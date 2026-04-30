@@ -1,0 +1,5 @@
+{
+  "name": "Gerador Produtos e Descrição - Omni360",
+  "description": "Ferramenta para importar planilhas de produtos, gerar descrições otimizadas para SEO usando inteligência artificial e exportar os resultados.",
+  "requestFramePermissions": []
+}

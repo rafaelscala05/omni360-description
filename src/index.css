@@ -1,0 +1,35 @@
+@import "tailwindcss";
+@import "react-quill-new/dist/quill.snow.css";
+
+.quill-editor-wrapper .ql-container {
+  @apply rounded-b-lg border-gray-300;
+  height: 250px;
+}
+
+.quill-editor-wrapper .ql-toolbar {
+  @apply rounded-t-lg border-gray-300 bg-gray-50;
+}
+
+/* Styles for the unified preview/edit view */
+.quill-readonly-view .ql-toolbar {
+  display: none !important;
+}
+
+.quill-readonly-view .ql-container.ql-snow {
+  border: none !important;
+  background: transparent !important;
+}
+
+.quill-view-mode .ql-editor {
+  padding: 1.5rem !important;
+  font-size: 0.95rem;
+}
+
+.quill-view-mode .ql-editor h2 {
+  font-weight: 700;
+  color: #111827;
+}
+
+.quill-view-mode .ql-editor p {
+  line-height: 1.6;
+}

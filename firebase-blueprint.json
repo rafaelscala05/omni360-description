@@ -1,0 +1,105 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "A product with its description, SEO data, and images.",
+      "type": "object",
+      "properties": {
+        "sku": { "type": "string", "description": "Product SKU" },
+        "description": { "type": "string", "description": "Product description" },
+        "price": { "type": "number", "description": "Product price" },
+        "imageUrl1": { "type": "string", "description": "URL of the primary image" },
+        "imageUrl2": { "type": "string", "description": "URL of the secondary image" },
+        "imageUrl3": { "type": "string", "description": "URL of the third image" },
+        "imageUrl4": { "type": "string", "description": "URL of the fourth image" },
+        "imageUrl5": { "type": "string", "description": "URL of the fifth image" },
+        "seoTitle": { "type": "string", "description": "SEO Title" },
+        "seoDescription": { "type": "string", "description": "SEO Description" },
+        "seoKeywords": { "type": "string", "description": "SEO Keywords" },
+        "status": { "type": "string", "description": "Status of the product generation" },
+        "ownerId": { "type": "string", "description": "ID of the user who owns this product" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp" },
+        "_tokenUsage": {
+          "type": "object",
+          "description": "Token usage logs for AI operations",
+          "properties": {
+            "enrichment": { "type": "object" },
+            "generation": { "type": "object" },
+            "images": { "type": "object" }
+          }
+        }
+      },
+      "required": ["ownerId", "createdAt"]
+    },
+    "Template": {
+      "title": "Template",
+      "description": "A prompt template for generating descriptions.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Template name" },
+        "prompt": { "type": "string", "description": "The prompt text" },
+        "ownerId": { "type": "string", "description": "ID of the user who owns this template" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" }
+      },
+      "required": ["name", "prompt", "ownerId", "createdAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile and credit management.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "credits": { "type": "number", "description": "Available AI credits" },
+        "lastSync": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "credits"]
+    },
+    "CreditLog": {
+      "title": "CreditLog",
+      "description": "Log of credit consumption.",
+      "type": "object",
+      "properties": {
+        "actionType": { "type": "string", "description": "Type of action (e.g., 'Enriquecimento', 'Geração SEO')" },
+        "productName": { "type": "string", "description": "Name of the product" },
+        "sku": { "type": "string", "description": "Product SKU" },
+        "userName": { "type": "string", "description": "Name of the user who performed the action" },
+        "creditsConsumed": { "type": "number", "description": "Number of credits consumed" },
+        "timestamp": { "type": "string", "format": "date-time", "description": "When the action occurred" }
+      },
+      "required": ["actionType", "userName", "creditsConsumed", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profile and credits."
+    },
+    "/users/{userId}/credit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/CreditLog" },
+      "description": "Credit consumption logs for a user."
+    },
+    "/users/{userId}/settings/{settingId}": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "originalHeaders": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "updatedAt": { "type": "string" }
+        }
+      },
+      "description": "User specific settings, like excel headers."
+    },
+    "/users/{userId}/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Products owned by a specific user."
+    },
+    "/users/{userId}/templates/{templateId}": {
+      "schema": { "$ref": "#/entities/Template" },
+      "description": "Templates owned by a specific user."
+    }
+  }
+}
