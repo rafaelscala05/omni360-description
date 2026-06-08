@@ -298,108 +298,37 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
   };
 
   const uploadImage = async (base64OrUrl: string, filename: string): Promise<string> => {
-    // If it's already a Firebase Storage URL, return it directly
-    if (base64OrUrl.includes('firebasestorage.googleapis.com')) return base64OrUrl;
-
+    // Para criar URLs amigáveis, utilizamos o endpoint local /api/upload
+    // que fará o download da imagem e retornará um link na mesma origem (ex: /uploads/nome...)
     try {
-      let base64Data = '';
-      let mimeType = 'image/jpeg';
-      let blob: Blob | null = null;
-
-      if (base64OrUrl.startsWith('data:')) {
-        base64Data = base64OrUrl;
-        const mimeMatch = base64Data.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,/);
-        if (mimeMatch && mimeMatch[1]) {
-          mimeType = mimeMatch[1];
-        }
-      } else {
-        // Special case: Firebase Storage URL
-        if (base64OrUrl.includes('firebasestorage.googleapis.com')) {
-          try {
-            const decodedUrl = decodeURIComponent(base64OrUrl);
-            const pathMatch = decodedUrl.match(/\/o\/(.+?)\?/);
-            if (pathMatch && pathMatch[1]) {
-              const path = pathMatch[1];
-              const storageRef = ref(storage, path);
-              blob = await getBlob(storageRef);
-            }
-          } catch (fbError) {
-            console.warn("Falha ao buscar blob do Firebase no upload, tentando fetch:", fbError);
-          }
-        }
-
-        if (!blob) {
-          // Fetch external URL and convert to base64
-          try {
-            const imgResponse = await fetch(base64OrUrl);
-            if (!imgResponse.ok) throw new Error(`Direct fetch failed with status ${imgResponse.status}`);
-            blob = await imgResponse.blob();
-          } catch (e) {
-            console.warn("Direct fetch failed for upload:", e);
-            
-            const proxies = [
-              { name: 'wsrv.nl', url: `https://wsrv.nl/?url=${encodeURIComponent(base64OrUrl)}&output=jpeg` },
-              { name: 'corsproxy.io', url: `https://corsproxy.io/?${encodeURIComponent(base64OrUrl)}` },
-              { name: 'codetabs', url: `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(base64OrUrl)}` },
-              { name: 'allorigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(base64OrUrl)}` }
-            ];
-
-            for (const proxy of proxies) {
-              try {
-                const pResp = await fetch(proxy.url);
-                if (pResp.ok) {
-                  blob = await pResp.blob();
-                  break;
-                }
-              } catch (pErr) {
-                console.warn(`Proxy ${proxy.name} falhou no upload:`, pErr);
-              }
-            }
-          }
-        }
-        
-        if (!blob) {
-          throw new Error("Failed to fetch image for upload");
-        }
-
-        mimeType = blob.type || 'image/jpeg';
-        
-        const reader = new FileReader();
-        const base64Promise = new Promise<string>((resolve) => {
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(blob!);
-        });
-        
-        base64Data = await base64Promise;
-      }
-
-      // Determine extension from mimeType
-      let extension = 'jpg';
-      if (mimeType.includes('png')) extension = 'png';
-      else if (mimeType.includes('webp')) extension = 'webp';
-      else if (mimeType.includes('gif')) extension = 'gif';
-      else if (mimeType.includes('svg')) extension = 'svg';
-
-      // Generate a unique filename
-      const safeFilename = filename.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'imagem';
-      const uniqueFilename = `${safeFilename}_${Date.now()}.${extension}`;
-      const storageRef = ref(storage, `products/${uniqueFilename}`);
-
-      // Upload to Firebase Storage
-      await uploadString(storageRef, base64Data, 'data_url');
+      let payload: any = { filename };
       
-      // Get the public download URL
-      const downloadURL = await getDownloadURL(storageRef);
-      return downloadURL;
-
-    } catch (error) {
-      console.error('Error uploading image to Firebase:', error);
-      // If Firebase upload fails (e.g., due to permissions), fallback to original
-      // But alert the user if it was a base64 string that might break Excel
       if (base64OrUrl.startsWith('data:')) {
-        alert("Erro ao salvar a imagem na nuvem. Verifique se você fez login no sistema.");
+        payload.imageBase64 = base64OrUrl;
+      } else {
+        // Se a imagem já estiver no /uploads/, talvez não seja necessário reenviar
+        // Mas para garantir uma cópia com o nome correto, o backend também suporta ler da URL.
+        payload.imageUrl = base64OrUrl;
       }
-      return base64OrUrl;
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      
+      if (!response.ok) {
+        throw new Error('Falha ao enviar imagem para /api/upload');
+      }
+      
+      const data = await response.json();
+      return data.url;
+    } catch (error) {
+      console.error('Error uploading image to local API:', error);
+      if (base64OrUrl.startsWith('data:')) {
+        alert("Erro ao salvar a imagem. Verifique se o servidor está online.");
+      }
+      return base64OrUrl; // Fallback
     }
   };
 

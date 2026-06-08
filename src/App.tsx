@@ -188,6 +188,7 @@ export default function App() {
     type: 'generate' | 'enrich';
     count: number;
     creditsNeeded: number;
+    targetId?: string;
   } | null>(null);
   const skipNextChangeTrack = useRef(false);
 
@@ -422,7 +423,7 @@ export default function App() {
         if (!localIds.has(docId)) {
           batch.delete(doc(productsRef, docId));
           opCount++;
-          if (opCount === 500) {
+          if (opCount >= 20) {
             await batch.commit();
             batch = writeBatch(db);
             opCount = 0;
@@ -482,7 +483,7 @@ export default function App() {
           batch.set(docRef, cleanDataToSave, { merge: true });
           opCount++;
           
-          if (opCount === 500) {
+          if (opCount >= 20) {
             await batch.commit();
             batch = writeBatch(db);
             opCount = 0;
@@ -1290,6 +1291,25 @@ export default function App() {
   const handleGenerateSingle = async (id: string) => {
     const productIndex = products.findIndex(p => p._id === id);
     if (productIndex === -1) return;
+
+    if (templates.length > 1) {
+      setShowMassActionConfirm({
+        isOpen: true,
+        type: 'generate',
+        count: 1,
+        creditsNeeded: 1,
+        targetId: id
+      });
+      return;
+    }
+
+    startGenerateSingle(id);
+  };
+
+  const startGenerateSingle = async (id: string) => {
+    setShowMassActionConfirm(null);
+    const productIndex = products.findIndex(p => p._id === id);
+    if (productIndex === -1) return;
     const product = products[productIndex];
 
     if (!(await consumeCredit('Geração SEO Individual', product['Descrição'], product['Código (SKU)']))) return;
@@ -1334,7 +1354,7 @@ export default function App() {
       return;
     }
 
-    if (count > 1) {
+    if (count > 1 || templates.length > 1) {
       setShowMassActionConfirm({
         isOpen: true,
         type: 'generate',
@@ -2649,8 +2669,12 @@ export default function App() {
                     {showMassActionConfirm.type === 'generate' ? <Sparkles className="w-8 h-8" /> : <Search className="w-8 h-8" />}
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold text-gray-900">Confirmar Ação em Massa</h3>
-                    <p className="text-sm text-gray-500">Esta ação processará múltiplos produtos.</p>
+                    <h3 className="text-xl font-bold text-gray-900">
+                      {showMassActionConfirm.count === 1 ? 'Confirmar Ação' : 'Confirmar Ação em Massa'}
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      {showMassActionConfirm.count === 1 ? 'Esta ação processará um produto.' : 'Esta ação processará múltiplos produtos.'}
+                    </p>
                   </div>
                 </div>
 
@@ -2674,6 +2698,21 @@ export default function App() {
                   </div>
                 </div>
 
+                {showMassActionConfirm.type === 'generate' && templates.length > 1 && (
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Selecione o Template de SEO</label>
+                    <select
+                      value={selectedTemplateId}
+                      onChange={(e) => setSelectedTemplateId(e.target.value)}
+                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                    >
+                      {templates.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <p className="text-xs text-gray-400 mb-6 italic text-center text-balance px-4">
                   Os créditos serão descontados unitariamente para cada produto processado com sucesso.
                 </p>
@@ -2688,7 +2727,11 @@ export default function App() {
                   <button
                     onClick={() => {
                       if (showMassActionConfirm.type === 'generate') {
-                        startGenerateMass();
+                        if (showMassActionConfirm.targetId) {
+                          startGenerateSingle(showMassActionConfirm.targetId);
+                        } else {
+                          startGenerateMass();
+                        }
                       } else {
                         startEnrichMass();
                       }

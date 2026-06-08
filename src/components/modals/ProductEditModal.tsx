@@ -924,13 +924,48 @@ export default function ProductEditModal({ product, categories, onClose, onSave,
                                 className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-sm font-bold transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 flex items-center gap-2 active:scale-95"
                               >
                                 <Sparkles className="w-4 h-4" />
-                                Gerar & Mudar Imagem Principal
+                                Gerar Imagens com IA
                               </button>
                             </div>
                         )}
                       </div>
                     </div>
                   </section>
+
+                  {editedProduct._ambientImages && editedProduct._ambientImages.length > 0 && (
+                    <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                      <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
+                        <Sparkles className="w-5 h-5 text-purple-600" />
+                        Ambientações Geradas
+                      </h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                        {editedProduct._ambientImages.map((img, idx) => (
+                          <div key={idx} className="flex flex-col gap-3 group">
+                            <div className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 shadow-sm group-hover:shadow-md transition-shadow">
+                              <img 
+                                src={img} 
+                                alt={`Ambientação ${idx + 1}`} 
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
+                                referrerPolicy="no-referrer"
+                              />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                                <a 
+                                  href={img} 
+                                  download={`ambientacao_${idx + 1}.jpg`} 
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-4 py-2 bg-white text-slate-900 font-bold text-xs rounded-xl shadow-lg transform translate-y-2 group-hover:translate-y-0 transition-all duration-300 flex items-center gap-2"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  Baixar Imagem
+                                </a>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
                 </div>
               )}
 

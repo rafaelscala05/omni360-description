@@ -12,16 +12,38 @@ const __dirname = path.dirname(__filename);
 
 // Lazy-initialized Gemini API client with telemetry header and dynamic key-refresh check
 let aiClient: GoogleGenAI | null = null;
+let vertexClient: GoogleGenAI | null = null;
 let lastUsedApiKey: string | null = null;
 
-function getGeminiClient(): GoogleGenAI {
+function getVertexClient(): GoogleGenAI {
+  if (!vertexClient) {
+    const projectId = process.env.VERTEX_PROJECT_ID;
+    const location = process.env.VERTEX_LOCATION || 'us-central1';
+    
+    if (!projectId) {
+      throw new Error("A variável de ambiente VERTEX_PROJECT_ID não está configurada. É necessária para usar a API do Vertex AI.");
+    }
+    
+    vertexClient = new GoogleGenAI({
+      vertexai: true,
+      project: projectId,
+      location: location,
+    });
+  }
+  return vertexClient;
+}
+
+function getGeminiClient(): Goo gleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   
   if (!apiKey || apiKey.trim() === '') {
+    console.error(`[DEBUG] GEMINI_API_KEY is ${apiKey === undefined ? 'undefined' : 'empty'}`);
     throw new Error("Chave de API não configurada. A variável GEMINI_API_KEY está vazia. Por favor, acesse o menu 'Settings' (Configurações) > 'Secrets' (Segredos) e insira sua chave do Gemini, ou adicione no arquivo .env se estiver rodando localmente.");
   }
   
-  const trimmedKey = apiKey.trim();
+  // Remove any spaces and surrounding quotes that might have been accidentally pasted
+  const trimmedKey = apiKey.trim().replace(/^["']|["']$/g, '');
+  console.log(`[DEBUG] GEMINI_API_KEY is configured. Length: ${trimmedKey.length}, Starts with: ${trimmedKey.substring(0, 4)}...`);
   
   if (!aiClient || lastUsedApiKey !== trimmedKey) {
     aiClient = new GoogleGenAI({
@@ -245,7 +267,8 @@ ${attributeInstructions}`;
         }
       }
 
-      const response = await getGeminiClient().models.generateContent({
+      const aiClientInstance = getGeminiClient();
+      const response = await aiClientInstance.models.generateContent({
         model: 'gemini-3.5-flash',
         contents: { parts },
         config: { 
@@ -484,36 +507,95 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
       const { base64Data, mimeType, ambientPrompt } = req.body;
       const cleanMimeType = normalizeMimeType(mimeType || 'image/jpeg', 'image.png');
 
-      const response = await getGeminiClient().models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                data: base64Data,
-                mimeType: cleanMimeType,
-              },
-            },
-            {
-              text: ambientPrompt,
-            },
-          ],
-        },
-      });
-
       let imageBase64 = null;
-      for (const part of response.candidates?.[0]?.content?.parts || []) {
-        if (part.inlineData) {
-          imageBase64 = `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
-          break;
+      if (process.env.VERTEX_PROJECT_ID) {
+        // Fluxo utilizando APIs REST do Vertex AI (Imagen)
+        const { GoogleAuth } = await import('google-auth-library');
+        const auth = new GoogleAuth({
+          scopes: ['https://www.googleapis.com/auth/cloud-platform']
+        });
+        const client = await auth.getClient();
+        const accessToken = await client.getAccessToken();
+        
+        const projectId = process.env.VERTEX_PROJECT_ID;
+        let location = process.env.VERTEX_LOCATION || 'us-central1';
+        // Modelos Imagen requerem endpoint regional, não suportam 'global'
+        if (location === 'global') {
+          location = 'us-central1';
+        }
+        const model = 'imagegeneration@006'; // Imagen 3 para edição
+        const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:predict`;
+        
+        // Remove 'data:image/...;base64,' prefix
+        const base64Clean = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+
+        const vertexResponse = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken.token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            instances: [
+              {
+                prompt: ambientPrompt,
+                image: {
+                  bytesBase64Encoded: base64Clean
+                }
+              }
+            ],
+            parameters: {
+              sampleCount: 1,
+              editConfig: {
+                editMode: "PRODUCT_IMAGE"
+              }
+            }
+          })
+        });
+
+        if (!vertexResponse.ok) {
+           const err = await vertexResponse.text();
+           console.error("Vertex API ERRO:", err);
+           throw new Error(`Vertex API error: ${err}`);
+        }
+        
+        const vData = await vertexResponse.json();
+        if (vData.predictions && vData.predictions[0] && vData.predictions[0].bytesBase64Encoded) {
+           imageBase64 = `data:image/jpeg;base64,${vData.predictions[0].bytesBase64Encoded}`;
+        }
+      } else {
+        // Fluxo padrão Gemini Flash Image
+        const response = await getGeminiClient().models.generateContent({
+          model: 'gemini-2.5-flash-image',
+          contents: {
+            parts: [
+              {
+                inlineData: {
+                  data: base64Data,
+                  mimeType: cleanMimeType,
+                },
+              },
+              {
+                text: ambientPrompt,
+              },
+            ],
+          },
+        });
+
+        for (const part of response.candidates?.[0]?.content?.parts || []) {
+          if (part.inlineData) {
+            imageBase64 = `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
+            break;
+          }
         }
       }
 
       if (!imageBase64) {
-        throw new Error("No image was returned by Gemini.");
+        throw new Error("No image was returned by the AI.");
       }
 
-      const usage = response.usageMetadata || { promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0 };
+      // Usage mock para Vertex, pois a API REST não retorna tokens de imagem diretamente
+      const usage = { promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0 };
 
       res.json({
         image: imageBase64,
