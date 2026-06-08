@@ -33,7 +33,7 @@ function getVertexClient(): GoogleGenAI {
   return vertexClient;
 }
 
-function getGeminiClient(): Goo gleGenAI {
+function getGeminiClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   
   if (!apiKey || apiKey.trim() === '') {
