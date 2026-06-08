@@ -32,6 +32,26 @@
       },
       "required": ["ownerId", "createdAt"]
     },
+    "Category": {
+      "title": "Category",
+      "description": "Category hierarchical entity.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "slug": { "type": "string" },
+        "parentId": { "type": "string" },
+        "level": { "type": "number" },
+        "path": { "type": "array", "items": { "type": "string" } },
+        "pathIds": { "type": "array", "items": { "type": "string" } },
+        "attributes": { "type": "array" },
+        "inheritParentAttributes": { "type": "boolean" },
+        "productCount": { "type": "number" },
+        "aiGenerated": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
     "Template": {
       "title": "Template",
       "description": "A prompt template for generating descriptions.",
@@ -92,6 +112,10 @@
         }
       },
       "description": "User specific settings, like excel headers."
+    },
+    "/users/{userId}/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/Category" },
+      "description": "Categories owned by a specific user."
     },
     "/users/{userId}/products/{productId}": {
       "schema": { "$ref": "#/entities/Product" },

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Search, Image as ImageIcon, Loader2, Check, Download, ExternalLink } from 'lucide-react';
-import { Product } from '../App';
-import { GoogleGenAI, Type } from '@google/genai';
+import { Product } from '../types/models';
 import { storage } from '../firebase';
 import { ref, uploadString, getDownloadURL, getBlob } from 'firebase/storage';
 
@@ -184,45 +183,42 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
       const processed = await processImage(base64Data, mimeType);
       base64Data = processed.base64;
       mimeType = processed.mimeType;
-
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       
-      // Helper for retrying with backoff
-      const generateWithRetry = async (index: number, retries = 2): Promise<string | null> => {
+      const defaultVariationPrompts = [
+        "Aprimore esta imagem e crie uma ambientação realista de e-commerce onde o produto está posicionado corretamente no mundo real. Mantenha o produto idêntico, apenas mude o fundo para um cenário de uso real e profissional.",
+        "Crie uma imagem de uma pessoa utilizando este produto de forma natural e realista num cenário do dia a dia. Mantenha o produto idêntico, mostrando-o em uso.",
+        "Crie uma imagem aproximada mostrando uma pessoa segurando este produto com as mãos, para dar uma clara noção de escala e tamanho real. Fundo minimalista, mantendo o produto idêntico."
+      ];
+
+      // Helper for retrying with backoff calling the server-side endpoint
+      const generateWithRetry = async (index: number, currentPrompt: string, retries = 2): Promise<string | null> => {
         for (let attempt = 0; attempt <= retries; attempt++) {
           try {
-            const res = await ai.models.generateContent({
-              model: 'gemini-2.5-flash-image',
-              contents: {
-                parts: [
-                  {
-                    inlineData: {
-                      data: base64Data,
-                      mimeType: mimeType,
-                    },
-                  },
-                  {
-                    text: ambientPrompt,
-                  },
-                ],
-              },
+            const res = await fetch('/api/gemini/generate-ambient-images', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ base64Data, mimeType, ambientPrompt: currentPrompt })
             });
 
-            for (const part of res.candidates?.[0]?.content?.parts || []) {
-              if (part.inlineData) {
-                const usage = res.usageMetadata || { promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0 };
-                totalPromptTokens += usage.promptTokenCount;
-                totalCompletionTokens += usage.candidatesTokenCount;
-                totalTokens += usage.totalTokenCount;
-                return `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
-              }
+            if (!res.ok) {
+              const errData = await res.json().catch(() => ({}));
+              throw new Error(errData.error || `Erro de rede no servidor (Status ${res.status})`);
+            }
+
+            const data = await res.json();
+            if (data.image) {
+              totalPromptTokens += data.usage?.promptTokens || 0;
+              totalCompletionTokens += data.usage?.completionTokens || 0;
+              totalTokens += data.usage?.totalTokens || 0;
+              return data.image;
             }
             return null;
           } catch (error: any) {
-            const isQuotaError = error.message?.includes("429") || 
-                                error.status === 429 || 
-                                error.message?.includes("RESOURCE_EXHAUSTED") || 
-                                error.message?.includes("quota");
+            const errorMsg = error.message || "";
+            const isQuotaError = errorMsg.includes("429") || 
+                                errorMsg.includes("RESOURCE_EXHAUSTED") || 
+                                errorMsg.includes("quota") ||
+                                errorMsg.includes("limite");
             
             if (isQuotaError && attempt < retries) {
               const delay = Math.pow(2, attempt) * 2000; // 2s, 4s
@@ -240,7 +236,11 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
       const validImages: string[] = [];
       for (let i = 0; i < 3; i++) {
         try {
-          const imgData = await generateWithRetry(i);
+          const promptToUse = (ambientPrompt === defaultPrompt) 
+             ? defaultVariationPrompts[i]
+             : ambientPrompt;
+
+          const imgData = await generateWithRetry(i, promptToUse);
           if (imgData) {
             validImages.push(imgData);
           }
@@ -250,10 +250,11 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
         } catch (genError: any) {
           console.error(`Error generating image ${i + 1}:`, genError);
           
-          const isQuotaError = genError.message?.includes("429") || 
-                              genError.status === 429 || 
-                              genError.message?.includes("RESOURCE_EXHAUSTED") || 
-                              genError.message?.includes("quota");
+          const errorMsg = genError.message || "";
+          const isQuotaError = errorMsg.includes("429") || 
+                              errorMsg.includes("RESOURCE_EXHAUSTED") || 
+                              errorMsg.includes("quota") ||
+                              errorMsg.includes("limite");
 
           // If we hit a rate limit and already have some images, we can stop and show what we have
           if (isQuotaError && validImages.length > 0) {
@@ -307,6 +308,10 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
 
       if (base64OrUrl.startsWith('data:')) {
         base64Data = base64OrUrl;
+        const mimeMatch = base64Data.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,/);
+        if (mimeMatch && mimeMatch[1]) {
+          mimeType = mimeMatch[1];
+        }
       } else {
         // Special case: Firebase Storage URL
         if (base64OrUrl.includes('firebasestorage.googleapis.com')) {
@@ -368,9 +373,16 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
         base64Data = await base64Promise;
       }
 
+      // Determine extension from mimeType
+      let extension = 'jpg';
+      if (mimeType.includes('png')) extension = 'png';
+      else if (mimeType.includes('webp')) extension = 'webp';
+      else if (mimeType.includes('gif')) extension = 'gif';
+      else if (mimeType.includes('svg')) extension = 'svg';
+
       // Generate a unique filename
-      const safeFilename = filename.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-      const uniqueFilename = `${safeFilename}_${Date.now()}`;
+      const safeFilename = filename.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'imagem';
+      const uniqueFilename = `${safeFilename}_${Date.now()}.${extension}`;
       const storageRef = ref(storage, `products/${uniqueFilename}`);
 
       // Upload to Firebase Storage

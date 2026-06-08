@@ -1,7 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, FileSpreadsheet, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, DownloadCloud, Edit, Globe, FileText, Database } from 'lucide-react';
+import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, FileSpreadsheet, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { GoogleGenAI, Type } from '@google/genai';
 import ImageSearchModal from './components/ImageSearchModal';
 import LoginLanding from './components/LoginLanding';
 import ReactQuill from 'react-quill-new';
@@ -11,102 +10,19 @@ import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from './firebase';
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { collection, doc, writeBatch, getDocs, setDoc, getDoc, deleteDoc, getDocFromServer, runTransaction } from 'firebase/firestore';
-
-// Initialize Gemini API
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+import CategoryManager from './components/categories/CategoryManager';
+import CategoryImportModal from './components/modals/CategoryImportModal';
+import ProductEditModal from './components/modals/ProductEditModal';
+import { Category, Product, AttributeValue } from './types/models';
+import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate } from './services/productService';
+import { fetchCategories, generateCategoryHierarchy, flattenHierarchy, getEffectiveAttributes, addAttributeToCategory } from './services/categoryService';
 
 // Utility to merge classes
 function cn(...classes: (string | boolean | undefined)[]) {
   return classes.filter(Boolean).join(' ');
 }
 
-// Types
-export interface Product {
-  // Original 64 columns
-  'ID'?: string;
-  'Código (SKU)'?: string;
-  'Descrição'?: string;
-  'Unidade'?: string;
-  'NCM (Classificação fiscal)'?: string;
-  'Origem'?: string;
-  'Preço'?: string | number;
-  'Valor IPI fixo'?: string | number;
-  'Observações'?: string;
-  'Situação'?: string;
-  'Estoque'?: string | number;
-  'Preço de custo'?: string | number;
-  'Cód do fornecedor'?: string;
-  'Fornecedor'?: string;
-  'Localização'?: string;
-  'Estoque máximo'?: string | number;
-  'Estoque mínimo'?: string | number;
-  'Peso líquido (Kg)'?: string | number;
-  'Peso bruto (Kg)'?: string | number;
-  'GTIN/EAN'?: string;
-  'GTIN/EAN tributável'?: string;
-  'Descrição complementar'?: string;
-  'CEST'?: string;
-  'Código de Enquadramento IPI'?: string;
-  'Formato embalagem'?: string;
-  'Largura embalagem'?: string | number;
-  'Altura Embalagem'?: string | number;
-  'Comprimento embalagem'?: string | number;
-  'Diâmetro embalagem'?: string | number;
-  'Tipo do produto'?: string;
-  'URL imagem 1'?: string;
-  'URL imagem 2'?: string;
-  'URL imagem 3'?: string;
-  'URL imagem 4'?: string;
-  'URL imagem 5'?: string;
-  'URL imagem 6'?: string;
-  'Categoria'?: string;
-  'Código do pai'?: string;
-  'Variações'?: string;
-  'Marca'?: string;
-  'Garantia'?: string;
-  'Sob encomenda'?: string;
-  'Preço promocional'?: string | number;
-  'URL imagem externa 1'?: string;
-  'URL imagem externa 2'?: string;
-  'URL imagem externa 3'?: string;
-  'URL imagem externa 4'?: string;
-  'URL imagem externa 5'?: string;
-  'URL imagem externa 6'?: string;
-  'Link do vídeo'?: string;
-  'Título SEO'?: string;
-  'Descrição SEO'?: string;
-  'Palavras chave SEO'?: string;
-  'Slug'?: string;
-  'Dias para preparação'?: string | number;
-  'Controlar lotes'?: string;
-  'Unidade por caixa'?: string | number;
-  'URL imagem externa 7'?: string;
-  'URL imagem externa 8'?: string;
-  'URL imagem externa 9'?: string;
-  'URL imagem externa 10'?: string;
-  'Markup'?: string | number;
-  'Permitir inclusão nas vendas'?: string;
-  'EX TIPI'?: string;
-  
-  // Internal fields
-  _id: string;
-  _statusDescricao: 'Sem descrição' | 'Descrição original' | 'Gerado por IA';
-  _statusSEO: 'Sem SEO' | 'Gerado por IA';
-  _isGenerating?: boolean;
-  _isEnriching?: boolean;
-  _enrichmentLog?: string;
-  _generationLog?: string;
-  _tokenUsage?: {
-    enrichment?: { promptTokens: number; completionTokens: number; totalTokens: number };
-    generation?: { promptTokens: number; completionTokens: number; totalTokens: number };
-    images?: { promptTokens: number; completionTokens: number; totalTokens: number };
-  };
-  _originalRow?: any; // Store original row to ensure all columns are exported
-  _children?: Product[]; // For grouping variations
-  _selectedImage?: string;
-  _ambientImages?: string[];
-  _isDirty?: boolean;
-}
+// Products type now imported
 
 interface Template {
   id: string;
@@ -175,66 +91,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 }
 
-const defaultTemplate: Template = {
-  id: 'default',
-  name: 'Padrão (E-commerce SEO)',
-  prompt: `Você é um especialista em SEO e copywriting para e-commerce.
-
-Gere conteúdo altamente detalhado, persuasivo e otimizado para o produto abaixo. O objetivo é explicar muito bem o produto, seus benefícios, casos de uso e especificações, tirando todas as dúvidas do cliente.
-
-**Dados do produto:**
-- SKU: {Código (SKU)}
-- Nome: {Descrição}
-- Categoria: {Categoria}
-- Marca: {Marca}
-- Descrição atual: {Descrição complementar}
-- Preço: R$ {Preço}
-- Variações disponíveis: {Variações agrupadas das filhas}
-
-**Análise Visual (IMPORTANTE):**
-Se uma imagem for fornecida junto com este prompt, analise-a detalhadamente. Identifique e descreva:
-- Cores exatas e predominantes
-- Texturas e materiais aparentes
-- Detalhes de design, acabamento e formato
-Incorpore essas características visuais de forma natural e persuasiva na descrição.
-
-**Retorne APENAS um JSON válido, sem markdown, sem explicações, no formato:**
-
-{
-  "descricao_html": "<div class='product-description'>...</div>",
-  "titulo_seo": "Título de até 60 caracteres com palavra-chave principal",
-  "descricao_seo": "Meta description de até 160 caracteres, atrativa e com CTA",
-  "palavras_chave": "palavra1, palavra2, palavra3, palavra4, palavra5"
-}
-
-**REGRAS para descricao_html:**
-- Estrutura Rica e Detalhada: 
-  <h2> [Frase de efeito sobre o produto] </h2>
-  <p> [Apresentação detalhada do produto, o que é, para que serve, qual problema resolve] </p>
-  <h3>Principais Benefícios</h3> <ul> [Lista com os maiores benefícios e diferenciais] </ul>
-  <h3>Detalhes e Especificações</h3> <ul> [Lista de características técnicas, material, medidas, etc] </ul>
-  <h3>Dicas de Uso / Como Usar</h3> <p> [Explicação de como extrair o melhor do produto no dia a dia] </p>
-  <p> [Fechamento persuasivo mencionando a marca e categoria] </p>
-- Seja extremamente detalhista e explicativo. Não economize nas palavras se for para agregar valor.
-- 300 a 600 palavras.
-- Português do Brasil, tom profissional mas acessível.
-- Inclua o nome do produto e categoria como palavras-chave naturais ao longo do texto.
-- Se houver variações, mencione as opções disponíveis no texto.
-
-**REGRAS para titulo_seo:**
-- Máximo 60 caracteres
-- Inclua o nome do produto e marca
-- Formato: "[Nome do Produto] - [Marca] | [Benefício ou Categoria]"
-
-**REGRAS para descricao_seo:**
-- Máximo 160 caracteres
-- Tom convidativo com CTA implícito
-- Inclua o preço ou benefício principal
-
-**REGRAS para palavras_chave:**
-- 5 a 10 keywords separadas por vírgula
-- Misture: nome exato, variações de busca, categoria, marca`
-};
+// defaultTemplate moved to productService
 
 const TINY_ERP_HEADERS = [
   'ID', 'Código (SKU)', 'Descrição', 'Unidade', 'Classificação fiscal', 'Origem', 'Preço', 'Valor IPI fixo', 'Observações', 'Situação', 'Estoque', 'Preço de custo', 'Cód do Fornecedor', 'Fornecedor', 'Localização', 'Estoque máximo', 'Estoque mínimo', 'Peso líquido (Kg)', 'Peso bruto (Kg)', 'GTIN/EAN', 'GTIN/EAN tributável', 'Descrição complementar', 'CEST', 'Código de Enquadramento IPI', 'Formato embalagem', 'Largura embalagem', 'Altura embalagem', 'Comprimento embalagem', 'Diâmetro embalagem', 'Tipo do produto', 'URL imagem 1', 'URL imagem 2', 'URL imagem 3', 'URL imagem 4', 'URL imagem 5', 'URL imagem 6', 'Categoria', 'Código do pai', 'Variações', 'Marca', 'Garantia', 'Sob encomenda', 'Preço promocional', 'URL imagem externa 1', 'URL imagem externa 2', 'URL imagem externa 3', 'URL imagem externa 4', 'URL imagem externa 5', 'URL imagem externa 6', 'Link do vídeo', 'Título SEO', 'Descrição SEO', 'Palavras chave SEO', 'Slug', 'Dias para preparação', 'Controlar lotes', 'Unidade por caixa', 'URL imagem externa 7', 'URL imagem externa 8', 'URL imagem externa 9', 'URL imagem externa 10', 'Markup', 'Permitir inclusão nas vendas', 'EX TIPI'
@@ -249,11 +106,18 @@ const decodeHTMLEntities = (text: string | undefined | null) => {
 
 export default function App() {
   // State
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [originalHeaders, setOriginalHeaders] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<'all' | 'processed'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'processed' | 'errors'>('all');
+  const [mainView, setMainView] = useState<'products' | 'categories'>('products');
   const [exportModel, setExportModel] = useState<'standard' | 'tinyerp'>('standard');
+  const [existingCategories, setExistingCategories] = useState<Category[]>([]);
+  const [showCategoryImport, setShowCategoryImport] = useState(false);
+  const [foundCategoriesFile, setFoundCategoriesFile] = useState<string[]>([]);
+  const [pendingProducts, setPendingProducts] = useState<Product[]>([]);
+  const [isProcessingCategories, setIsProcessingCategories] = useState(false);
   
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -311,6 +175,8 @@ export default function App() {
     'Status Desc.': true
   });
   const [isColumnConfigOpen, setIsColumnConfigOpen] = useState(false);
+  const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
 
   // Cloud Sync State
   const [isSavingToCloud, setIsSavingToCloud] = useState(false);
@@ -385,11 +251,18 @@ export default function App() {
             });
             setCredits(initialCredits);
           }
+          
+          // Load categories on startup
+          const cats = await fetchCategories(currentUser.uid);
+          setExistingCategories(cats);
+          
+          await loadFromCloud(true, currentUser.uid);
         } catch (error) {
-          console.error("Error fetching user credits:", error);
+          console.error("Error fetching user data/categories:", error);
         }
       } else {
         setCredits(0);
+        setExistingCategories([]);
       }
       setIsAuthReady(true);
     });
@@ -565,6 +438,27 @@ export default function App() {
       // 3. Save only DIRTY products (or all if we don't have dirty tracking yet, but we just added it)
       const dirtyProducts = products.filter(p => p._isDirty);
       
+      const removeUndefinedRecursively = (obj: any): any => {
+        if (obj === null || obj === undefined) {
+          return null;
+        }
+        if (Array.isArray(obj)) {
+          return obj.map(item => removeUndefinedRecursively(item));
+        }
+        if (typeof obj === 'object') {
+          // If it's a Firestore-compatible object (excluding special types like Date)
+          const cleanObj: any = {};
+          Object.keys(obj).forEach(key => {
+            const val = obj[key];
+            if (val !== undefined) {
+              cleanObj[key] = removeUndefinedRecursively(val);
+            }
+          });
+          return cleanObj;
+        }
+        return obj;
+      };
+
       if (dirtyProducts.length > 0) {
         for (const product of dirtyProducts) {
           const docId = product._id;
@@ -574,6 +468,7 @@ export default function App() {
           const dataToSave = { 
             ...product, 
             ownerId: user.uid, 
+            createdAt: product.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString() 
           };
           
@@ -582,13 +477,9 @@ export default function App() {
           delete dataToSave._isGenerating;
           delete dataToSave._isEnriching;
 
-          Object.keys(dataToSave).forEach(key => {
-            if (dataToSave[key as keyof typeof dataToSave] === undefined) {
-              delete dataToSave[key as keyof typeof dataToSave];
-            }
-          });
+          const cleanDataToSave = removeUndefinedRecursively(dataToSave);
 
-          batch.set(docRef, dataToSave, { merge: true });
+          batch.set(docRef, cleanDataToSave, { merge: true });
           opCount++;
           
           if (opCount === 500) {
@@ -616,8 +507,9 @@ export default function App() {
     }
   };
 
-  const loadFromCloud = async (silent = false) => {
-    if (!user) {
+  const loadFromCloud = async (silent = false, userId?: string) => {
+    const targetUid = userId || user?.uid;
+    if (!targetUid) {
       if (!silent) alert("Faça login para carregar da nuvem.");
       return;
     }
@@ -625,7 +517,7 @@ export default function App() {
     setIsLoadingFromCloud(true);
     try {
       // 1. Load original headers
-      const settingsPath = `users/${user.uid}/settings/excel`;
+      const settingsPath = `users/${targetUid}/settings/excel`;
       const settingsRef = doc(db, settingsPath);
       let settingsSnap;
       try {
@@ -639,7 +531,7 @@ export default function App() {
       }
 
       // 2. Load products
-      const productsPath = `users/${user.uid}/products`;
+      const productsPath = `users/${targetUid}/products`;
       const productsRef = collection(db, productsPath);
       let productsSnap;
       try {
@@ -711,8 +603,15 @@ export default function App() {
 
       // Tab filter
       if (activeTab === 'processed') {
-        const isProcessed = p._statusDescricao === 'Gerado por IA' || p._statusSEO === 'Gerado por IA' || p._enrichmentLog;
+        const isProcessed = 
+          p._statusDescricao === 'Gerado por IA' || 
+          p._statusSEO === 'Gerado por IA' || 
+          !!p._enrichmentLog ||
+          p.ownerId !== undefined;
         if (!isProcessed) return false;
+      }
+      if (activeTab === 'errors') {
+        if (!p._generationError) return false;
       }
 
       const matchesSearch = (p['Descrição']?.toLowerCase() || '').includes(searchQuery.toLowerCase()) || 
@@ -740,7 +639,7 @@ export default function App() {
     
     const testProduct = {
       'Código (SKU)': 'TEST-001',
-      'Descrição': 'Produto de Teste Omni360',
+      'Descrição': 'Produto de Teste Alfreds',
       'Unidade': 'UN',
       'NCM (Classificação fiscal)': '85171300',
       'Origem': '0',
@@ -750,7 +649,7 @@ export default function App() {
       'Estoque': 10,
       'Preço de custo': 1500.00,
       'Fornecedor': 'Fornecedor Teste',
-      'Marca': 'Omni360',
+      'Marca': 'Alfreds',
       'Categoria': 'Eletrônicos',
       'Peso bruto (Kg)': 0.5,
       'GTIN/EAN': '7891234567890',
@@ -855,7 +754,28 @@ export default function App() {
         // Actually, it's better to store all products flat, and just compute the children for rendering.
         // Let's store all products flat, but link them.
         
-        setProducts(allProducts);
+        // Extract unique categories
+        const uniqueCategories = Array.from(new Set(allProducts.map(p => p['Categoria']?.toString().trim()).filter(Boolean))) as string[];
+        
+        if (uniqueCategories.length > 0) {
+          // If we have auth, load current categories and show modal
+          if (auth.currentUser) {
+            fetchCategories(auth.currentUser.uid).then(cats => {
+              setExistingCategories(cats);
+              setFoundCategoriesFile(uniqueCategories);
+              setPendingProducts(finalProducts);
+              setShowCategoryImport(true);
+            }).catch(e => {
+              // fallback if network fails
+              setProducts(finalProducts);
+            });
+          } else {
+            setProducts(finalProducts);
+          }
+        } else {
+          setProducts(finalProducts);
+        }
+
         setSelectedIds(new Set());
         // Reset file input
         if (fileInputRef.current) fileInputRef.current.value = '';
@@ -867,17 +787,143 @@ export default function App() {
     reader.readAsBinaryString(file);
   };
 
-  const handleExport = () => {
+  const processCategoryImport = async (selectedNewCategories: string[], aiEnrichmentEnabled: boolean) => {
+    if (!auth.currentUser) return;
+    setIsProcessingCategories(true);
+    let catsToCreate: Partial<Category>[] = selectedNewCategories.map(catName => ({
+      name: catName,
+      slug: catName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      parentId: null,
+      level: 0,
+      path: [catName],
+      attributes: [],
+      inheritParentAttributes: true,
+      productCount: 0,
+      aiGenerated: false
+    }));
+    
+    try {
+      if (aiEnrichmentEnabled && selectedNewCategories.length > 0) {
+        if (credits < 1) {
+          alert('Você precisa de no mínimo 1 crédito para IA. A geração de hierarquia será ignorada.');
+        } else {
+          try {
+             await consumeCredit('generate_hierarchy', 'Geração de Hierarquia');
+             const aiResult = await generateCategoryHierarchy(selectedNewCategories);
+             console.log("AI Categories Result:", aiResult);
+             if (aiResult.hierarchy) {
+               catsToCreate = flattenHierarchy(aiResult.hierarchy);
+             }
+          } catch(e) {
+             console.error(e);
+             alert("Erro na IA, criando categorias planas...");
+          }
+        }
+      }
+
+      const batch = writeBatch(db);
+      const userRef = doc(db, `users/${auth.currentUser.uid}`);
+      
+      const newCreatedCats: Category[] = [];
+      const timestamp = new Date().toISOString();
+
+      catsToCreate.forEach(catData => {
+        const catRef = doc(collection(userRef, 'categories'));
+        // If it was flattened by AI it might have an id like cat_something. 
+        // We redefine it with a clean Firestore ID.
+        // Also we must update pathIds if it is a child.
+        // This mapping of pathIds requires updating the tree. For simplicity, if we use the AI structure, it has temporary IDs.
+        // It's better to preserve the generated IDs to keep parent/child references intact.
+        
+        const safeId = catData.id || catRef.id;
+        const actualRef = doc(collection(userRef, 'categories'), safeId);
+        
+        const newCat: Category = {
+          id: safeId,
+          name: catData.name || '',
+          slug: catData.slug || '',
+          parentId: catData.parentId || null,
+          level: catData.level || 0,
+          path: catData.path || [],
+          pathIds: catData.pathIds || [safeId],
+          attributes: catData.attributes || [],
+          inheritParentAttributes: catData.inheritParentAttributes ?? true,
+          productCount: 0,
+          aiGenerated: catData.aiGenerated || false,
+          createdAt: timestamp,
+          updatedAt: timestamp
+        };
+        batch.set(actualRef, newCat);
+        newCreatedCats.push(newCat);
+      });
+
+      if (newCreatedCats.length > 0) {
+        await batch.commit();
+      }
+
+      // Map pending products to category IDs if they match
+      const allRuntimeCats = [...existingCategories, ...newCreatedCats];
+      const updatedProducts = pendingProducts.map(prod => {
+        const catName = prod['Categoria']?.toString().trim();
+        const matched = allRuntimeCats.find(c => c.name.toLowerCase() === catName?.toLowerCase());
+        if (matched) {
+          prod.categoryId = matched.id;
+          prod.categoryPath = matched.path;
+        }
+        return prod;
+      });
+
+      setProducts(updatedProducts);
+      setShowCategoryImport(false);
+
+    } catch (e) {
+      console.error(e);
+      alert('Erro ao processar categorias.');
+    } finally {
+      setIsProcessingCategories(false);
+    }
+  };
+
+  const serializeCheckbox = (arr: string[]): string => {
+    if (!Array.isArray(arr)) return '';
+    return arr.join(';');
+  };
+
+  const sanitizeExportRow = (row: any, nullableFields: string[]) => {
+    const sanitized = { ...row };
+    nullableFields.forEach(field => {
+      if (sanitized[field] === null || sanitized[field] === undefined || sanitized[field] === '') {
+        sanitized[field] = '';
+      }
+    });
+    return sanitized;
+  };
+
+  const handleExport = (modelToUse: 'standard' | 'tinyerp' = 'standard') => {
     if (products.length === 0) return;
+
+    // Determine dynamic columns from all products
+    const dynamicAttrs = new Set<string>();
+    products.forEach(p => {
+      if (p.attributes) {
+        Object.keys(p.attributes).forEach(k => dynamicAttrs.add(k));
+      }
+      if (p._children) {
+        p._children.forEach(c => {
+          if (c.attributes) {
+            Object.keys(c.attributes).forEach(k => dynamicAttrs.add(k));
+          }
+        });
+      }
+    });
 
     const exportData = products.flatMap(p => {
       const rowsToExport = [];
       
       const prepareRow = (prod: Product) => {
-        if (exportModel === 'tinyerp') {
-          const row: any = {};
+        let row: any = {};
+        if (modelToUse === 'tinyerp') {
           TINY_ERP_HEADERS.forEach(header => {
-            // Default to empty string
             row[header] = '';
             
             // Map common fields
@@ -937,19 +983,18 @@ export default function App() {
             for (let i = 2; i <= 6; i++) {
               if (header === `URL imagem ${i}`) {
                 const ambientImg = prod._ambientImages?.[i - 2];
-                row[header] = ambientImg?.startsWith('data:') ? '[Imagem Base64]' : (ambientImg || prod[`URL imagem ${i}`] || '');
+                row[header] = ambientImg?.startsWith('data:') ? '[Imagem Base64]' : (ambientImg || prod[`URL imagem ${i}` as keyof Product] || '');
               }
             }
             for (let i = 1; i <= 10; i++) {
               if (header === `URL imagem externa ${i}`) {
-                row[header] = prod[`URL imagem externa ${i}`] || '';
+                row[header] = prod[`URL imagem externa ${i}` as keyof Product] || '';
               }
             }
           });
-          return row;
         } else {
           // Standard System Model
-          const row = { ...prod._originalRow };
+          row = { ...prod._originalRow };
           // Update with generated fields
           row['Descrição complementar'] = prod['Descrição complementar'] || row['Descrição complementar'];
           row['Título SEO'] = prod['Título SEO'] || row['Título SEO'];
@@ -976,8 +1021,20 @@ export default function App() {
               }
             });
           }
-          return row;
         }
+
+        // Apply modulo 4.3 - Atributos Dinâmicos na Exportação
+        if (prod.attributes) {
+          Object.entries(prod.attributes).forEach(([key, attr]) => {
+            if (Array.isArray(attr.value)) {
+              row[key] = serializeCheckbox(attr.value);
+            } else {
+              row[key] = attr.value;
+            }
+          });
+        }
+
+        return sanitizeExportRow(row, ['ID']);
       };
 
       rowsToExport.push(prepareRow(p));
@@ -993,14 +1050,23 @@ export default function App() {
     });
 
     // Determine the headers to use
-    let headersToUse = exportModel === 'tinyerp' ? TINY_ERP_HEADERS : (originalHeaders.length > 0 ? [...originalHeaders] : undefined);
+    let headersToUse = modelToUse === 'tinyerp' ? [...TINY_ERP_HEADERS] : (originalHeaders.length > 0 ? [...originalHeaders] : undefined);
     
     // Ensure new columns are added to standard model if they weren't in the original file
-    if (exportModel === 'standard' && headersToUse) {
+    if (modelToUse === 'standard' && headersToUse) {
       const newColumns = ['Título SEO', 'Descrição SEO', 'Palavras chave SEO', 'URL imagem 1', 'URL imagem 2', 'URL imagem 3', 'URL imagem 4', 'URL imagem 5'];
       newColumns.forEach(col => {
         if (!headersToUse!.includes(col)) {
           headersToUse!.push(col);
+        }
+      });
+    }
+
+    // Append dynamic columns
+    if (headersToUse) {
+      Array.from(dynamicAttrs).forEach(dynamicCol => {
+        if (!headersToUse!.includes(dynamicCol)) {
+          headersToUse!.push(dynamicCol);
         }
       });
     }
@@ -1010,7 +1076,7 @@ export default function App() {
     XLSX.utils.book_append_sheet(wb, ws, 'Planilha 1');
 
     const date = new Date().toISOString().split('T')[0];
-    const modelName = exportModel === 'tinyerp' ? 'TinyERP' : 'Padrao';
+    const modelName = modelToUse === 'tinyerp' ? 'TinyERP' : 'Padrao';
     XLSX.writeFile(wb, `produtos_exportacao_${modelName}_${date}.xlsx`);
   };
 
@@ -1032,150 +1098,8 @@ export default function App() {
     }
   };
 
-  const generateDescriptionText = async (product: Product, templateId: string): Promise<any> => {
-    const template = templates.find(t => t.id === templateId) || defaultTemplate;
-    
-    // Format variations for the prompt
-    let variacoesText = 'Nenhuma';
-    if (product._children && product._children.length > 0) {
-      const allVariations = product._children.map(c => c['Variações']).filter(Boolean);
-      variacoesText = allVariations.join(' | ');
-    }
-
-    const visualEnhancementRules = `
-ESPECIFICAÇÕES VISUAIS DA DESCRIÇÃO (OBRIGATÓRIO):
-1. Use HTML semântico e profissional.
-2. Adicione espaçamento extra (margem superior/inferior ou quebras de linha duplas) entre parágrafos, subtítulos e PRINCIPALMENTE entre itens de lista (<li>) para melhorar drasticamente a leitura.
-3. Utilize tags <h2> e <h3> para criar seções lógicas e organizadas.
-4. Transforme blocos de texto denso em listas bulleted (<ul> e <li>) para facilitar a escaneabilidade.
-5. O resultado deve ser visualmente limpo, com ar de e-commerce premium.`;
-
-    let prompt = template.prompt.replace(/{([^{}\n]+)}/g, (match, p1) => {
-      let key = p1.trim();
-      
-      if (key.toLowerCase() === 'variações agrupadas das filhas') {
-        return variacoesText;
-      }
-      
-      // Common aliases to make it easier for the user
-      if (key.toLowerCase() === 'nome') key = 'Descrição';
-      if (key.toLowerCase() === 'sku') key = 'Código (SKU)';
-      
-      // Try exact match first
-      let val = (product as any)[key];
-      
-      // Try case-insensitive match if not found
-      if (val === undefined) {
-        const foundKey = Object.keys(product).find(k => k.toLowerCase() === key.toLowerCase());
-        if (foundKey) {
-          val = (product as any)[foundKey];
-        }
-      }
-      
-      // If the value exists, return it.
-      // If it doesn't exist (e.g., empty cell in Excel, or invalid column), return an empty string
-      // to avoid sending the literal placeholder (like "{Marca}") to the AI.
-      return val != null ? String(val) : '';
-    });
-
-    const productDataForLog = { ...product };
-    Object.keys(productDataForLog).forEach(key => {
-      if (key.startsWith('_')) {
-        delete (productDataForLog as any)[key];
-      }
-    });
-
-    const promptLog = `=== PARÂMETROS DA PLANILHA ===\n${JSON.stringify(productDataForLog, null, 2)}\n\n=== PROMPT ENVIADO ===\n${prompt}\n\n=== REGRAS VISUAIS ===\n${visualEnhancementRules}`;
-
-    const parts: any[] = [{ text: prompt + "\n\n" + visualEnhancementRules }];
-
-    const imageUrl = product['URL imagem 1'] || product['URL imagem externa 1'];
-    if (imageUrl) {
-      try {
-        const response = await fetch(imageUrl);
-        if (response.ok) {
-          const blob = await response.blob();
-          const base64data = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          });
-          
-          const matches = base64data.match(/^data:(.+);base64,(.+)$/);
-          if (matches && matches.length === 3) {
-            parts.unshift({
-              inlineData: {
-                mimeType: matches[1],
-                data: matches[2]
-              }
-            });
-          }
-        }
-      } catch (error) {
-        console.warn("Aviso: Não foi possível carregar a imagem para análise da IA (possível bloqueio de CORS). Gerando descrição apenas com os dados em texto.", error);
-      }
-    }
-
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: { parts },
-        config: { 
-          temperature: 0.7,
-          maxOutputTokens: 4096,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              descricao_html: {
-                type: Type.STRING,
-                description: "A descrição do produto em formato HTML."
-              },
-              titulo_seo: {
-                type: Type.STRING,
-                description: "O título SEO otimizado."
-              },
-              descricao_seo: {
-                type: Type.STRING,
-                description: "A meta description SEO."
-              },
-              palavras_chave: {
-                type: Type.STRING,
-                description: "As palavras-chave separadas por vírgula."
-              }
-            },
-            required: ["descricao_html", "titulo_seo", "descricao_seo", "palavras_chave"]
-          }
-        }
-      });
-      
-      let text = response.text || '';
-      // Clean up markdown blocks if present
-      text = text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
-      
-      try {
-        const parsed = JSON.parse(text);
-        const usage = response.usageMetadata || { promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0 };
-        return { 
-          ...parsed, 
-          _promptLog: promptLog,
-          _usage: {
-            promptTokens: usage.promptTokenCount,
-            completionTokens: usage.candidatesTokenCount,
-            totalTokens: usage.totalTokenCount
-          }
-        };
-      } catch (e) {
-        console.error("Failed to parse JSON from AI response", text);
-        throw new Error("A IA não retornou um JSON válido.");
-      }
-    } catch (error) {
-      console.error("Error generating description:", error);
-      throw error;
-    }
-  };
-
+  // generateDescriptionText moved to productService
+  
   const applyGenerationToProductAndChildren = (productId: string, generatedData: any) => {
     setProducts(prev => {
       const updated = [...prev];
@@ -1185,6 +1109,19 @@ ESPECIFICAÇÕES VISUAIS DA DESCRIÇÃO (OBRIGATÓRIO):
       const parent = updated[parentIdx];
       const parentSku = parent['Código (SKU)'];
 
+      // Prepare normalized attributes from extracted data
+      const newAttributes = { ...(parent.attributes || {}) };
+      if (generatedData.extracted_attributes) {
+        Object.keys(generatedData.extracted_attributes).forEach(key => {
+          newAttributes[key] = {
+            value: generatedData.extracted_attributes[key].value,
+            confirmed: false,
+            aiSuggested: true,
+            source: 'text_ai'
+          };
+        });
+      }
+
       // Update parent
       updated[parentIdx] = {
         ...parent,
@@ -1192,9 +1129,11 @@ ESPECIFICAÇÕES VISUAIS DA DESCRIÇÃO (OBRIGATÓRIO):
         'Título SEO': decodeHTMLEntities(generatedData.titulo_seo),
         'Descrição SEO': decodeHTMLEntities(generatedData.descricao_seo),
         'Palavras chave SEO': decodeHTMLEntities(generatedData.palavras_chave),
+        attributes: newAttributes,
         _statusDescricao: 'Gerado por IA',
         _statusSEO: 'Gerado por IA',
         _generationLog: generatedData._promptLog,
+        _generationError: undefined,
         _tokenUsage: {
           ...parent._tokenUsage,
           generation: generatedData._usage
@@ -1212,6 +1151,7 @@ ESPECIFICAÇÕES VISUAIS DA DESCRIÇÃO (OBRIGATÓRIO):
               'Descrição complementar': decodeHTMLEntities(generatedData.descricao_html),
               // SEO fields are NOT copied to children according to prompt instructions
               _statusDescricao: 'Gerado por IA',
+              _generationError: undefined,
               _isDirty: true
             };
           }
@@ -1256,61 +1196,21 @@ ESPECIFICAÇÕES VISUAIS DA DESCRIÇÃO (OBRIGATÓRIO):
   };
 
   const enrichProductData = async (product: Product): Promise<any> => {
-    const prompt = `Você é um assistente de cadastro de e-commerce.
-Busque na internet as especificações técnicas do seguinte produto:
-Nome/Descrição: ${product['Descrição']}
-Marca: ${product['Marca']}
-Categoria: ${product['Categoria']}
-
-Tente encontrar os seguintes dados (se não encontrar, deixe vazio ou null):
-- GTIN/EAN (código de barras)
-- NCM (Classificação fiscal)
-- Peso bruto (Kg)
-- Largura embalagem (cm)
-- Altura Embalagem (cm)
-- Comprimento embalagem (cm)
-
-Retorne APENAS um JSON válido no seguinte formato:
-{
-  "GTIN/EAN": "...",
-  "NCM (Classificação fiscal)": "...",
-  "Peso bruto (Kg)": 1.5,
-  "Largura embalagem": 20,
-  "Altura Embalagem": 15,
-  "Comprimento embalagem": 10,
-  "log_fontes": "Resumo muito conciso (máx 150 caracteres) das fontes utilizadas."
-}`;
-
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: { 
-          temperature: 0.2,
-          maxOutputTokens: 2048,
-          systemInstruction: "Você é um assistente de e-commerce. Seja extremamente conciso. Nunca gere textos longos ou repetitivos. O campo log_fontes deve ter no máximo 150 caracteres. RESPONDA APENAS COM O JSON PURO.",
-          tools: [{ googleSearch: {} }]
-        }
+      const response = await fetch('/api/gemini/enrich-product-data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ product })
       });
-      
-      let text = response.text || '';
-      text = text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
-      
-      try {
-        const parsed = JSON.parse(text);
-        const usage = response.usageMetadata || { promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0 };
-        return {
-          ...parsed,
-          _usage: {
-            promptTokens: usage.promptTokenCount,
-            completionTokens: usage.candidatesTokenCount,
-            totalTokens: usage.totalTokenCount
-          }
-        };
-      } catch (e) {
-        console.error("Failed to parse JSON from AI response", text);
-        throw new Error("A IA não retornou um JSON válido.");
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Erro de rede no servidor (Status ${response.status})`);
       }
+
+      return await response.json();
     } catch (error) {
       console.error("Error enriching data:", error);
       throw error;
@@ -1400,15 +1300,24 @@ Retorne APENAS um JSON válido no seguinte formato:
     setProducts(newProducts);
 
     try {
-      const generatedData = await generateDescriptionText(product, selectedTemplateId);
+      const template = templates.find(t => t.id === selectedTemplateId) || defaultTemplate;
+      const generatedData = await generateDescriptionText(product, existingCategories, template);
       applyGenerationToProductAndChildren(id, generatedData);
     } catch (error) {
-      alert(`Erro ao gerar descrição para ${product['Descrição']}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      alert(`Erro ao gerar descrição para ${product['Descrição']}: ${errorMessage}`);
       setProducts(prev => {
         const updated = [...prev];
         const idx = updated.findIndex(p => p._id === id);
         if (idx !== -1) {
-          updated[idx] = { ...updated[idx], _isGenerating: false };
+          updated[idx] = { 
+            ...updated[idx], 
+            _isGenerating: false,
+            _generationError: errorMessage,
+            _statusDescricao: 'Erro',
+            _statusSEO: 'Erro',
+            _isDirty: true
+          };
         }
         return updated;
       });
@@ -1464,15 +1373,26 @@ Retorne APENAS um JSON válido no seguinte formato:
       });
 
       try {
-        const generatedData = await generateDescriptionText(product, selectedTemplateId);
+        const template = templates.find(t => t.id === selectedTemplateId) || defaultTemplate;
+        const generatedData = await generateDescriptionText(product, existingCategories, template);
         applyGenerationToProductAndChildren(id, generatedData);
         successCount++;
       } catch (error) {
         console.error(`Failed for ${id}`, error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
         setProducts(prev => {
           const updated = [...prev];
           const idx = updated.findIndex(p => p._id === id);
-          if (idx !== -1) updated[idx] = { ...updated[idx], _isGenerating: false };
+          if (idx !== -1) {
+            updated[idx] = { 
+              ...updated[idx], 
+              _isGenerating: false,
+              _generationError: errorMessage,
+              _statusDescricao: 'Erro',
+              _statusSEO: 'Erro',
+              _isDirty: true
+            };
+          }
           return updated;
         });
       }
@@ -1663,7 +1583,8 @@ Retorne APENAS um JSON válido no seguinte formato:
     
     setPreviewProduct(prev => prev ? { ...prev, _isGenerating: true } : null);
     try {
-      const generatedData = await generateDescriptionText(previewProduct, selectedTemplateId);
+      const template = templates.find(t => t.id === selectedTemplateId) || defaultTemplate;
+      const generatedData = await generateDescriptionText(previewProduct, existingCategories, template);
       setEditedDescription(generatedData.descricao_html);
       setPreviewProduct(prev => prev ? { 
         ...prev, 
@@ -1671,13 +1592,36 @@ Retorne APENAS um JSON válido no seguinte formato:
         'Título SEO': generatedData.titulo_seo,
         'Descrição SEO': generatedData.descricao_seo,
         'Palavras chave SEO': generatedData.palavras_chave,
-        _isGenerating: false 
+        _isGenerating: false,
+        _generationError: undefined
       } : null);
       
       applyGenerationToProductAndChildren(previewProduct._id, generatedData);
     } catch (error) {
-      alert("Erro ao regenerar descrição.");
-      setPreviewProduct(prev => prev ? { ...prev, _isGenerating: false } : null);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      alert(`Erro ao regenerar descrição: ${errorMessage}`);
+      setPreviewProduct(prev => prev ? { 
+        ...prev, 
+        _isGenerating: false,
+        _statusDescricao: 'Erro',
+        _statusSEO: 'Erro',
+        _generationError: errorMessage 
+      } : null);
+      setProducts(prev => {
+        const updated = [...prev];
+        const idx = updated.findIndex(p => p._id === previewProduct._id);
+        if (idx !== -1) {
+          updated[idx] = { 
+            ...updated[idx], 
+            _isGenerating: false,
+            _generationError: errorMessage,
+            _statusDescricao: 'Erro',
+            _statusSEO: 'Erro',
+            _isDirty: true 
+          };
+        }
+        return updated;
+      });
     }
   };
 
@@ -1702,6 +1646,12 @@ Retorne APENAS um JSON válido no seguinte formato:
             <X className="w-3 h-3" />
           </div>
         );
+      case 'Erro':
+        return (
+          <div className="flex items-center justify-center w-5 h-5 rounded-md bg-red-100 text-red-700 border border-red-200" title="Erro na geração da descrição">
+            <AlertCircle className="w-3 h-3" />
+          </div>
+        );
       default:
         return null;
     }
@@ -1719,6 +1669,12 @@ Retorne APENAS um JSON válido no seguinte formato:
         return (
           <div className="flex items-center justify-center w-5 h-5 rounded-md bg-red-50 text-red-500 border border-red-100" title="Atenção: Este produto não possui otimização SEO cadastrada">
             <X className="w-3 h-3" />
+          </div>
+        );
+      case 'Erro':
+        return (
+          <div className="flex items-center justify-center w-5 h-5 rounded-md bg-red-100 text-red-700 border border-red-200" title="Erro na geração de SEO">
+            <AlertCircle className="w-3 h-3" />
           </div>
         );
       default:
@@ -1765,7 +1721,7 @@ Retorne APENAS um JSON válido no seguinte formato:
         <div className="flex flex-col items-center gap-4">
             <div className="flex items-center gap-2">
                 <RefreshCw className="w-4 h-4 text-blue-600 animate-spin" />
-                <span className="text-gray-600 font-bold tracking-tight">Carregando Omni360...</span>
+                <span className="text-gray-600 font-bold tracking-tight">Carregando Alfreds...</span>
             </div>
             {isFirebaseUnavailable && (
                 <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl max-w-sm">
@@ -1784,922 +1740,697 @@ Retorne APENAS um JSON válido no seguinte formato:
     return <LoginLanding onLogin={handleLogin} />;
   }
 
+  
+  const renderHistoryView = () => (
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-5xl mx-auto w-full">
+      <div className="flex justify-between items-end mb-6">
+         <div>
+           <h1 className="text-[28px] font-bold text-slate-900 tracking-tight leading-tight">Histórico de Créditos</h1>
+           <p className="text-sm text-slate-500 mt-1">Revise suas transações recentes e uso de créditos.</p>
+         </div>
+         <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-700 transition-colors">
+           <Download className="w-4 h-4" /> Exportar CSV
+         </button>
+      </div>
+  
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+           <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Saldo Disponível</div>
+           <div className="flex items-baseline gap-2 mb-4">
+              <span className="text-5xl font-bold text-slate-900 tracking-tight">{credits}</span>
+              <span className="text-base text-slate-500">créditos</span>
+           </div>
+           <div className="flex items-center gap-1.5 text-xs text-slate-500">
+             <AlertCircle className="w-3.5 h-3.5" /> Renova automaticamente
+           </div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex items-center justify-between">
+           <div className="flex gap-12">
+              <div>
+                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Usado Este Mês</div>
+                 <div className="flex items-baseline gap-2">
+                   <span className="text-2xl font-bold text-slate-900">{creditLogs.reduce((acc, log) => acc + log.creditsConsumed, 0)}</span>
+                   <span className="text-sm text-slate-500">créditos</span>
+                 </div>
+              </div>
+              <div>
+                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Mais Usado</div>
+                 <div className="text-sm font-medium text-slate-900 mt-1">Geração IA</div>
+              </div>
+           </div>
+           <button className="flex items-center gap-2 px-4 py-2 font-medium text-sm text-white bg-[#004ac6] hover:bg-[#003ea8] transition-colors rounded-lg shadow-sm">
+              <Plus className="w-4 h-4" /> Comprar Créditos
+           </button>
+        </div>
+      </div>
+  
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+         <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+            <h2 className="text-base font-bold text-slate-900 tracking-tight">Transações Recentes</h2>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-500">Filtrar por:</span>
+              <select className="text-sm border border-slate-200 rounded-md bg-white pr-8 pl-3 py-1.5 outline-none focus:border-[#004ac6]">
+                 <option>Todos os Tipos</option>
+              </select>
+            </div>
+         </div>
+         <table className="w-full text-left text-sm whitespace-nowrap">
+           <thead className="bg-[#f7f9fb] border-b border-slate-200">
+             <tr>
+               <th className="px-6 py-3 font-semibold text-slate-500 text-xs tracking-wider uppercase">Data e Hora</th>
+               <th className="px-6 py-3 font-semibold text-slate-500 text-xs tracking-wider uppercase">Ação</th>
+               <th className="px-6 py-3 font-semibold text-slate-500 text-xs tracking-wider uppercase">Produto / Detalhes</th>
+               <th className="px-6 py-3 text-right font-semibold text-slate-500 text-xs tracking-wider uppercase">Créditos</th>
+             </tr>
+           </thead>
+           <tbody className="divide-y divide-slate-100">
+             {creditLogs.length === 0 ? (
+               <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-500">Nenhuma transação registrada.</td></tr>
+             ) : (
+               creditLogs.map((log) => (
+                 <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
+                   <td className="px-6 py-4 text-slate-600">{new Date(log.timestamp).toLocaleString('pt-BR')}</td>
+                   <td className="px-6 py-4">
+                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-100 text-slate-600 text-xs font-medium">
+                       <RefreshCw className="w-3 h-3" /> {log.actionType}
+                     </span>
+                   </td>
+                   <td className="px-6 py-4 text-slate-900 max-w-xs xl:max-w-md truncate" title={log.productName}>
+                     {log.productName}
+                     <div className="text-[10px] text-slate-400 font-mono mt-0.5">{log.sku}</div>
+                   </td>
+                   <td className="px-6 py-4 text-right text-red-500 font-medium">
+                     -{log.creditsConsumed}
+                   </td>
+                 </tr>
+               ))
+             )}
+           </tbody>
+         </table>
+         <div className="px-6 py-3 border-t border-slate-200 bg-white flex justify-between items-center text-sm text-slate-500">
+            <span>Mostrando transações</span>
+            <div className="flex gap-2">
+              <button disabled className="p-1 text-slate-300"><ChevronLeft className="w-4 h-4"/></button>
+              <button disabled className="p-1 text-slate-300"><ChevronRight className="w-4 h-4"/></button>
+            </div>
+         </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
+    <div className="h-screen bg-[#f7f9fb] flex font-sans overflow-hidden">
+      <input type="file" accept=".xlsx, .xls" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
       {isFirebaseUnavailable && (
-        <div className="bg-red-600 text-white px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-2 sticky top-0 z-50">
+        <div className="absolute top-0 inset-x-0 bg-red-600 text-white px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-2 z-50">
           <AlertCircle className="w-4 h-4" />
           Serviços em nuvem indisponíveis no momento (Verifique cotas ou conexão).
         </div>
       )}
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="bg-blue-600 p-2 rounded-lg">
-              <Sparkles className="w-5 h-5 text-white" />
-            </div>
-            <h1 className="text-xl font-bold text-gray-900 tracking-tight">Gerador de Descrição - Omni360</h1>
-          </div>
-          
-          <div>
-            <input 
-              type="file" 
-              accept=".xlsx, .xls" 
-              className="hidden" 
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-            />
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-3 mr-4 border-r border-gray-200 pr-4">
-                <button
-                  onClick={() => loadFromCloud()}
-                  disabled={isLoadingFromCloud}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-                  title="Carregar projeto salvo na nuvem"
-                >
-                  <RefreshCw className={`w-4 h-4 ${isLoadingFromCloud ? 'animate-spin' : ''}`} />
-                  Carregar Nuvem
-                </button>
-                <button
-                  onClick={() => saveToCloud()}
-                  disabled={isSavingToCloud || products.length === 0}
-                  className={`inline-flex items-center gap-2 px-3 py-1.5 border rounded-md shadow-sm text-sm font-medium transition-colors ${
-                    hasUnsavedChanges 
-                      ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100' 
-                      : 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
-                  } disabled:opacity-50`}
-                  title={hasUnsavedChanges ? "Existem alterações não salvas" : "Tudo salvo na nuvem"}
-                >
-                  {isSavingToCloud ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                  ) : hasUnsavedChanges ? (
-                    <Save className="w-4 h-4" />
-                  ) : (
-                    <Check className="w-4 h-4" />
-                  )}
-                  {isSavingToCloud ? 'Salvando...' : hasUnsavedChanges ? 'Salvar Nuvem' : 'Salvo'}
-                </button>
-                <button 
-                  onClick={() => setIsCreditHistoryOpen(true)}
-                  className="flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-200 rounded-full text-amber-700 hover:bg-amber-100 transition-colors" 
-                  title="Ver histórico de créditos"
-                >
-                  <Coins className="w-4 h-4" />
-                  <span className="text-xs font-bold">{credits}</span>
-                </button>
-                <div className="w-px h-6 bg-gray-200 mx-1"></div>
-                <img src={user.photoURL || ''} alt="User" className="w-8 h-8 rounded-full" />
-                <button 
-                  onClick={handleLogout}
-                  className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
-                  title="Sair"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex flex-col gap-6">
-        
-        {/* Tabs - Always Visible */}
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-            <button
-              onClick={() => setActiveTab('all')}
-              className={`
-                whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200
-                ${activeTab === 'all'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-400 hover:text-gray-700 hover:border-gray-300'
-                }
-              `}
-              id="tab-importar-produtos"
-            >
-              <div className="flex items-center gap-2">
-                <Upload className="w-4 h-4" />
-                Importar Produtos
-              </div>
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('processed');
-                loadFromCloud(false);
-              }}
-              className={`
-                whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200
-                ${activeTab === 'processed'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-400 hover:text-gray-700 hover:border-gray-300'
-                }
-              `}
-            >
-              Gerados / Aprimorados
-            </button>
-          </nav>
-        </div>
-
-        {activeTab === 'all' && products.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-xl bg-white p-12 text-center shadow-sm">
-            <div className="bg-blue-50 p-4 rounded-full mb-4">
-              <Upload className="w-12 h-12 text-blue-600" />
-            </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2 tracking-tight">Sua vitrine está vazia</h3>
-            <p className="text-gray-500 mb-8 max-w-md">Importe uma planilha Excel (.xlsx) contendo as colunas necessárias para começar a gerar descrições profissionais com IA.</p>
-            <div className="flex items-center gap-3">
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-3 px-6 py-3 bg-blue-600 border border-transparent rounded-lg shadow-md text-sm font-bold text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all transform hover:scale-[1.02]"
-              >
-                <FileSpreadsheet className="w-5 h-5" />
-                Selecionar Planilha
-              </button>
-              <button
-                onClick={downloadTemplate}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-white border border-gray-200 rounded-lg shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 transition-all"
-              >
-                <DownloadCloud className="w-5 h-5 text-blue-500" />
-                Baixar Modelo
-              </button>
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* Toolbar */}
-
-            {/* Toolbar */}
-            <div className="flex flex-col gap-4 mb-2">
-              {/* Filter Row (Superior) */}
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-wrap items-center gap-4">
-                <div className="relative max-w-xs w-full">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Search className="h-4 w-4 text-gray-400" />
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="Buscar por nome ou código..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  />
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <Filter className="h-4 w-4 text-gray-400" />
-                  <select 
-                    value={filterMarca} 
-                    onChange={(e) => setFilterMarca(e.target.value)}
-                    className="block w-full pl-3 pr-10 py-2 text-sm border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md bg-white border"
-                  >
-                    <option value="">Todas as Marcas</option>
-                    {marcas.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <select 
-                    value={filterCategoria} 
-                    onChange={(e) => setFilterCategoria(e.target.value)}
-                    className="block w-full pl-3 pr-10 py-2 text-sm border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md bg-white border"
-                  >
-                    <option value="">Todas as Categorias</option>
-                    {categorias.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <select 
-                    value={filterStatus} 
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                    className="block w-full pl-3 pr-10 py-2 text-sm border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md bg-white border"
-                  >
-                    <option value="">Todos os Status</option>
-                    <option value="Sem descrição">Sem descrição</option>
-                    <option value="Descrição original">Descrição original</option>
-                    <option value="Gerado por IA">Gerado por IA</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Action Row */}
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
-                <div className="flex items-center gap-4">
-                  <span className="text-sm text-gray-500 font-medium whitespace-nowrap">
-                    {selectedIds.size} selecionados
-                  </span>
-                  <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
-                    <select
-                      value={selectedTemplateId}
-                      onChange={(e) => setSelectedTemplateId(e.target.value)}
-                      className="block w-48 pl-3 pr-8 py-2 text-sm border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md bg-white border"
-                    >
-                      {templates.map(t => (
-                        <option key={t.id} value={t.id}>{t.name}</option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => setIsTemplateModalOpen(true)}
-                      className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                      title="Gerenciar Templates"
-                    >
-                      <Settings className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => setIsColumnConfigOpen(!isColumnConfigOpen)}
-                      className={`p-2 rounded-md transition-colors ${isColumnConfigOpen ? 'bg-blue-100 text-blue-600' : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'}`}
-                      title="Configurar Colunas"
-                    >
-                      <Layout className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={handleEnrichMass}
-                    disabled={selectedIds.size === 0 || isGeneratingMass || isEnrichingMass}
-                    className={`inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white transition-colors
-                      ${selectedIds.size === 0 || isGeneratingMass || isEnrichingMass ? 'bg-purple-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500'}`}
-                  >
-                    {isEnrichingMass ? (
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Search className="w-4 h-4" />
-                    )}
-                    🔍 Enriquecer
-                  </button>
-                  <button
-                    onClick={handleGenerateMass}
-                    disabled={selectedIds.size === 0 || isGeneratingMass || isEnrichingMass}
-                    className={`inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white transition-colors
-                      ${selectedIds.size === 0 || isGeneratingMass || isEnrichingMass ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'}`}
-                  >
-                    {isGeneratingMass ? (
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Play className="w-4 h-4" />
-                    )}
-                    🚀 Gerar Descrição
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Column Configuration Overlay */}
-            {isColumnConfigOpen && (
-              <div className="bg-white p-4 rounded-xl shadow-md border border-gray-200 grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3 animate-in fade-in slide-in-from-top-1 duration-200 mb-4">
-                {Object.keys(visibleColumns).map(col => (
-                  <label key={col} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={visibleColumns[col]}
-                      onChange={() => setVisibleColumns(prev => ({ ...prev, [col]: !prev[col] }))}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <span className="text-sm text-gray-700">{col}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-
-            {/* Mass Generation Progress */}
-            {(isGeneratingMass || isEnrichingMass) && (
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-blue-200 flex flex-col gap-2 mb-4">
-                <div className="flex justify-between text-sm font-medium text-gray-700">
-                  <span>{isEnrichingMass ? 'Progresso do Enriquecimento' : 'Progresso da Geração'}</span>
-                  <span>{generationProgress.current} / {generationProgress.total}</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div 
-                    className={`${isEnrichingMass ? 'bg-purple-600' : 'bg-blue-600'} h-2.5 rounded-full transition-all duration-300`} 
-                    style={{ width: `${(generationProgress.current / generationProgress.total) * 100}%` }}
-                  ></div>
-                </div>
-                <p className="text-sm text-gray-500 animate-pulse">{generationLog}</p>
-              </div>
-            )}
-
-            {/* Table */}
-            <div className="bg-white shadow-sm border border-gray-200 rounded-xl overflow-hidden flex-1 flex flex-col">
-              <div className="overflow-x-auto relative">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12 bg-gray-50">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
-                          checked={selectedIds.size === filteredProducts.length && filteredProducts.length > 0}
-                          onChange={toggleSelectAll}
-                        />
-                      </th>
-                      {visibleColumns['Img'] && <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 bg-gray-50">Img</th>}
-                      {visibleColumns['SKU'] && <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">SKU</th>}
-                      {visibleColumns['Descrição'] && <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Descrição</th>}
-                      {visibleColumns['Categoria'] && <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Categoria</th>}
-                      {visibleColumns['Marca'] && <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Marca</th>}
-                      {visibleColumns['Estoque'] && <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Estoque</th>}
-                      {visibleColumns['GTIN/EAN'] && <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">GTIN/EAN</th>}
-                      {visibleColumns['Preço'] && <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Preço</th>}
-                      {visibleColumns['Situação'] && <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Situação</th>}
-                      {visibleColumns['Tipo'] && <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Tipo</th>}
-                      {visibleColumns['Variações'] && <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Variações</th>}
-                      <th 
-                        scope="col" 
-                        className="sticky right-0 px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 shadow-[-10px_0_15px_-3px_rgba(0,0,0,0.1)] z-30 font-bold border-l border-gray-200 min-w-[200px]"
-                      >
-                        <div className="flex items-center justify-end gap-4">
-                          <div className="flex items-center gap-2">
-                             {visibleColumns['SEO'] && <Globe className="w-3 h-3 text-gray-400" title="SEO" />}
-                             {visibleColumns['Status Desc.'] && <FileText className="w-3 h-3 text-gray-400" title="Status Desc." />}
-                          </div>
-                          <span>Ações</span>
-                        </div>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {paginatedProducts.map((product) => {
-                      const imageUrl = product['URL imagem 1'] || product['URL imagem externa 1'];
-                      return (
-                      <tr key={product._id} className={`hover:bg-gray-50 transition-colors ${selectedIds.has(product._id) ? 'bg-blue-50/50' : ''}`}>
-                        <td className="px-6 py-4 whitespace-nowrap bg-white/50">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
-                            checked={selectedIds.has(product._id)}
-                            onChange={() => toggleSelection(product._id)}
-                          />
-                        </td>
-                        {visibleColumns['Img'] && (
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div 
-                              className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
-                              onClick={() => {
-                                setCurrentImageSearchProduct(product);
-                                setIsImageSearchModalOpen(true);
-                              }}
-                              title="Clique para gerenciar imagem"
-                            >
-                              {product._selectedImage ? (
-                                <img src={product._selectedImage} alt="" className="h-10 w-10 rounded object-cover border border-gray-200 shadow-sm" referrerPolicy="no-referrer" />
-                              ) : imageUrl ? (
-                                <img src={imageUrl} alt="" className="h-10 w-10 rounded object-cover border border-gray-200 shadow-sm" referrerPolicy="no-referrer" />
-                              ) : (
-                                <div className="h-10 w-10 rounded bg-gray-50 flex items-center justify-center border border-gray-200 border-dashed">
-                                  <ImageIcon className="w-4 h-4 text-gray-400" />
-                                </div>
-                              )}
-                            </div>
-                          </td>
-                        )}
-                        {visibleColumns['SKU'] && (
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
-                            {product['Código (SKU)']}
-                          </td>
-                        )}
-                        {visibleColumns['Descrição'] && (
-                          <td className="px-6 py-4 text-sm font-medium text-gray-900 max-w-xs truncate" title={product['Descrição']}>
-                            {product['Descrição']}
-                          </td>
-                        )}
-                        {visibleColumns['Categoria'] && (
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 max-w-[150px] truncate" title={product['Categoria']}>
-                            {product['Categoria']}
-                          </td>
-                        )}
-                        {visibleColumns['Marca'] && (
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {product['Marca']}
-                          </td>
-                        )}
-                        {visibleColumns['Estoque'] && (
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {product['Estoque'] || '-'}
-                          </td>
-                        )}
-                        {visibleColumns['GTIN/EAN'] && (
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
-                            {product['GTIN/EAN'] || '-'}
-                          </td>
-                        )}
-                        {visibleColumns['Preço'] && (
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
-                            {formatPrice(product['Preço'])}
-                          </td>
-                        )}
-                        {visibleColumns['Situação'] && (
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${product['Situação'] === 'Ativo' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
-                              {product['Situação'] || 'Inativo'}
-                            </span>
-                          </td>
-                        )}
-                        {visibleColumns['Tipo'] && (
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700">
-                              {product['Tipo do produto'] === 'K' ? 'Kit' : product['Tipo do produto'] === 'V' ? 'Variação' : 'Simples'}
-                            </span>
-                          </td>
-                        )}
-                        {visibleColumns['Variações'] && (
-                          <td className="px-6 py-4 max-w-[200px]">
-                            {renderVariations(product)}
-                          </td>
-                        )}
-                        <td 
-                          className="sticky right-0 px-6 py-4 whitespace-nowrap text-right text-sm font-medium border-l border-gray-200 bg-white shadow-[-10px_0_15px_-3px_rgba(0,0,0,0.1)] z-10 transition-colors group-hover:bg-gray-50 min-w-[200px]"
-                        >
-                          <div className="flex items-center justify-end gap-3">
-                            <div className="flex items-center gap-1.5 mr-2">
-                               {visibleColumns['SEO'] && getSeoBadge(product._statusSEO)}
-                               {visibleColumns['Status Desc.'] && getStatusBadge(product._statusDescricao)}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => handleEnrichSingle(product._id)}
-                                disabled={product._isEnriching || isGeneratingMass || isEnrichingMass}
-                                className="text-purple-600 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 p-1.5 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                title="Enriquecer"
-                              >
-                                <Search className={`w-4 h-4 ${product._isEnriching ? 'animate-spin' : ''}`} />
-                              </button>
-                              <button
-                                onClick={() => handleGenerateSingle(product._id)}
-                                disabled={product._isGenerating || isGeneratingMass || isEnrichingMass}
-                                className="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 text-xs"
-                                title="Gerar Descrição"
-                              >
-                                <Play className={`w-4 h-4 ${product._isGenerating ? 'animate-spin' : ''}`} />
-                                Gerar Descrição
-                              </button>
-                              <button
-                                onClick={() => openPreview(product)}
-                                className="text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 p-1.5 rounded-md transition-colors"
-                                title="Visualizar"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                      </td>
-                    </tr>
-                    )})}
-                    {filteredProducts.length === 0 && (
-                      <tr>
-                        <td colSpan={20} className="px-6 py-12 text-center text-gray-500">
-                          Nenhum produto encontrado com os filtros atuais.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Pagination Controls */}
-            <div className="bg-white px-6 py-4 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4 rounded-b-xl shadow-sm">
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-600">Produtos por página:</span>
-                    <select
-                      value={itemsPerPage}
-                      onChange={(e) => {
-                        setItemsPerPage(Number(e.target.value));
-                        setCurrentPage(1);
-                      }}
-                      className="text-sm border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 py-1"
-                    >
-                      <option value={10}>10</option>
-                      <option value={25}>25</option>
-                      <option value={50}>50</option>
-                    </select>
-                  </div>
-                  <span className="text-sm text-gray-500">
-                    Mostrando <span className="font-medium">{Math.min(filteredProducts.length, (currentPage - 1) * itemsPerPage + 1)}</span> a <span className="font-medium">{Math.min(filteredProducts.length, currentPage * itemsPerPage)}</span> de <span className="font-medium">{filteredProducts.length}</span> produtos
-                  </span>
-                </div>
-                
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={currentPage === 1}
-                    className="p-2 border border-gray-300 rounded-md text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <div className="flex gap-1">
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                      let pageNum;
-                      if (totalPages <= 5) pageNum = i + 1;
-                      else if (currentPage <= 3) pageNum = i + 1;
-                      else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
-                      else pageNum = currentPage - 2 + i;
-                      
-                      return (
-                        <button
-                          key={pageNum}
-                          onClick={() => setCurrentPage(pageNum)}
-                          className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
-                            currentPage === pageNum 
-                              ? 'bg-blue-600 text-white' 
-                              : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          {pageNum}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    disabled={currentPage === totalPages || totalPages === 0}
-                    className="p-2 border border-gray-300 rounded-md text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-            </div>
-          </>
-        )}
-      </main>
-
-      {/* Footer */}
-      {products.length > 0 && (
-        <footer className="bg-white border-t border-gray-200 py-4 mt-auto">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
-            <div className="text-sm text-gray-500">
-              <span className="font-medium text-gray-900">{products.length}</span> produtos carregados
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400 font-medium whitespace-nowrap">Modelo:</span>
-                <select
-                  value={exportModel}
-                  onChange={(e) => setExportModel(e.target.value as any)}
-                  className="block w-40 pl-2 pr-6 py-1.5 text-xs border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md bg-white border"
-                >
-                  <option value="standard">Padrão Sistema</option>
-                  <option value="tinyerp">Tiny ERP</option>
-                </select>
-              </div>
-              <button
-                onClick={handleExport}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
-              >
-              <Download className="w-4 h-4" />
-              📥 Exportar para Excel (.xlsx)
-            </button>
-          </div>
-        </div>
-      </footer>
+      
+      {/* Sidebar Overlay for Mobile */}
+      {isSidebarOpen && (
+        <div 
+          onClick={() => setIsSidebarOpen(false)} 
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-30 md:hidden transition-opacity duration-300" 
+        />
       )}
+
+      {/* Sidebar */}
+      <aside className={`
+        fixed inset-y-0 left-0 w-[260px] bg-[#0f172a] text-white flex-shrink-0 flex flex-col z-40 
+        shadow-[4px_0_24px_rgba(0,0,0,0.05)] pt-4 transition-transform duration-300 md:static md:translate-x-0
+        ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}
+      `}>
+        <div className="h-16 px-5 flex items-center justify-between border-b border-white/5 mx-3 mb-4 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="bg-[#004ac6] p-1.5 rounded-lg shadow-sm">
+              <Sparkles className="w-4 h-4 text-white" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-bold text-white tracking-tight leading-tight">Alfreds</span>
+              <span className="text-[10px] text-slate-400">Agente de Ecommerce</span>
+            </div>
+          </div>
+          {/* Close Sidebar button on mobile */}
+          <button 
+            onClick={() => setIsSidebarOpen(false)} 
+            className="md:hidden p-1 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+            title="Fechar Menu"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <nav className="mt-2 px-3 flex flex-col gap-1 flex-1">
+          <button 
+            onClick={() => { setMainView('products'); setIsSidebarOpen(false); }} 
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'products' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#004ac6] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
+          >
+            <Layout className="w-4 h-4" /> Produtos
+          </button>
+          <button 
+            onClick={() => { setMainView('categories'); setIsSidebarOpen(false); }} 
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'categories' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#004ac6] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
+          >
+            <Folder className="w-4 h-4" /> Categorias
+          </button>
+          <div className="my-2 border-t border-white/5 mx-4"></div>
+          <button 
+            onClick={() => { setMainView('history'); fetchCreditLogs(); setIsSidebarOpen(false); setIsCreditHistoryOpen(false); }} 
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'history' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#004ac6] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
+          >
+            <RefreshCw className="w-4 h-4" /> Histórico
+          </button>
+        </nav>
+
+        <div className="p-4 mt-auto mb-2 border-t border-white/5 mx-3">
+          <button 
+            onClick={() => { setIsTemplateModalOpen(true); setIsSidebarOpen(false); }} 
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 font-medium hover:text-white hover:bg-white/5 transition-colors"
+          >
+            <Settings className="w-4 h-4" /> Modelos
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 bg-[#f7f9fb] h-screen overflow-hidden">
+        {/* Top Bar */}
+        <header className="h-16 bg-white border-b border-slate-200 px-4 md:px-6 flex items-center justify-between flex-shrink-0 z-10 sticky top-0 shadow-sm gap-3">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <button 
+              onClick={() => setIsSidebarOpen(true)} 
+              className="md:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
+              title="Abrir Menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="w-full md:w-[360px] relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input 
+                type="text" 
+                placeholder="Buscar produtos..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-full pl-9 pr-4 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#004ac6] focus:border-[#004ac6] focus:bg-white transition-all text-slate-700 placeholder-slate-400" 
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 md:gap-5 shrink-0">
+            <div className="flex items-center gap-1.5 text-xs md:text-sm font-semibold text-slate-600 bg-slate-50 border border-slate-200 px-2.5 md:px-3 py-1 rounded-full shadow-sm">
+              <Coins className="w-4 h-4 text-amber-500 shrink-0" />
+              <span className="hidden sm:inline">Créditos:</span>
+              <span className="text-slate-900 font-bold">{credits}</span>
+            </div>
+            <div className="h-6 w-px bg-slate-200"></div>
+            <div className="relative">
+              <button onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)} className="flex items-center gap-2 group p-1 hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-full transition-colors focus:outline-none" title="Opções da conta">
+                 <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.email}`} alt="User Avatar" className="w-7 h-7 rounded-full border border-slate-200 group-hover:border-[#004ac6] transition-colors" />
+                 <span className="text-xs font-medium text-slate-700 hidden lg:block truncate max-w-[100px]">{user.displayName || user.email?.split('@')[0]}</span>
+              </button>
+              
+              {isProfileDropdownOpen && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setIsProfileDropdownOpen(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 flex flex-col rounded-xl shadow-lg z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50">
+                      <p className="text-sm font-medium text-slate-900 truncate">{user.displayName || 'Usuário'}</p>
+                      <p className="text-xs text-slate-500 truncate mt-0.5">{user.email}</p>
+                    </div>
+                    <div className="p-2">
+                      <button 
+                        onClick={() => {
+                          setIsProfileDropdownOpen(false);
+                          handleLogout();
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2 font-medium"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        Sair da conta
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </header>
+
+        {/* Dynamic View Content */}
+        <main className="flex-1 overflow-y-auto w-full p-6 bg-[#f7f9fb]">
+          {mainView === 'categories' ? (
+            <div className="animate-in fade-in h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+              <CategoryManager onClose={async () => {
+                setMainView('products');
+                if (user) {
+                  const cats = await fetchCategories(user.uid);
+                  setExistingCategories(cats);
+                }
+              }} />
+            </div>
+          ) : mainView === 'history' ? (
+            renderHistoryView()
+          ) : (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 h-full flex flex-col max-w-[1600px] mx-auto">
+               <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-5 gap-4 flex-shrink-0">
+                 <div>
+                   <h1 className="text-xl md:text-2xl font-bold text-slate-900 tracking-tight">Catálogo de Produtos</h1>
+                   <p className="text-xs md:text-sm text-slate-500 mt-0.5">Gerencie e enriqueça seu inventário de produtos.</p>
+                 </div>
+                 
+                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+                   <div className="flex p-0.5 bg-slate-100 rounded-xl border border-slate-200 shadow-inner overflow-x-auto scrollbar-none whitespace-nowrap">
+                     <button
+                       onClick={() => setActiveTab('all')}
+                       className={cn(
+                         "flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs md:text-sm font-bold rounded-lg transition-all shrink-0",
+                         activeTab === 'all' 
+                           ? "bg-white text-[#004ac6] shadow-sm" 
+                           : "text-slate-500 hover:text-slate-700"
+                       )}
+                       id="btn-tab-import"
+                     >
+                       <FileSpreadsheet className="w-3.5 h-3.5" />
+                       <span>Importar</span>
+                     </button>
+                     <button
+                       onClick={() => {
+                         setActiveTab('processed');
+                       }}
+                       className={cn(
+                         "flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs md:text-sm font-bold rounded-lg transition-all shrink-0",
+                         activeTab === 'processed' 
+                           ? "bg-white text-indigo-600 shadow-sm" 
+                           : "text-slate-500 hover:text-slate-700"
+                       )}
+                       id="btn-tab-enhanced"
+                     >
+                       {isLoadingFromCloud ? (
+                         <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                       ) : (
+                         <Sparkles className="w-3.5 h-3.5" />
+                       )}
+                       <span>Aprimorados</span>
+                     </button>
+                     <button
+                       onClick={() => setActiveTab('errors')}
+                       className={cn(
+                         "flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs md:text-sm font-bold rounded-lg transition-all shrink-0",
+                         activeTab === 'errors' 
+                           ? "bg-white text-red-600 shadow-sm" 
+                           : "text-slate-500 hover:text-slate-700"
+                       )}
+                       id="btn-tab-errors"
+                     >
+                       <AlertCircle className="w-3.5 h-3.5" />
+                       <span>Erros</span>
+                     </button>
+                   </div>
+
+                   <div className="hidden sm:block h-6 w-px bg-slate-200"></div>
+
+                   <div className="flex items-center gap-2 w-full sm:w-auto">
+                     <button
+                       onClick={() => saveToCloud()}
+                       disabled={isSavingToCloud || !hasUnsavedChanges || products.length === 0}
+                       className={cn(
+                         "flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 border rounded-lg shadow-sm text-xs md:text-sm font-semibold transition-all h-9 whitespace-nowrap",
+                         hasUnsavedChanges 
+                           ? 'bg-blue-50 border-blue-200 text-[#004ac6] hover:bg-blue-100' 
+                           : 'bg-slate-50 border-slate-200 text-slate-400 opacity-50'
+                       )}
+                     >
+                       {isSavingToCloud ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className={cn("w-4 h-4", hasUnsavedChanges ? "text-[#004ac6]" : "text-slate-400")} />}
+                       <span>{isSavingToCloud ? 'Salvando...' : 'Salvar'}</span>
+                     </button>
+                     <button 
+                       onClick={() => fileInputRef.current?.click()} 
+                       className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 font-bold text-xs md:text-sm text-white bg-[#004ac6] hover:bg-[#003ea8] transition-all rounded-lg shadow-md h-9 whitespace-nowrap"
+                     >
+                       <Upload className="w-4 h-4" /> 
+                       <span>Importar</span>
+                     </button>
+                   </div>
+                 </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col flex-1 min-h-0 relative">
+                  
+                  {/* Toolbar */}
+                  <div className="px-5 py-3.5 flex flex-wrap items-center justify-between border-b border-slate-200 bg-white gap-3 rounded-t-xl shrink-0">
+                      <div className="flex items-center gap-2">
+                        <select 
+                          className="px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-700 font-medium focus:ring-[#004ac6] outline-none focus:border-[#004ac6] bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
+                          value={filterMarca}
+                          onChange={(e) => setFilterMarca(e.target.value)}
+                        >
+                          <option value="">Todas as Marcas</option>
+                          {marcas.map(m => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                        <select 
+                          className="px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-700 font-medium focus:ring-[#004ac6] outline-none focus:border-[#004ac6] bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
+                          value={filterCategoria}
+                          onChange={(e) => setFilterCategoria(e.target.value)}
+                        >
+                          <option value="">Todas as Categorias</option>
+                          {categorias.map(m => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                        <div className="w-px h-5 bg-slate-200 mx-2"></div>
+                        <div className="text-xs text-slate-500 font-medium">{paginatedProducts.length} itens</div>
+                      </div>
+                     <div className="flex items-center gap-2 ml-auto relative">
+                        {generationLog && (
+                          <div className="mr-3 flex items-center gap-2 text-xs font-medium text-[#004ac6] bg-blue-50 px-3 py-1.5 rounded-full border border-blue-100 shadow-sm animate-in fade-in slide-in-from-right-4">
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            {generationProgress.current} / {generationProgress.total} 
+                            <span className="opacity-0 sm:opacity-100 overflow-hidden truncate max-w-[150px]">- {generationLog}</span>
+                          </div>
+                        )}
+                        <button
+                          onClick={handleEnrichMass}
+                          disabled={selectedIds.size === 0 || isEnrichingMass || isGeneratingMass}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-purple-700 border border-purple-200 rounded-lg text-sm font-medium hover:bg-purple-50 hover:border-purple-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                        >
+                          {isEnrichingMass ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                          <span className="hidden sm:inline">Enriquecer ({selectedIds.size})</span>
+                        </button>
+                        <button
+                          onClick={handleGenerateMass}
+                          disabled={selectedIds.size === 0 || isGeneratingMass || isEnrichingMass}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-[#004ac6] border border-blue-200 rounded-lg text-sm font-medium hover:bg-blue-50 hover:border-[#004ac6] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                        >
+                          {isGeneratingMass ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                          <span className="hidden sm:inline">Gerar ({selectedIds.size})</span>
+                        </button>
+                        
+                        <div className="w-px h-5 bg-slate-200 mx-2"></div>
+                        
+                        <button
+                          onClick={() => {
+                            setIsColumnConfigOpen(!isColumnConfigOpen);
+                            setIsExportDropdownOpen(false);
+                          }}
+                          className="p-1.5 border border-slate-200 bg-white rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
+                          title="Colunas Visíveis"
+                        >
+                          <Filter className="w-4 h-4" />
+                        </button>
+                        
+                        <div className="relative">
+                          <button
+                            onClick={() => {
+                              setIsExportDropdownOpen(!isExportDropdownOpen);
+                              setIsColumnConfigOpen(false);
+                            }}
+                            className="p-1.5 border border-slate-200 bg-white rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-all shadow-sm flex items-center justify-center gap-1 hover:border-slate-300"
+                            title="Opções de Exportação"
+                            id="export-dropdown-btn"
+                          >
+                            <Download className="w-4 h-4 text-slate-500" />
+                          </button>
+                          
+                          {isExportDropdownOpen && (
+                            <div className="absolute right-0 top-12 w-64 bg-white border border-slate-200 rounded-xl shadow-xl p-2 z-30 animate-in fade-in slide-in-from-top-2 origin-top-right">
+                              <div className="flex justify-between items-center px-2 py-1.5 mb-1 border-b border-slate-100">
+                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Exportar Planilha</h4>
+                                <button onClick={() => setIsExportDropdownOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-3.5 h-3.5"/></button>
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                <button
+                                  onClick={() => {
+                                    handleExport('standard');
+                                    setIsExportDropdownOpen(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-slate-50 rounded-lg flex items-start gap-2.5 transition-colors group"
+                                >
+                                  <div className="p-1.5 bg-blue-50 text-blue-600 rounded-md group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                                    <Layout className="w-3.5 h-3.5" />
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <span className="text-xs font-bold text-slate-700 group-hover:text-slate-900 leading-tight">Modelo Padrão</span>
+                                    <span className="text-[10px] text-slate-400 leading-normal">Formato original com novos atributos</span>
+                                  </div>
+                                </button>
+                                
+                                <button
+                                  onClick={() => {
+                                    handleExport('tinyerp');
+                                    setIsExportDropdownOpen(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-slate-50 rounded-lg flex items-start gap-2.5 transition-colors group"
+                                >
+                                  <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-md group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                                    <Download className="w-3.5 h-3.5" />
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <span className="text-xs font-bold text-slate-700 group-hover:text-slate-900 leading-tight">Modelo Tiny ERP</span>
+                                    <span className="text-[10px] text-slate-400 leading-normal">Formatado para o importador Tiny ERP</span>
+                                  </div>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {isColumnConfigOpen && (
+                            <div className="absolute right-0 top-12 w-56 bg-white border border-slate-200 rounded-xl shadow-xl p-3 z-30 animate-in fade-in slide-in-from-top-2 origin-top-right">
+                              <div className="flex justify-between items-center mb-2 pb-2 border-b border-slate-100">
+                                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Colunas</h4>
+                                <button onClick={() => setIsColumnConfigOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-3.5 h-3.5"/></button>
+                              </div>
+                              <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
+                                {Object.keys(visibleColumns).map(col => (
+                                  <label key={col} className="flex items-center gap-2 cursor-pointer py-1.5 px-2 hover:bg-slate-50 rounded-md transition-colors group">
+                                    <input type="checkbox" checked={visibleColumns[col]} onChange={(e) => setVisibleColumns(prev => ({ ...prev, [col]: e.target.checked }))} className="rounded border-slate-300 text-[#004ac6] focus:ring-[#004ac6] opacity-70 group-hover:opacity-100 transition-opacity" />
+                                    <span className="text-sm text-slate-700 group-hover:text-slate-900 font-medium">{col}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                        )}
+                     </div>
+                 </div>
+
+                 {/* Products Table Core */}
+                 <div className="flex-1 overflow-auto relative rounded-b-xl">
+                     <table className="min-w-full text-left text-sm whitespace-nowrap">
+                       <thead className="bg-[#f7f9fb] border-b border-slate-200 sticky top-0 z-20 shadow-sm backdrop-blur-sm bg-opacity-95">
+                         <tr>
+                            <th className="px-5 py-3.5 w-12 border-r border-slate-200">
+                              <input
+                                type="checkbox"
+                                onChange={(e) => setSelectedIds(e.target.checked ? new Set(paginatedProducts.map(p => p._id)) : new Set())}
+                                className="rounded border-slate-300 text-[#004ac6] focus:ring-[#004ac6]"
+                              />
+                            </th>
+                                      {visibleColumns['Img'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">IMG</th>}
+                            {visibleColumns['SKU'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">SKU</th>}
+                            {visibleColumns['Descrição'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">Descrição</th>}
+                            {visibleColumns['Categoria'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">Categoria</th>}
+                            {visibleColumns['Marca'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">Marca</th>}
+                            {visibleColumns['Status Desc.'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">Status</th>}
+                            <th className="px-5 py-3.5 text-right font-bold text-slate-600 text-xs tracking-wider uppercase bg-[#f7f9fb] shadow-[inset_1px_0_0_0_#e2e8f0] sticky right-0 z-20 w-[220px]">Ações</th>
+                         </tr>
+                       </thead>
+                       <tbody className="divide-y divide-slate-100">
+                          {products.length === 0 ? (
+                            <tr>
+                              <td colSpan={20}>
+                                <div className="p-16 flex flex-col items-center justify-center text-center">
+                                  <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-center mb-4">
+                                     <FileSpreadsheet className="w-8 h-8 text-slate-400" />
+                                  </div>
+                                   <h3 className="text-xl font-bold text-slate-900 mb-2">Pronto para começar?</h3>
+                                   <p className="text-sm text-slate-500 mb-8 max-w-sm mx-auto">
+                                     {activeTab === 'all' 
+                                       ? "Faça o upload de uma planilha Excel (XLSX) para gerenciar e aprimorar seus produtos com IA."
+                                       : "Você ainda não possui produtos aprimorados. Vá para a aba 'Importar' e use a IA para otimizar seus dados."
+                                     }
+                                   </p>
+                                   <button 
+                                     onClick={() => activeTab === 'all' ? fileInputRef.current?.click() : setActiveTab('all')} 
+                                     className="px-8 py-3 bg-[#004ac6] text-white rounded-xl shadow-lg shadow-blue-200 font-bold hover:bg-[#003ea8] transition-all hover:scale-105 active:scale-95 flex items-center gap-2 mx-auto"
+                                   >
+                                     {activeTab === 'all' ? <><Upload className="w-5 h-5" /> Importar Arquivo</> : "Ir para Importar"}
+                                   </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : paginatedProducts.length === 0 ? (
+                            <tr><td colSpan={20} className="text-center p-8 text-slate-500">Nenhum produto corresponde aos filtros.</td></tr>
+                          ) : paginatedProducts.map(product => {
+                            const isProcessed = product._statusDescricao === 'Gerado por IA';
+                            const isOriginal = product._statusDescricao === 'Descrição original';
+                            const isError = !!product._generationError || product._statusDescricao === 'Erro';
+                            const isEnriched = !!product._enrichmentLog;
+
+                            return (
+                            <tr key={product._id} className={cn(
+                              "hover:bg-[#f1f5f9]/60 transition-colors group relative",
+                              product._generationError 
+                                ? "bg-red-50/40 hover:bg-red-50/60" 
+                                : selectedIds.has(product._id) ? "bg-blue-50/40" : "bg-white"
+                            )}>
+                              <td className="px-5 py-3 border-r border-slate-100 bg-inherit">
+                                <div className={`absolute left-0 top-0 bottom-0 w-1 transition-colors ${product._generationError ? 'bg-red-500' : isProcessed ? 'bg-indigo-500' : isOriginal ? 'bg-emerald-500' : 'bg-transparent'}`}></div>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.has(product._id)}
+                                  onChange={(e) => {
+                                    const next = new Set(selectedIds);
+                                    if (e.target.checked) next.add(product._id);
+                                    else next.delete(product._id);
+                                    setSelectedIds(next);
+                                  }}
+                                  className="rounded border-slate-300 text-[#004ac6] focus:ring-[#004ac6]"
+                                />
+                              </td>
+                              {visibleColumns['Img'] && (
+                                <td className="px-4 py-2.5 bg-inherit">
+                                   <div className="relative inline-block">
+                                     {product._generationError && (
+                                       <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-white shadow-sm z-10 animate-pulse" title="Erro na geração"></div>
+                                     )}
+                                     {product._selectedImage ? (
+                                       <div className="w-10 h-10 rounded-md border border-slate-200 overflow-hidden bg-white p-[1px] shadow-sm hover:border-[#004ac6] cursor-pointer transition-colors" onClick={() => setCurrentImageSearchProduct(product)}>
+                                         <img src={product._selectedImage} alt="Product" className="w-full h-full object-contain rounded-sm" />
+                                       </div>
+                                     ) : product['URL imagem 1'] ? (
+                                       <div className="w-10 h-10 rounded-md border border-slate-200 overflow-hidden bg-white p-[1px] shadow-sm hover:border-[#004ac6] cursor-pointer transition-colors" onClick={() => setCurrentImageSearchProduct(product)}>
+                                         <img src={product['URL imagem 1'].toString()} alt="Product" className="w-full h-full object-contain rounded-sm" />
+                                       </div>
+                                     ) : (
+                                       <div className="w-10 h-10 rounded-md border border-slate-200 bg-slate-50 flex items-center justify-center text-slate-400 hover:border-[#004ac6] hover:text-[#004ac6] cursor-pointer transition-colors shadow-sm" onClick={() => setCurrentImageSearchProduct(product)}>
+                                         <ImageIcon className="w-4 h-4 opacity-70" />
+                                       </div>
+                                     )}
+                                   </div>
+                                </td>
+                              )}
+                              {visibleColumns['SKU'] && <td className="px-4 py-3 font-mono text-xs text-slate-600 font-medium bg-inherit">{product['Código (SKU)']}</td>}
+                              {visibleColumns['Descrição'] && (
+                                <td className="px-4 py-3 text-slate-900 bg-inherit">
+                                  <div className="max-w-[400px] 2xl:max-w-[600px] truncate" title={product['Descrição']}>{product['Descrição']}</div>
+                                </td>
+                              )}
+                              {visibleColumns['Categoria'] && <td className="px-4 py-3 text-slate-500 text-xs bg-inherit"><div className="max-w-[120px] truncate">{product['Categoria'] || '-'}</div></td>}
+                              {visibleColumns['Marca'] && <td className="px-4 py-3 text-slate-500 text-xs bg-inherit"><div className="max-w-[100px] truncate">{product['Marca'] || '-'}</div></td>}
+                              {visibleColumns['Status Desc.'] && (
+                                <td className="px-4 py-3 bg-inherit">
+                                   <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-widest ${isError ? 'bg-red-100 text-red-700 border border-red-200' : isProcessed ? 'bg-indigo-50 text-indigo-700 border border-indigo-200/50' : isOriginal ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/50' : 'bg-red-50 text-red-700 border border-red-200/50'}`}>
+                                     {isError ? 'Erro' : isProcessed ? 'Otimizado' : isOriginal ? 'Ativo' : 'Rascunho'}{product._generationError && !isError && <span className="block text-[9px] font-black text-red-650 uppercase tracking-widest mt-1.5 animate-pulse" title={product._generationError}>● Erro IA</span>}
+                                   </span>
+                                </td>
+                              )}
+                              <td className="px-5 py-3 text-right bg-inherit transition-colors sticky right-0 shadow-[inset_1px_0_0_0_#f1f5f9] group-hover:shadow-[inset_1px_0_0_0_#e2e8f0] z-10 w-[220px]">
+                                <div className="flex items-center justify-end gap-1.5 bg-inherit h-full">
+                                  <button 
+                                    onClick={() => openPreview(product)} 
+                                    className="text-[#004ac6] hover:bg-blue-600 hover:text-white bg-blue-50 border border-blue-100 p-1.5 rounded-lg transition-all shadow-sm flex items-center justify-center w-8 h-8 group/edit" 
+                                    title="Visualizar Detalhes"
+                                    id="product-edit-btn"
+                                  >
+                                    <Eye className="w-3.5 h-3.5 transition-transform group-hover/edit:scale-110" />
+                                  </button>
+                                  <button 
+                                    onClick={() => handleEnrichSingle(product._id)} 
+                                    disabled={product._isEnriching} 
+                                    className={cn(
+                                      "rounded-md transition-all shadow-sm disabled:opacity-50 flex items-center justify-center px-2 h-8 gap-1.5",
+                                      isEnriched 
+                                        ? "bg-purple-50 text-purple-700 border border-purple-200" 
+                                        : "bg-white text-slate-400 hover:text-purple-700 border border-slate-200 hover:border-purple-300 hover:bg-purple-50"
+                                    )}
+                                    title="Enriquecer Dados"
+                                  >
+                                    <Search className={`w-3.5 h-3.5 ${product._isEnriching ? 'animate-spin' : ''}`} />
+                                    {isEnriched && <span className="text-[10px] font-bold uppercase tracking-wider">Feito</span>}
+                                  </button>
+                                  <button 
+                                    onClick={() => handleGenerateSingle(product._id)} 
+                                    disabled={product._isGenerating} 
+                                    className={cn(
+                                      "rounded-md transition-all shadow-sm disabled:opacity-50 flex items-center justify-center px-2 h-8 gap-1.5",
+                                      isProcessed 
+                                        ? "bg-[#004ac6]/10 text-[#004ac6] border border-[#004ac6]/20" 
+                                        : "bg-white text-slate-400 hover:text-[#004ac6] border border-slate-200 hover:border-blue-300 hover:bg-blue-50"
+                                    )}
+                                    title="Gerar Visão Geral"
+                                  >
+                                    <Sparkles className={`w-3.5 h-3.5 ${product._isGenerating ? 'animate-pulse text-[#004ac6]' : ''}`} />
+                                    {isProcessed && <span className="text-[10px] font-bold uppercase tracking-wider">Gerado</span>}
+                                   </button>
+                                 </div>
+                              </td>
+                            </tr>
+                            )
+                          })
+                        }
+                    </tbody>
+                     </table>
+                  </div>
+
+                  {/* Pagination */}
+                  {filteredProducts.length > 0 && (
+                    <div className="px-6 py-4 border-t border-slate-200 bg-white flex flex-wrap justify-between items-center gap-4 shrink-0 rounded-b-xl">
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <span>Linhas por página:</span>
+                          <select
+                            value={itemsPerPage}
+                            onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                            className="text-xs border-slate-200 rounded-md font-medium focus:ring-[#004ac6] focus:border-[#004ac6] py-1 px-2.5 hover:bg-slate-50 transition-colors cursor-pointer outline-none shadow-sm"
+                          >
+                            <option value={10}>10</option>
+                            <option value={20}>20</option>
+                            <option value={50}>50</option>
+                            <option value={100}>100</option>
+                          </select>
+                        </div>
+                        <span className="hidden sm:inline">Mostrando <span className="font-medium text-slate-700">{Math.min(filteredProducts.length, (currentPage - 1) * itemsPerPage + 1)}</span> a <span className="font-medium text-slate-700">{Math.min(filteredProducts.length, currentPage * itemsPerPage)}</span> de <span className="font-medium text-slate-700">{filteredProducts.length}</span> resultados</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-3 py-1.5 bg-white border border-slate-200 rounded-md text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors shadow-sm font-medium">Anterior</button>
+                        <div className="flex items-center gap-1 px-2">
+                           <span className="font-medium text-slate-900">{currentPage}</span> <span className="text-slate-400">/</span> <span>{totalPages || 1}</span>
+                        </div>
+                        <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages || totalPages === 0} className="px-3 py-1.5 bg-white border border-slate-200 rounded-md text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors shadow-sm font-medium">Próximo</button>
+                    </div>
+                  </div>
+                )}
+                </div>
+              </div>
+            )}
+        </main>
+      </div>
 
       {/* Preview Modal */}
       {previewProduct && (
-        <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 bg-gray-900/50 transition-opacity" aria-hidden="true" onClick={() => setPreviewProduct(null)}></div>
-            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-            <div className="relative z-10 inline-block align-bottom bg-white rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl w-full">
-              
-              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                <div className="flex justify-between items-start mb-5 pb-4 border-b border-gray-100">
-                  <div className="flex items-center gap-4">
-                    {previewProduct['URL imagem 1'] || previewProduct['URL imagem externa 1'] ? (
-                      <img src={previewProduct['URL imagem 1'] || previewProduct['URL imagem externa 1']} alt="" className="h-16 w-16 rounded-lg object-cover border border-gray-200 shadow-sm" referrerPolicy="no-referrer" />
-                    ) : (
-                      <div className="h-16 w-16 rounded-lg bg-gray-100 flex items-center justify-center border border-gray-200">
-                        <span className="text-xs text-gray-400">Sem img</span>
-                      </div>
-                    )}
-                    <div>
-                      <h3 className="text-lg leading-6 font-bold text-gray-900" id="modal-title">
-                        {previewProduct['Descrição']}
-                      </h3>
-                      <div className="mt-1 flex items-center gap-3 text-sm text-gray-500">
-                        <span className="font-mono bg-gray-100 px-2 py-0.5 rounded">{previewProduct['Código (SKU)']}</span>
-                        <span>•</span>
-                        <span>{previewProduct['Marca']}</span>
-                        <span>•</span>
-                        <span>{previewProduct['Categoria']}</span>
-                        <span>•</span>
-                        <span className={previewProduct['Situação'] === 'Ativo' ? 'text-green-600 font-medium' : ''}>{previewProduct['Situação']}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <button onClick={() => setPreviewProduct(null)} className="text-gray-400 hover:text-gray-500 bg-gray-50 hover:bg-gray-100 rounded-full p-1 transition-colors">
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                  {/* Info Block */}
-                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                    <div className="flex justify-between items-center mb-3">
-                      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Informações</h4>
-                      <button 
-                        onClick={() => setIsEditingInfo(!isEditingInfo)}
-                        className="text-[10px] text-blue-600 hover:bg-blue-50 px-1.5 py-0.5 rounded"
-                      >
-                        {isEditingInfo ? 'Cancelar' : 'Editar'}
-                      </button>
-                    </div>
-                    {isEditingInfo ? (
-                      <div className="space-y-2">
-                        <div>
-                          <label className="text-[10px] text-gray-400 block">GTIN/EAN</label>
-                          <input 
-                            type="text" 
-                            value={editedInfo['GTIN/EAN'] || ''} 
-                            onChange={(e) => setEditedInfo(prev => ({ ...prev, 'GTIN/EAN': e.target.value }))}
-                            className="w-full text-xs p-1 border rounded"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-gray-400 block">Preço</label>
-                          <input 
-                            type="number" 
-                            step="0.01"
-                            value={editedInfo['Preço'] || 0} 
-                            onChange={(e) => setEditedInfo(prev => ({ ...prev, 'Preço': Number(e.target.value) }))}
-                            className="w-full text-xs p-1 border rounded"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-gray-400 block">Estoque</label>
-                          <input 
-                            type="number" 
-                            value={editedInfo['Estoque'] || 0} 
-                            onChange={(e) => setEditedInfo(prev => ({ ...prev, 'Estoque': Number(e.target.value) }))}
-                            className="w-full text-xs p-1 border rounded"
-                          />
-                        </div>
-                        <button 
-                          onClick={saveEditedInfo}
-                          className="w-full bg-blue-600 text-white text-[10px] py-1 rounded mt-2 hover:bg-blue-700"
-                        >
-                          Salvar Infos
-                        </button>
-                      </div>
-                    ) : (
-                      <dl className="space-y-2 text-sm">
-                        <div className="flex justify-between"><dt className="text-gray-500">GTIN/EAN:</dt><dd className="font-medium text-gray-900 font-mono text-xs">{previewProduct['GTIN/EAN'] || '-'}</dd></div>
-                        <div className="flex justify-between"><dt className="text-gray-500">NCM:</dt><dd className="font-medium text-gray-900 font-mono text-[10px]">{previewProduct['NCM (Classificação fiscal)'] || '-'}</dd></div>
-                        <div className="flex justify-between"><dt className="text-gray-500">Preço:</dt><dd className="font-medium text-gray-900">{formatPrice(previewProduct['Preço'])}</dd></div>
-                        {previewProduct['Preço promocional'] && <div className="flex justify-between"><dt className="text-gray-500">Preço Promo:</dt><dd className="font-medium text-green-600">{formatPrice(previewProduct['Preço promocional'])}</dd></div>}
-                        <div className="flex justify-between"><dt className="text-gray-500">Estoque:</dt><dd className="font-medium text-gray-900">{previewProduct['Estoque']}</dd></div>
-                        <div className="flex justify-between"><dt className="text-gray-500">Peso:</dt><dd className="font-medium text-gray-900">{previewProduct['Peso bruto (Kg)']} kg</dd></div>
-                      </dl>
-                    )}
-                  </div>
-
-                  {/* Variations Block */}
-                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Variações ({previewProduct._children?.length || 0})</h4>
-                    {previewProduct._children && previewProduct._children.length > 0 ? (
-                      <div className="space-y-2 max-h-40 overflow-y-auto">
-                        {previewProduct._children.map(child => (
-                          <div key={child._id} className="text-sm bg-white p-2 rounded border border-gray-100 flex flex-col gap-1">
-                            <span className="font-mono text-xs text-gray-500">{child['Código (SKU)']}</span>
-                            <div className="flex flex-wrap gap-1">
-                              {child['Variações']?.split('||').map((v, i) => (
-                                <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-100">
-                                  {v.trim()}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-gray-500 italic">Produto simples, sem variações.</p>
-                    )}
-                  </div>
-
-                  {/* SEO Block */}
-                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                    <div className="flex justify-between items-center mb-3">
-                      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2">
-                        SEO Gerado
-                        {getSeoBadge(previewProduct._statusSEO)}
-                      </h4>
-                      <button 
-                        onClick={() => setIsEditingSEO(!isEditingSEO)}
-                        className="text-[10px] text-blue-600 hover:bg-blue-50 px-1.5 py-0.5 rounded"
-                      >
-                        {isEditingSEO ? 'Cancelar' : 'Editar'}
-                      </button>
-                    </div>
-                    {isEditingSEO ? (
-                      <div className="space-y-3">
-                        <div>
-                          <label className="text-[10px] text-gray-400 block mb-1">Título SEO</label>
-                          <input 
-                            type="text" 
-                            value={editedSEO.title} 
-                            onChange={(e) => setEditedSEO(prev => ({ ...prev, title: e.target.value }))}
-                            className="w-full text-xs p-1 border rounded"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-gray-400 block mb-1">Descrição SEO</label>
-                          <textarea 
-                            value={editedSEO.description} 
-                            onChange={(e) => setEditedSEO(prev => ({ ...prev, description: e.target.value }))}
-                            className="w-full text-xs p-1 border rounded h-16"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-gray-400 block mb-1">Keywords</label>
-                          <input 
-                            type="text" 
-                            value={editedSEO.keywords} 
-                            onChange={(e) => setEditedSEO(prev => ({ ...prev, keywords: e.target.value }))}
-                            className="w-full text-xs p-1 border rounded"
-                          />
-                        </div>
-                        <button 
-                          onClick={saveEditedSEO}
-                          className="w-full bg-blue-600 text-white text-[10px] py-1 rounded mt-2 hover:bg-blue-700"
-                        >
-                          Salvar SEO
-                        </button>
-                      </div>
-                    ) : (
-                      <dl className="space-y-3 text-sm">
-                        <div>
-                          <dt className="text-gray-500 mb-1 flex justify-between">
-                            <span>Título SEO</span>
-                            <span className={`text-[10px] ${previewProduct['Título SEO']?.length > 60 ? 'text-red-500' : 'text-gray-400'}`}>
-                              {previewProduct['Título SEO']?.length || 0}/60
-                            </span>
-                          </dt>
-                          <dd className="font-medium text-gray-900 bg-white p-2 rounded border border-gray-100 text-xs truncate" title={previewProduct['Título SEO']}>{previewProduct['Título SEO'] || '-'}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-gray-500 mb-1 flex justify-between">
-                            <span>Descrição SEO</span>
-                            <span className={`text-[10px] ${previewProduct['Descrição SEO']?.length > 160 ? 'text-red-500' : 'text-gray-400'}`}>
-                              {previewProduct['Descrição SEO']?.length || 0}/160
-                            </span>
-                          </dt>
-                          <dd className="font-medium text-gray-900 bg-white p-2 rounded border border-gray-100 text-[10px] line-clamp-2">{previewProduct['Descrição SEO'] || '-'}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-gray-500 mb-1">Palavras-chave</dt>
-                          <dd className="font-medium text-gray-900 bg-white p-2 rounded border border-gray-100 text-[10px] line-clamp-2">{previewProduct['Palavras chave SEO'] || '-'}</dd>
-                        </div>
-                      </dl>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-2">
-                  {/* Token Usage Block */}
-                  {previewProduct._tokenUsage && (
-                    <div className="bg-green-50 p-4 rounded-lg border border-green-200 mb-6">
-                      <h4 className="text-xs font-semibold text-green-800 uppercase tracking-wider mb-3 flex items-center gap-2">
-                        <RefreshCw className="w-4 h-4" />
-                        Consumo de Tokens (Gemini API)
-                      </h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        {previewProduct._tokenUsage.enrichment && (
-                          <div className="bg-white p-2 rounded border border-green-100">
-                            <p className="text-[10px] text-green-600 font-bold uppercase mb-1">Enriquecimento</p>
-                            <div className="flex justify-between text-xs"><span className="text-gray-500">Prompt:</span><span className="font-mono">{previewProduct._tokenUsage.enrichment.promptTokens}</span></div>
-                            <div className="flex justify-between text-xs"><span className="text-gray-500">Resposta:</span><span className="font-mono">{previewProduct._tokenUsage.enrichment.completionTokens}</span></div>
-                            <div className="flex justify-between text-xs font-bold border-t border-green-50 mt-1 pt-1"><span>Total:</span><span className="font-mono">{previewProduct._tokenUsage.enrichment.totalTokens}</span></div>
-                          </div>
-                        )}
-                        {previewProduct._tokenUsage.generation && (
-                          <div className="bg-white p-2 rounded border border-green-100">
-                            <p className="text-[10px] text-green-600 font-bold uppercase mb-1">Geração SEO</p>
-                            <div className="flex justify-between text-xs"><span className="text-gray-500">Prompt:</span><span className="font-mono">{previewProduct._tokenUsage.generation.promptTokens}</span></div>
-                            <div className="flex justify-between text-xs"><span className="text-gray-500">Resposta:</span><span className="font-mono">{previewProduct._tokenUsage.generation.completionTokens}</span></div>
-                            <div className="flex justify-between text-xs font-bold border-t border-green-50 mt-1 pt-1"><span>Total:</span><span className="font-mono">{previewProduct._tokenUsage.generation.totalTokens}</span></div>
-                          </div>
-                        )}
-                        {previewProduct._tokenUsage.images && (
-                          <div className="bg-white p-2 rounded border border-green-100">
-                            <p className="text-[10px] text-green-600 font-bold uppercase mb-1">Ambientações</p>
-                            <div className="flex justify-between text-xs"><span className="text-gray-500">Prompt:</span><span className="font-mono">{previewProduct._tokenUsage.images.promptTokens}</span></div>
-                            <div className="flex justify-between text-xs"><span className="text-gray-500">Resposta:</span><span className="font-mono">{previewProduct._tokenUsage.images.completionTokens}</span></div>
-                            <div className="flex justify-between text-xs font-bold border-t border-green-50 mt-1 pt-1"><span>Total:</span><span className="font-mono">{previewProduct._tokenUsage.images.totalTokens}</span></div>
-                          </div>
-                        )}
-                      </div>
-                      <div className="mt-3 pt-2 border-t border-green-100 flex flex-col gap-1">
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs text-green-700 font-medium">Total Consumido no Produto:</span>
-                          <span className="text-sm font-bold text-green-800 font-mono">
-                            {(previewProduct._tokenUsage.enrichment?.totalTokens || 0) + 
-                             (previewProduct._tokenUsage.generation?.totalTokens || 0) + 
-                             (previewProduct._tokenUsage.images?.totalTokens || 0)} tokens
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Enrichment Log Block */}
-                  {previewProduct._enrichmentLog && (
-                    <div className="bg-purple-50 p-4 rounded-lg border border-purple-200 mb-6">
-                      <h4 className="text-xs font-semibold text-purple-800 uppercase tracking-wider mb-2 flex items-center gap-2">
-                        <Search className="w-4 h-4" />
-                        Log de Enriquecimento (Fontes)
-                      </h4>
-                      <p className="text-sm text-purple-900 whitespace-pre-wrap">{previewProduct._enrichmentLog}</p>
-                    </div>
-                  )}
-
-                  {/* Generation Log Block */}
-                  {previewProduct._generationLog && (
-                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 mb-6">
-                      <h4 className="text-xs font-semibold text-blue-800 uppercase tracking-wider mb-2 flex items-center gap-2">
-                        <Sparkles className="w-4 h-4" />
-                        Prompt Enviado para a IA (Log de Geração)
-                      </h4>
-                      <div className="text-xs text-blue-900 whitespace-pre-wrap font-mono max-h-40 overflow-y-auto bg-white p-3 rounded border border-blue-100">
-                        {previewProduct._generationLog}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between mb-3 border-b border-gray-100 pb-2">
-                    <h4 className="text-sm font-semibold text-gray-900 uppercase tracking-wider flex items-center gap-2">
-                      Descrição Complementar
-                      {getStatusBadge(previewProduct._statusDescricao)}
-                    </h4>
-                    <div className="flex items-center gap-2">
-                      <button 
-                        onClick={() => {
-                          if (isEditing) {
-                            // If canceling, reset edited description to current product description
-                            setEditedDescription(previewProduct['Descrição complementar'] || '');
-                          }
-                          setIsEditing(!isEditing);
-                        }}
-                        className="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors flex items-center gap-1"
-                      >
-                        {isEditing ? 'Cancelar Edição' : <><Edit className="w-3 h-3" /> Editar Descrição</>}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className={cn("space-y-4", !isEditing && "quill-view-mode")}>
-                    <div className={cn("quill-editor-wrapper transition-all duration-200", isEditing ? "h-80" : "max-h-[50vh] overflow-y-auto rounded-lg border border-gray-200 bg-gray-50")}>
-                      <ReactQuill
-                        theme="snow"
-                        value={isEditing ? editedDescription : (previewProduct['Descrição complementar'] || '')}
-                        onChange={isEditing ? setEditedDescription : undefined}
-                        readOnly={!isEditing}
-                        placeholder="Este produto ainda não possui uma descrição."
-                        className={cn(isEditing ? "h-64" : "quill-readonly-view")}
-                        modules={{
-                          toolbar: isEditing ? [
-                            [{ 'header': [1, 2, 3, false] }],
-                            ['bold', 'italic', 'underline', 'strike'],
-                            [{ 'list': 'ordered' }, { 'list': 'bullet' }],
-                            ['clean']
-                          ] : false,
-                        }}
-                      />
-                    </div>
-                    
-                    {isEditing && (
-                      <div className="flex justify-end pt-4">
-                        <button
-                          onClick={saveEditedDescription}
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 border border-transparent rounded-md shadow-sm text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                        >
-                          <Save className="w-4 h-4" />
-                          Salvar Descrição
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-              
-              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse border-t border-gray-200">
-                <button
-                  type="button"
-                  onClick={handleRegeneratePreview}
-                  disabled={previewProduct._isGenerating}
-                  className="w-full inline-flex justify-center items-center gap-2 rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
-                >
-                  {previewProduct._isGenerating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                  Regenerar
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ProductEditModal
+          product={previewProduct}
+          categories={existingCategories}
+          onClose={() => setPreviewProduct(null)}
+          onOpenImageModal={() => {
+            setCurrentImageSearchProduct(previewProduct);
+            setIsImageSearchModalOpen(true);
+            setPreviewProduct(null); // Optional: close edit modal, or leave it open
+          }}
+          onSave={(updated) => {
+            setProducts(products.map(p => p._id === updated._id ? { ...updated, _isDirty: true } : p));
+            setPreviewProduct(updated);
+          }}
+          onCategoryUpdate={async (categoryId, newAttr) => {
+            if (!user) return;
+            const updatedCategory = await addAttributeToCategory(user.uid, categoryId, existingCategories, newAttr);
+            setExistingCategories(existingCategories.map(c => c.id === categoryId ? updatedCategory : c));
+          }}
+        />
       )}
 
       {/* Template Management Modal */}
@@ -2983,6 +2714,16 @@ Retorne APENAS um JSON válido no seguinte formato:
         onSave={handleSaveImages}
         credits={credits}
         consumeCredit={consumeCredit}
+      />
+
+      {/* Category Import Review Modal */}
+      <CategoryImportModal
+        isOpen={showCategoryImport}
+        onClose={() => setShowCategoryImport(false)}
+        foundCategories={foundCategoriesFile}
+        existingCategories={existingCategories}
+        onConfirm={processCategoryImport}
+        isProcessing={isProcessingCategories}
       />
 
     </div>

@@ -58,6 +58,23 @@ service cloud.firestore {
              data.createdAt is string;
     }
 
+    function isValidCategory() {
+      let data = request.resource.data;
+      return (!('id' in data) || data.id is string) &&
+             (!('name' in data) || data.name is string) &&
+             (!('slug' in data) || data.slug is string) &&
+             (!('parentId' in data) || data.parentId is string || data.parentId == null) &&
+             (!('level' in data) || data.level is number) &&
+             (!('path' in data) || data.path is list) &&
+             (!('pathIds' in data) || data.pathIds is list) &&
+             (!('attributes' in data) || data.attributes is list) &&
+             (!('inheritParentAttributes' in data) || data.inheritParentAttributes is bool) &&
+             (!('productCount' in data) || data.productCount is number) &&
+             (!('aiGenerated' in data) || data.aiGenerated is bool) &&
+             (!('createdAt' in data) || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt is string);
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -78,6 +95,13 @@ service cloud.firestore {
         allow update, delete: if false;
       }
       
+      match /categories/{categoryId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidCategory();
+        allow update: if isOwner(userId) && isValidCategory();
+        allow delete: if isOwner(userId);
+      }
+      
       match /products/{productId} {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) && 
@@ -87,7 +111,7 @@ service cloud.firestore {
         allow update: if isOwner(userId) && 
                      isValidProduct() && 
                      request.resource.data.ownerId == resource.data.ownerId &&
-                     request.resource.data.createdAt == resource.data.createdAt;
+                     (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt);
         allow delete: if isOwner(userId);
       }
       

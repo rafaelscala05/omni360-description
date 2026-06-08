@@ -45,17 +45,17 @@ export default function LoginLanding({ onLogin }: LoginLandingProps) {
 
         <div className="relative z-10 max-w-2xl mx-auto">
           <div className="flex items-center gap-3 mb-8">
-            <div className="bg-blue-600 p-2.5 rounded-xl shadow-lg shadow-blue-200">
+            <div className="bg-primary p-2.5 rounded-xl shadow-lg shadow-blue-200">
               <Sparkles className="w-6 h-6 text-white" />
             </div>
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight">Omni360 AI</h2>
+            <h2 className="text-2xl font-black text-gray-900 tracking-tight">Alfreds - Agente de Ecommerce</h2>
           </div>
 
           <h1 className="text-5xl font-black text-gray-900 leading-tight mb-4">
-            Transforme seus produtos em <span className="text-blue-600">vendas automáticas</span>
+            Transforme seus produtos em <span className="text-primary">vendas automáticas</span>
           </h1>
           <p className="text-lg text-gray-600 mb-12 leading-relaxed">
-            A plataforma definitiva para gestores de e-commerce que desejam escalar seus cadastros com Inteligência Artificial Generativa de ponta.
+            Um agente para aprimorar os produtos do seu e-commerce.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -92,7 +92,7 @@ export default function LoginLanding({ onLogin }: LoginLandingProps) {
                 <div className="bg-blue-600 p-1.5 rounded-lg shadow-md h-8 w-8 flex items-center justify-center">
                     <Sparkles className="w-4 h-4 text-white" />
                 </div>
-                <span className="font-bold text-gray-900">Omni360 AI</span>
+                <span className="font-bold text-gray-900">Alfreds - Agente de Ecommerce</span>
             </div>
         </div>
 
@@ -127,7 +127,7 @@ export default function LoginLanding({ onLogin }: LoginLandingProps) {
         </div>
 
         <div className="absolute bottom-8 text-gray-400 text-xs">
-          © {new Date().getFullYear()} Omni360 Agencia. Todos os direitos reservados.
+          © {new Date().getFullYear()} Alfreds. Todos os direitos reservados.
         </div>
       </div>
     </div>

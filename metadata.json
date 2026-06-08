@@ -1,5 +1,6 @@
 {
-  "name": "Gerador Produtos e Descrição - Omni360",
-  "description": "Ferramenta para importar planilhas de produtos, gerar descrições otimizadas para SEO usando inteligência artificial e exportar os resultados.",
-  "requestFramePermissions": []
+  "name": "Alfreds - Agente de Ecommerce",
+  "description": "Um agente para aprimorar os produtos do seu e-commerce.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
 }

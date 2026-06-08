@@ -3,9 +3,161 @@ import { createServer as createViteServer } from "vite";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import dotenv from "dotenv";
+dotenv.config({ override: true });
+import { GoogleGenAI, Type } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Lazy-initialized Gemini API client with telemetry header and dynamic key-refresh check
+let aiClient: GoogleGenAI | null = null;
+let lastUsedApiKey: string | null = null;
+
+function getGeminiClient(): GoogleGenAI {
+  const apiKey = process.env.GEMINI_API_KEY;
+  
+  if (!apiKey || apiKey.trim() === '') {
+    throw new Error("Chave de API não configurada. A variável GEMINI_API_KEY está vazia. Por favor, acesse o menu 'Settings' (Configurações) > 'Secrets' (Segredos) e insira sua chave do Gemini, ou adicione no arquivo .env se estiver rodando localmente.");
+  }
+  
+  const trimmedKey = apiKey.trim();
+  
+  if (!aiClient || lastUsedApiKey !== trimmedKey) {
+    aiClient = new GoogleGenAI({
+      apiKey: trimmedKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+    lastUsedApiKey = trimmedKey;
+  }
+  return aiClient;
+}
+
+// Intercepts and parses Gemini API core errors to provide clear settings-based feedback
+function handleGeminiError(error: any): string {
+  const errorMsg = error.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
+  if (errorMsg.includes("Chave de API não configurada")) {
+    return errorMsg;
+  }
+  if (errorMsg.includes("429") && errorMsg.includes("quota")) {
+    return "O limite de requisições da sua chave (Quota) foi excedido ou você está sem saldo no Google AI Studio. Verifique os limites da sua conta.";
+  }
+  if (
+    errorMsg.includes("API key not valid") || 
+    errorMsg.includes("API_KEY_INVALID") || 
+    (errorMsg.includes("400") && errorMsg.includes("key"))
+  ) {
+    return "A chave de API que você forneceu não é válida. O servidor do Google a recusou. Certifique-se de não estar copiando a chave do Firebase por engano, não deixe espaços, e verifique a aba 'Settings' > 'Secrets'.";
+  }
+  if (errorMsg.includes("INVALID_ARGUMENT") && !errorMsg.includes("API key not valid")) {
+    return "Falha ao processar com a IA. Argumento ou dados inválidos enviados à API. " + errorMsg;
+  }
+  return errorMsg || "Erro desconhecido ao processar IA.";
+}
+
+// Normalizer for image MIME types to guarantee compatible and standard strings for Gemini
+function normalizeMimeType(mimeType: string, url: string): string {
+  if (!mimeType) return 'image/jpeg';
+  
+  // Clean the mime-type string by converting to lowercase and stripping semicolon parameters
+  let cleanMime = mimeType.split(';')[0].trim().toLowerCase();
+
+  // Map of common image extensions to standard mime-types
+  const extMap: Record<string, string> = {
+    'png': 'image/png',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'webp': 'image/webp',
+    'gif': 'image/gif',
+    'heic': 'image/heic',
+    'heif': 'image/heif'
+  };
+
+  // If MIME type is generic "image", invalid, or not starting with "image/", try to infer from extension
+  const hasValidFormat = cleanMime.startsWith('image/') && cleanMime.includes('/') && cleanMime.split('/')[1].length > 0;
+  
+  if (!hasValidFormat || cleanMime === 'image/octet-stream' || cleanMime === 'image') {
+    try {
+      const parsedUrl = new URL(url);
+      const ext = path.extname(parsedUrl.pathname).toLowerCase().replace('.', '');
+      if (extMap[ext]) {
+        return extMap[ext];
+      }
+    } catch (e) {
+      // If URL parsing fails, check if the string itself ends with an extension
+      const lastDot = url.lastIndexOf('.');
+      if (lastDot !== -1) {
+        const ext = url.slice(lastDot + 1).toLowerCase();
+        if (extMap[ext]) {
+          return extMap[ext];
+        }
+      }
+    }
+  }
+
+  // If we still have an invalid or generic 'image' or something without a slash, default to 'image/jpeg'
+  if (!cleanMime.startsWith('image/') || cleanMime === 'image') {
+    return 'image/jpeg';
+  }
+
+  // Standardize "image/jpg" -> "image/jpeg"
+  if (cleanMime === 'image/jpg') {
+    return 'image/jpeg';
+  }
+
+  return cleanMime;
+}
+
+// Helper function to fetch an external image URL and convert it to base64 structure
+async function fetchImageAsBase64(url: string): Promise<{ mimeType: string, data: string } | null> {
+  try {
+    // 1. Detect if it's a local upload path or local URL pointing to uploads
+    let localPath: string | null = null;
+    const processCwd = process.cwd();
+    
+    // If it's a relative path starting with /uploads or uploads
+    if (url.startsWith('/uploads/') || url.startsWith('uploads/')) {
+      const cleanRelativePath = url.startsWith('/') ? url.slice(1) : url;
+      localPath = path.join(processCwd, cleanRelativePath);
+    } 
+    // If it contains /uploads/ (like a full URL pointing to our local uploads)
+    else if (url.includes('/uploads/')) {
+      const uploadsIndex = url.indexOf('/uploads/');
+      const relativePart = url.substring(uploadsIndex + 1); // "uploads/..."
+      localPath = path.join(processCwd, relativePart);
+    }
+
+    if (localPath && fs.existsSync(localPath)) {
+      const buffer = fs.readFileSync(localPath);
+      const ext = path.extname(localPath).toLowerCase().replace('.', '');
+      const rawMimeType = ext ? `image/${ext}` : 'image/jpeg';
+      const mimeType = normalizeMimeType(rawMimeType, url);
+      return {
+        mimeType,
+        data: buffer.toString('base64')
+      };
+    }
+
+    // 2. Otherwise fetch the external image URL
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const rawMimeType = response.headers.get('content-type') || 'image/jpeg';
+    const mimeType = normalizeMimeType(rawMimeType, url);
+    return {
+      mimeType,
+      data: buffer.toString('base64')
+    };
+  } catch (e) {
+    console.error("fetchImageAsBase64 error:", e);
+    return null;
+  }
+}
 
 async function startServer() {
   const app = express();
@@ -25,6 +177,418 @@ async function startServer() {
   app.use('/uploads', express.static(uploadsDir));
 
   // API routes FIRST
+  
+  // 1. Generate Description
+  app.post("/api/gemini/generate-description", async (req, res) => {
+    try {
+      const { product, template, effectiveAttributes } = req.body;
+
+      const attrsInfo = (effectiveAttributes || []).map((attr: any) => {
+        return `- ${attr.key} (${attr.label}): Tipo: ${attr.type}, Opções permitidas: ${attr.options?.length ? attr.options.join(', ') : 'Qualquer'}`;
+      }).join('\n');
+
+      const attributeInstructions = (effectiveAttributes || []).length > 0 ? `
+PARA CADA UM DOS ATRIBUTOS ABAIXO, EXTRAIA O VALOR DO TEXTO OU IMAGEM (EM PORTUGUÊS DO BRASIL):
+${attrsInfo}
+Retorne-os no campo "extracted_attributes" do JSON.` : `Se identificar características importantes do produto (cor, material, tamanho, etc), sugira-os no campo "suggested_attributes" do JSON em PORTUGUÊS DO BRASIL.`;
+
+      // Format variations
+      let variacoesText = 'Nenhuma';
+      if (product._children && product._children.length > 0) {
+        const allVariations = product._children.map((c: any) => c['Variações']).filter(Boolean);
+        variacoesText = allVariations.join(' | ');
+      }
+
+      const visualEnhancementRules = `
+ESPECIFICAÇÕES VISUAIS DA DESCRIÇÃO (OBRIGATÓRIO):
+1. Use HTML semântico e profissional.
+2. Adicione espaçamento extra (margem superior/inferior ou quebras de linha duplas) entre parágrafos, subtítulos e PRINCIPALMENTE entre itens de lista (<li>) para melhorar drasticamente a leitura.
+3. Utilize tags <h2> e <h3> para criar seções lógicas e organizadas.
+4. Transforme blocos de texto denso em listas bulleted (<ul> e <li>) para facilitar a escaneabilidade.
+5. O resultado deve ser visualmente limpo, com ar de e-commerce premium.
+${attributeInstructions}`;
+
+      let promptText = template.prompt.replace(/{([^{}\n]+)}/g, (match: string, p1: string) => {
+        let key = p1.trim();
+        
+        if (key.toLowerCase() === 'variações agrupadas das filhas') {
+          return variacoesText;
+        }
+        
+        if (key.toLowerCase() === 'nome') key = 'Descrição';
+        if (key.toLowerCase() === 'sku') key = 'Código (SKU)';
+        
+        let val = product[key];
+        
+        if (val === undefined) {
+          const foundKey = Object.keys(product).find(k => k.toLowerCase() === key.toLowerCase());
+          if (foundKey) {
+            val = product[foundKey];
+          }
+        }
+        
+        return val != null ? String(val) : '';
+      });
+
+      const parts: any[] = [{ text: promptText + "\n\n" + visualEnhancementRules }];
+
+      const imageUrl = product._selectedImage || product['URL imagem 1'] || product['URL imagem externa 1'];
+      if (imageUrl) {
+        const imgData = await fetchImageAsBase64(imageUrl);
+        if (imgData) {
+          parts.unshift({
+            inlineData: {
+              mimeType: imgData.mimeType,
+              data: imgData.data
+            }
+          });
+        }
+      }
+
+      const response = await getGeminiClient().models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: { parts },
+        config: { 
+          temperature: 0.7,
+          maxOutputTokens: 8192,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              descricao_html: { type: Type.STRING },
+              titulo_seo: { type: Type.STRING },
+              descricao_seo: { type: Type.STRING },
+              palavras_chave: { type: Type.STRING },
+              extracted_attributes: {
+                type: Type.OBJECT,
+                description: "Atributos extraídos com base na definição da categoria.",
+                properties: {},
+                additionalProperties: {
+                  type: Type.OBJECT,
+                  properties: {
+                    value: { type: Type.STRING }
+                  }
+                }
+              },
+              suggested_attributes: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    key: { type: Type.STRING },
+                    label: { type: Type.STRING },
+                    value: { type: Type.STRING },
+                    type: { type: Type.STRING }
+                  }
+                }
+              }
+            },
+            required: ["descricao_html", "titulo_seo", "descricao_seo", "palavras_chave"]
+          }
+        }
+      });
+
+      res.json(JSON.parse(response.text || "{}"));
+    } catch (error: any) {
+      console.error("Backend error generating description:", error.message || error);
+      res.status(500).json({ error: handleGeminiError(error) });
+    }
+  });
+
+  // 2. Generate Product Attributes (Text-based)
+  app.post("/api/gemini/generate-attributes", async (req, res) => {
+    try {
+      const { product, effectiveAttributes } = req.body;
+      const currentAttributes = product.attributes || {};
+
+      const attrsInfo = (effectiveAttributes || []).map((attr: any) => {
+        const currentValue = currentAttributes[attr.key]?.value;
+        const valueStatus = currentValue ? ` (Valor atual: ${JSON.stringify(currentValue)})` : ' (Vazio/Não preenchido)';
+        return `- ${attr.key} (${attr.label}): Tipo: ${attr.type}, Opções permitidas: ${attr.options?.length ? attr.options.join(', ') : 'Qualquer'}${valueStatus}`;
+      }).join('\n');
+
+      const prompt = `
+Você é um assistente especialista em catálogo de e-commerce.
+Sua tarefa é analisar o produto fornecido e extrair atributos com base nas definições esperadas da categoria.
+
+Produto:
+Nome: ${product['Descrição'] || ''}
+Marca: ${product['Marca'] || ''}
+Categoria Path: ${product.categoryPath?.join(' > ') || ''}
+Descrição Adicional: ${product['Descrição complementar'] || ''}
+
+Atributos esperados para esta categoria:
+${attrsInfo}
+
+Instruções:
+1. Para os atributos definidos acima que estão VAZIOS, tente extrair os valores do texto. Responda sempre em PORTUGUÊS DO BRASIL.
+2. Se um atributo já possuir um "Valor atual", você só deve sugerir um novo valor se o valor atual estiver claramente errado ou incompleto.
+3. Para os atributos do tipo 'select' ou 'multiselect', você DEVE escolher EXATAMENTE entre as 'Opções permitidas'. Se não tiver certeza, não sugira valor.
+4. IMPORTANTE: Analise cuidadosamente as características do produto. Se você identificar características IMPORTANTES que NÃO estão na lista de atributos acima (e nem em campos como Marca, Preço, etc), sugira-os na seção "suggestedNewAttributes".
+5. EVITE REDUNDÂNCIA E SINÔNIMOS: Não sugira como "novo atributo" algo que já existe na lista de atributos acima ou nos campos padrão do produto, mesmo que com nome ligeiramente diferente (ex: se já existe "Material", não sugira "Composição").
+6. IDIOMA: Todos os labels e valores sugeridos devem estar em PORTUGUÊS DO BRASIL.
+
+Retorne EXATAMENTE neste formato JSON:
+{
+  "attributes": {
+    "ChaveDoAtributo": { "value": "ValorSugerido", "confidence": 0.95 }
+  },
+  "suggestedNewAttributes": [
+    { "key": "material_especifico", "label": "Material Específico", "value": "Titânio", "type": "text" }
+  ]
+}
+Responda APENAS com o objeto JSON.
+`;
+
+      const response = await getGeminiClient().models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          maxOutputTokens: 8192,
+          temperature: 0.2
+        }
+      });
+
+      res.json(JSON.parse(response.text || "{}"));
+    } catch (error: any) {
+      console.error("Backend error generating attributes:", error.message || error);
+      res.status(500).json({ error: handleGeminiError(error) });
+    }
+  });
+
+  // 3. Generate Attributes From Image
+  app.post("/api/gemini/generate-attributes-from-image", async (req, res) => {
+    try {
+      const { imageBase64, effectiveAttributes, productContext } = req.body;
+      const currentAttributes = productContext.attributes || {};
+
+      const attrsInfo = (effectiveAttributes || []).map((attr: any) => {
+        const currentValue = currentAttributes[attr.key]?.value;
+        const valueStatus = currentValue ? ` (Valor atual: ${JSON.stringify(currentValue)})` : ' (Vazio)';
+        return `- ${attr.key} (${attr.label}): Tipo: ${attr.type}, Opções permitidas: ${attr.options?.length ? attr.options.join(', ') : 'Qualquer'}${valueStatus}`;
+      }).join('\n');
+
+      const prompt = `
+Você é um assistente especialista em e-commerce e análise visual.
+Sua tarefa é analisar a imagem do produto e extrair atributos com base nas definições esperadas da categoria.
+
+Nome do Produto de Referência: ${productContext['Descrição'] || ''}
+
+Atributos esperados para esta categoria:
+${attrsInfo}
+
+Instruções:
+1. Analise visualmente o produto: cor dominante, material, características.
+2. Foque em preencher atributos que estão como "(Vazio)". Se já houver um "(Valor atual)", só sugira mudança se a imagem claramente mostrar algo diferente. Responda em PORTUGUÊS DO BRASIL.
+3. Para atributos 'select' ou 'multiselect', escolha EXATAMENTE dentre as opções.
+4. Se você identificar características visuais RELEVANTES que não estão na lista acima e nem nos campos padrão, sugira-os na seção "suggestedNewAttributes".
+5. EVITE REDUNDÂNCIA E SINÔNIMOS: Não sugira atributos que já existem na lista de atributos esperados ou campos padrão, mesmo que com nomes parecidos.
+6. IDIOMA: Todos os labels e valores devem estar em PORTUGUÊS DO BRASIL.
+
+Retorne EXATAMENTE neste formato JSON:
+{
+  "attributes": {
+    "ChaveDoAtributo": { "value": "ValorSugerido", "confidence": 0.95 }
+  },
+  "suggestedNewAttributes": [
+    { "key": "cor_detalhe", "label": "Cor do Detalhe", "value": "Dourado", "type": "text" }
+  ]
+}
+Responda APENAS com o objeto JSON.
+`;
+
+      const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+
+      const response = await getGeminiClient().models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: [
+          { inlineData: { mimeType: "image/jpeg", data: base64Data } },
+          prompt
+        ],
+        config: {
+          responseMimeType: "application/json",
+          maxOutputTokens: 8192,
+          temperature: 0.2
+        }
+      });
+
+      res.json(JSON.parse(response.text || "{}"));
+    } catch (error: any) {
+      console.error("Backend error generating attributes from image:", error.message || error);
+      res.status(500).json({ error: handleGeminiError(error) });
+    }
+  });
+
+  // 4. Generate Category Hierarchy
+  app.post("/api/gemini/generate-category-hierarchy", async (req, res) => {
+    try {
+      const { categories, segment } = req.body;
+
+      const prompt = `
+Você é um especialista em arquitetura de dados e e-commerce.
+Os usuários importaram a seguinte lista plana de categorias extraídas de uma planilha:
+[${categories.join(', ')}]
+
+${segment ? `O segmento do negócio é: ${segment}` : ''}
+
+Sua tarefa é organizar e enriquecer essas categorias em uma estrutura lógica (pai/filho).
+
+Diretrizes:
+1. Agrupe categorias semelhantes hierarquicamente.
+2. Sugira subcategorias adicionais relevantes se fizer sentido.
+3. Tente reaproveitar os nomes exatos passados, organizando na propriedade "hierarchy".
+4. Mantenha os níveis rasos (máximo de 3 níveis).
+
+Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Retorne SOMENTE o JSON, sem markdown):
+
+{
+  "hierarchy": [
+    {
+      "name": "Calçados",
+      "slug": "calcados",
+      "children": [
+        {
+          "name": "Calçados Masculinos",
+          "slug": "calcados-masculinos",
+          "children": []
+        }
+      ]
+    }
+  ],
+  "suggestedNewCategories": [
+    { "name": "Acessórios", "reason": "Complementar ao segmento de moda" }
+  ]
+}
+`;
+
+      const response = await getGeminiClient().models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          temperature: 0.2
+        }
+      });
+
+      res.json(JSON.parse(response.text || "{}"));
+    } catch (error: any) {
+      console.error("Backend error generating category hierarchy:", error.message || error);
+      res.status(500).json({ error: handleGeminiError(error) });
+    }
+  });
+
+  // 5. Generate Ambient Images
+  app.post("/api/gemini/generate-ambient-images", async (req, res) => {
+    try {
+      const { base64Data, mimeType, ambientPrompt } = req.body;
+      const cleanMimeType = normalizeMimeType(mimeType || 'image/jpeg', 'image.png');
+
+      const response = await getGeminiClient().models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                data: base64Data,
+                mimeType: cleanMimeType,
+              },
+            },
+            {
+              text: ambientPrompt,
+            },
+          ],
+        },
+      });
+
+      let imageBase64 = null;
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+          imageBase64 = `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
+          break;
+        }
+      }
+
+      if (!imageBase64) {
+        throw new Error("No image was returned by Gemini.");
+      }
+
+      const usage = response.usageMetadata || { promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0 };
+
+      res.json({
+        image: imageBase64,
+        usage: {
+          promptTokens: usage.promptTokenCount,
+          completionTokens: usage.candidatesTokenCount,
+          totalTokens: usage.totalTokenCount
+        }
+      });
+    } catch (error: any) {
+      console.error("Backend error generating ambient images:", error.message || error);
+      res.status(500).json({ error: handleGeminiError(error) });
+    }
+  });
+
+  // 6. Enrich Product Data
+  app.post("/api/gemini/enrich-product-data", async (req, res) => {
+    try {
+      const { product } = req.body;
+
+      const prompt = `Você é um assistente de cadastro de e-commerce.
+Busque na internet as especificações técnicas do seguinte produto:
+Nome/Descrição: ${product['Descrição']}
+Marca: ${product['Marca']}
+Categoria: ${product['Categoria']}
+
+Tente encontrar os seguintes dados (se não encontrar, deixe vazio ou null):
+- GTIN/EAN (código de barras)
+- NCM (Classificação fiscal)
+- Peso bruto (Kg)
+- Largura embalagem (cm)
+- Altura Embalagem (cm)
+- Comprimento embalagem (cm)
+
+Retorne APENAS um JSON válido no seguinte formato:
+{
+  "GTIN/EAN": "...",
+  "NCM (Classificação fiscal)": "...",
+  "Peso bruto (Kg)": 1.5,
+  "Largura embalagem": 20,
+  "Altura Embalagem": 15,
+  "Comprimento embalagem": 10,
+  "log_fontes": "Resumo muito conciso (máx 150 caracteres) das fontes utilizadas."
+}`;
+
+      const response = await getGeminiClient().models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: prompt,
+        config: { 
+          temperature: 0.2,
+          maxOutputTokens: 2048,
+          systemInstruction: "Você é um assistente de e-commerce. Seja extremamente conciso. Nunca gere textos longos ou repetitivos. O campo log_fontes deve ter no máximo 150 caracteres. RESPONDA APENAS COM O JSON PURO.",
+          tools: [{ googleSearch: {} }]
+        }
+      });
+
+      let text = response.text || '';
+      text = text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+
+      const usage = response.usageMetadata || { promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0 };
+      const parsed = JSON.parse(text || "{}");
+      res.json({
+        ...parsed,
+        _usage: {
+          promptTokens: usage.promptTokenCount,
+          completionTokens: usage.candidatesTokenCount,
+          totalTokens: usage.totalTokenCount
+        }
+      });
+    } catch (error: any) {
+      console.error("Backend error enriching product data:", error.message || error);
+      res.status(500).json({ error: handleGeminiError(error) });
+    }
+  });
+
   app.post("/api/upload", async (req, res) => {
     try {
       const { imageBase64, imageUrl, filename } = req.body;

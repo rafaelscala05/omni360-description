@@ -1,5 +1,17 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 @import "react-quill-new/dist/quill.snow.css";
+
+@theme {
+  --color-primary: #004ac6;
+  --color-sidebar: #0f172a;
+  --color-sidebar-active: #1e293b;
+  --color-surface-bg: #f7f9fb;
+}
+
+body {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
 
 .quill-editor-wrapper .ql-container {
   @apply rounded-b-lg border-gray-300;
