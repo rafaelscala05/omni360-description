@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, FileSpreadsheet, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu } from 'lucide-react';
+import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, FileSpreadsheet, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ImageSearchModal from './components/ImageSearchModal';
 import LoginLanding from './components/LoginLanding';
@@ -124,6 +124,9 @@ export default function App() {
   const [filterMarca, setFilterMarca] = useState('');
   const [filterCategoria, setFilterCategoria] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [hideGeneratedInImport, setHideGeneratedInImport] = useState(false);
+  const [hideEnrichedInImport, setHideEnrichedInImport] = useState(false);
+  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   
   // Generation State
   const [isGeneratingMass, setIsGeneratingMass] = useState(false);
@@ -602,17 +605,40 @@ export default function App() {
       // Only show parent or simple products in the main list
       if (p['Código do pai']) return false;
 
+      const hasError = 
+        !!p._generationError || 
+        p._statusDescricao === 'Erro' || 
+        p._statusSEO === 'Erro' ||
+        (p['Descrição']?.startsWith('Erro:') || false) ||
+        (p['Título SEO']?.startsWith('Erro:') || false);
+
       // Tab filter
       if (activeTab === 'processed') {
-        const isProcessed = 
-          p._statusDescricao === 'Gerado por IA' || 
-          p._statusSEO === 'Gerado por IA' || 
-          !!p._enrichmentLog ||
-          p.ownerId !== undefined;
-        if (!isProcessed) return false;
+        if (hasError) return false;
+
+        const hasGeneratedDescription = p._statusDescricao === 'Gerado por IA' || p._statusSEO === 'Gerado por IA';
+        const hasEnrichedData = !!p._enrichmentLog;
+        if (!hasGeneratedDescription && !hasEnrichedData) return false;
       }
       if (activeTab === 'errors') {
-        if (!p._generationError) return false;
+        if (!hasError) return false;
+      }
+      if (activeTab === 'all') {
+        const hasGeneratedDescription = p._statusDescricao === 'Gerado por IA' || p._statusSEO === 'Gerado por IA';
+        const hasEnrichedData = !!p._enrichmentLog;
+        
+        // Remove from spreadsheet / first step tab if both enriched and generated description content
+        if (hasGeneratedDescription && hasEnrichedData) {
+          return false;
+        }
+
+        // Additional toggles to hide individually
+        if (hideGeneratedInImport && hasGeneratedDescription) {
+          return false;
+        }
+        if (hideEnrichedInImport && hasEnrichedData) {
+          return false;
+        }
       }
 
       const matchesSearch = (p['Descrição']?.toLowerCase() || '').includes(searchQuery.toLowerCase()) || 
@@ -623,7 +649,7 @@ export default function App() {
       
       return matchesSearch && matchesMarca && matchesCategoria && matchesStatus;
     });
-  }, [products, searchQuery, filterMarca, filterCategoria, filterStatus, activeTab]);
+  }, [products, searchQuery, filterMarca, filterCategoria, filterStatus, activeTab, hideGeneratedInImport, hideEnrichedInImport]);
 
   const paginatedProducts = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -903,9 +929,15 @@ export default function App() {
   const handleExport = (modelToUse: 'standard' | 'tinyerp' = 'standard') => {
     if (products.length === 0) return;
 
+    const productsToExport = selectedIds.size > 0
+      ? products.filter(p => selectedIds.has(p._id))
+      : products;
+
+    if (productsToExport.length === 0) return;
+
     // Determine dynamic columns from all products
     const dynamicAttrs = new Set<string>();
-    products.forEach(p => {
+    productsToExport.forEach(p => {
       if (p.attributes) {
         Object.keys(p.attributes).forEach(k => dynamicAttrs.add(k));
       }
@@ -918,7 +950,7 @@ export default function App() {
       }
     });
 
-    const exportData = products.flatMap(p => {
+    const exportData = productsToExport.flatMap(p => {
       const rowsToExport = [];
       
       const prepareRow = (prod: Product) => {
@@ -2102,8 +2134,8 @@ export default function App() {
                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col flex-1 min-h-0 relative">
                   
                   {/* Toolbar */}
-                  <div className="px-5 py-3.5 flex flex-wrap items-center justify-between border-b border-slate-200 bg-white gap-3 rounded-t-xl shrink-0">
-                      <div className="flex items-center gap-2">
+                  <div className="px-5 py-3.5 flex flex-wrap items-center justify-between border-b border-slate-200 bg-white gap-3 rounded-t-xl shrink-0 relative z-30">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <select 
                           className="px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-700 font-medium focus:ring-[#004ac6] outline-none focus:border-[#004ac6] bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
                           value={filterMarca}
@@ -2120,7 +2152,71 @@ export default function App() {
                           <option value="">Todas as Categorias</option>
                           {categorias.map(m => <option key={m} value={m}>{m}</option>)}
                         </select>
-                        <div className="w-px h-5 bg-slate-200 mx-2"></div>
+
+                        {activeTab === 'all' && (
+                          <div className="relative inline-block text-left z-30">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsFilterDropdownOpen(!isFilterDropdownOpen);
+                                setIsColumnConfigOpen(false);
+                                setIsExportDropdownOpen(false);
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-700 font-medium focus:ring-[#004ac6] focus:border-[#004ac6] outline-none bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer select-none"
+                            >
+                              <Filter className="w-4 h-4 text-slate-500" />
+                              <span>Filtrar: Gerados / Enriquecidos</span>
+                              {((hideGeneratedInImport ? 1 : 0) + (hideEnrichedInImport ? 1 : 0)) > 0 ? (
+                                <span className="inline-flex items-center justify-center bg-[#004ac6] text-white rounded-md px-1.5 py-0.5 text-[10px] font-bold leading-none ml-1">
+                                  {hideGeneratedInImport && hideEnrichedInImport 
+                                    ? "Ambos" 
+                                    : hideGeneratedInImport 
+                                      ? "Sem Descrição" 
+                                      : "Sem Enriquecidos"
+                                  }
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 text-xs ml-1 font-normal">Nenhum</span>
+                              )}
+                              <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-0.5" />
+                            </button>
+
+                            {isFilterDropdownOpen && (
+                              <>
+                                <div 
+                                  className="fixed inset-0 z-30" 
+                                  onClick={() => setIsFilterDropdownOpen(false)} 
+                                />
+                                <div className="absolute left-0 mt-1.5 w-64 bg-white border border-slate-200 rounded-lg shadow-lg z-40 py-2 animate-in fade-in slide-in-from-top-1">
+                                  <div className="px-3.5 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                    Ocultar do Importador
+                                  </div>
+                                  <hr className="border-slate-100 my-1" />
+                                  <label className="flex items-center gap-2.5 px-3.5 py-2 cursor-pointer hover:bg-slate-50 transition-colors text-xs font-semibold text-slate-600 select-none">
+                                    <input 
+                                      type="checkbox" 
+                                      checked={hideGeneratedInImport} 
+                                      onChange={(e) => setHideGeneratedInImport(e.target.checked)} 
+                                      className="rounded border-slate-300 text-[#004ac6] focus:ring-[#004ac6] w-4 h-4 cursor-pointer"
+                                    />
+                                    <span>Esconder Já Gerado Descrição</span>
+                                  </label>
+                                  <label className="flex items-center gap-2.5 px-3.5 py-2 cursor-pointer hover:bg-slate-50 transition-colors text-xs font-semibold text-slate-600 select-none">
+                                    <input 
+                                      type="checkbox" 
+                                      checked={hideEnrichedInImport} 
+                                      onChange={(e) => setHideEnrichedInImport(e.target.checked)} 
+                                      className="rounded border-slate-300 text-[#004ac6] focus:ring-[#004ac6] w-4 h-4 cursor-pointer"
+                                    />
+                                    <span>Esconder Já Enriquecidos</span>
+                                  </label>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="w-px h-5 bg-slate-200 mx-1 sm:mx-2"></div>
                         <div className="text-xs text-slate-500 font-medium">{paginatedProducts.length} itens</div>
                       </div>
                      <div className="flex items-center gap-2 ml-auto relative">

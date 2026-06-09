@@ -59,6 +59,53 @@ function getGeminiClient(): GoogleGenAI {
   return aiClient;
 }
 
+// Helper function to call the Gemini API with automatic retry and model fallback (e.g. on 503 high demand error)
+async function generateContentWithFallback(params: {
+  model: string;
+  contents: any;
+  config?: any;
+}): Promise<any> {
+  let primaryModel = params.model || 'gemini-2.5-flash';
+  // If the user requested a specific image model, don't override it with text models
+  const isSpecialModel = primaryModel.includes('image') || primaryModel.includes('flash-8b');
+  const fallbackModel = isSpecialModel ? primaryModel : 'gemini-2.5-flash';
+  
+  let attempts = 0;
+  const maxAttempts = 3;
+  
+  while (attempts < maxAttempts) {
+    attempts++;
+    const currentModel = (!isSpecialModel && attempts === maxAttempts) ? fallbackModel : primaryModel;
+    try {
+      const client = getGeminiClient();
+      console.log(`[DEBUG] Calling Gemini. Model: ${currentModel}, Attempt: ${attempts}/${maxAttempts}`);
+      return await client.models.generateContent({
+        ...params,
+        model: currentModel
+      });
+    } catch (error: any) {
+      const errorStr = error.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
+      const is503 = errorStr.includes("503") || 
+                    errorStr.includes("UNAVAILABLE") || 
+                    errorStr.includes("high demand") || 
+                    errorStr.includes("temporarily") ||
+                    (error.status && error.status === 503) ||
+                    (error.code && error.code === 503);
+                    
+      console.warn(`[DEBUG] Attempt ${attempts}/${maxAttempts} failed. is503: ${is503}. Error: ${errorStr}`);
+      
+      if (is503 && attempts < maxAttempts) {
+        const delay = attempts * 1000;
+        console.log(`[DEBUG] Model is under high demand (503). Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      
+      throw error;
+    }
+  }
+}
+
 // Intercepts and parses Gemini API core errors to provide clear settings-based feedback
 function handleGeminiError(error: any): string {
   const errorMsg = error.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
@@ -267,9 +314,8 @@ ${attributeInstructions}`;
         }
       }
 
-      const aiClientInstance = getGeminiClient();
-      const response = await aiClientInstance.models.generateContent({
-        model: 'gemini-3.5-flash',
+      const response = await generateContentWithFallback({
+        model: 'gemini-2.5-flash',
         contents: { parts },
         config: { 
           temperature: 0.7,
@@ -363,8 +409,8 @@ Retorne EXATAMENTE neste formato JSON:
 Responda APENAS com o objeto JSON.
 `;
 
-      const response = await getGeminiClient().models.generateContent({
-        model: 'gemini-3.5-flash',
+      const response = await generateContentWithFallback({
+        model: 'gemini-2.5-flash',
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -423,8 +469,8 @@ Responda APENAS com o objeto JSON.
 
       const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
 
-      const response = await getGeminiClient().models.generateContent({
-        model: 'gemini-3.5-flash',
+      const response = await generateContentWithFallback({
+        model: 'gemini-2.5-flash',
         contents: [
           { inlineData: { mimeType: "image/jpeg", data: base64Data } },
           prompt
@@ -485,8 +531,8 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
 }
 `;
 
-      const response = await getGeminiClient().models.generateContent({
-        model: 'gemini-3.5-flash',
+      const response = await generateContentWithFallback({
+        model: 'gemini-2.5-flash',
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -523,7 +569,7 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
         if (location === 'global') {
           location = 'us-central1';
         }
-        const model = 'imagegeneration@006'; // Imagen 3 para edição
+        const model = 'imagen-3.0-capability-001'; // Imagen 3 para edição
         const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:predict`;
         
         // Remove 'data:image/...;base64,' prefix
@@ -540,6 +586,12 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
               {
                 prompt: ambientPrompt,
                 image: {
+                  bytesBase64Encoded: base64Clean 
+                },
+                context_image: {
+                  bytesBase64Encoded: base64Clean
+                },
+                contextImage: {
                   bytesBase64Encoded: base64Clean
                 }
               }
@@ -555,17 +607,39 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
 
         if (!vertexResponse.ok) {
            const err = await vertexResponse.text();
-           console.error("Vertex API ERRO:", err);
-           throw new Error(`Vertex API error: ${err}`);
-        }
-        
-        const vData = await vertexResponse.json();
-        if (vData.predictions && vData.predictions[0] && vData.predictions[0].bytesBase64Encoded) {
-           imageBase64 = `data:image/jpeg;base64,${vData.predictions[0].bytesBase64Encoded}`;
+           console.warn("Vertex API ERRO (Tentando fallback para flash-image):", err);
+           // Fallback to gemini-2.5-flash-image
+           const response = await generateContentWithFallback({
+              model: 'gemini-2.5-flash-image',
+              contents: {
+                parts: [
+                  {
+                    inlineData: {
+                      data: base64Data,
+                      mimeType: cleanMimeType,
+                    },
+                  },
+                  {
+                    text: ambientPrompt,
+                  },
+                ],
+              },
+            });
+            for (const part of response.candidates?.[0]?.content?.parts || []) {
+              if (part.inlineData) {
+                imageBase64 = `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
+                break;
+              }
+            }
+        } else {
+           const vData = await vertexResponse.json();
+           if (vData.predictions && vData.predictions[0] && vData.predictions[0].bytesBase64Encoded) {
+              imageBase64 = `data:image/jpeg;base64,${vData.predictions[0].bytesBase64Encoded}`;
+           }
         }
       } else {
         // Fluxo padrão Gemini Flash Image
-        const response = await getGeminiClient().models.generateContent({
+        const response = await generateContentWithFallback({
           model: 'gemini-2.5-flash-image',
           contents: {
             parts: [
@@ -641,8 +715,8 @@ Retorne APENAS um JSON válido no seguinte formato:
   "log_fontes": "Resumo muito conciso (máx 150 caracteres) das fontes utilizadas."
 }`;
 
-      const response = await getGeminiClient().models.generateContent({
-        model: 'gemini-3.5-flash',
+      const response = await generateContentWithFallback({
+        model: 'gemini-2.5-flash',
         contents: prompt,
         config: { 
           temperature: 0.2,
