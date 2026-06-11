@@ -186,6 +186,10 @@ export default function App() {
   const [isLoadingFromCloud, setIsLoadingFromCloud] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<{
+    isOpen: boolean;
+    type: 'selected' | 'all';
+  } | null>(null);
   const [showMassActionConfirm, setShowMassActionConfirm] = useState<{
     isOpen: boolean;
     type: 'generate' | 'enrich';
@@ -1535,6 +1539,40 @@ export default function App() {
     }, 3000);
   };
 
+  const handleDeleteSelected = () => {
+    if (selectedIds.size === 0) return;
+    setShowDeleteConfirm({ isOpen: true, type: 'selected' });
+  };
+
+  const handleDeleteAllInTab = () => {
+    if (filteredProducts.length === 0) return;
+    setShowDeleteConfirm({ isOpen: true, type: 'all' });
+  };
+
+  const processDelete = () => {
+    if (!showDeleteConfirm) return;
+    
+    if (showDeleteConfirm.type === 'selected') {
+      setProducts(prev => {
+        const next = prev.filter(p => !selectedIds.has(p._id));
+        skipNextChangeTrack.current = true;
+        return next;
+      });
+      setSelectedIds(new Set());
+    } else if (showDeleteConfirm.type === 'all') {
+      const idsToRemove = new Set(filteredProducts.map(p => p._id));
+      setProducts(prev => {
+        const next = prev.filter(p => !idsToRemove.has(p._id));
+        skipNextChangeTrack.current = true;
+        return next;
+      });
+      setSelectedIds(new Set());
+    }
+    
+    setHasUnsavedChanges(true);
+    setShowDeleteConfirm(null);
+  };
+
   const openPreview = (product: Product) => {
     setPreviewProduct(product);
     setEditedDescription(product['Descrição complementar'] || '');
@@ -2244,7 +2282,31 @@ export default function App() {
                           <span className="hidden sm:inline">Gerar ({selectedIds.size})</span>
                         </button>
                         
-                        <div className="w-px h-5 bg-slate-200 mx-2"></div>
+                        <button
+                          onClick={handleDeleteSelected}
+                          disabled={selectedIds.size === 0}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-red-600 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-50 hover:border-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                          title="Excluir Selecionados"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Excluir ({selectedIds.size})</span>
+                        </button>
+
+                        <div className="w-px h-5 bg-slate-200 mx-1 sm:mx-2"></div>
+
+                        {activeTab === 'all' && (
+                          <button
+                            onClick={handleDeleteAllInTab}
+                            disabled={filteredProducts.length === 0}
+                            className="flex items-center gap-1.5 p-1.5 sm:px-3 sm:py-1.5 bg-white text-red-600 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-50 hover:border-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                            title="Limpar Todos da Aba"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Limpar Aba</span>
+                          </button>
+                        )}
+                        
+                        <div className="w-px h-5 bg-slate-200 mx-1 sm:mx-2"></div>
                         
                         <button
                           onClick={() => {
@@ -2748,6 +2810,69 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {showDeleteConfirm && showDeleteConfirm.isOpen && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-gray-100"
+            >
+              <div className="p-6">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="p-3 rounded-xl bg-red-50 text-red-600">
+                    <Trash2 className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">
+                      Confirmar Exclusão
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      Esta ação removerá produtos da aba de importar.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-xl p-4 mb-6 space-y-3">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Produtos a excluir:</span>
+                    <span className="font-bold text-gray-900">
+                      {showDeleteConfirm.type === 'selected' ? selectedIds.size : filteredProducts.length}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Ação:</span>
+                    <span className="font-medium text-red-600 uppercase">
+                      Remover da lista
+                    </span>
+                  </div>
+                  <div className="border-t border-gray-200 pt-3 flex justify-between items-center text-sm text-gray-500">
+                    *Esta ação afetará apenas a lista de importação atual.
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowDeleteConfirm(null)}
+                    className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={processDelete}
+                    className="flex-1 px-4 py-3 text-white rounded-xl font-bold shadow-lg shadow-opacity-20 transition-all transform hover:scale-[1.02] active:scale-[0.98] bg-red-600 hover:bg-red-700 shadow-red-500"
+                  >
+                    Confirmar Exclusão
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Mass Action Confirmation Modal */}
       <AnimatePresence>

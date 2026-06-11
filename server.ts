@@ -607,30 +607,13 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
 
         if (!vertexResponse.ok) {
            const err = await vertexResponse.text();
-           console.warn("Vertex API ERRO (Tentando fallback para flash-image):", err);
-           // Fallback to gemini-2.5-flash-image
-           const response = await generateContentWithFallback({
-              model: 'gemini-2.5-flash-image',
-              contents: {
-                parts: [
-                  {
-                    inlineData: {
-                      data: base64Data,
-                      mimeType: cleanMimeType,
-                    },
-                  },
-                  {
-                    text: ambientPrompt,
-                  },
-                ],
-              },
-            });
-            for (const part of response.candidates?.[0]?.content?.parts || []) {
-              if (part.inlineData) {
-                imageBase64 = `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
-                break;
-              }
-            }
+           console.warn("Vertex API ERRO:", err);
+           let parsedErr = err;
+           try {
+              const p = JSON.parse(err);
+              if (p.error && p.error.message) parsedErr = p.error.message;
+           } catch (e) {}
+           throw new Error("Erro na Vertex API: " + parsedErr);
         } else {
            const vData = await vertexResponse.json();
            if (vData.predictions && vData.predictions[0] && vData.predictions[0].bytesBase64Encoded) {
@@ -638,30 +621,7 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
            }
         }
       } else {
-        // Fluxo padrão Gemini Flash Image
-        const response = await generateContentWithFallback({
-          model: 'gemini-2.5-flash-image',
-          contents: {
-            parts: [
-              {
-                inlineData: {
-                  data: base64Data,
-                  mimeType: cleanMimeType,
-                },
-              },
-              {
-                text: ambientPrompt,
-              },
-            ],
-          },
-        });
-
-        for (const part of response.candidates?.[0]?.content?.parts || []) {
-          if (part.inlineData) {
-            imageBase64 = `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
-            break;
-          }
-        }
+         throw new Error("Para geração de imagens (Ambientação do Produto), você precisa configurar o Vertex AI (VERTEX_PROJECT_ID) pois a edição de imagens requer o Vertex Imagen API.");
       }
 
       if (!imageBase64) {
