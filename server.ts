@@ -5,7 +5,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 dotenv.config({ override: true });
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, ThinkingLevel, Modality, HarmCategory, HarmBlockThreshold } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -547,108 +547,64 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
     }
   });
 
-  // 5. Generate Ambient Images (via Vertex AI Imagen REST API)
+  // 5. Generate Ambient Images (via Gemini image generation model)
   app.post("/api/gemini/generate-ambient-images", async (req, res) => {
     try {
       const { base64Data, mimeType, ambientPrompt, imageIndex = 0 } = req.body;
-      normalizeMimeType(mimeType || 'image/jpeg', 'image.png'); // validate/normalize
-
-      const projectId = process.env.VERTEX_PROJECT_ID;
-      if (!projectId) {
-        throw new Error("VERTEX_PROJECT_ID não configurado. Adicione-o ao arquivo .env.");
-      }
-
-      let location = process.env.VERTEX_LOCATION || 'us-central1';
-      if (location === 'global') location = 'us-central1';
-
-      const { GoogleAuth } = await import('google-auth-library');
-      const auth = new GoogleAuth({
-        scopes: ['https://www.googleapis.com/auth/cloud-platform']
-      });
-      const authClient = await auth.getClient();
-      const tokenResponse = await authClient.getAccessToken();
-      if (!tokenResponse.token) {
-        throw new Error("Não foi possível obter o token de acesso do Google Cloud. Execute 'gcloud auth application-default login' no terminal.");
-      }
+      const normalizedMime = normalizeMimeType(mimeType || 'image/jpeg', 'image.png');
 
       const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-      // imagen-3.0-capability-001 is the editing model supporting BGSWAP and SUBJECT_REFERENCE.
-      // imagen-4.0-capability-001 is not yet broadly available; imagen-4.0-generate-001 is pure generation.
-      const model = 'imagen-3.0-capability-001';
-      const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:predict`;
 
-      // Image 0 (Produto Ambientado): pass image directly (not as referenceImages) so BGSWAP
-      // composites the exact product pixels onto a new background — product stays pixel-perfect.
-      // Images 1 & 2 (with people): use REFERENCE_TYPE_SUBJECT so the model can generate a full
-      // scene with people while using the product image as a visual reference.
-      const isBgSwap = imageIndex === 0;
-      // BGSWAP: REFERENCE_TYPE_RAW is the "context_image" required for mask-free editing.
-      // The model auto-segments the foreground and replaces only the background.
-      // Images 1 & 2: REFERENCE_TYPE_SUBJECT tells the model to recreate the product
-      // appearance in a new scene that can include people.
-      const vertexPayload: any = isBgSwap
-        ? {
-            instances: [{
-              prompt: ambientPrompt,
-              referenceImages: [{
-                referenceId: 1,
-                referenceType: "REFERENCE_TYPE_RAW",
-                referenceImage: { bytesBase64Encoded: cleanBase64 }
-              }]
-            }],
-            parameters: {
-              sampleCount: 1,
-              editConfig: { editMode: "EDIT_MODE_BGSWAP" }
-            }
-          }
-        : {
-            instances: [{
-              prompt: ambientPrompt,
-              referenceImages: [{
-                referenceId: 1,
-                referenceType: "REFERENCE_TYPE_SUBJECT",
-                referenceImage: { bytesBase64Encoded: cleanBase64 },
-                subjectImageConfig: { subjectType: "SUBJECT_TYPE_PRODUCT" }
-              }]
-            }],
-            parameters: {
-              sampleCount: 1
-            }
-          };
-      console.log(`[DEBUG] imageIndex: ${imageIndex}, mode: ${isBgSwap ? 'BGSWAP (direct image)' : 'SUBJECT_REFERENCE'}`);
-      console.log(`[DEBUG] base64 length: ${cleanBase64.length}, url: ${url}`);
+      console.log(`[DEBUG] imageIndex: ${imageIndex}, model: gemini-3.1-flash-image`);
 
-      const vertexResponse = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${tokenResponse.token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(vertexPayload)
+      const client = getVertexClient();
+      const response = await client.models.generateContent({
+        model: 'gemini-3.1-flash-image',
+        contents: [{
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType: normalizedMime, data: cleanBase64 } },
+            { text: ambientPrompt }
+          ]
+        }],
+        config: {
+          temperature: 1,
+          topP: 0.95,
+          maxOutputTokens: 32768,
+          responseModalities: [Modality.IMAGE, Modality.TEXT],
+          safetySettings: [
+            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.OFF },
+            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.OFF },
+            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.OFF },
+            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.OFF }
+          ],
+          imageConfig: {
+            aspectRatio: '1:1',
+            imageSize: '1K',
+            outputMimeType: 'image/png'
+          },
+          thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL }
+        }
       });
 
-      if (!vertexResponse.ok) {
-        const errText = await vertexResponse.text();
-        console.error("Vertex API error response:", errText);
-        let errMsg = errText;
-        try {
-          const parsed = JSON.parse(errText);
-          if (parsed.error?.message) errMsg = parsed.error.message;
-        } catch (_) {}
-        const regionHint = vertexResponse.status === 404
-          ? ` Verifique se o Imagen 4 está disponível na região configurada em VERTEX_LOCATION (atual: "${process.env.VERTEX_LOCATION || 'us-central1'}"). Tente trocar para "us-central1".`
-          : '';
-        throw new Error(`Erro na Vertex API (${vertexResponse.status}): ${errMsg}${regionHint}`);
+      // Extract the image part from the response candidates
+      let imageData: string | null = null;
+      for (const candidate of response.candidates || []) {
+        for (const part of candidate.content?.parts || []) {
+          if ((part as any).inlineData?.data) {
+            imageData = (part as any).inlineData.data;
+            break;
+          }
+        }
+        if (imageData) break;
       }
 
-      const vData = await vertexResponse.json();
-      const prediction = vData.predictions?.[0];
-      if (!prediction?.bytesBase64Encoded) {
-        throw new Error("A Vertex API não retornou uma imagem. Resposta: " + JSON.stringify(vData));
+      if (!imageData) {
+        throw new Error("O modelo não retornou uma imagem. Tente novamente.");
       }
 
       res.json({
-        image: `data:image/jpeg;base64,${prediction.bytesBase64Encoded}`,
+        image: `data:image/png;base64,${imageData}`,
         usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
       });
     } catch (error: any) {
@@ -669,29 +625,21 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
         .filter(Boolean)
         .join(". ");
 
-      const prompt = `You are an expert in product photography and AI image generation for e-commerce.
+      const prompt = `You are an expert in product photography for e-commerce. Your task is to write 3 image transformation instructions in ENGLISH for a generative AI model (gemini-3.1-flash-image). The model receives the product image directly, so you must NOT describe the product's appearance — focus entirely on what should change in the scene.
 
-${base64Data ? 'Analyze the product image provided and use your visual observation as the primary source of truth.' : ''}
-Use the following product information as additional context: ${productContext}
+${base64Data ? 'Analyze the product image provided to understand what kind of product it is and what realistic use cases apply.' : ''}
+Product context: ${productContext}
 
-Your task is to generate 3 image generation prompts in ENGLISH for use with Google Imagen 4.
+Generate 3 transformation instructions following this exact order and format:
 
-${base64Data ? `Step 1 — Visual analysis: Carefully observe the product in the image and identify:
-- Primary and secondary colors with finish (matte, glossy, metallic, transparent, etc.)
-- Materials visible (plastic, metal, fabric, wood, glass, rubber, etc.)
-- Shape and form factor
-- Distinctive visual features: logo placement, patterns, textures, unique design elements
+Instruction 0 — Background swap: Tell the model to keep the product exactly as-is and replace only the background. Describe the new environment (scene, lighting, props, atmosphere) in vivid, cinematic detail. The product must remain unchanged and centered. Example: "Keep the product exactly as-is. Replace the background with a modern kitchen countertop — white marble surface, warm golden hour light from a side window, a linen cloth and fresh herbs nearby, soft bokeh background."
 
-Step 2 — ` : ''}Generate 3 prompts following this exact order and format. Prompts 1 and 2 MUST embed the specific visual attributes${base64Data ? ' from your Step 1 analysis' : ' of the product'} so Google Imagen recreates the exact same product appearance.
+Instruction 1 — Lifestyle scene with person: Tell the model to create a scene showing a person naturally using or interacting with the product. Describe the person (age range, style), the action, the environment, and the lighting. The product must remain visually identical to the input image. Example: "Show a woman in her late 20s, casual style, using this product at a bright café table near a window. Natural afternoon light. The product should look identical to the input image."
 
-Prompt 0 — Background replacement (BGSWAP mode): Describe ONLY the new background environment. Do NOT describe the product — it will be composited pixel-perfect from the reference image. Focus on: the scene/setting, lighting quality and direction, surrounding objects, context of use, atmosphere. Be specific and cinematic.
-
-Prompt 1 — Product in use: A person using the product naturally in everyday life. MUST explicitly include the product's visual appearance (e.g. "same matte black aluminum bottle with red logo and silver cap"). Describe: the person (age range, casual/professional), the action, the environment, the lighting, the mood. The product must look identical to the reference.
-
-Prompt 2 — Scale reference: A person holding or standing next to the product to clearly show its real size. MUST explicitly include the product's visual appearance. Use a clean neutral background. Focus on the size proportion between person and product. The product must look identical to the reference.
+Instruction 2 — Scale reference: Tell the model to show a person holding or standing next to the product against a clean neutral background, clearly showing the product's real size. The product must remain visually identical to the input image. Example: "Show a person's hands holding this product against a clean white studio background. The product must look identical to the input image. Focus on showing the real size of the product clearly."
 
 Return ONLY valid JSON with this exact structure, no markdown, no explanations:
-{"prompts": ["prompt0", "prompt1", "prompt2"], "productDescription": "concise visual description of the product (colors, materials, key features)"}`;
+{"prompts": ["instruction0", "instruction1", "instruction2"], "productDescription": "concise visual description of the product (colors, materials, key features)"}`;
 
       const parts: any[] = [];
       if (base64Data) {
