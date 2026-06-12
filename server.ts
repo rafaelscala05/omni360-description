@@ -691,8 +691,6 @@ Prompt 2 — Scale reference: A person holding or standing next to the product t
 Return ONLY valid JSON with this exact structure, no markdown, no explanations:
 {"prompts": ["prompt0", "prompt1", "prompt2"], "productDescription": "concise visual description of the product (colors, materials, key features)"}`;
 
-      const client = getVertexClient();
-
       const parts: any[] = [];
       if (base64Data) {
         const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
@@ -700,7 +698,7 @@ Return ONLY valid JSON with this exact structure, no markdown, no explanations:
       }
       parts.push({ text: prompt });
 
-      const response = await client.models.generateContent({
+      const response = await generateContentWithFallback({
         model: 'gemini-2.5-flash',
         contents: [{ role: "user", parts }],
         config: { responseMimeType: "application/json" }
