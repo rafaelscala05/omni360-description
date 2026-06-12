@@ -572,9 +572,9 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
       }
 
       const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-      // imagen-4.0-capability-001 handles editing ops (BGSWAP, SUBJECT_REFERENCE).
-      // imagen-4.0-generate-001 is pure text-to-image and does not support referenceImages.
-      const model = 'imagen-4.0-capability-001';
+      // imagen-3.0-capability-001 is the editing model supporting BGSWAP and SUBJECT_REFERENCE.
+      // imagen-4.0-capability-001 is not yet broadly available; imagen-4.0-generate-001 is pure generation.
+      const model = 'imagen-3.0-capability-001';
       const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:predict`;
 
       // Image 0 (Produto Ambientado): pass image directly (not as referenceImages) so BGSWAP
