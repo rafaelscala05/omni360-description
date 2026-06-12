@@ -658,7 +658,7 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
   // 6. Generate Ambient Image Prompts via Gemini
   app.post("/api/gemini/generate-ambient-prompts", async (req, res) => {
     try {
-      const { productName, brand, category, description } = req.body;
+      const { productName, brand, category, description, base64Data, mimeType } = req.body;
       if (!productName) {
         return res.status(400).json({ error: "productName é obrigatório." });
       }
@@ -667,30 +667,47 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
         .filter(Boolean)
         .join(". ");
 
-      const prompt = `Você é especialista em criação de imagens de produto para e-commerce. Com base nas informações do produto abaixo, gere 3 prompts criativos e específicos em português para serem usados em geração de imagens com IA.
+      const prompt = `You are an expert in product photography and AI image generation for e-commerce.
 
-Produto: ${productContext}
+${base64Data ? 'Analyze the product image provided and use your visual observation as the primary source of truth.' : ''}
+Use the following product information as additional context: ${productContext}
 
-Cada prompt deve descrever uma cena diferente, mantendo o produto como o foco central. Os 3 prompts devem seguir exatamente esta ordem e estilo:
+Your task is to generate 3 image generation prompts in ENGLISH for use with Google Imagen 4.
 
-1. **Produto Ambientado**: O produto inserido em um cenário realista e contextualizado ao seu uso natural (sem pessoas). Descreva o ambiente, iluminação, materiais ao redor, contexto de uso.
+${base64Data ? `Step 1 — Visual analysis: Carefully observe the product in the image and identify:
+- Primary and secondary colors with finish (matte, glossy, metallic, transparent, etc.)
+- Materials visible (plastic, metal, fabric, wood, glass, rubber, etc.)
+- Shape and form factor
+- Distinctive visual features: logo placement, patterns, textures, unique design elements
 
-2. **Produto em Uso**: Uma pessoa utilizando o produto de forma natural e cotidiana. Descreva quem usa, como usa, o ambiente ao redor, a expressão ou postura da pessoa.
+Step 2 — ` : ''}Generate 3 prompts following this exact order and format. Prompts 1 and 2 MUST embed the specific visual attributes${base64Data ? ' from your Step 1 analysis' : ' of the product'} so Google Imagen recreates the exact same product appearance.
 
-3. **Escala e Tamanho**: Uma pessoa segurando ou posicionada muito próxima ao produto para mostrar claramente o tamanho real do produto. Fundo neutro ou discreto, foco na proporção produto/pessoa.
+Prompt 0 — Background replacement (BGSWAP mode): Describe ONLY the new background environment. Do NOT describe the product — it will be composited pixel-perfect from the reference image. Focus on: the scene/setting, lighting quality and direction, surrounding objects, context of use, atmosphere. Be specific and cinematic.
 
-Retorne APENAS um JSON válido com esta estrutura exata, sem markdown, sem explicações:
-{"prompts": ["prompt1", "prompt2", "prompt3"]}`;
+Prompt 1 — Product in use: A person using the product naturally in everyday life. MUST explicitly include the product's visual appearance (e.g. "same matte black aluminum bottle with red logo and silver cap"). Describe: the person (age range, casual/professional), the action, the environment, the lighting, the mood. The product must look identical to the reference.
 
-      const vertexClient = getVertexClient();
-      const response = await vertexClient.models.generateContent({
+Prompt 2 — Scale reference: A person holding or standing next to the product to clearly show its real size. MUST explicitly include the product's visual appearance. Use a clean neutral background. Focus on the size proportion between person and product. The product must look identical to the reference.
+
+Return ONLY valid JSON with this exact structure, no markdown, no explanations:
+{"prompts": ["prompt0", "prompt1", "prompt2"], "productDescription": "concise visual description of the product (colors, materials, key features)"}`;
+
+      const client = getVertexClient();
+
+      const parts: any[] = [];
+      if (base64Data) {
+        const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+        parts.push({ inlineData: { mimeType: mimeType || 'image/jpeg', data: cleanBase64 } });
+      }
+      parts.push({ text: prompt });
+
+      const response = await client.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        contents: [{ role: "user", parts }],
         config: { responseMimeType: "application/json" }
       });
 
       const raw = response.text?.trim() || "{}";
-      let parsed: { prompts?: string[] };
+      let parsed: { prompts?: string[]; productDescription?: string };
       try {
         parsed = JSON.parse(raw);
       } catch {
@@ -702,7 +719,7 @@ Retorne APENAS um JSON válido com esta estrutura exata, sem markdown, sem expli
         throw new Error("Gemini não retornou 3 prompts no formato esperado.");
       }
 
-      res.json({ prompts: parsed.prompts });
+      res.json({ prompts: parsed.prompts, productDescription: parsed.productDescription || '' });
     } catch (error: any) {
       console.error("Backend error generating ambient prompts:", error.message || error);
       res.status(500).json({ error: error.message || "Erro desconhecido ao gerar prompts." });
