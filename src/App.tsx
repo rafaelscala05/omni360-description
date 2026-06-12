@@ -2999,6 +2999,7 @@ Retorne APENAS um JSON válido no seguinte formato:
         isOpen={isImageSearchModalOpen}
         onClose={() => setIsImageSearchModalOpen(false)}
         product={currentImageSearchProduct}
+        uid={user?.uid || ''}
         onSave={handleSaveImages}
         credits={credits}
         consumeCredit={consumeCredit}

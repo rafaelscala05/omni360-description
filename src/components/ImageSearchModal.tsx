@@ -3,12 +3,15 @@ import { X, Search, Image as ImageIcon, Loader2, Download, ExternalLink, Refresh
 import { Product } from '../types/models';
 import { fetchAndProcessImage } from '../utils/imageUtils';
 import { generateImage, generateJson } from '../services/aiService';
+import { storage } from '../firebase';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import type { Part } from 'firebase/ai';
 
 interface ImageSearchModalProps {
   isOpen: boolean;
   onClose: () => void;
   product: Product | null;
+  uid: string;
   onSave: (productId: string, selectedImage: string, ambientImages: string[], tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number }) => void;
   credits: number;
   consumeCredit: (actionType: string, productName?: string, sku?: string) => Promise<boolean>;
@@ -71,7 +74,7 @@ Return ONLY valid JSON with this exact structure, no markdown, no explanations:
   return { prompts: parsed.prompts, productDescription: parsed.productDescription || '' };
 }
 
-export default function ImageSearchModal({ isOpen, onClose, product, onSave, credits, consumeCredit }: ImageSearchModalProps) {
+export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave, credits, consumeCredit }: ImageSearchModalProps) {
   const [step, setStep] = useState<'search' | 'ambient'>('search');
   const [selectedImageUrl, setSelectedImageUrl] = useState<string>('');
 
@@ -194,24 +197,34 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
     }
   };
 
+  // Uploads an image (data URL or external URL) to Firebase Storage and returns a public download URL.
+  // External URLs are fetched/normalized client-side first (handles CORS via proxies in fetchAndProcessImage).
   const uploadImage = async (base64OrUrl: string, filename: string): Promise<string> => {
     try {
-      const payload: any = { filename };
-      if (base64OrUrl.startsWith('data:')) payload.imageBase64 = base64OrUrl;
-      else payload.imageUrl = base64OrUrl;
+      // Already a persistent Firebase Storage URL — nothing to re-upload.
+      if (base64OrUrl.includes('firebasestorage.googleapis.com')) {
+        return base64OrUrl;
+      }
 
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      let dataUrl: string;
+      if (base64OrUrl.startsWith('data:')) {
+        dataUrl = base64OrUrl;
+      } else {
+        // External URL (e.g. TinyERP S3): fetch + normalize to JPEG base64 via proxies.
+        const { base64Data, mimeType } = await fetchAndProcessImage(base64OrUrl);
+        dataUrl = `data:${mimeType};base64,${base64Data}`;
+      }
 
-      if (!response.ok) throw new Error('Falha ao enviar imagem para /api/upload');
-      const data = await response.json();
-      return data.url;
+      const safeName = filename.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const ext = dataUrl.startsWith('data:image/png') ? 'png' : 'jpg';
+      const path = `users/${uid}/product-images/${safeName}_${Date.now()}.${ext}`;
+      const storageRef = ref(storage, path);
+
+      await uploadString(storageRef, dataUrl, 'data_url');
+      return await getDownloadURL(storageRef);
     } catch (error) {
-      console.error('Error uploading image:', error);
-      return base64OrUrl;
+      console.error('Error uploading image to Firebase Storage:', error);
+      throw error;
     }
   };
 
@@ -227,6 +240,9 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
         );
         onSave(product._id, finalSelectedImage, finalAmbientImages.filter(Boolean), tokenUsage.totalTokens > 0 ? tokenUsage : undefined);
         handleClose();
+      } catch (error: any) {
+        console.error('Erro ao salvar imagens:', error);
+        alert(`Erro ao salvar as imagens no Firebase Storage: ${error?.message || 'erro desconhecido'}. Verifique se o Firebase Storage está habilitado e se as regras permitem upload.`);
       } finally {
         setIsSaving(false);
       }
