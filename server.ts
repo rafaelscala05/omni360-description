@@ -696,7 +696,7 @@ Return ONLY valid JSON with this exact structure, no markdown, no explanations:
       const parts: any[] = [];
       if (base64Data) {
         const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-        parts.push({ inlineData: { mimeType: mimeType || 'image/jpeg', data: cleanBase64 } });
+        parts.push({ inlineData: { mimeType: normalizeMimeType(mimeType || '', 'upload'), data: cleanBase64 } });
       }
       parts.push({ text: prompt });
 
