@@ -230,7 +230,7 @@ async function fetchImageAsBase64(url: string): Promise<{ mimeType: string, data
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = parseInt(process.env.PORT || '3000', 10);
 
   // Increase payload limit for base64 images
   app.use(express.json({ limit: '50mb' }));
@@ -547,105 +547,169 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
     }
   });
 
-  // 5. Generate Ambient Images
+  // 5. Generate Ambient Images (via Vertex AI Imagen REST API)
   app.post("/api/gemini/generate-ambient-images", async (req, res) => {
     try {
-      const { base64Data, mimeType, ambientPrompt } = req.body;
-      const cleanMimeType = normalizeMimeType(mimeType || 'image/jpeg', 'image.png');
+      const { base64Data, mimeType, ambientPrompt, imageIndex = 0 } = req.body;
+      normalizeMimeType(mimeType || 'image/jpeg', 'image.png'); // validate/normalize
 
-      let imageBase64 = null;
-      if (process.env.VERTEX_PROJECT_ID) {
-        // Fluxo utilizando APIs REST do Vertex AI (Imagen)
-        const { GoogleAuth } = await import('google-auth-library');
-        const auth = new GoogleAuth({
-          scopes: ['https://www.googleapis.com/auth/cloud-platform']
-        });
-        const client = await auth.getClient();
-        const accessToken = await client.getAccessToken();
-        
-        const projectId = process.env.VERTEX_PROJECT_ID;
-        let location = process.env.VERTEX_LOCATION || 'us-central1';
-        // Modelos Imagen requerem endpoint regional, não suportam 'global'
-        if (location === 'global') {
-          location = 'us-central1';
-        }
-        const model = 'imagen-3.0-capability-001'; // Imagen 3 para edição
-        const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:predict`;
-        
-        // Remove 'data:image/...;base64,' prefix
-        const base64Clean = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+      const projectId = process.env.VERTEX_PROJECT_ID;
+      if (!projectId) {
+        throw new Error("VERTEX_PROJECT_ID não configurado. Adicione-o ao arquivo .env.");
+      }
 
-        const vertexResponse = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken.token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            instances: [
-              {
-                prompt: ambientPrompt,
-                image: {
-                  bytesBase64Encoded: base64Clean 
-                },
-                context_image: {
-                  bytesBase64Encoded: base64Clean
-                },
-                contextImage: {
-                  bytesBase64Encoded: base64Clean
-                }
-              }
-            ],
+      let location = process.env.VERTEX_LOCATION || 'us-central1';
+      if (location === 'global') location = 'us-central1';
+
+      const { GoogleAuth } = await import('google-auth-library');
+      const auth = new GoogleAuth({
+        scopes: ['https://www.googleapis.com/auth/cloud-platform']
+      });
+      const authClient = await auth.getClient();
+      const tokenResponse = await authClient.getAccessToken();
+      if (!tokenResponse.token) {
+        throw new Error("Não foi possível obter o token de acesso do Google Cloud. Execute 'gcloud auth application-default login' no terminal.");
+      }
+
+      const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+      const model = 'imagen-4.0-generate-001';
+      const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:predict`;
+
+      // Image 0 (Produto Ambientado): pass image directly (not as referenceImages) so BGSWAP
+      // composites the exact product pixels onto a new background — product stays pixel-perfect.
+      // Images 1 & 2 (with people): use REFERENCE_TYPE_SUBJECT so the model can generate a full
+      // scene with people while using the product image as a visual reference.
+      const isBgSwap = imageIndex === 0;
+      // BGSWAP: REFERENCE_TYPE_RAW is the "context_image" required for mask-free editing.
+      // The model auto-segments the foreground and replaces only the background.
+      // Images 1 & 2: REFERENCE_TYPE_SUBJECT tells the model to recreate the product
+      // appearance in a new scene that can include people.
+      const vertexPayload: any = isBgSwap
+        ? {
+            instances: [{
+              prompt: ambientPrompt,
+              referenceImages: [{
+                referenceId: 1,
+                referenceType: "REFERENCE_TYPE_RAW",
+                referenceImage: { bytesBase64Encoded: cleanBase64 }
+              }]
+            }],
             parameters: {
               sampleCount: 1,
-              editConfig: {
-                editMode: "PRODUCT_IMAGE"
-              }
+              editConfig: { editMode: "EDIT_MODE_BGSWAP" }
             }
-          })
-        });
+          }
+        : {
+            instances: [{
+              prompt: ambientPrompt,
+              referenceImages: [{
+                referenceId: 1,
+                referenceType: "REFERENCE_TYPE_SUBJECT",
+                referenceImage: { bytesBase64Encoded: cleanBase64 },
+                subjectImageConfig: { subjectType: "SUBJECT_TYPE_PRODUCT" }
+              }]
+            }],
+            parameters: {
+              sampleCount: 1
+            }
+          };
+      console.log(`[DEBUG] imageIndex: ${imageIndex}, mode: ${isBgSwap ? 'BGSWAP (direct image)' : 'SUBJECT_REFERENCE'}`);
+      console.log(`[DEBUG] base64 length: ${cleanBase64.length}, url: ${url}`);
 
-        if (!vertexResponse.ok) {
-           const err = await vertexResponse.text();
-           console.warn("Vertex API ERRO:", err);
-           let parsedErr = err;
-           try {
-              const p = JSON.parse(err);
-              if (p.error && p.error.message) parsedErr = p.error.message;
-           } catch (e) {}
-           throw new Error("Erro na Vertex API: " + parsedErr);
-        } else {
-           const vData = await vertexResponse.json();
-           if (vData.predictions && vData.predictions[0] && vData.predictions[0].bytesBase64Encoded) {
-              imageBase64 = `data:image/jpeg;base64,${vData.predictions[0].bytesBase64Encoded}`;
-           }
-        }
-      } else {
-         throw new Error("Para geração de imagens (Ambientação do Produto), você precisa configurar o Vertex AI (VERTEX_PROJECT_ID) pois a edição de imagens requer o Vertex Imagen API.");
+      const vertexResponse = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${tokenResponse.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(vertexPayload)
+      });
+
+      if (!vertexResponse.ok) {
+        const errText = await vertexResponse.text();
+        console.error("Vertex API error response:", errText);
+        let errMsg = errText;
+        try {
+          const parsed = JSON.parse(errText);
+          if (parsed.error?.message) errMsg = parsed.error.message;
+        } catch (_) {}
+        const regionHint = vertexResponse.status === 404
+          ? ` Verifique se o Imagen 4 está disponível na região configurada em VERTEX_LOCATION (atual: "${process.env.VERTEX_LOCATION || 'us-central1'}"). Tente trocar para "us-central1".`
+          : '';
+        throw new Error(`Erro na Vertex API (${vertexResponse.status}): ${errMsg}${regionHint}`);
       }
 
-      if (!imageBase64) {
-        throw new Error("No image was returned by the AI.");
+      const vData = await vertexResponse.json();
+      const prediction = vData.predictions?.[0];
+      if (!prediction?.bytesBase64Encoded) {
+        throw new Error("A Vertex API não retornou uma imagem. Resposta: " + JSON.stringify(vData));
       }
-
-      // Usage mock para Vertex, pois a API REST não retorna tokens de imagem diretamente
-      const usage = { promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0 };
 
       res.json({
-        image: imageBase64,
-        usage: {
-          promptTokens: usage.promptTokenCount,
-          completionTokens: usage.candidatesTokenCount,
-          totalTokens: usage.totalTokenCount
-        }
+        image: `data:image/jpeg;base64,${prediction.bytesBase64Encoded}`,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
       });
     } catch (error: any) {
       console.error("Backend error generating ambient images:", error.message || error);
-      res.status(500).json({ error: handleGeminiError(error) });
+      res.status(500).json({ error: error.message || "Erro desconhecido ao gerar imagem." });
     }
   });
 
-  // 6. Enrich Product Data
+  // 6. Generate Ambient Image Prompts via Gemini
+  app.post("/api/gemini/generate-ambient-prompts", async (req, res) => {
+    try {
+      const { productName, brand, category, description } = req.body;
+      if (!productName) {
+        return res.status(400).json({ error: "productName é obrigatório." });
+      }
+
+      const productContext = [productName, brand, category, description]
+        .filter(Boolean)
+        .join(". ");
+
+      const prompt = `Você é especialista em criação de imagens de produto para e-commerce. Com base nas informações do produto abaixo, gere 3 prompts criativos e específicos em português para serem usados em geração de imagens com IA.
+
+Produto: ${productContext}
+
+Cada prompt deve descrever uma cena diferente, mantendo o produto como o foco central. Os 3 prompts devem seguir exatamente esta ordem e estilo:
+
+1. **Produto Ambientado**: O produto inserido em um cenário realista e contextualizado ao seu uso natural (sem pessoas). Descreva o ambiente, iluminação, materiais ao redor, contexto de uso.
+
+2. **Produto em Uso**: Uma pessoa utilizando o produto de forma natural e cotidiana. Descreva quem usa, como usa, o ambiente ao redor, a expressão ou postura da pessoa.
+
+3. **Escala e Tamanho**: Uma pessoa segurando ou posicionada muito próxima ao produto para mostrar claramente o tamanho real do produto. Fundo neutro ou discreto, foco na proporção produto/pessoa.
+
+Retorne APENAS um JSON válido com esta estrutura exata, sem markdown, sem explicações:
+{"prompts": ["prompt1", "prompt2", "prompt3"]}`;
+
+      const vertexClient = getVertexClient();
+      const response = await vertexClient.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      const raw = response.text?.trim() || "{}";
+      let parsed: { prompts?: string[] };
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        const match = raw.match(/\{[\s\S]*\}/);
+        parsed = match ? JSON.parse(match[0]) : {};
+      }
+
+      if (!Array.isArray(parsed.prompts) || parsed.prompts.length !== 3) {
+        throw new Error("Gemini não retornou 3 prompts no formato esperado.");
+      }
+
+      res.json({ prompts: parsed.prompts });
+    } catch (error: any) {
+      console.error("Backend error generating ambient prompts:", error.message || error);
+      res.status(500).json({ error: error.message || "Erro desconhecido ao gerar prompts." });
+    }
+  });
+
+  // 7. Enrich Product Data
   app.post("/api/gemini/enrich-product-data", async (req, res) => {
     try {
       const { product } = req.body;
