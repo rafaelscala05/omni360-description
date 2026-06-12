@@ -558,7 +558,7 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
       console.log(`[DEBUG] imageIndex: ${imageIndex}, model: gemini-3.1-flash-image`);
 
       const client = getVertexClient();
-      const response = await client.models.generateContent({
+      const generateParams = {
         model: 'gemini-3.1-flash-image',
         contents: [{
           role: 'user',
@@ -585,7 +585,27 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
           },
           thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL }
         }
-      });
+      };
+
+      let response: any;
+      const maxAttempts = 4;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          console.log(`[DEBUG] gemini-3.1-flash-image attempt ${attempt}/${maxAttempts}`);
+          response = await client.models.generateContent(generateParams);
+          break;
+        } catch (err: any) {
+          const msg = err.message || String(err);
+          const is503 = msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('high demand') || (err.status === 503);
+          if (is503 && attempt < maxAttempts) {
+            const delay = attempt * 3000;
+            console.log(`[DEBUG] 503 on attempt ${attempt}, retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            throw err;
+          }
+        }
+      }
 
       // Extract the image part from the response candidates
       let imageData: string | null = null;
