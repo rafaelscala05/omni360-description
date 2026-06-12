@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { X, Search, Image as ImageIcon, Loader2, Download, ExternalLink, RefreshCw } from 'lucide-react';
 import { Product } from '../types/models';
-import { storage } from '../firebase';
-import { ref, getBlob } from 'firebase/storage';
+import { fetchAndProcessImage } from '../utils/imageUtils';
+import { generateImage, generateJson } from '../services/aiService';
+import type { Part } from 'firebase/ai';
 
 interface ImageSearchModalProps {
   isOpen: boolean;
@@ -14,6 +15,61 @@ interface ImageSearchModalProps {
 }
 
 const IMAGE_TITLES = ['Produto Ambientado', 'Produto em Uso', 'Escala e Tamanho'];
+
+interface AmbientPromptContext {
+  productName: string;
+  brand?: string;
+  category?: string;
+  description?: string;
+}
+
+// Generates 3 English ambient-image transformation instructions from the product context + image.
+async function generateAmbientPrompts(
+  ctx: AmbientPromptContext,
+  base64Data?: string,
+  mimeType?: string,
+): Promise<{ prompts: string[]; productDescription: string }> {
+  const productContext = [ctx.productName, ctx.brand, ctx.category, ctx.description]
+    .filter(Boolean)
+    .join('. ');
+
+  const prompt = `You are a senior commercial photographer and art director for premium e-commerce brands. Your task is to write 3 image transformation instructions in ENGLISH for a generative AI model (gemini-2.5-flash-image). The model receives the product image directly, so you must NOT describe the product's appearance — focus entirely on what should change in the scene.
+
+${base64Data ? 'Analyze the product image provided to understand exactly what this product is, who uses it, where it is realistically used, and what surfaces/objects/environments naturally surround it in real life.' : ''}
+Product context: ${productContext}
+
+CRITICAL REALISM RULES (apply to ALL instructions):
+- The scene must be SPECIFIC to THIS product and its real-world use context — never generic. Reason from the product: a power tool belongs on a workbench with sawdust, not a marble countertop; a skincare serum belongs on a bathroom shelf with morning light, not a kitchen.
+- The result must look like a REAL photograph taken by a professional, NOT an AI render. Demand photographic authenticity: natural and slightly uneven lighting, real soft shadows and contact shadows under the product, subtle surface imperfections (dust, fingerprints, wear, scratches, texture), shallow depth of field with realistic lens bokeh, true-to-life color and white balance, no plastic-perfect surfaces, no symmetrical CGI cleanliness.
+- Specify a real camera look: e.g. shot on a 50mm or 85mm lens, f/2.0, natural window light or practical lighting, photojournalistic / lifestyle editorial style.
+- Avoid clichés (marble countertop, generic golden hour, floating product, empty studio) unless they genuinely fit the product.
+
+Generate 3 transformation instructions following this exact order and format:
+
+Instruction 0 — Realistic in-context scene: Keep the product exactly as-is (do NOT alter the product), and place it into a believable, lived-in environment where THIS specific product is actually used or displayed, chosen from the product description and category. Build a rich but natural scene: the right surface/material, contextually relevant props that a real owner would have nearby, realistic ambient lighting with direction and soft shadows, and a sense of depth (foreground/background). The product must sit naturally in the scene with a grounded contact shadow — not floating, not centered like a catalog cutout. Make it look like a candid photo from a real home/workspace/store, captured on a 50mm lens at f/2.2 with natural light. Example for a leather wallet: "Keep the product exactly as-is. Place it on a worn wooden café table next to a set of car keys, a folded newspaper and a half-finished espresso, warm morning window light from the left casting a soft natural shadow, shallow depth of field, blurred background of a cozy café interior, shot on 50mm f/2.2, candid lifestyle photograph, photorealistic with subtle surface texture and no AI artifacts."
+
+Instruction 1 — Authentic lifestyle scene with person: Keep the product visually identical to the input image, and show a real-looking person who genuinely belongs to THIS product's target audience naturally using or interacting with it in the right real-world moment (derive the person, action and setting from the product description and category). Make the person look real and candid — natural skin texture and pores, realistic hands and fingers actually gripping/touching the product with correct scale, relaxed unposed body language, everyday authentic clothing that fits the context, no model-perfect stock-photo smile. Build a believable environment around the action with depth and contextual props, motivated natural lighting with soft directional shadows. Capture it as a documentary/lifestyle editorial frame on an 85mm lens at f/2.0, shallow depth of field, true-to-life colors, no AI artifacts. The product must look identical to the input image. Example for running shoes: "Keep the product identical to the input image. Show a man in his early 30s in casual athletic wear lacing up this shoe on his foot while sitting on a city park bench at golden hour, sweat on his skin, real hands with natural detail, blurred green park background, motivated warm side light with a soft shadow, shot on 85mm f/2.0, candid documentary lifestyle photograph, photorealistic, no AI artifacts."
+
+Instruction 2 — Realistic scale reference: Keep the product visually identical to the input image, and show a real person's hands (or the person next to it) holding or interacting with the product to communicate its true real-world size and proportions. Use a clean but NOT artificial setting — a simple real surface or softly blurred everyday background, never an empty CGI void. Demand realistic human hands with correct anatomy, natural skin texture and accurate scale relative to the product, soft natural lighting with a grounded contact shadow. Shoot it like a real close-up product photo on a 50mm lens at f/2.8, photorealistic, no AI artifacts. The product must look identical to the input image and its size must read clearly. Example: "Keep the product identical to the input image. Show a woman's hands with natural skin texture holding this product at chest height over a softly blurred light wooden desk, neutral daylight from a window, soft contact shadow, correct real-life scale, shot on 50mm f/2.8, photorealistic close-up, no AI artifacts, the product clearly showing its real size."
+
+Return ONLY valid JSON with this exact structure, no markdown, no explanations:
+{"prompts": ["instruction0", "instruction1", "instruction2"], "productDescription": "concise visual description of the product (colors, materials, key features)"}`;
+
+  const parts: Part[] = [];
+  if (base64Data) {
+    const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+    parts.push({ inlineData: { mimeType: mimeType || 'image/jpeg', data: cleanBase64 } });
+  }
+  parts.push({ text: prompt });
+
+  const parsed = await generateJson(parts);
+
+  if (!Array.isArray(parsed.prompts) || parsed.prompts.length !== 3) {
+    throw new Error('A IA não retornou 3 prompts no formato esperado.');
+  }
+
+  return { prompts: parsed.prompts, productDescription: parsed.productDescription || '' };
+}
 
 export default function ImageSearchModal({ isOpen, onClose, product, onSave, credits, consumeCredit }: ImageSearchModalProps) {
   const [step, setStep] = useState<'search' | 'ambient'>('search');
@@ -44,119 +100,10 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
     window.open(url, '_blank');
   };
 
-  const fetchAndProcessImage = async (imageUrl: string): Promise<{ base64Data: string; mimeType: string }> => {
-    let base64Data = '';
-    let mimeType = '';
-
-    if (imageUrl.startsWith('data:')) {
-      const matches = imageUrl.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-      if (matches && matches.length === 3) {
-        mimeType = matches[1];
-        base64Data = matches[2];
-      } else {
-        throw new Error("Formato de imagem base64 inválido.");
-      }
-    } else {
-      let blob: Blob | null = null;
-
-      if (imageUrl.includes('firebasestorage.googleapis.com')) {
-        try {
-          const decodedUrl = decodeURIComponent(imageUrl);
-          const pathMatch = decodedUrl.match(/\/o\/(.+?)\?/);
-          if (pathMatch && pathMatch[1]) {
-            const storageRef = ref(storage, pathMatch[1]);
-            blob = await getBlob(storageRef);
-          }
-        } catch (fbError) {
-          console.warn("Falha ao buscar blob do Firebase via SDK:", fbError);
-        }
-      }
-
-      if (!blob) {
-        try {
-          const imgResponse = await fetch(imageUrl);
-          if (!imgResponse.ok) throw new Error(`Direct fetch failed with status ${imgResponse.status}`);
-          blob = await imgResponse.blob();
-        } catch (e) {
-          const proxies = [
-            { name: 'wsrv.nl', url: `https://wsrv.nl/?url=${encodeURIComponent(imageUrl)}&output=jpeg` },
-            { name: 'corsproxy.io', url: `https://corsproxy.io/?${encodeURIComponent(imageUrl)}` },
-            { name: 'codetabs', url: `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(imageUrl)}` },
-            { name: 'allorigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrl)}` }
-          ];
-
-          for (const proxy of proxies) {
-            try {
-              const pResp = await fetch(proxy.url);
-              if (pResp.ok) {
-                blob = await pResp.blob();
-                break;
-              }
-            } catch (_) {}
-          }
-        }
-      }
-
-      if (!blob) {
-        throw new Error("Não foi possível carregar a imagem da URL fornecida (CORS ou erro de rede).");
-      }
-
-      const reader = new FileReader();
-      const base64DataUrl = await new Promise<string>((resolve) => {
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob!);
-      });
-
-      base64Data = base64DataUrl.split(',')[1];
-      mimeType = blob.type || 'image/jpeg';
-    }
-
-    // Normalize to JPEG and cap at 1024px
-    const processed = await new Promise<{ base64: string; mimeType: string }>((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = "Anonymous";
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_DIM = 1024;
-        let width = img.width;
-        let height = img.height;
-        if (width > MAX_DIM || height > MAX_DIM) {
-          if (width > height) { height *= MAX_DIM / width; width = MAX_DIM; }
-          else { width *= MAX_DIM / height; height = MAX_DIM; }
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) { resolve({ base64: base64Data, mimeType }); return; }
-        ctx.fillStyle = "white";
-        ctx.fillRect(0, 0, width, height);
-        ctx.drawImage(img, 0, 0, width, height);
-        const newDataUrl = canvas.toDataURL('image/jpeg', 0.9);
-        resolve({ base64: newDataUrl.split(',')[1], mimeType: 'image/jpeg' });
-      };
-      img.onerror = () => reject(new Error("O arquivo carregado não é uma imagem válida ou está corrompido."));
-      img.src = `data:${mimeType};base64,${base64Data}`;
-    });
-
-    return { base64Data: processed.base64, mimeType: processed.mimeType };
-  };
-
-  const callGenerateImage = async (base64Data: string, mimeType: string, prompt: string, imageIndex: number, retries = 2): Promise<string | null> => {
+  const callGenerateImage = async (base64Data: string, mimeType: string, prompt: string, _imageIndex: number, retries = 2): Promise<string | null> => {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const res = await fetch('/api/gemini/generate-ambient-images', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ base64Data, mimeType, ambientPrompt: prompt, imageIndex })
-        });
-
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || `Erro de rede no servidor (Status ${res.status})`);
-        }
-
-        const data = await res.json();
-        return data.image || null;
+        return await generateImage(base64Data, mimeType, prompt);
       } catch (error: any) {
         const isQuotaError = /429|RESOURCE_EXHAUSTED|quota|limite/.test(error.message || "");
         if (isQuotaError && attempt < retries) {
@@ -181,25 +128,16 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
       const { base64Data, mimeType } = await fetchAndProcessImage(selectedImageUrl);
 
       // 2. Generate prompts WITH the product image so Gemini can visually anchor them
-      const promptsRes = await fetch('/api/gemini/generate-ambient-prompts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const { prompts, productDescription: desc } = await generateAmbientPrompts(
+        {
           productName: product['Descrição'] || '',
           brand: product['Marca'] || '',
           category: product['Categoria'] || '',
           description: product['Descrição complementar'] || '',
-          base64Data,
-          mimeType
-        })
-      });
-
-      if (!promptsRes.ok) {
-        const err = await promptsRes.json().catch(() => ({}));
-        throw new Error(err.error || 'Erro ao gerar prompts de ambientação.');
-      }
-
-      const { prompts, productDescription: desc } = await promptsRes.json();
+        },
+        base64Data,
+        mimeType,
+      );
       setImagePrompts(prompts);
       if (desc) setProductDescription(desc);
 

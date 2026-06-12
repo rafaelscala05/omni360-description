@@ -1,6 +1,7 @@
 import { collection, doc, writeBatch, getDocs, getDoc, setDoc, query, where, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Category, AttributeDefinition } from '../types/models';
+import { generateJson } from './aiService';
 
 export const getCategoriesPath = (uid: string) => `users/${uid}/categories`;
 
@@ -79,20 +80,44 @@ export const getEffectiveAttributes = (categoryId: string, allCategories: Catego
 // Modulo 0.3 — Geração de Hierarquia via IA (Gemini)
 export const generateCategoryHierarchy = async (categories: string[], segment?: string) => {
   try {
-    const response = await fetch('/api/gemini/generate-category-hierarchy', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ categories, segment })
-    });
+    const prompt = `
+Você é um especialista em arquitetura de dados e e-commerce.
+Os usuários importaram a seguinte lista plana de categorias extraídas de uma planilha:
+[${categories.join(', ')}]
 
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.error || `Erro ao gerar categoria (Status ${response.status})`);
+${segment ? `O segmento do negócio é: ${segment}` : ''}
+
+Sua tarefa é organizar e enriquecer essas categorias em uma estrutura lógica (pai/filho).
+
+Diretrizes:
+1. Agrupe categorias semelhantes hierarquicamente.
+2. Sugira subcategorias adicionais relevantes se fizer sentido.
+3. Tente reaproveitar os nomes exatos passados, organizando na propriedade "hierarchy".
+4. Mantenha os níveis rasos (máximo de 3 níveis).
+
+Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Retorne SOMENTE o JSON, sem markdown):
+
+{
+  "hierarchy": [
+    {
+      "name": "Calçados",
+      "slug": "calcados",
+      "children": [
+        {
+          "name": "Calçados Masculinos",
+          "slug": "calcados-masculinos",
+          "children": []
+        }
+      ]
     }
+  ],
+  "suggestedNewCategories": [
+    { "name": "Acessórios", "reason": "Complementar ao segmento de moda" }
+  ]
+}
+`;
 
-    return await response.json();
+    return await generateJson(prompt, { temperature: 0.2 });
   } catch (error) {
     console.error("Erro ao gerar hierarquia de categorias:", error);
     throw error;

@@ -16,6 +16,11 @@ import ProductEditModal from './components/modals/ProductEditModal';
 import { Category, Product, AttributeValue } from './types/models';
 import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate } from './services/productService';
 import { fetchCategories, generateCategoryHierarchy, flattenHierarchy, getEffectiveAttributes, addAttributeToCategory } from './services/categoryService';
+import { generateGrounded, parseJsonResponse } from './services/aiService';
+
+// Build version injected at build time by Vite (git short hash + UTC date)
+declare const __BUILD_VERSION__: string;
+const BUILD_VERSION = typeof __BUILD_VERSION__ !== 'undefined' ? __BUILD_VERSION__ : 'dev';
 
 // Utility to merge classes
 function cn(...classes: (string | boolean | undefined)[]) {
@@ -1234,20 +1239,39 @@ export default function App() {
 
   const enrichProductData = async (product: Product): Promise<any> => {
     try {
-      const response = await fetch('/api/gemini/enrich-product-data', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ product })
+      const prompt = `Você é um assistente de cadastro de e-commerce.
+Busque na internet as especificações técnicas do seguinte produto:
+Nome/Descrição: ${product['Descrição']}
+Marca: ${product['Marca']}
+Categoria: ${product['Categoria']}
+
+Tente encontrar os seguintes dados (se não encontrar, deixe vazio ou null):
+- GTIN/EAN (código de barras)
+- NCM (Classificação fiscal)
+- Peso bruto (Kg)
+- Largura embalagem (cm)
+- Altura Embalagem (cm)
+- Comprimento embalagem (cm)
+
+Retorne APENAS um JSON válido no seguinte formato:
+{
+  "GTIN/EAN": "...",
+  "NCM (Classificação fiscal)": "...",
+  "Peso bruto (Kg)": 1.5,
+  "Largura embalagem": 20,
+  "Altura Embalagem": 15,
+  "Comprimento embalagem": 10,
+  "log_fontes": "Resumo muito conciso (máx 150 caracteres) das fontes utilizadas."
+}`;
+
+      const { text, usage } = await generateGrounded(prompt, {
+        temperature: 0.2,
+        maxOutputTokens: 2048,
+        systemInstruction: "Você é um assistente de e-commerce. Seja extremamente conciso. Nunca gere textos longos ou repetitivos. O campo log_fontes deve ter no máximo 150 caracteres. RESPONDA APENAS COM O JSON PURO.",
       });
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || `Erro de rede no servidor (Status ${response.status})`);
-      }
-
-      return await response.json();
+      const parsed = parseJsonResponse(text);
+      return { ...parsed, _usage: usage };
     } catch (error) {
       console.error("Error enriching data:", error);
       throw error;
@@ -2989,6 +3013,11 @@ export default function App() {
         onConfirm={processCategoryImport}
         isProcessing={isProcessingCategories}
       />
+
+      {/* Build version footer */}
+      <div className="fixed bottom-1 right-2 z-40 text-[10px] text-slate-400 pointer-events-none select-none">
+        build {BUILD_VERSION}
+      </div>
 
     </div>
   );
