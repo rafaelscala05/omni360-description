@@ -547,7 +547,7 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
     }
   });
 
-  // 5. Generate Ambient Images (via Gemini image generation model)
+  // 5. Generate Ambient Images (via Gemini API — gemini-2.5-flash-image)
   app.post("/api/gemini/generate-ambient-images", async (req, res) => {
     try {
       const { base64Data, mimeType, ambientPrompt, imageIndex = 0 } = req.body;
@@ -557,8 +557,7 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
 
       console.log(`[DEBUG] imageIndex: ${imageIndex}, model: gemini-2.5-flash-image`);
 
-      const client = getVertexClient();
-      const generateParams = {
+      const response = await generateContentWithFallback({
         model: 'gemini-2.5-flash-image',
         contents: [{
           role: 'user',
@@ -568,44 +567,15 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
           ]
         }],
         config: {
-          temperature: 1,
-          topP: 0.95,
-          maxOutputTokens: 32768,
           responseModalities: [Modality.IMAGE, Modality.TEXT],
           safetySettings: [
             { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.OFF },
             { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.OFF },
             { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.OFF },
             { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.OFF }
-          ],
-          imageConfig: {
-            aspectRatio: '1:1',
-            imageSize: '1K',
-            outputMimeType: 'image/png'
-          },
-          thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL }
+          ]
         }
-      };
-
-      let response: any;
-      const maxAttempts = 4;
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-          console.log(`[DEBUG] gemini-3.1-flash-image attempt ${attempt}/${maxAttempts}`);
-          response = await client.models.generateContent(generateParams);
-          break;
-        } catch (err: any) {
-          const msg = err.message || String(err);
-          const is503 = msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('high demand') || (err.status === 503);
-          if (is503 && attempt < maxAttempts) {
-            const delay = attempt * 3000;
-            console.log(`[DEBUG] 503 on attempt ${attempt}, retrying in ${delay}ms...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-          } else {
-            throw err;
-          }
-        }
-      }
+      });
 
       // Extract the image part from the response candidates
       let imageData: string | null = null;
