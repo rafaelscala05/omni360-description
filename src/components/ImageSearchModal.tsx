@@ -235,12 +235,12 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
 
   const handleRegenerateImage = async (index: number) => {
     if (!selectedImageUrl || !product) return;
-    if (!(await consumeCredit('Regeneração de Imagem', product['Descrição'], product['Código (SKU)']))) return;
 
     setImageRegenerating(prev => { const n = [...prev]; n[index] = true; return n; });
 
     try {
       const { base64Data, mimeType } = await fetchAndProcessImage(selectedImageUrl);
+      if (!(await consumeCredit('Regeneração de Imagem', product['Descrição'], product['Código (SKU)']))) return;
       const imgData = await callGenerateImage(base64Data, mimeType, imagePrompts[index], index);
       if (imgData) {
         setAmbientImages(prev => { const n = [...prev]; n[index] = imgData; return n; });
