@@ -6,3 +6,10 @@ coverage/
 *.log
 .env*
 !.env.example
+uploads/
+
+# Service account keys & data exports — never commit
+source-key.json
+*-key.json
+users-export.json
+firestore-export/
