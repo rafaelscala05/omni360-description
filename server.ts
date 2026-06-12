@@ -556,6 +556,7 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
       const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
 
       console.log(`[DEBUG] imageIndex: ${imageIndex}, model: gemini-2.5-flash-image`);
+      console.log(`[DEBUG] ambientPrompt[${imageIndex}]: ${ambientPrompt}`);
 
       const response = await generateContentWithFallback({
         model: 'gemini-2.5-flash-image',
@@ -615,14 +616,20 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
         .filter(Boolean)
         .join(". ");
 
-      const prompt = `You are an expert in product photography for e-commerce. Your task is to write 3 image transformation instructions in ENGLISH for a generative AI model (gemini-3.1-flash-image). The model receives the product image directly, so you must NOT describe the product's appearance — focus entirely on what should change in the scene.
+      const prompt = `You are a senior commercial photographer and art director for premium e-commerce brands. Your task is to write 3 image transformation instructions in ENGLISH for a generative AI model (gemini-2.5-flash-image). The model receives the product image directly, so you must NOT describe the product's appearance — focus entirely on what should change in the scene.
 
-${base64Data ? 'Analyze the product image provided to understand what kind of product it is and what realistic use cases apply.' : ''}
+${base64Data ? 'Analyze the product image provided to understand exactly what this product is, who uses it, where it is realistically used, and what surfaces/objects/environments naturally surround it in real life.' : ''}
 Product context: ${productContext}
+
+CRITICAL REALISM RULES (apply to ALL instructions):
+- The scene must be SPECIFIC to THIS product and its real-world use context — never generic. Reason from the product: a power tool belongs on a workbench with sawdust, not a marble countertop; a skincare serum belongs on a bathroom shelf with morning light, not a kitchen.
+- The result must look like a REAL photograph taken by a professional, NOT an AI render. Demand photographic authenticity: natural and slightly uneven lighting, real soft shadows and contact shadows under the product, subtle surface imperfections (dust, fingerprints, wear, scratches, texture), shallow depth of field with realistic lens bokeh, true-to-life color and white balance, no plastic-perfect surfaces, no symmetrical CGI cleanliness.
+- Specify a real camera look: e.g. shot on a 50mm or 85mm lens, f/2.0, natural window light or practical lighting, photojournalistic / lifestyle editorial style.
+- Avoid clichés (marble countertop, generic golden hour, floating product, empty studio) unless they genuinely fit the product.
 
 Generate 3 transformation instructions following this exact order and format:
 
-Instruction 0 — Background swap: Tell the model to keep the product exactly as-is and replace only the background. Describe the new environment (scene, lighting, props, atmosphere) in vivid, cinematic detail. The product must remain unchanged and centered. Example: "Keep the product exactly as-is. Replace the background with a modern kitchen countertop — white marble surface, warm golden hour light from a side window, a linen cloth and fresh herbs nearby, soft bokeh background."
+Instruction 0 — Realistic in-context scene: Keep the product exactly as-is (do NOT alter the product), and place it into a believable, lived-in environment where THIS specific product is actually used or displayed, chosen from the product description and category. Build a rich but natural scene: the right surface/material, contextually relevant props that a real owner would have nearby, realistic ambient lighting with direction and soft shadows, and a sense of depth (foreground/background). The product must sit naturally in the scene with a grounded contact shadow — not floating, not centered like a catalog cutout. Make it look like a candid photo from a real home/workspace/store, captured on a 50mm lens at f/2.2 with natural light. Example for a leather wallet: "Keep the product exactly as-is. Place it on a worn wooden café table next to a set of car keys, a folded newspaper and a half-finished espresso, warm morning window light from the left casting a soft natural shadow, shallow depth of field, blurred background of a cozy café interior, shot on 50mm f/2.2, candid lifestyle photograph, photorealistic with subtle surface texture and no AI artifacts."
 
 Instruction 1 — Lifestyle scene with person: Tell the model to create a scene showing a person naturally using or interacting with the product. Describe the person (age range, style), the action, the environment, and the lighting. The product must remain visually identical to the input image. Example: "Show a woman in her late 20s, casual style, using this product at a bright café table near a window. Natural afternoon light. The product should look identical to the input image."
 
