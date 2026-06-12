@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Search, Image as ImageIcon, Loader2, Check, Download, ExternalLink } from 'lucide-react';
+import { X, Search, Image as ImageIcon, Loader2, Download, ExternalLink, RefreshCw } from 'lucide-react';
 import { Product } from '../types/models';
 import { storage } from '../firebase';
-import { ref, uploadString, getDownloadURL, getBlob } from 'firebase/storage';
+import { ref, getBlob } from 'firebase/storage';
 
 interface ImageSearchModalProps {
   isOpen: boolean;
@@ -13,24 +13,27 @@ interface ImageSearchModalProps {
   consumeCredit: (actionType: string, productName?: string, sku?: string) => Promise<boolean>;
 }
 
+const IMAGE_TITLES = ['Produto Ambientado', 'Produto em Uso', 'Escala e Tamanho'];
+
 export default function ImageSearchModal({ isOpen, onClose, product, onSave, credits, consumeCredit }: ImageSearchModalProps) {
   const [step, setStep] = useState<'search' | 'ambient'>('search');
   const [selectedImageUrl, setSelectedImageUrl] = useState<string>('');
-  
+
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [ambientImages, setAmbientImages] = useState<string[]>([]);
+  const [imagePrompts, setImagePrompts] = useState<string[]>(['', '', '']);
+  const [imageRegenerating, setImageRegenerating] = useState<boolean[]>([false, false, false]);
   const [tokenUsage, setTokenUsage] = useState({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
-  
-  const defaultPrompt = "Aprimore esta imagem e crie uma ambientação realista de e-commerce onde o produto está posicionado corretamente no mundo real. Mantenha o produto idêntico, apenas mude o fundo para um cenário de uso real e profissional.";
-  const [ambientPrompt, setAmbientPrompt] = useState(defaultPrompt);
+  const [productDescription, setProductDescription] = useState('');
 
   useEffect(() => {
     if (isOpen && product && step === 'search') {
       setSelectedImageUrl(product._selectedImage || '');
       setAmbientImages(product._ambientImages || []);
+      setImagePrompts(['', '', '']);
       setTokenUsage({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
-      setAmbientPrompt(defaultPrompt);
+      setProductDescription('');
     }
   }, [isOpen, product]);
 
@@ -41,294 +44,236 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
     window.open(url, '_blank');
   };
 
+  const fetchAndProcessImage = async (imageUrl: string): Promise<{ base64Data: string; mimeType: string }> => {
+    let base64Data = '';
+    let mimeType = '';
+
+    if (imageUrl.startsWith('data:')) {
+      const matches = imageUrl.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+      if (matches && matches.length === 3) {
+        mimeType = matches[1];
+        base64Data = matches[2];
+      } else {
+        throw new Error("Formato de imagem base64 inválido.");
+      }
+    } else {
+      let blob: Blob | null = null;
+
+      if (imageUrl.includes('firebasestorage.googleapis.com')) {
+        try {
+          const decodedUrl = decodeURIComponent(imageUrl);
+          const pathMatch = decodedUrl.match(/\/o\/(.+?)\?/);
+          if (pathMatch && pathMatch[1]) {
+            const storageRef = ref(storage, pathMatch[1]);
+            blob = await getBlob(storageRef);
+          }
+        } catch (fbError) {
+          console.warn("Falha ao buscar blob do Firebase via SDK:", fbError);
+        }
+      }
+
+      if (!blob) {
+        try {
+          const imgResponse = await fetch(imageUrl);
+          if (!imgResponse.ok) throw new Error(`Direct fetch failed with status ${imgResponse.status}`);
+          blob = await imgResponse.blob();
+        } catch (e) {
+          const proxies = [
+            { name: 'wsrv.nl', url: `https://wsrv.nl/?url=${encodeURIComponent(imageUrl)}&output=jpeg` },
+            { name: 'corsproxy.io', url: `https://corsproxy.io/?${encodeURIComponent(imageUrl)}` },
+            { name: 'codetabs', url: `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(imageUrl)}` },
+            { name: 'allorigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrl)}` }
+          ];
+
+          for (const proxy of proxies) {
+            try {
+              const pResp = await fetch(proxy.url);
+              if (pResp.ok) {
+                blob = await pResp.blob();
+                break;
+              }
+            } catch (_) {}
+          }
+        }
+      }
+
+      if (!blob) {
+        throw new Error("Não foi possível carregar a imagem da URL fornecida (CORS ou erro de rede).");
+      }
+
+      const reader = new FileReader();
+      const base64DataUrl = await new Promise<string>((resolve) => {
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob!);
+      });
+
+      base64Data = base64DataUrl.split(',')[1];
+      mimeType = blob.type || 'image/jpeg';
+    }
+
+    // Normalize to JPEG and cap at 1024px
+    const processed = await new Promise<{ base64: string; mimeType: string }>((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "Anonymous";
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_DIM = 1024;
+        let width = img.width;
+        let height = img.height;
+        if (width > MAX_DIM || height > MAX_DIM) {
+          if (width > height) { height *= MAX_DIM / width; width = MAX_DIM; }
+          else { width *= MAX_DIM / height; height = MAX_DIM; }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { resolve({ base64: base64Data, mimeType }); return; }
+        ctx.fillStyle = "white";
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        const newDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        resolve({ base64: newDataUrl.split(',')[1], mimeType: 'image/jpeg' });
+      };
+      img.onerror = () => reject(new Error("O arquivo carregado não é uma imagem válida ou está corrompido."));
+      img.src = `data:${mimeType};base64,${base64Data}`;
+    });
+
+    return { base64Data: processed.base64, mimeType: processed.mimeType };
+  };
+
+  const callGenerateImage = async (base64Data: string, mimeType: string, prompt: string, imageIndex: number, retries = 2): Promise<string | null> => {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await fetch('/api/gemini/generate-ambient-images', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ base64Data, mimeType, ambientPrompt: prompt, imageIndex })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Erro de rede no servidor (Status ${res.status})`);
+        }
+
+        const data = await res.json();
+        return data.image || null;
+      } catch (error: any) {
+        const isQuotaError = /429|RESOURCE_EXHAUSTED|quota|limite/.test(error.message || "");
+        if (isQuotaError && attempt < retries) {
+          await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 2000));
+          continue;
+        }
+        throw error;
+      }
+    }
+    return null;
+  };
+
   const handleGenerateAmbient = async () => {
     if (!selectedImageUrl || !product) return;
     if (!(await consumeCredit('Geração de Ambientação', product['Descrição'], product['Código (SKU)']))) return;
-    
+
     setIsGenerating(true);
     setStep('ambient');
-    let totalPromptTokens = 0;
-    let totalCompletionTokens = 0;
-    let totalTokens = 0;
-    
+
     try {
-      let base64Data = '';
-      let mimeType = '';
+      // 1. Process image first — needed by Gemini for visual analysis
+      const { base64Data, mimeType } = await fetchAndProcessImage(selectedImageUrl);
 
-      if (selectedImageUrl.startsWith('data:')) {
-        const matches = selectedImageUrl.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-        if (matches && matches.length === 3) {
-          mimeType = matches[1];
-          base64Data = matches[2];
-        } else {
-          throw new Error("Formato de imagem base64 inválido.");
-        }
-      } else {
-        // Fetch the image and convert to base64
-        let imgResponse;
-        let blob: Blob | null = null;
+      // 2. Generate prompts WITH the product image so Gemini can visually anchor them
+      const promptsRes = await fetch('/api/gemini/generate-ambient-prompts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productName: product['Descrição'] || '',
+          brand: product['Marca'] || '',
+          category: product['Categoria'] || '',
+          description: product['Descrição complementar'] || '',
+          base64Data,
+          mimeType
+        })
+      });
 
-        // Special case: Firebase Storage URL
-        if (selectedImageUrl.includes('firebasestorage.googleapis.com')) {
-          try {
-            console.log("Detectada URL do Firebase Storage, tentando buscar via SDK...");
-            const decodedUrl = decodeURIComponent(selectedImageUrl);
-            const pathMatch = decodedUrl.match(/\/o\/(.+?)\?/);
-            if (pathMatch && pathMatch[1]) {
-              const path = pathMatch[1];
-              const storageRef = ref(storage, path);
-              blob = await getBlob(storageRef);
-              console.log("Blob do Firebase obtido com sucesso.");
-            }
-          } catch (fbError) {
-            console.warn("Falha ao buscar blob do Firebase via SDK, tentando fetch normal:", fbError);
-          }
-        }
-
-        if (!blob) {
-          try {
-            imgResponse = await fetch(selectedImageUrl);
-            if (!imgResponse.ok) throw new Error(`Direct fetch failed with status ${imgResponse.status}`);
-            blob = await imgResponse.blob();
-          } catch (e) {
-            console.warn("Direct fetch failed:", e);
-            
-            // Try proxies in a more optimized order
-            const proxies = [
-              { name: 'wsrv.nl', url: `https://wsrv.nl/?url=${encodeURIComponent(selectedImageUrl)}&output=jpeg` },
-              { name: 'corsproxy.io', url: `https://corsproxy.io/?${encodeURIComponent(selectedImageUrl)}` },
-              { name: 'codetabs', url: `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(selectedImageUrl)}` },
-              { name: 'allorigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(selectedImageUrl)}` }
-            ];
-
-            for (const proxy of proxies) {
-              try {
-                console.log(`Tentando proxy ${proxy.name}...`);
-                const pResp = await fetch(proxy.url);
-                if (pResp.ok) {
-                  blob = await pResp.blob();
-                  console.log(`Sucesso com proxy ${proxy.name}`);
-                  break;
-                }
-              } catch (pErr) {
-                console.warn(`Proxy ${proxy.name} falhou:`, pErr);
-              }
-            }
-          }
-        }
-        
-        if (!blob) {
-          throw new Error("Não foi possível carregar a imagem da URL fornecida (CORS ou erro de rede).");
-        }
-
-        // Remove strict blob.type check because proxies sometimes return application/octet-stream
-        // We will rely on the Image object in processImage to validate it
-        
-        const reader = new FileReader();
-        const base64Promise = new Promise<string>((resolve) => {
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(blob!);
-        });
-        
-        const base64DataUrl = await base64Promise;
-        base64Data = base64DataUrl.split(',')[1];
-        mimeType = blob.type || 'image/jpeg';
+      if (!promptsRes.ok) {
+        const err = await promptsRes.json().catch(() => ({}));
+        throw new Error(err.error || 'Erro ao gerar prompts de ambientação.');
       }
 
-      // Process image to ensure it's a valid JPEG and not too large for Gemini
-      const processImage = (base64Str: string, mime: string): Promise<{ base64: string, mimeType: string }> => {
-        return new Promise((resolve, reject) => {
-          const img = new Image();
-          img.crossOrigin = "Anonymous";
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            const MAX_DIM = 1024;
-            let width = img.width;
-            let height = img.height;
-            
-            if (width > MAX_DIM || height > MAX_DIM) {
-              if (width > height) {
-                height *= MAX_DIM / width;
-                width = MAX_DIM;
-              } else {
-                width *= MAX_DIM / height;
-                height = MAX_DIM;
-              }
-            }
-            
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-              resolve({ base64: base64Str, mimeType: mime }); // fallback
-              return;
-            }
-            
-            // Fill white background for transparent images
-            ctx.fillStyle = "white";
-            ctx.fillRect(0, 0, width, height);
-            ctx.drawImage(img, 0, 0, width, height);
-            
-            const newDataUrl = canvas.toDataURL('image/jpeg', 0.9);
-            const newBase64 = newDataUrl.split(',')[1];
-            resolve({ base64: newBase64, mimeType: 'image/jpeg' });
-          };
-          img.onerror = () => {
-            reject(new Error("O arquivo carregado não é uma imagem válida ou está corrompido."));
-          };
-          img.src = `data:${mime};base64,${base64Str}`;
-        });
-      };
+      const { prompts, productDescription: desc } = await promptsRes.json();
+      setImagePrompts(prompts);
+      if (desc) setProductDescription(desc);
 
-      const processed = await processImage(base64Data, mimeType);
-      base64Data = processed.base64;
-      mimeType = processed.mimeType;
-      
-      const defaultVariationPrompts = [
-        "Aprimore esta imagem e crie uma ambientação realista de e-commerce onde o produto está posicionado corretamente no mundo real. Mantenha o produto idêntico, apenas mude o fundo para um cenário de uso real e profissional.",
-        "Crie uma imagem de uma pessoa utilizando este produto de forma natural e realista num cenário do dia a dia. Mantenha o produto idêntico, mostrando-o em uso.",
-        "Crie uma imagem aproximada mostrando uma pessoa segurando este produto com as mãos, para dar uma clara noção de escala e tamanho real. Fundo minimalista, mantendo o produto idêntico."
-      ];
-
-      // Helper for retrying with backoff calling the server-side endpoint
-      const generateWithRetry = async (index: number, currentPrompt: string, retries = 2): Promise<string | null> => {
-        for (let attempt = 0; attempt <= retries; attempt++) {
-          try {
-            const res = await fetch('/api/gemini/generate-ambient-images', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ base64Data, mimeType, ambientPrompt: currentPrompt })
-            });
-
-            if (!res.ok) {
-              const errData = await res.json().catch(() => ({}));
-              throw new Error(errData.error || `Erro de rede no servidor (Status ${res.status})`);
-            }
-
-            const data = await res.json();
-            if (data.image) {
-              totalPromptTokens += data.usage?.promptTokens || 0;
-              totalCompletionTokens += data.usage?.completionTokens || 0;
-              totalTokens += data.usage?.totalTokens || 0;
-              return data.image;
-            }
-            return null;
-          } catch (error: any) {
-            const errorMsg = error.message || "";
-            const isQuotaError = errorMsg.includes("429") || 
-                                errorMsg.includes("RESOURCE_EXHAUSTED") || 
-                                errorMsg.includes("quota") ||
-                                errorMsg.includes("limite");
-            
-            if (isQuotaError && attempt < retries) {
-              const delay = Math.pow(2, attempt) * 2000; // 2s, 4s
-              console.warn(`Quota atingida na imagem ${index + 1}, tentativa ${attempt + 1}. Retentando em ${delay}ms...`);
-              await new Promise(resolve => setTimeout(resolve, delay));
-              continue;
-            }
-            throw error;
-          }
-        }
-        return null;
-      };
-
-      // Generate 3 images sequentially to avoid rate limits (429)
+      // 3. Generate all 3 ambient images (retry/backoff handled inside callGenerateImage)
       const validImages: string[] = [];
       for (let i = 0; i < 3; i++) {
         try {
-          const promptToUse = (ambientPrompt === defaultPrompt) 
-             ? defaultVariationPrompts[i]
-             : ambientPrompt;
-
-          const imgData = await generateWithRetry(i, promptToUse);
-          if (imgData) {
-            validImages.push(imgData);
-          }
-          
-          // Increase delay between requests to help with rate limits
-          if (i < 2) await new Promise(resolve => setTimeout(resolve, 2000));
+          const imgData = await callGenerateImage(base64Data, mimeType, prompts[i], i);
+          validImages.push(imgData || '');
         } catch (genError: any) {
-          console.error(`Error generating image ${i + 1}:`, genError);
-          
-          const errorMsg = genError.message || "";
-          const isQuotaError = errorMsg.includes("429") || 
-                              errorMsg.includes("RESOURCE_EXHAUSTED") || 
-                              errorMsg.includes("quota") ||
-                              errorMsg.includes("limite");
-
-          // If we hit a rate limit and already have some images, we can stop and show what we have
-          if (isQuotaError && validImages.length > 0) {
-            console.log("Rate limit hit, but we have some images. Stopping generation.");
-            break;
-          }
-          // If it's the first image and we hit a rate limit, throw to show the error
+          const isQuota = /429|RESOURCE_EXHAUSTED|quota|limite/.test(genError.message || "");
+          if (isQuota && validImages.length > 0) break;
           if (i === 0) throw genError;
+          validImages.push('');
         }
       }
 
-      if (validImages.length === 0) {
-        throw new Error("Não foi possível gerar nenhuma imagem.");
-      }
-
+      if (validImages.every(img => !img)) throw new Error("Não foi possível gerar nenhuma imagem.");
       setAmbientImages(validImages);
-      setTokenUsage({
-        promptTokens: totalPromptTokens,
-        completionTokens: totalCompletionTokens,
-        totalTokens: totalTokens
-      });
 
     } catch (error: any) {
       console.error("Erro ao gerar ambientações:", error);
-      
-      let errorMessage = "Erro ao processar a imagem. Verifique se a URL é válida e tente novamente.";
-      
-      if (error.message === "Não foi possível carregar a imagem da URL fornecida.") {
-        errorMessage = "Não foi possível carregar a imagem da URL fornecida. O site de origem pode estar bloqueando o acesso.";
-      } else if (error.message?.includes("429") || error.status === 429 || error.message?.includes("RESOURCE_EXHAUSTED") || error.message?.includes("quota")) {
-        errorMessage = "O limite de uso da inteligência artificial foi atingido (Erro 429). Por favor, aguarde um momento e tente novamente.";
-      } else if (error.message) {
-        errorMessage = `Erro: ${error.message}`;
-      }
-
-      alert(errorMessage);
+      const isQuota = /429|RESOURCE_EXHAUSTED|quota|limite/.test(error.message || "");
+      alert(isQuota
+        ? "O limite de uso da IA foi atingido (Erro 429). Aguarde um momento e tente novamente."
+        : `Erro: ${error.message || "Erro ao processar a imagem."}`
+      );
       setStep('search');
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const uploadImage = async (base64OrUrl: string, filename: string): Promise<string> => {
-    // Para criar URLs amigáveis, utilizamos o endpoint local /api/upload
-    // que fará o download da imagem e retornará um link na mesma origem (ex: /uploads/nome...)
+  const handleRegenerateImage = async (index: number) => {
+    if (!selectedImageUrl || !product) return;
+    if (!(await consumeCredit('Regeneração de Imagem', product['Descrição'], product['Código (SKU)']))) return;
+
+    setImageRegenerating(prev => { const n = [...prev]; n[index] = true; return n; });
+
     try {
-      let payload: any = { filename };
-      
-      if (base64OrUrl.startsWith('data:')) {
-        payload.imageBase64 = base64OrUrl;
-      } else {
-        // Se a imagem já estiver no /uploads/, talvez não seja necessário reenviar
-        // Mas para garantir uma cópia com o nome correto, o backend também suporta ler da URL.
-        payload.imageUrl = base64OrUrl;
+      const { base64Data, mimeType } = await fetchAndProcessImage(selectedImageUrl);
+      const imgData = await callGenerateImage(base64Data, mimeType, imagePrompts[index], index);
+      if (imgData) {
+        setAmbientImages(prev => { const n = [...prev]; n[index] = imgData; return n; });
       }
+    } catch (error: any) {
+      const isQuota = /429|RESOURCE_EXHAUSTED|quota|limite/.test(error.message || "");
+      alert(isQuota
+        ? "Limite de uso da IA atingido. Aguarde e tente novamente."
+        : `Erro ao regenerar imagem: ${error.message}`
+      );
+    } finally {
+      setImageRegenerating(prev => { const n = [...prev]; n[index] = false; return n; });
+    }
+  };
+
+  const uploadImage = async (base64OrUrl: string, filename: string): Promise<string> => {
+    try {
+      const payload: any = { filename };
+      if (base64OrUrl.startsWith('data:')) payload.imageBase64 = base64OrUrl;
+      else payload.imageUrl = base64OrUrl;
 
       const response = await fetch('/api/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      
-      if (!response.ok) {
-        throw new Error('Falha ao enviar imagem para /api/upload');
-      }
-      
+
+      if (!response.ok) throw new Error('Falha ao enviar imagem para /api/upload');
       const data = await response.json();
       return data.url;
     } catch (error) {
-      console.error('Error uploading image to local API:', error);
-      if (base64OrUrl.startsWith('data:')) {
-        alert("Erro ao salvar a imagem. Verifique se o servidor está online.");
-      }
-      return base64OrUrl; // Fallback
+      console.error('Error uploading image:', error);
+      return base64OrUrl;
     }
   };
 
@@ -336,15 +281,13 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
     if (product && selectedImageUrl) {
       setIsSaving(true);
       try {
-        // Upload selected image if it's base64
         const finalSelectedImage = await uploadImage(selectedImageUrl, product['Código (SKU)'] || 'produto');
-        
-        // Upload ambient images
         const finalAmbientImages = await Promise.all(
-          ambientImages.map((img, idx) => uploadImage(img, `${product['Código (SKU)'] || 'produto'}_ambientacao_${idx + 1}`))
+          ambientImages.map((img, idx) =>
+            img ? uploadImage(img, `${product['Código (SKU)'] || 'produto'}_ambientacao_${idx + 1}`) : Promise.resolve('')
+          )
         );
-
-        onSave(product._id, finalSelectedImage, finalAmbientImages, tokenUsage.totalTokens > 0 ? tokenUsage : undefined);
+        onSave(product._id, finalSelectedImage, finalAmbientImages.filter(Boolean), tokenUsage.totalTokens > 0 ? tokenUsage : undefined);
         handleClose();
       } finally {
         setIsSaving(false);
@@ -356,6 +299,9 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
     setStep('search');
     setSelectedImageUrl('');
     setAmbientImages([]);
+    setImagePrompts(['', '', '']);
+    setImageRegenerating([false, false, false]);
+    setProductDescription('');
     onClose();
   };
 
@@ -371,17 +317,14 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
             <h3 className="text-lg font-medium leading-6 text-gray-900">
               {step === 'search' ? 'Imagem do Produto' : 'Ambientações Geradas'}
             </h3>
-            <button
-              onClick={handleClose}
-              className="text-gray-400 hover:text-gray-500 focus:outline-none"
-            >
+            <button onClick={handleClose} className="text-gray-400 hover:text-gray-500 focus:outline-none">
               <X className="w-6 h-6" />
             </button>
           </div>
 
           <div className="mb-4">
             <p className="text-sm text-gray-500">
-              <strong>Produto:</strong> {product['Descrição']} <br/>
+              <strong>Produto:</strong> {product['Descrição']} <br />
               <strong>SKU:</strong> {product['Código (SKU)']} | <strong>Marca:</strong> {product['Marca']}
             </p>
           </div>
@@ -389,7 +332,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
           {step === 'search' && (
             <div className="space-y-6">
               <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 flex items-start gap-3">
-                <Search className="w-5 h-5 text-blue-600 mt-0.5" />
+                <Search className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
                 <div>
                   <h4 className="text-sm font-medium text-blue-900">Como adicionar uma imagem:</h4>
                   <ol className="mt-1 text-sm text-blue-800 list-decimal list-inside space-y-1">
@@ -425,13 +368,11 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
                 <div className="mt-4">
                   <p className="text-sm font-medium text-gray-700 mb-2">Pré-visualização:</p>
                   <div className="relative w-48 h-48 rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
-                    <img 
-                      src={selectedImageUrl} 
-                      alt="Pré-visualização" 
+                    <img
+                      src={selectedImageUrl}
+                      alt="Pré-visualização"
                       className="w-full h-full object-contain"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = 'https://via.placeholder.com/200?text=Erro+ao+carregar';
-                      }}
+                      onError={(e) => { (e.target as HTMLImageElement).src = 'https://via.placeholder.com/200?text=Erro+ao+carregar'; }}
                     />
                   </div>
                 </div>
@@ -449,14 +390,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
                   disabled={!selectedImageUrl || isSaving}
                   className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isSaving ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Salvando...
-                    </>
-                  ) : (
-                    'Salvar Apenas Imagem'
-                  )}
+                  {isSaving ? <><Loader2 className="w-4 h-4 animate-spin" />Salvando...</> : 'Salvar Apenas Imagem'}
                 </button>
                 <button
                   onClick={handleGenerateAmbient}
@@ -475,55 +409,61 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
               {isGenerating ? (
                 <div className="flex flex-col items-center justify-center py-12">
                   <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-4" />
-                  <p className="text-gray-600">A IA está analisando a imagem e gerando 3 ambientações realistas...</p>
+                  <p className="text-gray-600">A IA está analisando o produto e gerando 3 imagens personalizadas...</p>
                   <p className="text-sm text-gray-400 mt-2">Isso pode levar alguns segundos.</p>
                 </div>
               ) : (
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                    {ambientImages.map((imgBase64, idx) => (
-                      <div key={idx} className="flex flex-col gap-2">
-                        <div className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 shadow-sm">
-                          <img src={imgBase64} alt={`Ambientação ${idx + 1}`} className="w-full h-full object-cover" />
+                    {IMAGE_TITLES.map((title, idx) => (
+                      <div key={idx} className="flex flex-col gap-3">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{title}</p>
+
+                        <div className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 shadow-sm bg-gray-50">
+                          {ambientImages[idx] ? (
+                            <img src={ambientImages[idx]} alt={title} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-gray-300">
+                              <ImageIcon className="w-10 h-10" />
+                            </div>
+                          )}
+                          {imageRegenerating[idx] && (
+                            <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+                              <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                            </div>
+                          )}
                         </div>
-                        <a 
-                          href={imgBase64} 
-                          download={`${product['Código (SKU)'] || 'produto'}_ambientacao_${idx + 1}.png`}
-                          className="inline-flex items-center justify-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-                        >
-                          <Download className="w-4 h-4" />
-                          Baixar
-                        </a>
+
+                        <textarea
+                          value={imagePrompts[idx]}
+                          onChange={(e) => setImagePrompts(prev => { const n = [...prev]; n[idx] = e.target.value; return n; })}
+                          rows={3}
+                          placeholder="Sugerir um novo prompt..."
+                          className="w-full px-3 py-2 text-xs border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 resize-none"
+                        />
+
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleRegenerateImage(idx)}
+                            disabled={imageRegenerating[idx] || imageRegenerating.some(r => r)}
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <RefreshCw className="w-3 h-3" />
+                            Gerar novamente
+                          </button>
+                          {ambientImages[idx] && (
+                            <a
+                              href={ambientImages[idx]}
+                              download={`${product['Código (SKU)'] || 'produto'}_${title.toLowerCase().replace(/ /g, '_')}.png`}
+                              className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                            >
+                              <Download className="w-3 h-3" />
+                              Baixar
+                            </a>
+                          )}
+                        </div>
                       </div>
                     ))}
-                  </div>
-
-                  <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200 text-left">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Modificar Ambientação (Prompt)
-                    </label>
-                    <textarea
-                      value={ambientPrompt}
-                      onChange={(e) => setAmbientPrompt(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    />
-                    <div className="mt-3 flex flex-wrap gap-2 items-center">
-                      <span className="text-xs text-gray-500 font-medium">Ideias:</span>
-                      <button onClick={() => setAmbientPrompt("Cenário de natureza, ao ar livre, luz do sol natural, realista, alta qualidade, produto em destaque.")} className="text-xs bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-50 transition-colors">Natureza</button>
-                      <button onClick={() => setAmbientPrompt("Estúdio fotográfico minimalista, fundo em tom pastel, iluminação suave, reflexo sutil, profissional.")} className="text-xs bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-50 transition-colors">Estúdio Minimalista</button>
-                      <button onClick={() => setAmbientPrompt("Cenário urbano moderno, textura de concreto, luzes da cidade ao fundo, estilo lifestyle.")} className="text-xs bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-50 transition-colors">Urbano</button>
-                      <button onClick={() => setAmbientPrompt("Ambiente caseiro aconchegante, mesa de madeira, luz quente de abajur, realista.")} className="text-xs bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-50 transition-colors">Casa/Aconchegante</button>
-                    </div>
-                    <div className="mt-4 flex justify-end">
-                      <button
-                        onClick={handleGenerateAmbient}
-                        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700"
-                      >
-                        <ImageIcon className="w-4 h-4" />
-                        Regerar Imagens
-                      </button>
-                    </div>
                   </div>
 
                   <div className="flex justify-end gap-3 pt-6 border-t border-gray-200">
@@ -539,14 +479,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, onSave, cre
                       disabled={isSaving}
                       className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50"
                     >
-                      {isSaving ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Salvando...
-                        </>
-                      ) : (
-                        'Salvar Imagens no Produto'
-                      )}
+                      {isSaving ? <><Loader2 className="w-4 h-4 animate-spin" />Salvando...</> : 'Salvar Imagens no Produto'}
                     </button>
                   </div>
                 </>
