@@ -555,11 +555,11 @@ Retorne os dados em formato JSON estrito, conformando-se ao seguinte modelo (Ret
 
       const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
 
-      console.log(`[DEBUG] imageIndex: ${imageIndex}, model: gemini-3.1-flash-image`);
+      console.log(`[DEBUG] imageIndex: ${imageIndex}, model: gemini-2.5-flash-image`);
 
       const client = getVertexClient();
       const generateParams = {
-        model: 'gemini-3.1-flash-image',
+        model: 'gemini-2.5-flash-image',
         contents: [{
           role: 'user',
           parts: [
