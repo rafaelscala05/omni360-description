@@ -1128,7 +1128,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                         {editedProduct['Marca'] && (
                           <span className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">{editedProduct['Marca']}</span>
                         )}
-                        <h1 className="text-2xl md:text-3xl font-bold text-slate-900 leading-tight">
+                        <h1 className="font-display text-2xl md:text-3xl font-bold text-slate-900 leading-tight">
                           {editedProduct['Descrição'] || 'Produto Sem Nome'}
                         </h1>
                         {editedProduct['Categoria'] && (

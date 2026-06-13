@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 @import "react-quill-new/dist/quill.snow.css";
 
@@ -7,10 +7,17 @@
   --color-sidebar: #0f172a;
   --color-sidebar-active: #1e293b;
   --color-surface-bg: #f7f9fb;
+  --font-display: "Bricolage Grotesque", "Inter", ui-sans-serif, system-ui, sans-serif;
 }
 
 body {
   font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Distinctive display font for primary headings */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
 }
 
 .quill-editor-wrapper .ql-container {

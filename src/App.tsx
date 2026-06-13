@@ -1,7 +1,6 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'react';
 import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, FileSpreadsheet, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import ImageSearchModal from './components/ImageSearchModal';
 import LoginLanding from './components/LoginLanding';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
@@ -10,9 +9,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from './firebase';
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { collection, doc, writeBatch, getDocs, setDoc, getDoc, deleteDoc, getDocFromServer, runTransaction } from 'firebase/firestore';
-import CategoryManager from './components/categories/CategoryManager';
-import CategoryImportModal from './components/modals/CategoryImportModal';
-import ProductEditModal from './components/modals/ProductEditModal';
+const ImageSearchModal = lazy(() => import('./components/ImageSearchModal'));
+const CategoryManager = lazy(() => import('./components/categories/CategoryManager'));
+const CategoryImportModal = lazy(() => import('./components/modals/CategoryImportModal'));
+const ProductEditModal = lazy(() => import('./components/modals/ProductEditModal'));
 import { Category, Product, AttributeValue, getProductStatusFlags, ProductModalTab } from './types/models';
 import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate } from './services/productService';
 import { fetchCategories, generateCategoryHierarchy, flattenHierarchy, getEffectiveAttributes, addAttributeToCategory } from './services/categoryService';
@@ -2005,7 +2005,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               <Sparkles className="w-4 h-4 text-white" />
             </div>
             <div className="flex flex-col">
-              <span className="font-bold text-white tracking-tight leading-tight">Alfreds</span>
+              <span className="font-display text-base font-extrabold text-white tracking-tight leading-tight">Alfreds</span>
               <span className="text-[10px] text-slate-400">Agente de Ecommerce</span>
             </div>
           </div>
@@ -2122,13 +2122,15 @@ Retorne APENAS um JSON válido no seguinte formato:
         <main className="flex-1 overflow-y-auto w-full p-6 bg-[#f7f9fb]">
           {mainView === 'categories' ? (
             <div className="animate-in fade-in h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-              <CategoryManager onClose={async () => {
-                setMainView('products');
-                if (user) {
-                  const cats = await fetchCategories(user.uid);
-                  setExistingCategories(cats);
-                }
-              }} />
+              <Suspense fallback={<div className="h-full flex items-center justify-center text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
+                <CategoryManager onClose={async () => {
+                  setMainView('products');
+                  if (user) {
+                    const cats = await fetchCategories(user.uid);
+                    setExistingCategories(cats);
+                  }
+                }} />
+              </Suspense>
             </div>
           ) : mainView === 'history' ? (
             renderHistoryView()
@@ -2136,7 +2138,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 h-full flex flex-col max-w-[1600px] mx-auto">
                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-5 gap-4 flex-shrink-0">
                  <div>
-                   <h1 className="text-xl md:text-2xl font-bold text-slate-900 tracking-tight">Catálogo de Produtos</h1>
+                   <h1 className="font-display text-xl md:text-2xl font-bold text-slate-900 tracking-tight">Catálogo de Produtos</h1>
                    <p className="text-xs md:text-sm text-slate-500 mt-0.5">Gerencie e enriqueça seu inventário de produtos.</p>
                  </div>
 
@@ -2448,7 +2450,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                                   <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-center mb-4">
                                      <FileSpreadsheet className="w-8 h-8 text-slate-400" />
                                   </div>
-                                   <h3 className="text-xl font-bold text-slate-900 mb-2">Pronto para começar?</h3>
+                                   <h3 className="font-display text-2xl font-bold text-slate-900 mb-2">Pronto para começar?</h3>
                                    <p className="text-sm text-slate-500 mb-8 max-w-sm mx-auto">
                                      Faça o upload de uma planilha Excel (XLSX) para gerenciar e aprimorar seus produtos com IA.
                                    </p>
@@ -2670,26 +2672,28 @@ Retorne APENAS um JSON válido no seguinte formato:
 
       {/* Preview Modal */}
       {previewProduct && (
-        <ProductEditModal
-          product={previewProduct}
-          categories={existingCategories}
-          initialTab={previewInitialTab}
-          onClose={() => setPreviewProduct(null)}
-          onOpenImageModal={() => {
-            setCurrentImageSearchProduct(previewProduct);
-            setIsImageSearchModalOpen(true);
-            setPreviewProduct(null); // Optional: close edit modal, or leave it open
-          }}
-          onSave={(updated) => {
-            setProducts(products.map(p => p._id === updated._id ? { ...updated, _isDirty: true } : p));
-            setPreviewProduct(updated);
-          }}
-          onCategoryUpdate={async (categoryId, newAttr) => {
-            if (!user) return;
-            const updatedCategory = await addAttributeToCategory(user.uid, categoryId, existingCategories, newAttr);
-            setExistingCategories(existingCategories.map(c => c.id === categoryId ? updatedCategory : c));
-          }}
-        />
+        <Suspense fallback={<div className="fixed inset-0 z-[100] bg-slate-50 flex items-center justify-center"><RefreshCw className="w-7 h-7 animate-spin text-[#004ac6]" /></div>}>
+          <ProductEditModal
+            product={previewProduct}
+            categories={existingCategories}
+            initialTab={previewInitialTab}
+            onClose={() => setPreviewProduct(null)}
+            onOpenImageModal={() => {
+              setCurrentImageSearchProduct(previewProduct);
+              setIsImageSearchModalOpen(true);
+              setPreviewProduct(null); // Optional: close edit modal, or leave it open
+            }}
+            onSave={(updated) => {
+              setProducts(products.map(p => p._id === updated._id ? { ...updated, _isDirty: true } : p));
+              setPreviewProduct(updated);
+            }}
+            onCategoryUpdate={async (categoryId, newAttr) => {
+              if (!user) return;
+              const updatedCategory = await addAttributeToCategory(user.uid, categoryId, existingCategories, newAttr);
+              setExistingCategories(existingCategories.map(c => c.id === categoryId ? updatedCategory : c));
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Template Management Modal */}
@@ -3052,26 +3056,34 @@ Retorne APENAS um JSON válido no seguinte formato:
       </AnimatePresence>
 
       {/* Image Search Modal */}
-      <ImageSearchModal
-        isOpen={isImageSearchModalOpen}
-        onClose={() => setIsImageSearchModalOpen(false)}
-        product={currentImageSearchProduct}
-        uid={user?.uid || ''}
-        onSave={handleSaveImages}
-        credits={credits}
-        getCreditCost={getCreditCost}
-        consumeCredit={consumeCredit}
-      />
+      {isImageSearchModalOpen && (
+        <Suspense fallback={null}>
+          <ImageSearchModal
+            isOpen={isImageSearchModalOpen}
+            onClose={() => setIsImageSearchModalOpen(false)}
+            product={currentImageSearchProduct}
+            uid={user?.uid || ''}
+            onSave={handleSaveImages}
+            credits={credits}
+            getCreditCost={getCreditCost}
+            consumeCredit={consumeCredit}
+          />
+        </Suspense>
+      )}
 
       {/* Category Import Review Modal */}
-      <CategoryImportModal
-        isOpen={showCategoryImport}
-        onClose={() => setShowCategoryImport(false)}
-        foundCategories={foundCategoriesFile}
-        existingCategories={existingCategories}
-        onConfirm={processCategoryImport}
-        isProcessing={isProcessingCategories}
-      />
+      {showCategoryImport && (
+        <Suspense fallback={null}>
+          <CategoryImportModal
+            isOpen={showCategoryImport}
+            onClose={() => setShowCategoryImport(false)}
+            foundCategories={foundCategoriesFile}
+            existingCategories={existingCategories}
+            onConfirm={processCategoryImport}
+            isProcessing={isProcessingCategories}
+          />
+        </Suspense>
+      )}
 
       {/* Build version footer */}
       <div className="fixed bottom-1 right-2 z-40 text-[10px] text-slate-400 pointer-events-none select-none">

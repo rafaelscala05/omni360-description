@@ -48,7 +48,7 @@ export default function LoginLanding({ onLogin }: LoginLandingProps) {
             <div className="bg-primary p-2.5 rounded-xl shadow-lg shadow-blue-200">
               <Sparkles className="w-6 h-6 text-white" />
             </div>
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight">Alfreds - Agente de Ecommerce</h2>
+            <h2 className="font-display text-2xl font-extrabold text-gray-900 tracking-tight">Alfreds - Agente de Ecommerce</h2>
           </div>
 
           <h1 className="text-5xl font-black text-gray-900 leading-tight mb-4">
