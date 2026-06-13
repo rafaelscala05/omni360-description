@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Product, Category, AttributeDefinition } from '../../types/models';
+import { Product, Category, AttributeDefinition, ProductModalTab, getProductStatusFlags } from '../../types/models';
 import { getEffectiveAttributes } from '../../services/categoryService';
 import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText } from '../../services/productService';
 import { 
@@ -209,16 +209,17 @@ function WYSIWYGEditor({ value, onChange }: WYSIWYGEditorProps) {
 interface ProductEditModalProps {
   product: Product;
   categories: Category[];
+  initialTab?: ProductModalTab;
   onClose: () => void;
   onSave: (updatedProduct: Product) => void;
   onCategoryUpdate?: (categoryId: string, newAttr: AttributeDefinition) => Promise<void>;
   onOpenImageModal?: () => void;
 }
 
-export default function ProductEditModal({ product, categories, onClose, onSave, onCategoryUpdate, onOpenImageModal }: ProductEditModalProps) {
+export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal }: ProductEditModalProps) {
   const [editedProduct, setEditedProduct] = useState<Product>({ ...product });
   const [initialProduct, setInitialProduct] = useState<Product>({ ...product });
-  const [activeTab, setActiveTab] = useState<'geral' | 'atributos' | 'tecnico' | 'ia' | 'imagem'>('geral');
+  const [activeTab, setActiveTab] = useState<ProductModalTab>(initialTab);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGeneratingIA, setIsGeneratingIA] = useState(false);
   const [suggestedAttributes, setSuggestedAttributes] = useState<any[]>([]);
@@ -436,12 +437,15 @@ export default function ProductEditModal({ product, categories, onClose, onSave,
     setIsAnalyzing(false);
   };
 
+  const statusFlags = getProductStatusFlags(editedProduct);
+
   const tabs = [
-    { id: 'geral', label: 'Geral', icon: Layout },
-    { id: 'atributos', label: 'Atributos', icon: Tag },
-    { id: 'tecnico', label: 'Técnico', icon: Cpu },
-    { id: 'imagem', label: 'Imagens (IA)', icon: ImageIcon },
-    { id: 'ia', label: 'Conteúdo IA', icon: Sparkles },
+    { id: 'geral', label: 'Geral', icon: Layout, done: false },
+    { id: 'atributos', label: 'Atributos', icon: Tag, done: statusFlags.atributosGerados },
+    { id: 'tecnico', label: 'Técnico', icon: Cpu, done: statusFlags.enriquecido },
+    { id: 'ia', label: 'Conteúdo', icon: Sparkles, done: statusFlags.descricaoGerada },
+    { id: 'imagem', label: 'Imagens', icon: ImageIcon, done: statusFlags.imagensGeradas },
+    { id: 'simular', label: 'Simular Produto', icon: Eye, done: false },
   ] as const;
 
   return (
@@ -511,9 +515,12 @@ export default function ProductEditModal({ product, categories, onClose, onSave,
                 <Icon className={cn("w-5 h-5", isActive ? "text-[#004ac6]" : "text-slate-400")} />
                 {tab.label}
                 {tab.id === 'atributos' && effectiveAttributes.length > 0 && (
-                   <span className="ml-auto px-1.5 py-0.5 rounded-full bg-blue-100 text-[#004ac6] text-[10px]">
+                   <span className="ml-1 px-1.5 py-0.5 rounded-full bg-blue-100 text-[#004ac6] text-[10px]">
                       {effectiveAttributes.length}
                    </span>
+                )}
+                {tab.done && (
+                   <CheckCircle2 className="w-4 h-4 text-emerald-500 ml-auto shrink-0" />
                 )}
               </button>
             );
@@ -1049,6 +1056,137 @@ export default function ProductEditModal({ product, categories, onClose, onSave,
                    </div>
                 </div>
               )}
+
+              {activeTab === 'simular' && (() => {
+                const galleryImages = [
+                  editedProduct._selectedImage,
+                  editedProduct['URL imagem 1'],
+                  editedProduct['URL imagem 2'],
+                  editedProduct['URL imagem 3'],
+                  editedProduct['URL imagem 4'],
+                  editedProduct['URL imagem 5'],
+                  editedProduct['URL imagem 6'],
+                  ...(editedProduct._ambientImages || []),
+                ].filter((v, i, arr) => v && arr.indexOf(v) === i) as string[];
+
+                const priceNumber = Number(String(editedProduct['Preço'] ?? '').toString().replace(',', '.'));
+                const priceLabel = isFinite(priceNumber) && priceNumber > 0
+                  ? priceNumber.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                  : (editedProduct['Preço'] ? `R$ ${editedProduct['Preço']}` : '—');
+
+                const filledAttributes = effectiveAttributes
+                  .map(attr => {
+                    const raw = editedProduct.attributes?.[attr.key]?.value;
+                    const value = Array.isArray(raw) ? raw.join(', ') : (raw || '');
+                    return { label: attr.label, value };
+                  })
+                  .filter(a => a.value);
+
+                return (
+                <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-300 pb-20">
+                  <style>{`
+                    .sim-desc h2 { font-size: 1.25rem; font-weight: 700; margin: 1rem 0 0.5rem 0; color: #0f172a; }
+                    .sim-desc h3 { font-size: 1.1rem; font-weight: 700; margin: 0.75rem 0 0.5rem 0; color: #1e293b; }
+                    .sim-desc p { margin-bottom: 0.75rem; line-height: 1.7; color: #334155; }
+                    .sim-desc ul { list-style-type: disc; padding-left: 1.5rem; margin: 0.5rem 0; }
+                    .sim-desc ol { list-style-type: decimal; padding-left: 1.5rem; margin: 0.5rem 0; }
+                    .sim-desc li { margin-bottom: 0.25rem; color: #334155; }
+                    .sim-desc strong, .sim-desc b { font-weight: 700; }
+                    .sim-desc em, .sim-desc i { font-style: italic; }
+                    .sim-desc u { text-decoration: underline; }
+                  `}</style>
+
+                  <div className="flex items-center gap-2 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                    <Eye className="w-4 h-4" />
+                    Pré-visualização (somente leitura) — como aparece em um e-commerce
+                  </div>
+
+                  <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 p-6 md:p-10">
+                      {/* Galeria */}
+                      <div>
+                        <div className="aspect-square w-full rounded-2xl border border-slate-100 bg-slate-50 overflow-hidden flex items-center justify-center">
+                          {galleryImages[0] ? (
+                            <img src={galleryImages[0]} alt={editedProduct['Descrição'] || ''} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                          ) : (
+                            <ImageIcon className="w-16 h-16 text-slate-300" />
+                          )}
+                        </div>
+                        {galleryImages.length > 1 && (
+                          <div className="flex gap-2 mt-3 flex-wrap">
+                            {galleryImages.slice(0, 6).map((img, idx) => (
+                              <div key={idx} className="w-16 h-16 rounded-lg border border-slate-200 bg-white overflow-hidden shrink-0">
+                                <img src={img} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Info */}
+                      <div className="flex flex-col">
+                        {editedProduct['Marca'] && (
+                          <span className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">{editedProduct['Marca']}</span>
+                        )}
+                        <h1 className="text-2xl md:text-3xl font-bold text-slate-900 leading-tight">
+                          {editedProduct['Descrição'] || 'Produto Sem Nome'}
+                        </h1>
+                        {editedProduct['Categoria'] && (
+                          <p className="text-xs text-slate-400 mt-1">{editedProduct['Categoria']}</p>
+                        )}
+                        <div className="mt-5 text-3xl font-black text-slate-900">{priceLabel}</div>
+
+                        {filledAttributes.length > 0 && (
+                          <div className="mt-6 border-t border-slate-100 pt-5">
+                            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Especificações</h3>
+                            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+                              {filledAttributes.map(a => (
+                                <div key={a.label} className="flex justify-between gap-3 text-sm border-b border-dashed border-slate-100 py-1">
+                                  <dt className="text-slate-500">{a.label}</dt>
+                                  <dd className="font-semibold text-slate-800 text-right">{a.value}</dd>
+                                </div>
+                              ))}
+                            </dl>
+                          </div>
+                        )}
+
+                        <button
+                          disabled
+                          className="mt-8 w-full sm:w-auto px-8 py-3.5 bg-[#004ac6] text-white font-bold rounded-xl shadow-lg shadow-blue-200 opacity-90 cursor-default flex items-center justify-center gap-2"
+                        >
+                          Comprar agora
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Descrição */}
+                    <div className="border-t border-slate-100 p-6 md:p-10">
+                      <h3 className="text-base font-bold text-slate-900 mb-4">Descrição do Produto</h3>
+                      {editedProduct['Descrição complementar'] ? (
+                        <div
+                          className="sim-desc max-w-none"
+                          dangerouslySetInnerHTML={{ __html: editedProduct['Descrição complementar'] }}
+                        />
+                      ) : (
+                        <p className="text-sm text-slate-400 italic">Nenhuma descrição gerada ainda. Gere o conteúdo na aba "Conteúdo".</p>
+                      )}
+                    </div>
+
+                    {/* SEO Preview */}
+                    {(editedProduct['Título SEO'] || editedProduct['Descrição SEO']) && (
+                      <div className="border-t border-slate-100 p-6 md:p-10 bg-slate-50/50">
+                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Pré-visualização na Busca</h3>
+                        <div className="max-w-xl">
+                          <div className="text-[#1a0dab] text-lg leading-tight truncate">{editedProduct['Título SEO'] || editedProduct['Descrição']}</div>
+                          <div className="text-[#006621] text-xs mt-0.5">www.sualoja.com.br › {editedProduct['Slug'] || (editedProduct['Descrição'] || '').toLowerCase().replace(/\s+/g, '-').slice(0, 40)}</div>
+                          <div className="text-sm text-slate-600 mt-1 line-clamp-2">{editedProduct['Descrição SEO']}</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                );
+              })()}
 
            </div>
         </main>

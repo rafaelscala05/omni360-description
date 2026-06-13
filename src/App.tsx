@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, FileSpreadsheet, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu } from 'lucide-react';
+import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, FileSpreadsheet, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ImageSearchModal from './components/ImageSearchModal';
 import LoginLanding from './components/LoginLanding';
@@ -13,10 +13,11 @@ import { collection, doc, writeBatch, getDocs, setDoc, getDoc, deleteDoc, getDoc
 import CategoryManager from './components/categories/CategoryManager';
 import CategoryImportModal from './components/modals/CategoryImportModal';
 import ProductEditModal from './components/modals/ProductEditModal';
-import { Category, Product, AttributeValue } from './types/models';
+import { Category, Product, AttributeValue, getProductStatusFlags, ProductModalTab } from './types/models';
 import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate } from './services/productService';
 import { fetchCategories, generateCategoryHierarchy, flattenHierarchy, getEffectiveAttributes, addAttributeToCategory } from './services/categoryService';
 import { generateGrounded, parseJsonResponse } from './services/aiService';
+import { CREDIT_ACTIONS, resolveCreditCost, type CreditAction } from './credits';
 
 // Build version injected at build time by Vite (git short hash + UTC date)
 declare const __BUILD_VERSION__: string;
@@ -38,6 +39,7 @@ interface Template {
 interface CreditLog {
   id: string;
   actionType: string;
+  actionKey?: string;
   productName: string;
   sku: string;
   userName: string;
@@ -115,7 +117,6 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [originalHeaders, setOriginalHeaders] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<'all' | 'processed' | 'errors'>('all');
   const [mainView, setMainView] = useState<'products' | 'categories'>('products');
   const [exportModel, setExportModel] = useState<'standard' | 'tinyerp'>('standard');
   const [existingCategories, setExistingCategories] = useState<Category[]>([]);
@@ -128,9 +129,13 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMarca, setFilterMarca] = useState('');
   const [filterCategoria, setFilterCategoria] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
-  const [hideGeneratedInImport, setHideGeneratedInImport] = useState(false);
-  const [hideEnrichedInImport, setHideEnrichedInImport] = useState(false);
+  const [statusFilters, setStatusFilters] = useState({
+    descricao: false,
+    enriquecido: false,
+    imagens: false,
+    atributos: false,
+    salvos: false,
+  });
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   
   // Generation State
@@ -141,6 +146,7 @@ export default function App() {
   
   // Preview Modal State
   const [previewProduct, setPreviewProduct] = useState<Product | null>(null);
+  const [previewInitialTab, setPreviewInitialTab] = useState<ProductModalTab>('geral');
   const [editedDescription, setEditedDescription] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [isEditingSEO, setIsEditingSEO] = useState(false);
@@ -156,6 +162,8 @@ export default function App() {
   // Auth State
   const [user, setUser] = useState<User | null>(null);
   const [credits, setCredits] = useState<number>(0);
+  // Per-action credit costs loaded from the read-only Firestore doc `config/credits`.
+  const [creditCosts, setCreditCosts] = useState<Record<string, number>>({});
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isCreditHistoryOpen, setIsCreditHistoryOpen] = useState(false);
   const [creditLogs, setCreditLogs] = useState<CreditLog[]>([]);
@@ -180,7 +188,7 @@ export default function App() {
     'Tipo': true,
     'Variações': true,
     'SEO': true,
-    'Status Desc.': true
+    'Status': true
   });
   const [isColumnConfigOpen, setIsColumnConfigOpen] = useState(false);
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
@@ -265,6 +273,20 @@ export default function App() {
             setCredits(initialCredits);
           }
           
+          // Load admin-controlled per-action credit costs (read-only config doc)
+          try {
+            const costSnap = await getDoc(doc(db, 'config/credits'));
+            if (costSnap.exists()) {
+              const data = costSnap.data();
+              setCreditCosts({
+                ...(data.costs ?? {}),
+                ...(data.defaultCost != null ? { _default: data.defaultCost } : {}),
+              });
+            }
+          } catch (costError) {
+            console.error("Error loading credit costs config:", costError);
+          }
+
           // Load categories on startup
           const cats = await fetchCategories(currentUser.uid);
           setExistingCategories(cats);
@@ -282,48 +304,69 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  const consumeCredit = async (actionType: string, productName: string = 'N/A', sku: string = 'N/A') => {
+  // Cost of a given action, resolved against the loaded config (fallbacks inside).
+  const getCreditCost = (key: string) => resolveCreditCost(creditCosts, key);
+
+  // Pre-flight balance guard used before launching an AI call. Returns false (and
+  // alerts) when the in-memory balance is insufficient. The authoritative check
+  // still happens transactionally inside consumeCredit after the call succeeds.
+  const ensureCredits = (action: CreditAction, multiplier: number = 1): boolean => {
+    const needed = getCreditCost(action.key) * multiplier;
+    if (credits < needed) {
+      alert(`Você não possui créditos suficientes. Necessário: ${needed}, Disponível: ${credits}`);
+      return false;
+    }
+    return true;
+  };
+
+  // Debits the cost of `action` transactionally and writes an immutable log.
+  // Call this only AFTER the paid operation (AI call) has succeeded, so a failed
+  // generation never costs the user credits.
+  const consumeCredit = async (action: CreditAction, productName: string = 'N/A', sku: string = 'N/A') => {
     if (!user) return false;
-    
+
+    const cost = getCreditCost(action.key);
+
     try {
       const userPath = `users/${user.uid}`;
       const userRef = doc(db, userPath);
-      
+
       const updatedValue = await runTransaction(db, async (transaction) => {
         const userSnap = await transaction.get(userRef);
         if (!userSnap.exists()) {
           throw new Error("Usuário não encontrado.");
         }
-        
+
         const currentCredits = userSnap.data().credits ?? 0;
-        if (currentCredits <= 0) {
+        if (currentCredits < cost) {
           throw new Error("INSUFFICIENT_CREDITS");
         }
-        
-        const nextCredits = currentCredits - 1;
+
+        const nextCredits = currentCredits - cost;
         transaction.update(userRef, { credits: nextCredits });
-        
+
         // Log consumption
         const logRef = doc(collection(db, `${userPath}/credit_logs`));
         const logData: Omit<CreditLog, 'id'> = {
-          actionType,
+          actionType: action.label,
+          actionKey: action.key,
           productName,
           sku,
           userName: user.displayName || user.email || 'Usuário',
-          creditsConsumed: 1,
+          creditsConsumed: cost,
           timestamp: new Date().toISOString()
         };
         transaction.set(logRef, logData);
-        
+
         return nextCredits;
       });
-      
+
       setCredits(updatedValue);
-      
+
       if (isCreditHistoryOpen) {
         fetchCreditLogs();
       }
-      
+
       return true;
     } catch (error: any) {
       if (error.message === "INSUFFICIENT_CREDITS") {
@@ -395,11 +438,14 @@ export default function App() {
       const userPath = `users/${user.uid}`;
       const userRef = doc(db, userPath);
       try {
-        await setDoc(userRef, { 
-          email: user.email, 
+        // NOTE: `credits` is intentionally NOT written here. The balance is only
+        // ever mutated by consumeCredit's transaction (and, in the future,
+        // server-side top-ups). Re-asserting a stale in-memory value here risks
+        // overwriting concurrent debits and is rejected by the hardened rules.
+        await setDoc(userRef, {
+          email: user.email,
           lastSync: new Date().toISOString(),
-          displayName: user.displayName,
-          credits: credits
+          displayName: user.displayName
         }, { merge: true });
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, userPath);
@@ -614,51 +660,23 @@ export default function App() {
       // Only show parent or simple products in the main list
       if (p['Código do pai']) return false;
 
-      const hasError = 
-        !!p._generationError || 
-        p._statusDescricao === 'Erro' || 
-        p._statusSEO === 'Erro' ||
-        (p['Descrição']?.startsWith('Erro:') || false) ||
-        (p['Título SEO']?.startsWith('Erro:') || false);
+      const flags = getProductStatusFlags(p);
 
-      // Tab filter
-      if (activeTab === 'processed') {
-        if (hasError) return false;
-
-        const hasGeneratedDescription = p._statusDescricao === 'Gerado por IA' || p._statusSEO === 'Gerado por IA';
-        const hasEnrichedData = !!p._enrichmentLog;
-        if (!hasGeneratedDescription && !hasEnrichedData) return false;
-      }
-      if (activeTab === 'errors') {
-        if (!hasError) return false;
-      }
-      if (activeTab === 'all') {
-        const hasGeneratedDescription = p._statusDescricao === 'Gerado por IA' || p._statusSEO === 'Gerado por IA';
-        const hasEnrichedData = !!p._enrichmentLog;
-        
-        // Remove from spreadsheet / first step tab if both enriched and generated description content
-        if (hasGeneratedDescription && hasEnrichedData) {
-          return false;
-        }
-
-        // Additional toggles to hide individually
-        if (hideGeneratedInImport && hasGeneratedDescription) {
-          return false;
-        }
-        if (hideEnrichedInImport && hasEnrichedData) {
-          return false;
-        }
-      }
-
-      const matchesSearch = (p['Descrição']?.toLowerCase() || '').includes(searchQuery.toLowerCase()) || 
+      const matchesSearch = (p['Descrição']?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
                             (p['Código (SKU)']?.toLowerCase() || '').includes(searchQuery.toLowerCase());
       const matchesMarca = filterMarca ? p['Marca'] === filterMarca : true;
       const matchesCategoria = filterCategoria ? p['Categoria'] === filterCategoria : true;
-      const matchesStatus = filterStatus ? p._statusDescricao === filterStatus : true;
-      
-      return matchesSearch && matchesMarca && matchesCategoria && matchesStatus;
+
+      // Status filters (AND): se ligado, o produto precisa ter aquele flag
+      if (statusFilters.descricao && !flags.descricaoGerada) return false;
+      if (statusFilters.enriquecido && !flags.enriquecido) return false;
+      if (statusFilters.imagens && !flags.imagensGeradas) return false;
+      if (statusFilters.atributos && !flags.atributosGerados) return false;
+      if (statusFilters.salvos && !flags.salvo) return false;
+
+      return matchesSearch && matchesMarca && matchesCategoria;
     });
-  }, [products, searchQuery, filterMarca, filterCategoria, filterStatus, activeTab, hideGeneratedInImport, hideEnrichedInImport]);
+  }, [products, searchQuery, filterMarca, filterCategoria, statusFilters]);
 
   const paginatedProducts = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -840,16 +858,18 @@ export default function App() {
     
     try {
       if (aiEnrichmentEnabled && selectedNewCategories.length > 0) {
-        if (credits < 1) {
-          alert('Você precisa de no mínimo 1 crédito para IA. A geração de hierarquia será ignorada.');
+        const hierarchyCost = getCreditCost(CREDIT_ACTIONS.generateHierarchy.key);
+        if (credits < hierarchyCost) {
+          alert(`Você precisa de no mínimo ${hierarchyCost} crédito(s) para IA. A geração de hierarquia será ignorada.`);
         } else {
           try {
-             await consumeCredit('generate_hierarchy', 'Geração de Hierarquia');
              const aiResult = await generateCategoryHierarchy(selectedNewCategories);
              console.log("AI Categories Result:", aiResult);
              if (aiResult.hierarchy) {
                catsToCreate = flattenHierarchy(aiResult.hierarchy);
              }
+             // Debit only after the AI call succeeded.
+             await consumeCredit(CREDIT_ACTIONS.generateHierarchy);
           } catch(e) {
              console.error(e);
              alert("Erro na IA, criando categorias planas...");
@@ -1325,8 +1345,8 @@ Retorne APENAS um JSON válido no seguinte formato:
     if (productIndex === -1) return;
     const product = products[productIndex];
 
-    if (!(await consumeCredit('Enriquecimento Individual', product['Descrição'], product['Código (SKU)']))) return;
-    
+    if (!ensureCredits(CREDIT_ACTIONS.enrichSingle)) return;
+
     // Set enriching state
     const newProducts = [...products];
     newProducts[productIndex] = { ...product, _isEnriching: true };
@@ -1335,6 +1355,7 @@ Retorne APENAS um JSON válido no seguinte formato:
     try {
       const enrichedData = await enrichProductData(product);
       applyEnrichmentToProductAndChildren(id, enrichedData);
+      await consumeCredit(CREDIT_ACTIONS.enrichSingle, product['Descrição'], product['Código (SKU)']);
     } catch (error) {
       alert(`Erro ao enriquecer dados para ${product['Descrição']}`);
       setProducts(prev => {
@@ -1357,7 +1378,7 @@ Retorne APENAS um JSON válido no seguinte formato:
         isOpen: true,
         type: 'generate',
         count: 1,
-        creditsNeeded: 1,
+        creditsNeeded: getCreditCost(CREDIT_ACTIONS.generateSeoSingle.key),
         targetId: id
       });
       return;
@@ -1372,8 +1393,8 @@ Retorne APENAS um JSON válido no seguinte formato:
     if (productIndex === -1) return;
     const product = products[productIndex];
 
-    if (!(await consumeCredit('Geração SEO Individual', product['Descrição'], product['Código (SKU)']))) return;
-    
+    if (!ensureCredits(CREDIT_ACTIONS.generateSeoSingle)) return;
+
     // Set generating state
     const newProducts = [...products];
     newProducts[productIndex] = { ...product, _isGenerating: true };
@@ -1383,6 +1404,7 @@ Retorne APENAS um JSON válido no seguinte formato:
       const template = templates.find(t => t.id === selectedTemplateId) || defaultTemplate;
       const generatedData = await generateDescriptionText(product, existingCategories, template);
       applyGenerationToProductAndChildren(id, generatedData);
+      await consumeCredit(CREDIT_ACTIONS.generateSeoSingle, product['Descrição'], product['Código (SKU)']);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       alert(`Erro ao gerar descrição para ${product['Descrição']}: ${errorMessage}`);
@@ -1409,8 +1431,9 @@ Retorne APENAS um JSON válido no seguinte formato:
     
     // Total cost check
     const count = selectedIds.size;
-    if (credits < count) {
-      alert(`Você não possui créditos suficientes. Necessário: ${count}, Disponível: ${credits}`);
+    const generateNeeded = count * getCreditCost(CREDIT_ACTIONS.generateSeoMass.key);
+    if (credits < generateNeeded) {
+      alert(`Você não possui créditos suficientes. Necessário: ${generateNeeded}, Disponível: ${credits}`);
       return;
     }
 
@@ -1419,7 +1442,7 @@ Retorne APENAS um JSON válido no seguinte formato:
         isOpen: true,
         type: 'generate',
         count: count,
-        creditsNeeded: count
+        creditsNeeded: generateNeeded
       });
       return;
     }
@@ -1441,9 +1464,8 @@ Retorne APENAS um JSON válido no seguinte formato:
       if (productIndex === -1) continue;
       
       const product = products[productIndex];
-      if (!(await consumeCredit('Geração SEO em Massa', product['Descrição'], product['Código (SKU)']))) break;
       setGenerationLog(`Gerando descrição para: ${product['Descrição'] || product['Código (SKU)']}...`);
-      
+
       // Update UI to show this specific item is generating
       setProducts(prev => {
         const updated = [...prev];
@@ -1456,6 +1478,8 @@ Retorne APENAS um JSON válido no seguinte formato:
         const template = templates.find(t => t.id === selectedTemplateId) || defaultTemplate;
         const generatedData = await generateDescriptionText(product, existingCategories, template);
         applyGenerationToProductAndChildren(id, generatedData);
+        // Debit only after success; stop the batch if the balance ran out.
+        if (!(await consumeCredit(CREDIT_ACTIONS.generateSeoMass, product['Descrição'], product['Código (SKU)']))) break;
         successCount++;
       } catch (error) {
         console.error(`Failed for ${id}`, error);
@@ -1495,8 +1519,9 @@ Retorne APENAS um JSON válido no seguinte formato:
 
     // Total cost check
     const count = selectedIds.size;
-    if (credits < count) {
-      alert(`Você não possui créditos suficientes. Necessário: ${count}, Disponível: ${credits}`);
+    const enrichNeeded = count * getCreditCost(CREDIT_ACTIONS.enrichMass.key);
+    if (credits < enrichNeeded) {
+      alert(`Você não possui créditos suficientes. Necessário: ${enrichNeeded}, Disponível: ${credits}`);
       return;
     }
 
@@ -1505,7 +1530,7 @@ Retorne APENAS um JSON válido no seguinte formato:
         isOpen: true,
         type: 'enrich',
         count: count,
-        creditsNeeded: count
+        creditsNeeded: enrichNeeded
       });
       return;
     }
@@ -1527,9 +1552,8 @@ Retorne APENAS um JSON válido no seguinte formato:
       if (productIndex === -1) continue;
       
       const product = products[productIndex];
-      if (!(await consumeCredit('Enriquecimento em Massa', product['Descrição'], product['Código (SKU)']))) break;
       setGenerationLog(`Buscando dados para: ${product['Descrição'] || product['Código (SKU)']}...`);
-      
+
       setProducts(prev => {
         const updated = [...prev];
         const idx = updated.findIndex(p => p._id === id);
@@ -1540,6 +1564,8 @@ Retorne APENAS um JSON válido no seguinte formato:
       try {
         const enrichedData = await enrichProductData(product);
         applyEnrichmentToProductAndChildren(id, enrichedData);
+        // Debit only after success; stop the batch if the balance ran out.
+        if (!(await consumeCredit(CREDIT_ACTIONS.enrichMass, product['Descrição'], product['Código (SKU)']))) break;
         successCount++;
       } catch (error) {
         console.error(`Failed enriching ${id}`, error);
@@ -1568,11 +1594,6 @@ Retorne APENAS um JSON válido no seguinte formato:
     setShowDeleteConfirm({ isOpen: true, type: 'selected' });
   };
 
-  const handleDeleteAllInTab = () => {
-    if (filteredProducts.length === 0) return;
-    setShowDeleteConfirm({ isOpen: true, type: 'all' });
-  };
-
   const processDelete = () => {
     if (!showDeleteConfirm) return;
     
@@ -1597,7 +1618,8 @@ Retorne APENAS um JSON válido no seguinte formato:
     setShowDeleteConfirm(null);
   };
 
-  const openPreview = (product: Product) => {
+  const openPreview = (product: Product, initialTab: ProductModalTab = 'geral') => {
+    setPreviewInitialTab(initialTab);
     setPreviewProduct(product);
     setEditedDescription(product['Descrição complementar'] || '');
     setEditedSEO({
@@ -1693,12 +1715,13 @@ Retorne APENAS um JSON válido no seguinte formato:
 
   const handleRegeneratePreview = async () => {
     if (!previewProduct) return;
-    if (!(await consumeCredit('Regeneração Individual', previewProduct['Descrição'], previewProduct['Código (SKU)']))) return;
-    
+    if (!ensureCredits(CREDIT_ACTIONS.regenerateSingle)) return;
+
     setPreviewProduct(prev => prev ? { ...prev, _isGenerating: true } : null);
     try {
       const template = templates.find(t => t.id === selectedTemplateId) || defaultTemplate;
       const generatedData = await generateDescriptionText(previewProduct, existingCategories, template);
+      await consumeCredit(CREDIT_ACTIONS.regenerateSingle, previewProduct['Descrição'], previewProduct['Código (SKU)']);
       setEditedDescription(generatedData.descricao_html);
       setPreviewProduct(prev => prev ? { 
         ...prev, 
@@ -2116,57 +2139,36 @@ Retorne APENAS um JSON válido no seguinte formato:
                    <h1 className="text-xl md:text-2xl font-bold text-slate-900 tracking-tight">Catálogo de Produtos</h1>
                    <p className="text-xs md:text-sm text-slate-500 mt-0.5">Gerencie e enriqueça seu inventário de produtos.</p>
                  </div>
-                 
-                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
-                   <div className="flex p-0.5 bg-slate-100 rounded-xl border border-slate-200 shadow-inner overflow-x-auto scrollbar-none whitespace-nowrap">
-                     <button
-                       onClick={() => setActiveTab('all')}
-                       className={cn(
-                         "flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs md:text-sm font-bold rounded-lg transition-all shrink-0",
-                         activeTab === 'all' 
-                           ? "bg-white text-[#004ac6] shadow-sm" 
-                           : "text-slate-500 hover:text-slate-700"
-                       )}
-                       id="btn-tab-import"
-                     >
-                       <FileSpreadsheet className="w-3.5 h-3.5" />
-                       <span>Importar</span>
-                     </button>
-                     <button
-                       onClick={() => {
-                         setActiveTab('processed');
-                       }}
-                       className={cn(
-                         "flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs md:text-sm font-bold rounded-lg transition-all shrink-0",
-                         activeTab === 'processed' 
-                           ? "bg-white text-indigo-600 shadow-sm" 
-                           : "text-slate-500 hover:text-slate-700"
-                       )}
-                       id="btn-tab-enhanced"
-                     >
-                       {isLoadingFromCloud ? (
-                         <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                       ) : (
-                         <Sparkles className="w-3.5 h-3.5" />
-                       )}
-                       <span>Aprimorados</span>
-                     </button>
-                     <button
-                       onClick={() => setActiveTab('errors')}
-                       className={cn(
-                         "flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs md:text-sm font-bold rounded-lg transition-all shrink-0",
-                         activeTab === 'errors' 
-                           ? "bg-white text-red-600 shadow-sm" 
-                           : "text-slate-500 hover:text-slate-700"
-                       )}
-                       id="btn-tab-errors"
-                     >
-                       <AlertCircle className="w-3.5 h-3.5" />
-                       <span>Erros</span>
-                     </button>
-                   </div>
 
-                   <div className="hidden sm:block h-6 w-px bg-slate-200"></div>
+                 {/* Legenda de Status */}
+                 <div className="hidden xl:flex items-center gap-3 px-4 py-2 bg-white/80 border border-slate-200 rounded-xl shadow-sm">
+                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Legenda</span>
+                   <div className="h-4 w-px bg-slate-200" />
+                   <div className="flex items-center gap-3.5">
+                     {([
+                       { Icon: Sparkles, label: 'Descrição', color: 'text-indigo-600 bg-indigo-50' },
+                       { Icon: Tag, label: 'Atributos', color: 'text-amber-600 bg-amber-50' },
+                       { Icon: Search, label: 'Enriquecido', color: 'text-purple-600 bg-purple-50' },
+                       { Icon: ImageIcon, label: 'Imagens', color: 'text-blue-600 bg-blue-50' },
+                       { Icon: Cloud, label: 'Salvo', color: 'text-emerald-600 bg-emerald-50' },
+                     ] as const).map(({ Icon, label, color }) => (
+                       <div key={label} className="flex items-center gap-1.5">
+                         <span className={cn("flex items-center justify-center w-5 h-5 rounded-md border border-slate-200/60", color)}>
+                           <Icon className="w-3 h-3" />
+                         </span>
+                         <span className="text-[11px] font-medium text-slate-600">{label}</span>
+                       </div>
+                     ))}
+                   </div>
+                 </div>
+
+                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+                   {isLoadingFromCloud && (
+                     <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                       <span>Sincronizando...</span>
+                     </div>
+                   )}
 
                    <div className="flex items-center gap-2 w-full sm:w-auto">
                      <button
@@ -2215,7 +2217,16 @@ Retorne APENAS um JSON válido no seguinte formato:
                           {categorias.map(m => <option key={m} value={m}>{m}</option>)}
                         </select>
 
-                        {activeTab === 'all' && (
+                        {(() => {
+                          const activeStatusCount = Object.values(statusFilters).filter(Boolean).length;
+                          const statusFilterItems: { key: keyof typeof statusFilters; label: string }[] = [
+                            { key: 'descricao', label: 'Descrição Gerada' },
+                            { key: 'enriquecido', label: 'Enriquecido' },
+                            { key: 'imagens', label: 'Imagens Geradas' },
+                            { key: 'atributos', label: 'Atributos Gerados' },
+                            { key: 'salvos', label: 'Apenas Salvos' },
+                          ];
+                          return (
                           <div className="relative inline-block text-left z-30">
                             <button
                               type="button"
@@ -2227,15 +2238,10 @@ Retorne APENAS um JSON válido no seguinte formato:
                               className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-700 font-medium focus:ring-[#004ac6] focus:border-[#004ac6] outline-none bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer select-none"
                             >
                               <Filter className="w-4 h-4 text-slate-500" />
-                              <span>Filtrar: Gerados / Enriquecidos</span>
-                              {((hideGeneratedInImport ? 1 : 0) + (hideEnrichedInImport ? 1 : 0)) > 0 ? (
+                              <span>Filtrar por Status</span>
+                              {activeStatusCount > 0 ? (
                                 <span className="inline-flex items-center justify-center bg-[#004ac6] text-white rounded-md px-1.5 py-0.5 text-[10px] font-bold leading-none ml-1">
-                                  {hideGeneratedInImport && hideEnrichedInImport 
-                                    ? "Ambos" 
-                                    : hideGeneratedInImport 
-                                      ? "Sem Descrição" 
-                                      : "Sem Enriquecidos"
-                                  }
+                                  {activeStatusCount}
                                 </span>
                               ) : (
                                 <span className="text-slate-400 text-xs ml-1 font-normal">Nenhum</span>
@@ -2245,38 +2251,42 @@ Retorne APENAS um JSON válido no seguinte formato:
 
                             {isFilterDropdownOpen && (
                               <>
-                                <div 
-                                  className="fixed inset-0 z-30" 
-                                  onClick={() => setIsFilterDropdownOpen(false)} 
+                                <div
+                                  className="fixed inset-0 z-30"
+                                  onClick={() => setIsFilterDropdownOpen(false)}
                                 />
                                 <div className="absolute left-0 mt-1.5 w-64 bg-white border border-slate-200 rounded-lg shadow-lg z-40 py-2 animate-in fade-in slide-in-from-top-1">
-                                  <div className="px-3.5 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                                    Ocultar do Importador
+                                  <div className="flex items-center justify-between px-3.5 py-1.5">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                      Mostrar apenas com
+                                    </span>
+                                    {activeStatusCount > 0 && (
+                                      <button
+                                        onClick={() => setStatusFilters({ descricao: false, enriquecido: false, imagens: false, atributos: false, salvos: false })}
+                                        className="text-[10px] font-bold text-[#004ac6] hover:underline"
+                                      >
+                                        Limpar
+                                      </button>
+                                    )}
                                   </div>
                                   <hr className="border-slate-100 my-1" />
-                                  <label className="flex items-center gap-2.5 px-3.5 py-2 cursor-pointer hover:bg-slate-50 transition-colors text-xs font-semibold text-slate-600 select-none">
-                                    <input 
-                                      type="checkbox" 
-                                      checked={hideGeneratedInImport} 
-                                      onChange={(e) => setHideGeneratedInImport(e.target.checked)} 
-                                      className="rounded border-slate-300 text-[#004ac6] focus:ring-[#004ac6] w-4 h-4 cursor-pointer"
-                                    />
-                                    <span>Esconder Já Gerado Descrição</span>
-                                  </label>
-                                  <label className="flex items-center gap-2.5 px-3.5 py-2 cursor-pointer hover:bg-slate-50 transition-colors text-xs font-semibold text-slate-600 select-none">
-                                    <input 
-                                      type="checkbox" 
-                                      checked={hideEnrichedInImport} 
-                                      onChange={(e) => setHideEnrichedInImport(e.target.checked)} 
-                                      className="rounded border-slate-300 text-[#004ac6] focus:ring-[#004ac6] w-4 h-4 cursor-pointer"
-                                    />
-                                    <span>Esconder Já Enriquecidos</span>
-                                  </label>
+                                  {statusFilterItems.map(item => (
+                                    <label key={item.key} className="flex items-center gap-2.5 px-3.5 py-2 cursor-pointer hover:bg-slate-50 transition-colors text-xs font-semibold text-slate-600 select-none">
+                                      <input
+                                        type="checkbox"
+                                        checked={statusFilters[item.key]}
+                                        onChange={(e) => setStatusFilters(prev => ({ ...prev, [item.key]: e.target.checked }))}
+                                        className="rounded border-slate-300 text-[#004ac6] focus:ring-[#004ac6] w-4 h-4 cursor-pointer"
+                                      />
+                                      <span>{item.label}</span>
+                                    </label>
+                                  ))}
                                 </div>
                               </>
                             )}
                           </div>
-                        )}
+                          );
+                        })()}
 
                         <div className="w-px h-5 bg-slate-200 mx-1 sm:mx-2"></div>
                         <div className="text-xs text-slate-500 font-medium">{paginatedProducts.length} itens</div>
@@ -2318,29 +2328,20 @@ Retorne APENAS um JSON válido no seguinte formato:
 
                         <div className="w-px h-5 bg-slate-200 mx-1 sm:mx-2"></div>
 
-                        {activeTab === 'all' && (
-                          <button
-                            onClick={handleDeleteAllInTab}
-                            disabled={filteredProducts.length === 0}
-                            className="flex items-center gap-1.5 p-1.5 sm:px-3 sm:py-1.5 bg-white text-red-600 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-50 hover:border-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                            title="Limpar Todos da Aba"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Limpar Aba</span>
-                          </button>
-                        )}
-                        
-                        <div className="w-px h-5 bg-slate-200 mx-1 sm:mx-2"></div>
-                        
                         <button
                           onClick={() => {
                             setIsColumnConfigOpen(!isColumnConfigOpen);
                             setIsExportDropdownOpen(false);
                           }}
-                          className="p-1.5 border border-slate-200 bg-white rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
+                          className={cn(
+                            "p-1.5 border rounded-lg transition-colors shadow-sm",
+                            isColumnConfigOpen
+                              ? "border-[#004ac6]/30 bg-blue-50 text-[#004ac6]"
+                              : "border-slate-200 bg-white text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                          )}
                           title="Colunas Visíveis"
                         >
-                          <Filter className="w-4 h-4" />
+                          <Columns3 className="w-4 h-4" />
                         </button>
                         
                         <div className="relative">
@@ -2435,8 +2436,8 @@ Retorne APENAS um JSON válido no seguinte formato:
                             {visibleColumns['Descrição'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">Descrição</th>}
                             {visibleColumns['Categoria'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">Categoria</th>}
                             {visibleColumns['Marca'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">Marca</th>}
-                            {visibleColumns['Status Desc.'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">Status</th>}
-                            <th className="px-5 py-3.5 text-right font-bold text-slate-600 text-xs tracking-wider uppercase bg-[#f7f9fb] shadow-[inset_1px_0_0_0_#e2e8f0] sticky right-0 z-20 w-[220px]">Ações</th>
+                            {visibleColumns['Status'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">Status</th>}
+                            <th className="px-5 py-3.5 text-right font-bold text-slate-600 text-xs tracking-wider uppercase bg-[#f7f9fb] shadow-[inset_1px_0_0_0_#e2e8f0] sticky right-0 z-20 w-[280px]">Ações</th>
                          </tr>
                        </thead>
                        <tbody className="divide-y divide-slate-100">
@@ -2449,16 +2450,13 @@ Retorne APENAS um JSON válido no seguinte formato:
                                   </div>
                                    <h3 className="text-xl font-bold text-slate-900 mb-2">Pronto para começar?</h3>
                                    <p className="text-sm text-slate-500 mb-8 max-w-sm mx-auto">
-                                     {activeTab === 'all' 
-                                       ? "Faça o upload de uma planilha Excel (XLSX) para gerenciar e aprimorar seus produtos com IA."
-                                       : "Você ainda não possui produtos aprimorados. Vá para a aba 'Importar' e use a IA para otimizar seus dados."
-                                     }
+                                     Faça o upload de uma planilha Excel (XLSX) para gerenciar e aprimorar seus produtos com IA.
                                    </p>
-                                   <button 
-                                     onClick={() => activeTab === 'all' ? fileInputRef.current?.click() : setActiveTab('all')} 
+                                   <button
+                                     onClick={() => fileInputRef.current?.click()}
                                      className="px-8 py-3 bg-[#004ac6] text-white rounded-xl shadow-lg shadow-blue-200 font-bold hover:bg-[#003ea8] transition-all hover:scale-105 active:scale-95 flex items-center gap-2 mx-auto"
                                    >
-                                     {activeTab === 'all' ? <><Upload className="w-5 h-5" /> Importar Arquivo</> : "Ir para Importar"}
+                                     <Upload className="w-5 h-5" /> Importar Arquivo
                                    </button>
                                 </div>
                               </td>
@@ -2470,6 +2468,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                             const isOriginal = product._statusDescricao === 'Descrição original';
                             const isError = !!product._generationError || product._statusDescricao === 'Erro';
                             const isEnriched = !!product._enrichmentLog;
+                            const flags = getProductStatusFlags(product);
 
                             return (
                             <tr key={product._id} className={cn(
@@ -2522,50 +2521,107 @@ Retorne APENAS um JSON válido no seguinte formato:
                               )}
                               {visibleColumns['Categoria'] && <td className="px-4 py-3 text-slate-500 text-xs bg-inherit"><div className="max-w-[120px] truncate">{product['Categoria'] || '-'}</div></td>}
                               {visibleColumns['Marca'] && <td className="px-4 py-3 text-slate-500 text-xs bg-inherit"><div className="max-w-[100px] truncate">{product['Marca'] || '-'}</div></td>}
-                              {visibleColumns['Status Desc.'] && (
+                              {visibleColumns['Status'] && (
                                 <td className="px-4 py-3 bg-inherit">
-                                   <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-widest ${isError ? 'bg-red-100 text-red-700 border border-red-200' : isProcessed ? 'bg-indigo-50 text-indigo-700 border border-indigo-200/50' : isOriginal ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/50' : 'bg-red-50 text-red-700 border border-red-200/50'}`}>
-                                     {isError ? 'Erro' : isProcessed ? 'Otimizado' : isOriginal ? 'Ativo' : 'Rascunho'}{product._generationError && !isError && <span className="block text-[9px] font-black text-red-650 uppercase tracking-widest mt-1.5 animate-pulse" title={product._generationError}>● Erro IA</span>}
-                                   </span>
+                                   <div className="flex flex-col gap-1.5">
+                                     <div className="flex items-center gap-1">
+                                       {([
+                                         { on: flags.descricaoGerada, Icon: Sparkles, label: 'Descrição', onClass: 'bg-indigo-50 text-indigo-700 border-indigo-200/60' },
+                                         { on: flags.atributosGerados, Icon: Tag, label: 'Atributos', onClass: 'bg-amber-50 text-amber-700 border-amber-200/60' },
+                                         { on: flags.enriquecido, Icon: Search, label: 'Enriquecido', onClass: 'bg-purple-50 text-purple-700 border-purple-200/60' },
+                                         { on: flags.imagensGeradas, Icon: ImageIcon, label: 'Imagens', onClass: 'bg-blue-50 text-blue-700 border-blue-200/60' },
+                                       ] as const).map(({ on, Icon, label, onClass }) => (
+                                         <span
+                                           key={label}
+                                           title={`${label}: ${on ? 'concluído' : 'pendente'}`}
+                                           className={cn(
+                                             "inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase tracking-wider transition-colors",
+                                             on ? onClass : "bg-slate-50 text-slate-300 border-slate-200/60"
+                                           )}
+                                         >
+                                           <Icon className="w-3 h-3" />
+                                         </span>
+                                       ))}
+                                     </div>
+                                     <div className="flex items-center gap-2">
+                                       {flags.salvo ? (
+                                         <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-emerald-600" title="Sincronizado na nuvem">
+                                           <Cloud className="w-3 h-3" /> Salvo
+                                         </span>
+                                       ) : (
+                                         <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-amber-600" title="Alterações não salvas">
+                                           <CloudUpload className="w-3 h-3" /> Não salvo
+                                         </span>
+                                       )}
+                                       {isError && (
+                                         <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-red-600 animate-pulse" title={product._generationError || 'Erro'}>
+                                           <AlertCircle className="w-3 h-3" /> Erro
+                                         </span>
+                                       )}
+                                     </div>
+                                   </div>
                                 </td>
                               )}
-                              <td className="px-5 py-3 text-right bg-inherit transition-colors sticky right-0 shadow-[inset_1px_0_0_0_#f1f5f9] group-hover:shadow-[inset_1px_0_0_0_#e2e8f0] z-10 w-[220px]">
+                              <td className="px-5 py-3 text-right bg-inherit transition-colors sticky right-0 shadow-[inset_1px_0_0_0_#f1f5f9] group-hover:shadow-[inset_1px_0_0_0_#e2e8f0] z-10 w-[280px]">
                                 <div className="flex items-center justify-end gap-1.5 bg-inherit h-full">
-                                  <button 
-                                    onClick={() => openPreview(product)} 
-                                    className="text-[#004ac6] hover:bg-blue-600 hover:text-white bg-blue-50 border border-blue-100 p-1.5 rounded-lg transition-all shadow-sm flex items-center justify-center w-8 h-8 group/edit" 
+                                  <button
+                                    onClick={() => openPreview(product)}
+                                    className="text-[#004ac6] hover:bg-blue-600 hover:text-white bg-blue-50 border border-blue-100 p-1.5 rounded-lg transition-all shadow-sm flex items-center justify-center w-8 h-8 group/edit"
                                     title="Visualizar Detalhes"
                                     id="product-edit-btn"
                                   >
                                     <Eye className="w-3.5 h-3.5 transition-transform group-hover/edit:scale-110" />
                                   </button>
-                                  <button 
-                                    onClick={() => handleEnrichSingle(product._id)} 
-                                    disabled={product._isEnriching} 
+                                  <button
+                                    onClick={() => openPreview(product, 'atributos')}
                                     className={cn(
-                                      "rounded-md transition-all shadow-sm disabled:opacity-50 flex items-center justify-center px-2 h-8 gap-1.5",
-                                      isEnriched 
-                                        ? "bg-purple-50 text-purple-700 border border-purple-200" 
+                                      "rounded-md transition-all shadow-sm flex items-center justify-center w-8 h-8",
+                                      flags.atributosGerados
+                                        ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                        : "bg-white text-slate-400 hover:text-amber-700 border border-slate-200 hover:border-amber-300 hover:bg-amber-50"
+                                    )}
+                                    title="Gerar Atributos"
+                                  >
+                                    <Tag className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => openPreview(product, 'imagem')}
+                                    className={cn(
+                                      "rounded-md transition-all shadow-sm flex items-center justify-center w-8 h-8",
+                                      flags.imagensGeradas
+                                        ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                        : "bg-white text-slate-400 hover:text-blue-700 border border-slate-200 hover:border-blue-300 hover:bg-blue-50"
+                                    )}
+                                    title="Gerar Imagens"
+                                  >
+                                    <ImageIcon className="w-3.5 h-3.5" />
+                                  </button>
+                                  <div className="w-px h-5 bg-slate-200 mx-0.5"></div>
+                                  <button
+                                    onClick={() => handleEnrichSingle(product._id)}
+                                    disabled={product._isEnriching}
+                                    className={cn(
+                                      "rounded-md transition-all shadow-sm disabled:opacity-50 flex items-center justify-center w-8 h-8",
+                                      isEnriched
+                                        ? "bg-purple-50 text-purple-700 border border-purple-200"
                                         : "bg-white text-slate-400 hover:text-purple-700 border border-slate-200 hover:border-purple-300 hover:bg-purple-50"
                                     )}
-                                    title="Enriquecer Dados"
+                                    title={isEnriched ? "Enriquecer Dados (já enriquecido)" : "Enriquecer Dados"}
                                   >
                                     <Search className={`w-3.5 h-3.5 ${product._isEnriching ? 'animate-spin' : ''}`} />
-                                    {isEnriched && <span className="text-[10px] font-bold uppercase tracking-wider">Feito</span>}
                                   </button>
-                                  <button 
-                                    onClick={() => handleGenerateSingle(product._id)} 
-                                    disabled={product._isGenerating} 
+                                  <button
+                                    onClick={() => handleGenerateSingle(product._id)}
+                                    disabled={product._isGenerating}
                                     className={cn(
-                                      "rounded-md transition-all shadow-sm disabled:opacity-50 flex items-center justify-center px-2 h-8 gap-1.5",
-                                      isProcessed 
-                                        ? "bg-[#004ac6]/10 text-[#004ac6] border border-[#004ac6]/20" 
+                                      "rounded-md transition-all shadow-sm disabled:opacity-50 flex items-center justify-center w-8 h-8",
+                                      isProcessed
+                                        ? "bg-[#004ac6]/10 text-[#004ac6] border border-[#004ac6]/20"
                                         : "bg-white text-slate-400 hover:text-[#004ac6] border border-slate-200 hover:border-blue-300 hover:bg-blue-50"
                                     )}
-                                    title="Gerar Visão Geral"
+                                    title={isProcessed ? "Gerar Descrição (já gerada)" : "Gerar Descrição"}
                                   >
                                     <Sparkles className={`w-3.5 h-3.5 ${product._isGenerating ? 'animate-pulse text-[#004ac6]' : ''}`} />
-                                    {isProcessed && <span className="text-[10px] font-bold uppercase tracking-wider">Gerado</span>}
                                    </button>
                                  </div>
                               </td>
@@ -2617,6 +2673,7 @@ Retorne APENAS um JSON válido no seguinte formato:
         <ProductEditModal
           product={previewProduct}
           categories={existingCategories}
+          initialTab={previewInitialTab}
           onClose={() => setPreviewProduct(null)}
           onOpenImageModal={() => {
             setCurrentImageSearchProduct(previewProduct);
@@ -3002,6 +3059,7 @@ Retorne APENAS um JSON válido no seguinte formato:
         uid={user?.uid || ''}
         onSave={handleSaveImages}
         credits={credits}
+        getCreditCost={getCreditCost}
         consumeCredit={consumeCredit}
       />
 

@@ -143,3 +143,37 @@ export interface Product {
   variantAttributes?: string[]; // ex: ['Cor', 'Tamanho']
   variantValues?: { [key: string]: string }; // ex: { 'Cor': 'Azul', 'Tamanho': 'M'}
 }
+
+export type ProductModalTab = 'geral' | 'atributos' | 'tecnico' | 'ia' | 'imagem' | 'simular';
+
+export interface ProductStatusFlags {
+  descricaoGerada: boolean;
+  enriquecido: boolean;
+  imagensGeradas: boolean;
+  atributosGerados: boolean;
+  salvo: boolean;
+  erro: boolean;
+}
+
+/**
+ * Fonte única da verdade para o estado de processamento de um produto.
+ * Reutilizado na listagem, nos filtros e no modal do produto.
+ */
+export function getProductStatusFlags(p: Product): ProductStatusFlags {
+  const atributosGerados = Object.values(p.attributes ?? {}).some(a => {
+    const v = a?.value;
+    return Array.isArray(v) ? v.length > 0 : !!v;
+  });
+
+  return {
+    descricaoGerada: p._statusDescricao === 'Gerado por IA',
+    enriquecido: !!p._enrichmentLog,
+    imagensGeradas: (p._ambientImages?.length ?? 0) > 0,
+    atributosGerados,
+    salvo: !p._isDirty,
+    erro:
+      !!p._generationError ||
+      p._statusDescricao === 'Erro' ||
+      p._statusSEO === 'Erro',
+  };
+}

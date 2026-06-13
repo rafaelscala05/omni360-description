@@ -50,6 +50,16 @@ service cloud.firestore {
              (!('lastSync' in data) || data.lastSync is string);
     }
 
+    // On update, the client may only keep credits the same or DECREASE them
+    // (debits via consumeCredit). Any increase (top-up/recharge) must happen
+    // server-side with the Admin SDK, which bypasses these rules. This closes
+    // the hole where a client could set its own credits to an arbitrary value.
+    function creditsNotIncreased() {
+      return !('credits' in request.resource.data)
+          || !('credits' in resource.data)
+          || request.resource.data.credits <= resource.data.credits;
+    }
+
     function isValidTemplate() {
       let data = request.resource.data;
       return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
@@ -79,9 +89,17 @@ service cloud.firestore {
     // Rules
     // ===============================================================
 
+    // Admin-controlled, read-only configuration (e.g. per-action credit costs).
+    // Writes happen only via the Admin SDK / Firebase console, never the client.
+    match /config/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
     match /users/{userId} {
       allow read: if isOwner(userId);
-      allow create, update: if isOwner(userId) && isValidUser();
+      allow create: if isOwner(userId) && isValidUser();
+      allow update: if isOwner(userId) && isValidUser() && creditsNotIncreased();
       allow delete: if isOwner(userId);
 
       match /settings/{settingId} {

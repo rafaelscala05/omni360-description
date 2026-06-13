@@ -6,6 +6,7 @@ import { generateImage, generateJson } from '../services/aiService';
 import { storage } from '../firebase';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import type { Part } from 'firebase/ai';
+import { CREDIT_ACTIONS, type CreditAction } from '../credits';
 
 interface ImageSearchModalProps {
   isOpen: boolean;
@@ -14,7 +15,8 @@ interface ImageSearchModalProps {
   uid: string;
   onSave: (productId: string, selectedImage: string, ambientImages: string[], tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number }) => void;
   credits: number;
-  consumeCredit: (actionType: string, productName?: string, sku?: string) => Promise<boolean>;
+  getCreditCost: (key: string) => number;
+  consumeCredit: (action: CreditAction, productName?: string, sku?: string) => Promise<boolean>;
 }
 
 const IMAGE_TITLES = ['Produto Ambientado', 'Produto em Uso', 'Escala e Tamanho'];
@@ -74,7 +76,7 @@ Return ONLY valid JSON with this exact structure, no markdown, no explanations:
   return { prompts: parsed.prompts, productDescription: parsed.productDescription || '' };
 }
 
-export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave, credits, consumeCredit }: ImageSearchModalProps) {
+export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave, credits, getCreditCost, consumeCredit }: ImageSearchModalProps) {
   const [step, setStep] = useState<'search' | 'ambient'>('search');
   const [selectedImageUrl, setSelectedImageUrl] = useState<string>('');
 
@@ -121,7 +123,10 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
 
   const handleGenerateAmbient = async () => {
     if (!selectedImageUrl || !product) return;
-    if (!(await consumeCredit('Geração de Ambientação', product['Descrição'], product['Código (SKU)']))) return;
+    if (credits < getCreditCost(CREDIT_ACTIONS.ambientImage.key)) {
+      alert('Você não possui créditos suficientes. Por favor, adicione mais créditos.');
+      return;
+    }
 
     setIsGenerating(true);
     setStep('ambient');
@@ -161,6 +166,9 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
       if (validImages.every(img => !img)) throw new Error("Não foi possível gerar nenhuma imagem.");
       setAmbientImages(validImages);
 
+      // Debit only after at least one image was generated successfully.
+      await consumeCredit(CREDIT_ACTIONS.ambientImage, product['Descrição'], product['Código (SKU)']);
+
     } catch (error: any) {
       console.error("Erro ao gerar ambientações:", error);
       const isQuota = /429|RESOURCE_EXHAUSTED|quota|limite/.test(error.message || "");
@@ -176,15 +184,20 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
 
   const handleRegenerateImage = async (index: number) => {
     if (!selectedImageUrl || !product) return;
+    if (credits < getCreditCost(CREDIT_ACTIONS.regenerateImage.key)) {
+      alert('Você não possui créditos suficientes. Por favor, adicione mais créditos.');
+      return;
+    }
 
     setImageRegenerating(prev => { const n = [...prev]; n[index] = true; return n; });
 
     try {
       const { base64Data, mimeType } = await fetchAndProcessImage(selectedImageUrl);
-      if (!(await consumeCredit('Regeneração de Imagem', product['Descrição'], product['Código (SKU)']))) return;
       const imgData = await callGenerateImage(base64Data, mimeType, imagePrompts[index], index);
       if (imgData) {
         setAmbientImages(prev => { const n = [...prev]; n[index] = imgData; return n; });
+        // Debit only after the image was regenerated successfully.
+        await consumeCredit(CREDIT_ACTIONS.regenerateImage, product['Descrição'], product['Código (SKU)']);
       }
     } catch (error: any) {
       const isQuota = /429|RESOURCE_EXHAUSTED|quota|limite/.test(error.message || "");
