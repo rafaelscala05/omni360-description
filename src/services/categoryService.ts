@@ -77,6 +77,25 @@ export const getEffectiveAttributes = (categoryId: string, allCategories: Catego
   return effectiveAttributes;
 };
 
+export const getEffectiveImagePrompts = (
+  categoryId: string,
+  allCategories: Category[]
+): { scene1?: string; scene2?: string; scene3?: string } | null => {
+  let current: Category | undefined = allCategories.find(c => c.id === categoryId);
+
+  while (current) {
+    // If this category owns its prompts (not inheriting) OR has no parent, use own imagePrompts
+    if (!current.inheritImagePrompts || !current.parentId) {
+      const p = current.imagePrompts;
+      return (p && (p.scene1 || p.scene2 || p.scene3)) ? p : null;
+    }
+    // Walk up to parent
+    current = allCategories.find(c => c.id === current!.parentId);
+  }
+
+  return null;
+};
+
 // Modulo 0.3 — Geração de Hierarquia via IA (Gemini)
 export const generateCategoryHierarchy = async (categories: string[], segment?: string) => {
   try {

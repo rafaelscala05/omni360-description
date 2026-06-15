@@ -134,7 +134,6 @@ export default function App() {
     enriquecido: false,
     imagens: false,
     atributos: false,
-    salvos: false,
   });
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   
@@ -642,12 +641,20 @@ export default function App() {
   });
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(defaultTemplate.id);
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'templates' | 'images'>('templates');
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
+  const [enableCategoryImagePrompts, setEnableCategoryImagePrompts] = useState<boolean>(
+    () => localStorage.getItem('enableCategoryImagePrompts') === 'true'
+  );
 
   // Save templates to local storage whenever they change
   useEffect(() => {
     localStorage.setItem('ai_description_templates', JSON.stringify(templates));
   }, [templates]);
+
+  useEffect(() => {
+    localStorage.setItem('enableCategoryImagePrompts', String(enableCategoryImagePrompts));
+  }, [enableCategoryImagePrompts]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -667,12 +674,11 @@ export default function App() {
       const matchesMarca = filterMarca ? p['Marca'] === filterMarca : true;
       const matchesCategoria = filterCategoria ? p['Categoria'] === filterCategoria : true;
 
-      // Status filters (AND): se ligado, o produto precisa ter aquele flag
-      if (statusFilters.descricao && !flags.descricaoGerada) return false;
-      if (statusFilters.enriquecido && !flags.enriquecido) return false;
-      if (statusFilters.imagens && !flags.imagensGeradas) return false;
-      if (statusFilters.atributos && !flags.atributosGerados) return false;
-      if (statusFilters.salvos && !flags.salvo) return false;
+      // Status filters (AND): se ligado, esconde produtos que JÁ têm aquele dado gerado
+      if (statusFilters.descricao && flags.descricaoGerada) return false;
+      if (statusFilters.enriquecido && flags.enriquecido) return false;
+      if (statusFilters.imagens && flags.imagensGeradas) return false;
+      if (statusFilters.atributos && flags.atributosGerados) return false;
 
       return matchesSearch && matchesMarca && matchesCategoria;
     });
@@ -690,7 +696,7 @@ export default function App() {
     const headers = [
       'Código (SKU)', 'Descrição', 'Unidade', 'NCM (Classificação fiscal)', 'Origem', 'Preço', 'Observações', 'Situação', 'Estoque', 'Preço de custo', 'Fornecedor', 'Marca', 'Categoria', 'Peso bruto (Kg)', 'GTIN/EAN', 'URL imagem 1', 'Descrição complementar', 'Título SEO', 'Descrição SEO', 'Palavras chave SEO'
     ];
-    
+
     const testProduct = {
       'Código (SKU)': 'TEST-001',
       'Descrição': 'Produto de Teste Alfreds',
@@ -717,8 +723,19 @@ export default function App() {
     const ws = XLSX.utils.json_to_sheet([testProduct], { header: headers });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Produtos");
-    
+
     XLSX.writeFile(wb, "template_omni360_teste.xlsx");
+  };
+
+  const downloadBlankTemplate = () => {
+    const headers = [
+      'Código (SKU)', 'Descrição', 'Unidade', 'NCM (Classificação fiscal)', 'Origem', 'Preço', 'Observações', 'Situação', 'Estoque', 'Preço de custo', 'Fornecedor', 'Marca', 'Categoria', 'Peso bruto (Kg)', 'GTIN/EAN', 'URL imagem 1', 'Descrição complementar', 'Título SEO', 'Descrição SEO', 'Palavras chave SEO'
+    ];
+    const emptyRow = Object.fromEntries(headers.map(h => [h, '']));
+    const ws = XLSX.utils.json_to_sheet([emptyRow], { header: headers });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Produtos");
+    XLSX.writeFile(wb, "template-planilha-alfreds.xlsx");
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -904,6 +921,7 @@ export default function App() {
           pathIds: catData.pathIds || [safeId],
           attributes: catData.attributes || [],
           inheritParentAttributes: catData.inheritParentAttributes ?? true,
+          inheritImagePrompts: catData.inheritImagePrompts ?? true,
           productCount: 0,
           aiGenerated: catData.aiGenerated || false,
           createdAt: timestamp,
@@ -2046,7 +2064,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             onClick={() => { setIsTemplateModalOpen(true); setIsSidebarOpen(false); }} 
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 font-medium hover:text-white hover:bg-white/5 transition-colors"
           >
-            <Settings className="w-4 h-4" /> Modelos
+            <Settings className="w-4 h-4" /> Configurações
           </button>
         </div>
       </aside>
@@ -2150,9 +2168,8 @@ Retorne APENAS um JSON válido no seguinte formato:
                      {([
                        { Icon: Sparkles, label: 'Descrição', color: 'text-indigo-600 bg-indigo-50' },
                        { Icon: Tag, label: 'Atributos', color: 'text-amber-600 bg-amber-50' },
-                       { Icon: Search, label: 'Enriquecido', color: 'text-purple-600 bg-purple-50' },
+                       // { Icon: Search, label: 'Enriquecido', color: 'text-purple-600 bg-purple-50' }, // desativado temporariamente
                        { Icon: ImageIcon, label: 'Imagens', color: 'text-blue-600 bg-blue-50' },
-                       { Icon: Cloud, label: 'Salvo', color: 'text-emerald-600 bg-emerald-50' },
                      ] as const).map(({ Icon, label, color }) => (
                        <div key={label} className="flex items-center gap-1.5">
                          <span className={cn("flex items-center justify-center w-5 h-5 rounded-md border border-slate-200/60", color)}>
@@ -2223,10 +2240,9 @@ Retorne APENAS um JSON válido no seguinte formato:
                           const activeStatusCount = Object.values(statusFilters).filter(Boolean).length;
                           const statusFilterItems: { key: keyof typeof statusFilters; label: string }[] = [
                             { key: 'descricao', label: 'Descrição Gerada' },
-                            { key: 'enriquecido', label: 'Enriquecido' },
+                            // { key: 'enriquecido', label: 'Enriquecido' }, // desativado temporariamente
                             { key: 'imagens', label: 'Imagens Geradas' },
                             { key: 'atributos', label: 'Atributos Gerados' },
-                            { key: 'salvos', label: 'Apenas Salvos' },
                           ];
                           return (
                           <div className="relative inline-block text-left z-30">
@@ -2260,11 +2276,11 @@ Retorne APENAS um JSON válido no seguinte formato:
                                 <div className="absolute left-0 mt-1.5 w-64 bg-white border border-slate-200 rounded-lg shadow-lg z-40 py-2 animate-in fade-in slide-in-from-top-1">
                                   <div className="flex items-center justify-between px-3.5 py-1.5">
                                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                                      Mostrar apenas com
+                                      Esconder produtos com
                                     </span>
                                     {activeStatusCount > 0 && (
                                       <button
-                                        onClick={() => setStatusFilters({ descricao: false, enriquecido: false, imagens: false, atributos: false, salvos: false })}
+                                        onClick={() => setStatusFilters({ descricao: false, enriquecido: false, imagens: false, atributos: false })}
                                         className="text-[10px] font-bold text-[#004ac6] hover:underline"
                                       >
                                         Limpar
@@ -2301,6 +2317,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                             <span className="opacity-0 sm:opacity-100 overflow-hidden truncate max-w-[150px]">- {generationLog}</span>
                           </div>
                         )}
+                        {/* Botão Enriquecer em massa — desativado temporariamente
                         <button
                           onClick={handleEnrichMass}
                           disabled={selectedIds.size === 0 || isEnrichingMass || isGeneratingMass}
@@ -2309,6 +2326,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                           {isEnrichingMass ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
                           <span className="hidden sm:inline">Enriquecer ({selectedIds.size})</span>
                         </button>
+                        */}
                         <button
                           onClick={handleGenerateMass}
                           disabled={selectedIds.size === 0 || isGeneratingMass || isEnrichingMass}
@@ -2446,20 +2464,28 @@ Retorne APENAS um JSON válido no seguinte formato:
                           {products.length === 0 ? (
                             <tr>
                               <td colSpan={20}>
-                                <div className="p-16 flex flex-col items-center justify-center text-center">
+                                <div className="p-16 flex flex-col items-center justify-center text-center w-full">
                                   <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-center mb-4">
-                                     <FileSpreadsheet className="w-8 h-8 text-slate-400" />
+                                    <FileSpreadsheet className="w-8 h-8 text-slate-400" />
                                   </div>
-                                   <h3 className="font-display text-2xl font-bold text-slate-900 mb-2">Pronto para começar?</h3>
-                                   <p className="text-sm text-slate-500 mb-8 max-w-sm mx-auto">
-                                     Faça o upload de uma planilha Excel (XLSX) para gerenciar e aprimorar seus produtos com IA.
-                                   </p>
-                                   <button
-                                     onClick={() => fileInputRef.current?.click()}
-                                     className="px-8 py-3 bg-[#004ac6] text-white rounded-xl shadow-lg shadow-blue-200 font-bold hover:bg-[#003ea8] transition-all hover:scale-105 active:scale-95 flex items-center gap-2 mx-auto"
-                                   >
-                                     <Upload className="w-5 h-5" /> Importar Arquivo
-                                   </button>
+                                  <h3 className="font-display text-2xl font-bold text-slate-900 mb-2 text-center">Pronto para começar?</h3>
+                                  <p className="text-sm text-slate-500 mb-8 max-w-sm text-center">
+                                    Faça o upload de uma planilha Excel (XLSX) para gerenciar e aprimorar seus produtos com IA.
+                                  </p>
+                                  <div className="flex flex-col sm:flex-row items-center gap-3">
+                                    <button
+                                      onClick={() => fileInputRef.current?.click()}
+                                      className="px-8 py-3 bg-[#004ac6] text-white rounded-xl shadow-lg shadow-blue-200 font-bold hover:bg-[#003ea8] transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+                                    >
+                                      <Upload className="w-5 h-5" /> Importar Arquivo
+                                    </button>
+                                    <button
+                                      onClick={downloadBlankTemplate}
+                                      className="px-6 py-3 bg-white text-slate-700 rounded-xl border border-slate-200 font-semibold hover:bg-slate-50 transition-all hover:scale-105 active:scale-95 flex items-center gap-2 text-sm"
+                                    >
+                                      <Download className="w-4 h-4 text-slate-500" /> Baixar Planilha Padrão
+                                    </button>
+                                  </div>
                                 </div>
                               </td>
                             </tr>
@@ -2530,7 +2556,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                                        {([
                                          { on: flags.descricaoGerada, Icon: Sparkles, label: 'Descrição', onClass: 'bg-indigo-50 text-indigo-700 border-indigo-200/60' },
                                          { on: flags.atributosGerados, Icon: Tag, label: 'Atributos', onClass: 'bg-amber-50 text-amber-700 border-amber-200/60' },
-                                         { on: flags.enriquecido, Icon: Search, label: 'Enriquecido', onClass: 'bg-purple-50 text-purple-700 border-purple-200/60' },
+                                         // { on: flags.enriquecido, Icon: Search, label: 'Enriquecido', onClass: 'bg-purple-50 text-purple-700 border-purple-200/60' }, // desativado temporariamente
                                          { on: flags.imagensGeradas, Icon: ImageIcon, label: 'Imagens', onClass: 'bg-blue-50 text-blue-700 border-blue-200/60' },
                                        ] as const).map(({ on, Icon, label, onClass }) => (
                                          <span
@@ -2545,22 +2571,13 @@ Retorne APENAS um JSON válido no seguinte formato:
                                          </span>
                                        ))}
                                      </div>
-                                     <div className="flex items-center gap-2">
-                                       {flags.salvo ? (
-                                         <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-emerald-600" title="Sincronizado na nuvem">
-                                           <Cloud className="w-3 h-3" /> Salvo
-                                         </span>
-                                       ) : (
-                                         <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-amber-600" title="Alterações não salvas">
-                                           <CloudUpload className="w-3 h-3" /> Não salvo
-                                         </span>
-                                       )}
-                                       {isError && (
+                                     {isError && (
+                                       <div className="flex items-center gap-2">
                                          <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-red-600 animate-pulse" title={product._generationError || 'Erro'}>
                                            <AlertCircle className="w-3 h-3" /> Erro
                                          </span>
-                                       )}
-                                     </div>
+                                       </div>
+                                     )}
                                    </div>
                                 </td>
                               )}
@@ -2598,6 +2615,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                                   >
                                     <ImageIcon className="w-3.5 h-3.5" />
                                   </button>
+                                  {/* Botão Enriquecer individual — desativado temporariamente
                                   <div className="w-px h-5 bg-slate-200 mx-0.5"></div>
                                   <button
                                     onClick={() => handleEnrichSingle(product._id)}
@@ -2612,6 +2630,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                                   >
                                     <Search className={`w-3.5 h-3.5 ${product._isEnriching ? 'animate-spin' : ''}`} />
                                   </button>
+                                  */}
                                   <button
                                     onClick={() => handleGenerateSingle(product._id)}
                                     disabled={product._isGenerating}
@@ -2696,124 +2715,188 @@ Retorne APENAS um JSON válido no seguinte formato:
         </Suspense>
       )}
 
-      {/* Template Management Modal */}
+      {/* Settings Modal */}
       {isTemplateModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="template-modal-title" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="settings-modal-title" role="dialog" aria-modal="true">
           <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
             <div className="fixed inset-0 bg-gray-900/50 transition-opacity" aria-hidden="true" onClick={() => setIsTemplateModalOpen(false)}></div>
             <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
             <div className="relative z-10 inline-block align-bottom bg-white rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-5xl w-full">
-              
+
               <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                <div className="flex justify-between items-start mb-5 pb-4 border-b border-gray-100">
-                  <h3 className="text-lg leading-6 font-bold text-gray-900" id="template-modal-title">
-                    Gerenciar Templates
+                <div className="flex justify-between items-start mb-4 pb-4 border-b border-gray-100">
+                  <h3 className="text-lg leading-6 font-bold text-gray-900" id="settings-modal-title">
+                    Configurações
                   </h3>
                   <button onClick={() => setIsTemplateModalOpen(false)} className="text-gray-400 hover:text-gray-500 bg-gray-50 hover:bg-gray-100 rounded-full p-1 transition-colors">
                     <X className="w-5 h-5" />
                   </button>
                 </div>
 
-                <div className="flex flex-col md:flex-row gap-6">
-                  {/* Template List */}
-                  <div className="w-full md:w-1/3 border-r border-gray-200 pr-4">
-                    <div className="flex justify-between items-center mb-4">
-                      <h4 className="font-medium text-gray-900">Seus Templates</h4>
-                      <button 
-                        onClick={() => setEditingTemplate({ id: `temp_${Date.now()}`, name: 'Novo Template', prompt: '' })}
-                        className="p-1 text-blue-600 hover:bg-blue-50 rounded"
-                        title="Novo Template"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <ul className="space-y-2 max-h-[60vh] overflow-y-auto">
-                      {templates.map(t => (
-                        <li key={t.id} className="flex items-center justify-between group">
-                          <button
-                            onClick={() => setEditingTemplate(t)}
-                            className={`flex-1 text-left px-3 py-2 rounded-md text-sm truncate ${editingTemplate?.id === t.id ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-50'}`}
-                          >
-                            {t.name}
-                          </button>
-                          {t.id !== 'default' && (
-                            <button
-                              onClick={() => {
-                                const newTemplates = templates.filter(temp => temp.id !== t.id);
-                                setTemplates(newTemplates);
-                                if (selectedTemplateId === t.id) setSelectedTemplateId('default');
-                                if (editingTemplate?.id === t.id) setEditingTemplate(null);
-                              }}
-                              className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                              title="Excluir Template"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                {/* Tabs */}
+                <div className="flex gap-1 mb-6 border-b border-gray-200">
+                  <button
+                    onClick={() => setSettingsTab('templates')}
+                    className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${settingsTab === 'templates' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                  >
+                    Templates de Descrição
+                  </button>
+                  <button
+                    onClick={() => setSettingsTab('images')}
+                    className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${settingsTab === 'images' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                  >
+                    Imagens Ambientadas
+                  </button>
+                </div>
 
-                  {/* Template Editor */}
-                  <div className="w-full md:w-2/3 pl-2">
-                    {editingTemplate ? (
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Template</label>
-                          <input
-                            type="text"
-                            value={editingTemplate.name}
-                            onChange={(e) => setEditingTemplate({...editingTemplate, name: e.target.value})}
-                            disabled={editingTemplate.id === 'default'}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:bg-gray-100"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Prompt e Estrutura HTML
-                            <span className="ml-2 text-xs text-gray-500 font-normal">
-                              Variáveis: {'{NOME}'}, {'{MARCA}'}, {'{CATEGORIAS}'}, {'{CATEGORIA_SUPERIOR}'}
-                            </span>
-                          </label>
-                          <textarea
-                            value={editingTemplate.prompt}
-                            onChange={(e) => setEditingTemplate({...editingTemplate, prompt: e.target.value})}
-                            disabled={editingTemplate.id === 'default'}
-                            className="w-full h-96 p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 font-mono text-sm disabled:bg-gray-100"
-                            placeholder="Escreva o prompt para a IA aqui..."
-                          />
-                        </div>
-                        {editingTemplate.id !== 'default' && (
-                          <div className="flex justify-end">
+                {settingsTab === 'templates' && (
+                  <div className="flex flex-col md:flex-row gap-6">
+                    {/* Template List */}
+                    <div className="w-full md:w-1/3 border-r border-gray-200 pr-4">
+                      <div className="flex justify-between items-center mb-4">
+                        <h4 className="font-medium text-gray-900">Seus Templates</h4>
+                        <button
+                          onClick={() => setEditingTemplate({ id: `temp_${Date.now()}`, name: 'Novo Template', prompt: '' })}
+                          className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                          title="Novo Template"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <ul className="space-y-2 max-h-[60vh] overflow-y-auto">
+                        {templates.map(t => (
+                          <li key={t.id} className="flex items-center justify-between group">
                             <button
-                              onClick={() => {
-                                const exists = templates.find(t => t.id === editingTemplate.id);
-                                if (exists) {
-                                  setTemplates(templates.map(t => t.id === editingTemplate.id ? editingTemplate : t));
-                                } else {
-                                  setTemplates([...templates, editingTemplate]);
-                                  setSelectedTemplateId(editingTemplate.id);
-                                }
-                                setEditingTemplate(null);
-                              }}
-                              disabled={!editingTemplate.name.trim() || !editingTemplate.prompt.trim()}
-                              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 border border-transparent rounded-md shadow-sm text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                              onClick={() => setEditingTemplate(t)}
+                              className={`flex-1 text-left px-3 py-2 rounded-md text-sm truncate ${editingTemplate?.id === t.id ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-50'}`}
                             >
-                              <Save className="w-4 h-4" />
-                              Salvar Template
+                              {t.name}
                             </button>
+                            {t.id !== 'default' && (
+                              <button
+                                onClick={() => {
+                                  const newTemplates = templates.filter(temp => temp.id !== t.id);
+                                  setTemplates(newTemplates);
+                                  if (selectedTemplateId === t.id) setSelectedTemplateId('default');
+                                  if (editingTemplate?.id === t.id) setEditingTemplate(null);
+                                }}
+                                className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                title="Excluir Template"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Template Editor */}
+                    <div className="w-full md:w-2/3 pl-2">
+                      {editingTemplate ? (
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Template</label>
+                            <input
+                              type="text"
+                              value={editingTemplate.name}
+                              onChange={(e) => setEditingTemplate({...editingTemplate, name: e.target.value})}
+                              disabled={editingTemplate.id === 'default'}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:bg-gray-100"
+                            />
                           </div>
-                        )}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Prompt e Estrutura HTML
+                              <span className="ml-2 text-xs text-gray-500 font-normal">
+                                Variáveis: {'{NOME}'}, {'{MARCA}'}, {'{CATEGORIAS}'}, {'{CATEGORIA_SUPERIOR}'}
+                              </span>
+                            </label>
+                            <textarea
+                              value={editingTemplate.prompt}
+                              onChange={(e) => setEditingTemplate({...editingTemplate, prompt: e.target.value})}
+                              disabled={editingTemplate.id === 'default'}
+                              className="w-full h-96 p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 font-mono text-sm disabled:bg-gray-100"
+                              placeholder="Escreva o prompt para a IA aqui..."
+                            />
+                          </div>
+                          {editingTemplate.id !== 'default' && (
+                            <div className="flex justify-end">
+                              <button
+                                onClick={() => {
+                                  const exists = templates.find(t => t.id === editingTemplate.id);
+                                  if (exists) {
+                                    setTemplates(templates.map(t => t.id === editingTemplate.id ? editingTemplate : t));
+                                  } else {
+                                    setTemplates([...templates, editingTemplate]);
+                                    setSelectedTemplateId(editingTemplate.id);
+                                  }
+                                  setEditingTemplate(null);
+                                }}
+                                disabled={!editingTemplate.name.trim() || !editingTemplate.prompt.trim()}
+                                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 border border-transparent rounded-md shadow-sm text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <Save className="w-4 h-4" />
+                                Salvar Template
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-gray-500 py-12">
+                          <Settings className="w-12 h-12 text-gray-300 mb-4" />
+                          <p>Selecione um template para editar ou crie um novo.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {settingsTab === 'images' && (
+                  <div className="max-w-2xl space-y-6">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        id="enableCategoryImagePrompts"
+                        checked={enableCategoryImagePrompts}
+                        onChange={(e) => setEnableCategoryImagePrompts(e.target.checked)}
+                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <label htmlFor="enableCategoryImagePrompts" className="text-sm font-medium text-gray-900">
+                        Habilitar prompt por categoria
+                      </label>
+                    </div>
+
+                    {!enableCategoryImagePrompts ? (
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-600">
+                        <p className="font-medium text-gray-800 mb-1">Modo automático ativo</p>
+                        <p>O sistema gera cenas inteligentes para cada produto com base na categoria, descrição e imagem fornecida, usando técnica profissional de direção fotográfica. Nenhuma configuração necessária.</p>
                       </div>
                     ) : (
-                      <div className="h-full flex flex-col items-center justify-center text-gray-500 py-12">
-                        <Settings className="w-12 h-12 text-gray-300 mb-4" />
-                        <p>Selecione um template para editar ou crie um novo.</p>
+                      <div className="space-y-5">
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800 space-y-2">
+                          <p className="font-semibold">Como funciona</p>
+                          <p>Configure cenas por categoria no menu <strong>Categorias</strong>. Cada produto usará o prompt da sua categoria (ou da categoria pai, se não tiver prompt próprio).</p>
+                          <p className="font-semibold mt-3">Cenas padrão (use como referência)</p>
+                          <ul className="space-y-1 list-disc list-inside text-blue-700">
+                            <li><strong>Cena 1:</strong> produto em cenário realista e contextual para a categoria</li>
+                            <li><strong>Cena 2:</strong> pessoa do público-alvo usando o produto em situação cotidiana</li>
+                            <li><strong>Cena 3:</strong> mãos segurando o produto para referência de tamanho real</li>
+                          </ul>
+                        </div>
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+                          <p className="font-semibold mb-1">⚠️ Atenção para manter a qualidade</p>
+                          <ul className="space-y-1 list-disc list-inside">
+                            <li>Descreva apenas <strong>a cena desejada</strong> — o ambiente, pessoas, objetos ao redor</li>
+                            <li><strong>Não</strong> descreva o produto em si (cor, material, tamanho)</li>
+                            <li>O sistema aplica iluminação, câmera e técnica fotográfica profissional automaticamente</li>
+                            <li>Mantenha as descrições concisas (1–2 frases por cena)</li>
+                          </ul>
+                        </div>
                       </div>
                     )}
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
@@ -3067,6 +3150,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             credits={credits}
             getCreditCost={getCreditCost}
             consumeCredit={consumeCredit}
+            existingCategories={existingCategories}
           />
         </Suspense>
       )}
