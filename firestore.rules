@@ -96,6 +96,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Pagamentos pendentes — escritos apenas pelo servidor via Admin SDK.
+    // O cliente nunca deve ler nem escrever nesta coleção.
+    match /pendingPayments/{paymentId} {
+      allow read, write: if false;
+    }
+
     match /users/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUser();
