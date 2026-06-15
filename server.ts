@@ -196,6 +196,70 @@ async function startServer() {
     }
   });
 
+  app.post('/api/payments/webhook', async (req, res) => {
+    try {
+      const token = req.headers['asaas-access-token'];
+      if (token !== process.env.ASAAS_WEBHOOK_TOKEN) {
+        console.warn('Webhook: token inválido recebido');
+        return res.status(200).json({ received: true });
+      }
+
+      const event = req.body as {
+        event: string;
+        payment?: { id: string };
+      };
+
+      const CONFIRMABLE_EVENTS = ['PAYMENT_CONFIRMED', 'PAYMENT_RECEIVED'];
+      if (!CONFIRMABLE_EVENTS.includes(event.event) || !event.payment?.id) {
+        return res.status(200).json({ received: true });
+      }
+
+      const paymentId = event.payment.id;
+      const pendingRef = adminDb.collection('pendingPayments').doc(paymentId);
+
+      await adminDb.runTransaction(async (tx) => {
+        const pendingSnap = await tx.get(pendingRef);
+        if (!pendingSnap.exists || pendingSnap.data()?.status === 'completed') return;
+
+        const { uid, credits, amount } = pendingSnap.data() as {
+          uid: string;
+          credits: number;
+          amount: number;
+        };
+
+        const userRef = adminDb.collection('users').doc(uid);
+        const logRef = adminDb.collection('users').doc(uid).collection('credit_logs').doc();
+
+        tx.update(userRef, {
+          credits: FieldValue.increment(credits),
+        });
+
+        tx.set(logRef, {
+          type: 'purchase',
+          actionType: 'Compra de Créditos',
+          creditsAdded: credits,
+          creditsConsumed: 0,
+          amount,
+          paymentId,
+          productName: 'N/A',
+          sku: 'N/A',
+          userName: '',
+          timestamp: new Date().toISOString(),
+        });
+
+        tx.update(pendingRef, {
+          status: 'completed',
+          completedAt: FieldValue.serverTimestamp(),
+        });
+      });
+
+      return res.status(200).json({ received: true });
+    } catch (err) {
+      console.error('Webhook processing error:', err);
+      return res.status(200).json({ received: true });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
