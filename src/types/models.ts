@@ -8,6 +8,12 @@ export interface Category {
   pathIds: string[];
   attributes: AttributeDefinition[];
   inheritParentAttributes: boolean;
+  imagePrompts?: {
+    scene1?: string;
+    scene2?: string;
+    scene3?: string;
+  };
+  inheritImagePrompts: boolean;
   productCount: number;
   aiGenerated: boolean;
   createdAt: string;

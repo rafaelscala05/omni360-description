@@ -442,7 +442,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
   const tabs = [
     { id: 'geral', label: 'Geral', icon: Layout, done: false },
     { id: 'atributos', label: 'Atributos', icon: Tag, done: statusFlags.atributosGerados },
-    { id: 'tecnico', label: 'Técnico', icon: Cpu, done: statusFlags.enriquecido },
+    // { id: 'tecnico', label: 'Técnico', icon: Cpu, done: statusFlags.enriquecido }, // Aba técnica desativada temporariamente
     { id: 'ia', label: 'Conteúdo', icon: Sparkles, done: statusFlags.descricaoGerada },
     { id: 'imagem', label: 'Imagens', icon: ImageIcon, done: statusFlags.imagensGeradas },
     { id: 'simular', label: 'Simular Produto', icon: Eye, done: false },
@@ -848,6 +848,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                 </div>
               )}
 
+              {/* Aba Técnico — desativada temporariamente
               {activeTab === 'tecnico' && (
                 <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-300">
                    <section className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
@@ -858,38 +859,39 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                       <div className="grid grid-cols-2 gap-8">
                         <div className="space-y-1.5">
                           <label className="text-xs font-bold text-slate-500 uppercase ml-1 tracking-wider">GTIN / EAN</label>
-                          <input 
-                            type="text" 
-                            value={editedProduct['GTIN/EAN'] || ''} 
-                            onChange={(e) => setEditedProduct({...editedProduct, 'GTIN/EAN': e.target.value})} 
-                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-mono" 
+                          <input
+                            type="text"
+                            value={editedProduct['GTIN/EAN'] || ''}
+                            onChange={(e) => setEditedProduct({...editedProduct, 'GTIN/EAN': e.target.value})}
+                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-mono"
                             placeholder="789..."
                           />
                         </div>
                         <div className="space-y-1.5">
                           <label className="text-xs font-bold text-slate-500 uppercase ml-1 tracking-wider">NCM (Classificação fiscal)</label>
-                          <input 
-                            type="text" 
-                            value={editedProduct['NCM (Classificação fiscal)'] || ''} 
-                            onChange={(e) => setEditedProduct({...editedProduct, 'NCM (Classificação fiscal)': e.target.value})} 
-                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm" 
+                          <input
+                            type="text"
+                            value={editedProduct['NCM (Classificação fiscal)'] || ''}
+                            onChange={(e) => setEditedProduct({...editedProduct, 'NCM (Classificação fiscal)': e.target.value})}
+                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm"
                             placeholder="0000.00.00"
                           />
                         </div>
                         <div className="space-y-1.5">
                           <label className="text-xs font-bold text-slate-500 uppercase ml-1 tracking-wider">Peso Bruto (Kg)</label>
-                          <input 
-                            type="number" 
-                            step="0.001" 
-                            value={editedProduct['Peso bruto (Kg)'] as string || ''} 
-                            onChange={(e) => setEditedProduct({...editedProduct, 'Peso bruto (Kg)': e.target.value})} 
-                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-mono" 
+                          <input
+                            type="number"
+                            step="0.001"
+                            value={editedProduct['Peso bruto (Kg)'] as string || ''}
+                            onChange={(e) => setEditedProduct({...editedProduct, 'Peso bruto (Kg)': e.target.value})}
+                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-mono"
                           />
                         </div>
                       </div>
                    </section>
                 </div>
               )}
+              */}
 
               {activeTab === 'imagem' && (
                 <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-300">
@@ -1128,7 +1130,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                         {editedProduct['Marca'] && (
                           <span className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">{editedProduct['Marca']}</span>
                         )}
-                        <h1 className="text-2xl md:text-3xl font-bold text-slate-900 leading-tight">
+                        <h1 className="font-display text-2xl md:text-3xl font-bold text-slate-900 leading-tight">
                           {editedProduct['Descrição'] || 'Produto Sem Nome'}
                         </h1>
                         {editedProduct['Categoria'] && (
