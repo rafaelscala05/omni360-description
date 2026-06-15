@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { initializeApp, getApps, applicationDefault } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import dotenv from "dotenv";
 
@@ -21,6 +21,42 @@ dotenv.config({ override: true });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+async function verifyFirebaseToken(req: express.Request): Promise<import('firebase-admin/auth').DecodedIdToken> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    throw Object.assign(new Error('Missing auth token'), { status: 401 });
+  }
+  const idToken = authHeader.split('Bearer ')[1];
+  return adminAuth.verifyIdToken(idToken);
+}
+
+async function getOrCreateAsaasCustomer(
+  name: string,
+  cpfCnpj: string,
+  email: string,
+): Promise<string> {
+  const baseUrl = process.env.ASAAS_BASE_URL!;
+  const apiKey = process.env.ASAAS_API_KEY!;
+  const headers: Record<string, string> = { 'access_token': apiKey, 'Content-Type': 'application/json' };
+
+  const rawCpfCnpj = cpfCnpj.replace(/\D/g, '');
+
+  const listResp = await fetch(`${baseUrl}/customers?cpfCnpj=${rawCpfCnpj}&limit=1`, { headers });
+  if (!listResp.ok) throw new Error(`Asaas list customers failed: ${listResp.status}`);
+  const listData = await listResp.json() as { data: Array<{ id: string }> };
+
+  if (listData.data.length > 0) return listData.data[0].id;
+
+  const createResp = await fetch(`${baseUrl}/customers`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ name, cpfCnpj: rawCpfCnpj, email }),
+  });
+  if (!createResp.ok) throw new Error(`Asaas create customer failed: ${createResp.status}`);
+  const customer = await createResp.json() as { id: string };
+  return customer.id;
+}
 
 async function startServer() {
   const app = express();
@@ -92,6 +128,71 @@ async function startServer() {
     } catch (error) {
       console.error("Upload error:", error);
       res.status(500).json({ error: "Failed to save image" });
+    }
+  });
+
+  app.post('/api/payments/create-checkout', async (req, res) => {
+    try {
+      const decoded = await verifyFirebaseToken(req);
+      const { credits, name, cpfCnpj } = req.body as {
+        credits: number;
+        name: string;
+        cpfCnpj: string;
+      };
+
+      if (!credits || !Number.isInteger(credits) || credits < 10 || credits % 10 !== 0) {
+        return res.status(400).json({ error: 'credits deve ser inteiro, múltiplo de 10 e mínimo 10' });
+      }
+      if (!name?.trim()) return res.status(400).json({ error: 'name é obrigatório' });
+      if (!cpfCnpj?.trim()) return res.status(400).json({ error: 'cpfCnpj é obrigatório' });
+
+      const amount = credits * 0.5;
+      const email = decoded.email ?? `${decoded.uid}@sem-email.com`;
+
+      const customerId = await getOrCreateAsaasCustomer(name.trim(), cpfCnpj, email);
+
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 1);
+      const dueDateStr = dueDate.toISOString().split('T')[0];
+
+      const baseUrl = process.env.ASAAS_BASE_URL!;
+      const apiKey = process.env.ASAAS_API_KEY!;
+      const headers: Record<string, string> = { 'access_token': apiKey, 'Content-Type': 'application/json' };
+
+      const paymentResp = await fetch(`${baseUrl}/payments`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          customer: customerId,
+          billingType: 'UNDEFINED',
+          value: amount,
+          dueDate: dueDateStr,
+          description: `Compra de ${credits} créditos — Omni360`,
+        }),
+      });
+
+      if (!paymentResp.ok) {
+        const err = await paymentResp.text();
+        console.error('Asaas create payment error:', err);
+        return res.status(502).json({ error: 'Falha ao criar cobrança no Asaas' });
+      }
+
+      const payment = await paymentResp.json() as { id: string; invoiceUrl: string };
+
+      await adminDb.collection('pendingPayments').doc(payment.id).set({
+        uid: decoded.uid,
+        credits,
+        amount,
+        status: 'pending',
+        createdAt: FieldValue.serverTimestamp(),
+      });
+
+      return res.json({ invoiceUrl: payment.invoiceUrl });
+    } catch (err: unknown) {
+      const error = err as { status?: number; message?: string };
+      if (error.status === 401) return res.status(401).json({ error: 'Não autorizado' });
+      console.error('create-checkout error:', err);
+      return res.status(500).json({ error: 'Erro interno' });
     }
   });
 
