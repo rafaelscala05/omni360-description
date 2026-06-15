@@ -146,7 +146,7 @@ async function startServer() {
       if (!name?.trim()) return res.status(400).json({ error: 'name é obrigatório' });
       if (!cpfCnpj?.trim()) return res.status(400).json({ error: 'cpfCnpj é obrigatório' });
 
-      const amount = credits * 0.5;
+      const amount = Math.round(credits * 0.5 * 100) / 100;
       const email = decoded.email ?? `${decoded.uid}@sem-email.com`;
 
       const customerId = await getOrCreateAsaasCustomer(name.trim(), cpfCnpj, email);
@@ -215,6 +215,24 @@ async function startServer() {
       }
 
       const paymentId = event.payment.id;
+
+      // Verificar status real do pagamento na API do Asaas
+      const asaasBaseUrl = process.env.ASAAS_BASE_URL!;
+      const asaasApiKey = process.env.ASAAS_API_KEY!;
+      const verifyResp = await fetch(`${asaasBaseUrl}/payments/${paymentId}`, {
+        headers: { 'access_token': asaasApiKey },
+      });
+      if (!verifyResp.ok) {
+        console.warn(`Webhook: não foi possível verificar pagamento ${paymentId} no Asaas`);
+        return res.status(200).json({ received: true });
+      }
+      const asaasPayment = await verifyResp.json() as { status?: string };
+      const CONFIRMED_STATUSES = ['CONFIRMED', 'RECEIVED'];
+      if (!asaasPayment.status || !CONFIRMED_STATUSES.includes(asaasPayment.status)) {
+        console.warn(`Webhook: pagamento ${paymentId} status=${asaasPayment.status}, ignorando`);
+        return res.status(200).json({ received: true });
+      }
+
       const pendingRef = adminDb.collection('pendingPayments').doc(paymentId);
 
       await adminDb.runTransaction(async (tx) => {
