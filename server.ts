@@ -149,14 +149,25 @@ async function startServer() {
       const amount = Math.round(credits * 0.5 * 100) / 100;
       const email = decoded.email ?? `${decoded.uid}@sem-email.com`;
 
-      const customerId = await getOrCreateAsaasCustomer(name.trim(), cpfCnpj, email);
+      const baseUrl = process.env.ASAAS_BASE_URL;
+      const apiKey = process.env.ASAAS_API_KEY;
+      if (!baseUrl || !apiKey) {
+        console.error('create-checkout: ASAAS_BASE_URL ou ASAAS_API_KEY não configurados');
+        return res.status(500).json({ error: 'Configuração de pagamento ausente no servidor' });
+      }
+
+      let customerId: string;
+      try {
+        customerId = await getOrCreateAsaasCustomer(name.trim(), cpfCnpj, email);
+      } catch (err) {
+        console.error('create-checkout: falha ao criar/buscar cliente Asaas:', err);
+        return res.status(502).json({ error: 'Falha ao registrar cliente no Asaas' });
+      }
 
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + 1);
       const dueDateStr = dueDate.toISOString().split('T')[0];
 
-      const baseUrl = process.env.ASAAS_BASE_URL!;
-      const apiKey = process.env.ASAAS_API_KEY!;
       const headers: Record<string, string> = { 'access_token': apiKey, 'Content-Type': 'application/json' };
 
       const paymentResp = await fetch(`${baseUrl}/payments`, {
@@ -192,7 +203,7 @@ async function startServer() {
       const error = err as { status?: number; message?: string };
       if (error.status === 401) return res.status(401).json({ error: 'Não autorizado' });
       console.error('create-checkout error:', err);
-      return res.status(500).json({ error: 'Erro interno' });
+      return res.status(500).json({ error: 'Erro interno', detail: error.message });
     }
   });
 
