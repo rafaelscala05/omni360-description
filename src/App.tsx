@@ -272,6 +272,7 @@ export default function App() {
             setCredits(initialCredits);
           }
           // Listener em tempo real para manter o saldo sempre atualizado
+          unsubscribeCredits?.();
           unsubscribeCredits = onSnapshot(userRef, (snap) => {
             if (snap.exists()) setCredits(snap.data().credits ?? 0);
           });
@@ -299,6 +300,8 @@ export default function App() {
           console.error("Error fetching user data/categories:", error);
         }
       } else {
+        unsubscribeCredits?.();
+        unsubscribeCredits = null;
         setCredits(0);
         setExistingCategories([]);
       }
