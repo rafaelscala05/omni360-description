@@ -3,7 +3,20 @@ import { createServer as createViteServer } from "vite";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { initializeApp, getApps, applicationDefault } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 import dotenv from "dotenv";
+
+if (!getApps().length) {
+  initializeApp({
+    credential: applicationDefault(),
+  });
+}
+
+export const adminDb = getFirestore();
+export const adminAuth = getAuth();
+
 dotenv.config({ override: true });
 
 const __filename = fileURLToPath(import.meta.url);
