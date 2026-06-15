@@ -8,3 +8,9 @@ runConfig:
 env:
   - variable: NODE_ENV
     value: production
+  - variable: ASAAS_API_KEY
+    secret: asaas-api-key
+  - variable: ASAAS_WEBHOOK_TOKEN
+    secret: asaas-webhook-token
+  - variable: ASAAS_BASE_URL
+    value: https://api.asaas.com/api/v3
