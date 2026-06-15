@@ -8,7 +8,7 @@ import 'react-quill-new/dist/quill.bubble.css';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from './firebase';
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, doc, writeBatch, getDocs, setDoc, getDoc, deleteDoc, getDocFromServer, runTransaction } from 'firebase/firestore';
+import { collection, doc, writeBatch, getDocs, setDoc, getDoc, deleteDoc, getDocFromServer, runTransaction, onSnapshot } from 'firebase/firestore';
 const ImageSearchModal = lazy(() => import('./components/ImageSearchModal'));
 const CategoryManager = lazy(() => import('./components/categories/CategoryManager'));
 const CategoryImportModal = lazy(() => import('./components/modals/CategoryImportModal'));
@@ -251,6 +251,8 @@ export default function App() {
   }, [hasUnsavedChanges, user, products, originalHeaders]);
 
   useEffect(() => {
+    let unsubscribeCredits: (() => void) | null = null;
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
@@ -258,20 +260,22 @@ export default function App() {
         const userRef = doc(db, `users/${currentUser.uid}`);
         try {
           const userSnap = await getDoc(userRef);
-          if (userSnap.exists()) {
-            setCredits(userSnap.data().credits ?? 0);
-          } else {
+          if (!userSnap.exists()) {
             // New user, give some starter credits
             const initialCredits = 10;
-            await setDoc(userRef, { 
-              email: currentUser.email, 
+            await setDoc(userRef, {
+              email: currentUser.email,
               credits: initialCredits,
               lastSync: new Date().toISOString(),
-              displayName: currentUser.displayName 
+              displayName: currentUser.displayName,
             });
             setCredits(initialCredits);
           }
-          
+          // Listener em tempo real para manter o saldo sempre atualizado
+          unsubscribeCredits = onSnapshot(userRef, (snap) => {
+            if (snap.exists()) setCredits(snap.data().credits ?? 0);
+          });
+
           // Load admin-controlled per-action credit costs (read-only config doc)
           try {
             const costSnap = await getDoc(doc(db, 'config/credits'));
@@ -289,7 +293,7 @@ export default function App() {
           // Load categories on startup
           const cats = await fetchCategories(currentUser.uid);
           setExistingCategories(cats);
-          
+
           await loadFromCloud(true, currentUser.uid);
         } catch (error) {
           console.error("Error fetching user data/categories:", error);
@@ -300,7 +304,10 @@ export default function App() {
       }
       setIsAuthReady(true);
     });
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      unsubscribeCredits?.();
+    };
   }, []);
 
   // Cost of a given action, resolved against the loaded config (fallbacks inside).
