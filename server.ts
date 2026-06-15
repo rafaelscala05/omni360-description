@@ -43,7 +43,10 @@ async function getOrCreateAsaasCustomer(
   const rawCpfCnpj = cpfCnpj.replace(/\D/g, '');
 
   const listResp = await fetch(`${baseUrl}/customers?cpfCnpj=${rawCpfCnpj}&limit=1`, { headers });
-  if (!listResp.ok) throw new Error(`Asaas list customers failed: ${listResp.status}`);
+  if (!listResp.ok) {
+    const body = await listResp.text();
+    throw new Error(`Asaas list customers failed: ${listResp.status} — ${body}`);
+  }
   const listData = await listResp.json() as { data: Array<{ id: string }> };
 
   if (listData.data.length > 0) return listData.data[0].id;
@@ -53,7 +56,10 @@ async function getOrCreateAsaasCustomer(
     headers,
     body: JSON.stringify({ name, cpfCnpj: rawCpfCnpj, email }),
   });
-  if (!createResp.ok) throw new Error(`Asaas create customer failed: ${createResp.status}`);
+  if (!createResp.ok) {
+    const body = await createResp.text();
+    throw new Error(`Asaas create customer failed: ${createResp.status} — ${body}`);
+  }
   const customer = await createResp.json() as { id: string };
   return customer.id;
 }
@@ -160,8 +166,9 @@ async function startServer() {
       try {
         customerId = await getOrCreateAsaasCustomer(name.trim(), cpfCnpj, email);
       } catch (err) {
-        console.error('create-checkout: falha ao criar/buscar cliente Asaas:', err);
-        return res.status(502).json({ error: 'Falha ao registrar cliente no Asaas' });
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('create-checkout: falha ao criar/buscar cliente Asaas:', msg);
+        return res.status(502).json({ error: 'Falha ao registrar cliente no Asaas', detail: msg });
       }
 
       const dueDate = new Date();
