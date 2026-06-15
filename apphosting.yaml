@@ -16,6 +16,6 @@ env:
   - variable: ASAAS_WEBHOOK_TOKEN
     secret: asaas-webhook-token
   - variable: ASAAS_BASE_URL
-    value: https://api.asaas.com/api/v3
+    value: https://api.asaas.com/v3
   - variable: GEMINI_API_KEY
     secret: gemini-api-key
