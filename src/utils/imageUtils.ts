@@ -16,6 +16,13 @@ export async function fetchAndProcessImage(imageUrl: string): Promise<{ base64Da
       throw new Error('Formato de imagem base64 inválido.');
     }
   } else {
+    // Reject localhost URLs when running in production — they point to dev machines
+    const isLocalhostUrl = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(imageUrl);
+    const isRunningLocally = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (isLocalhostUrl && !isRunningLocally) {
+      throw new Error('Imagem salva localmente não está disponível em produção.');
+    }
+
     let blob: Blob | null = null;
 
     if (imageUrl.includes('firebasestorage.googleapis.com')) {

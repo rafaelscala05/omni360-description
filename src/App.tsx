@@ -2544,13 +2544,21 @@ Retorne APENAS um JSON válido no seguinte formato:
                                      {product._generationError && (
                                        <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-white shadow-sm z-10 animate-pulse" title="Erro na geração"></div>
                                      )}
-                                     {product._selectedImage ? (
-                                       <div className="w-10 h-10 rounded-md border border-slate-200 overflow-hidden bg-white p-[1px] shadow-sm hover:border-[#004ac6] cursor-pointer transition-colors" onClick={() => setCurrentImageSearchProduct(product)}>
-                                         <img src={product._selectedImage} alt="Product" className="w-full h-full object-contain rounded-sm" />
-                                       </div>
-                                     ) : product['URL imagem 1'] ? (
-                                       <div className="w-10 h-10 rounded-md border border-slate-200 overflow-hidden bg-white p-[1px] shadow-sm hover:border-[#004ac6] cursor-pointer transition-colors" onClick={() => setCurrentImageSearchProduct(product)}>
-                                         <img src={product['URL imagem 1'].toString()} alt="Product" className="w-full h-full object-contain rounded-sm" />
+                                     {(product._selectedImage || product['URL imagem 1']) ? (
+                                       <div className="w-10 h-10 rounded-md border border-slate-200 overflow-hidden bg-white p-[1px] shadow-sm hover:border-[#004ac6] cursor-pointer transition-colors relative" onClick={() => setCurrentImageSearchProduct(product)}>
+                                         <img
+                                           src={(product._selectedImage || product['URL imagem 1']!.toString())}
+                                           alt="Product"
+                                           className="w-full h-full object-contain rounded-sm"
+                                           onError={e => {
+                                             e.currentTarget.style.display = 'none';
+                                             const fallback = e.currentTarget.nextElementSibling as HTMLElement | null;
+                                             if (fallback) fallback.removeAttribute('hidden');
+                                           }}
+                                         />
+                                         <span hidden className="absolute inset-0 flex items-center justify-center text-slate-400">
+                                           <ImageIcon className="w-4 h-4 opacity-70" />
+                                         </span>
                                        </div>
                                      ) : (
                                        <div className="w-10 h-10 rounded-md border border-slate-200 bg-slate-50 flex items-center justify-center text-slate-400 hover:border-[#004ac6] hover:text-[#004ac6] cursor-pointer transition-colors shadow-sm" onClick={() => setCurrentImageSearchProduct(product)}>
