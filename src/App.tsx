@@ -13,6 +13,7 @@ const ImageSearchModal = lazy(() => import('./components/ImageSearchModal'));
 const CategoryManager = lazy(() => import('./components/categories/CategoryManager'));
 const CategoryImportModal = lazy(() => import('./components/modals/CategoryImportModal'));
 const ProductEditModal = lazy(() => import('./components/modals/ProductEditModal'));
+import CreditPurchaseModal from './components/modals/CreditPurchaseModal';
 import { Category, Product, AttributeValue, getProductStatusFlags, ProductModalTab } from './types/models';
 import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate } from './services/productService';
 import { fetchCategories, generateCategoryHierarchy, flattenHierarchy, getEffectiveAttributes, addAttributeToCategory } from './services/categoryService';
@@ -38,12 +39,15 @@ interface Template {
 
 interface CreditLog {
   id: string;
+  type?: 'purchase';
   actionType: string;
   actionKey?: string;
   productName: string;
   sku: string;
   userName: string;
   creditsConsumed: number;
+  creditsAdded?: number;
+  amount?: number;
   timestamp: string;
 }
 
@@ -165,6 +169,7 @@ export default function App() {
   const [creditCosts, setCreditCosts] = useState<Record<string, number>>({});
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isCreditHistoryOpen, setIsCreditHistoryOpen] = useState(false);
+  const [isCreditPurchaseOpen, setIsCreditPurchaseOpen] = useState(false);
   const [creditLogs, setCreditLogs] = useState<CreditLog[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [isFirebaseUnavailable, setIsFirebaseUnavailable] = useState(false);
@@ -1934,7 +1939,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               <div>
                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Usado Este Mês</div>
                  <div className="flex items-baseline gap-2">
-                   <span className="text-2xl font-bold text-slate-900">{creditLogs.reduce((acc, log) => acc + log.creditsConsumed, 0)}</span>
+                   <span className="text-2xl font-bold text-slate-900">{creditLogs.filter(l => l.type !== 'purchase').reduce((acc, log) => acc + log.creditsConsumed, 0)}</span>
                    <span className="text-sm text-slate-500">créditos</span>
                  </div>
               </div>
@@ -2104,11 +2109,15 @@ Retorne APENAS um JSON válido no seguinte formato:
           </div>
 
           <div className="flex items-center gap-3 md:gap-5 shrink-0">
-            <div className="flex items-center gap-1.5 text-xs md:text-sm font-semibold text-slate-600 bg-slate-50 border border-slate-200 px-2.5 md:px-3 py-1 rounded-full shadow-sm">
+            <button
+              onClick={() => setIsCreditPurchaseOpen(true)}
+              className="flex items-center gap-1.5 text-xs md:text-sm font-semibold text-slate-600 bg-slate-50 border border-slate-200 px-2.5 md:px-3 py-1 rounded-full shadow-sm hover:bg-amber-50 hover:border-amber-200 transition-colors"
+              title="Comprar créditos"
+            >
               <Coins className="w-4 h-4 text-amber-500 shrink-0" />
               <span className="hidden sm:inline">Créditos:</span>
               <span className="text-slate-900 font-bold">{credits}</span>
-            </div>
+            </button>
             <div className="h-6 w-px bg-slate-200"></div>
             <div className="relative">
               <button onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)} className="flex items-center gap-2 group p-1 hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-full transition-colors focus:outline-none" title="Opções da conta">
@@ -2933,10 +2942,16 @@ Retorne APENAS um JSON válido no seguinte formato:
                   <p className="text-sm text-amber-800 font-medium">Saldo Atual</p>
                   <p className="text-2xl font-bold text-amber-900">{credits} créditos</p>
                 </div>
-                <div className="text-right">
-                  <p className="text-xs text-amber-600">Para recarregar, entre em contato</p>
-                  <p className="text-xs text-amber-600">com o administrador do sistema.</p>
-                </div>
+                <button
+                  onClick={() => {
+                    setIsCreditHistoryOpen(false);
+                    setIsCreditPurchaseOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 text-white text-xs font-medium rounded-lg hover:bg-amber-600 transition-colors"
+                >
+                  <Coins className="w-3.5 h-3.5" />
+                  Comprar créditos
+                </button>
               </div>
 
               <div className="max-h-[400px] overflow-y-auto">
@@ -2975,8 +2990,12 @@ Retorne APENAS um JSON válido no seguinte formato:
                             </div>
                             <div className="text-[10px] text-gray-500 font-mono">{log.sku}</div>
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-right text-xs font-bold text-amber-600">
-                            -{log.creditsConsumed}
+                          <td className="px-4 py-3 whitespace-nowrap text-right text-xs font-bold">
+                            {log.type === 'purchase' ? (
+                              <span className="text-green-600">+{log.creditsAdded}</span>
+                            ) : (
+                              <span className="text-amber-600">-{log.creditsConsumed}</span>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -3177,6 +3196,10 @@ Retorne APENAS um JSON válido no seguinte formato:
             isProcessing={isProcessingCategories}
           />
         </Suspense>
+      )}
+
+      {isCreditPurchaseOpen && (
+        <CreditPurchaseModal onClose={() => setIsCreditPurchaseOpen(false)} />
       )}
 
       {/* Build version footer */}
