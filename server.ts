@@ -7,17 +7,15 @@ import { initializeApp, getApps, applicationDefault } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import dotenv from "dotenv";
-import { createRequire } from "module";
+import firebaseAppletConfig from "./firebase-applet-config.json";
 
 // Pin the Admin SDK to the SAME Firebase project the client uses to mint ID
 // tokens, so verifyIdToken's expected "aud" always matches the token issuer.
 // Without this, the Admin SDK inherits the local ADC's project (which may differ)
 // and rejects tokens with an "incorrect aud claim" error.
-const require = createRequire(import.meta.url);
-const { projectId: firebaseProjectId, firestoreDatabaseId } = require("./firebase-applet-config.json") as {
-  projectId: string;
-  firestoreDatabaseId: string;
-};
+// Static import so esbuild inlines the JSON into the bundle (a runtime require
+// of a relative path would not resolve from dist/server.js in production).
+const { projectId: firebaseProjectId, firestoreDatabaseId } = firebaseAppletConfig;
 
 if (!getApps().length) {
   initializeApp({
