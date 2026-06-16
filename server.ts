@@ -14,7 +14,10 @@ import { createRequire } from "module";
 // Without this, the Admin SDK inherits the local ADC's project (which may differ)
 // and rejects tokens with an "incorrect aud claim" error.
 const require = createRequire(import.meta.url);
-const { projectId: firebaseProjectId } = require("./firebase-applet-config.json") as { projectId: string };
+const { projectId: firebaseProjectId, firestoreDatabaseId } = require("./firebase-applet-config.json") as {
+  projectId: string;
+  firestoreDatabaseId: string;
+};
 
 if (!getApps().length) {
   initializeApp({
@@ -23,7 +26,10 @@ if (!getApps().length) {
   });
 }
 
-export const adminDb = getFirestore();
+// The client uses a NAMED Firestore database (firestoreDatabaseId), not the
+// "(default)" one. The Admin SDK must target the same named database or writes
+// fail with "5 NOT_FOUND" (the default database does not exist in this project).
+export const adminDb = getFirestore(firestoreDatabaseId);
 export const adminAuth = getAuth();
 
 // Do NOT override: in production the App Hosting environment (apphosting.yaml /
