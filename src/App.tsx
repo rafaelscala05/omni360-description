@@ -1930,9 +1930,6 @@ Retorne APENAS um JSON válido no seguinte formato:
               <span className="text-5xl font-bold text-slate-900 tracking-tight">{credits}</span>
               <span className="text-base text-slate-500">créditos</span>
            </div>
-           <div className="flex items-center gap-1.5 text-xs text-slate-500">
-             <AlertCircle className="w-3.5 h-3.5" /> Renova automaticamente
-           </div>
         </div>
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex items-center justify-between">
            <div className="flex gap-12">
@@ -1986,11 +1983,28 @@ Retorne APENAS um JSON válido no seguinte formato:
                      </span>
                    </td>
                    <td className="px-6 py-4 text-slate-900 max-w-xs xl:max-w-md truncate" title={log.productName}>
-                     {log.productName}
-                     <div className="text-[10px] text-slate-400 font-mono mt-0.5">{log.sku}</div>
+                     {log.type === 'purchase' ? (
+                       <>
+                         Compra de {log.creditsAdded ?? 0} créditos
+                         {log.amount != null && (
+                           <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                             R$ {log.amount.toFixed(2).replace('.', ',')}
+                           </div>
+                         )}
+                       </>
+                     ) : (
+                       <>
+                         {log.productName}
+                         <div className="text-[10px] text-slate-400 font-mono mt-0.5">{log.sku}</div>
+                       </>
+                     )}
                    </td>
-                   <td className="px-6 py-4 text-right text-red-500 font-medium">
-                     -{log.creditsConsumed}
+                   <td className="px-6 py-4 text-right font-medium">
+                     {log.type === 'purchase' ? (
+                       <span className="text-green-600">+{log.creditsAdded ?? 0}</span>
+                     ) : (
+                       <span className="text-red-500">-{log.creditsConsumed}</span>
+                     )}
                    </td>
                  </tr>
                ))

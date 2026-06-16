@@ -303,8 +303,8 @@ async function startServer() {
           creditsConsumed: 0,
           amount,
           paymentId,
-          productName: 'N/A',
-          sku: 'N/A',
+          productName: `Compra de ${credits} créditos`,
+          sku: `R$ ${amount.toFixed(2)}`,
           userName: '',
           timestamp: new Date().toISOString(),
         });
