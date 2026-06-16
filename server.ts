@@ -7,10 +7,19 @@ import { initializeApp, getApps, applicationDefault } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import dotenv from "dotenv";
+import { createRequire } from "module";
+
+// Pin the Admin SDK to the SAME Firebase project the client uses to mint ID
+// tokens, so verifyIdToken's expected "aud" always matches the token issuer.
+// Without this, the Admin SDK inherits the local ADC's project (which may differ)
+// and rejects tokens with an "incorrect aud claim" error.
+const require = createRequire(import.meta.url);
+const { projectId: firebaseProjectId } = require("./firebase-applet-config.json") as { projectId: string };
 
 if (!getApps().length) {
   initializeApp({
     credential: applicationDefault(),
+    projectId: firebaseProjectId,
   });
 }
 
