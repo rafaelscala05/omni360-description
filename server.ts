@@ -46,21 +46,32 @@ async function verifyFirebaseToken(req: express.Request): Promise<import('fireba
   return adminAuth.verifyIdToken(idToken);
 }
 
+// Asaas hosts (api.asaas.com / api-sandbox.asaas.com) expose the API under /v3,
+// NOT /api/v3. Self-heal a stray /api segment and trailing slashes so a
+// misconfigured ASAAS_BASE_URL still produces the correct path instead of an
+// empty-body 404.
+function getAsaasBaseUrl(): string {
+  const raw = (process.env.ASAAS_BASE_URL || '').trim().replace(/\/+$/, '');
+  return raw.replace(/\/api\/v3$/, '/v3');
+}
+
 async function getOrCreateAsaasCustomer(
   name: string,
   cpfCnpj: string,
   email: string,
 ): Promise<string> {
-  const baseUrl = process.env.ASAAS_BASE_URL!;
+  const baseUrl = getAsaasBaseUrl();
   const apiKey = process.env.ASAAS_API_KEY!;
   const headers: Record<string, string> = { 'access_token': apiKey, 'Content-Type': 'application/json' };
 
   const rawCpfCnpj = cpfCnpj.replace(/\D/g, '');
 
-  const listResp = await fetch(`${baseUrl}/customers?cpfCnpj=${rawCpfCnpj}&limit=1`, { headers });
+  const listUrl = `${baseUrl}/customers?cpfCnpj=${rawCpfCnpj}&limit=1`;
+  console.log(`Asaas list customers → ${listUrl} (key ${apiKey ? apiKey.slice(0, 10) + '…' : 'MISSING'})`);
+  const listResp = await fetch(listUrl, { headers });
   if (!listResp.ok) {
     const body = await listResp.text();
-    throw new Error(`Asaas list customers failed: ${listResp.status} — ${body}`);
+    throw new Error(`Asaas list customers failed: ${listResp.status} — ${body} [url=${listUrl}]`);
   }
   const listData = await listResp.json() as { data: Array<{ id: string }> };
 
@@ -170,7 +181,7 @@ async function startServer() {
       const amount = Math.round(credits * 0.5 * 100) / 100;
       const email = decoded.email ?? `${decoded.uid}@sem-email.com`;
 
-      const baseUrl = process.env.ASAAS_BASE_URL;
+      const baseUrl = getAsaasBaseUrl();
       const apiKey = process.env.ASAAS_API_KEY;
       if (!baseUrl || !apiKey) {
         console.error('create-checkout: ASAAS_BASE_URL ou ASAAS_API_KEY não configurados');
