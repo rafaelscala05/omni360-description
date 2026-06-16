@@ -17,7 +17,9 @@ if (!getApps().length) {
 export const adminDb = getFirestore();
 export const adminAuth = getAuth();
 
-dotenv.config({ override: true });
+// Do NOT override: in production the App Hosting environment (apphosting.yaml /
+// Secret Manager) must take precedence over any stray .env bundled in the image.
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
