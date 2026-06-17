@@ -331,8 +331,26 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    // Hashed assets are immutable: cache them aggressively. index.html must
+    // never be cached, or the browser keeps requesting an old bundle hash.
+    app.use(express.static(distPath, {
+      index: false,
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('index.html')) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        } else {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      },
+    }));
     app.get('*', (req, res) => {
+      // Never serve index.html for missing asset requests (.js, .css, etc.) —
+      // returning HTML for a module request triggers a MIME type error.
+      // Let those 404 so the browser fails loudly instead of silently.
+      if (path.extname(req.path)) {
+        return res.status(404).end();
+      }
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

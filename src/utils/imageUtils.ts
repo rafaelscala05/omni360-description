@@ -25,6 +25,8 @@ export async function fetchAndProcessImage(imageUrl: string): Promise<{ base64Da
 
     let blob: Blob | null = null;
 
+    // Legacy signed URLs (firebasestorage.googleapis.com) require the SDK to fetch the blob.
+    // Public URLs (storage.googleapis.com) are fetched directly below.
     if (imageUrl.includes('firebasestorage.googleapis.com')) {
       try {
         const decodedUrl = decodeURIComponent(imageUrl);

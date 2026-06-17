@@ -5,7 +5,7 @@ import { fetchAndProcessImage } from '../utils/imageUtils';
 import { generateImage, generateJson } from '../services/aiService';
 import { getEffectiveImagePrompts } from '../services/categoryService';
 import { storage } from '../firebase';
-import { ref, uploadString, getDownloadURL } from 'firebase/storage';
+import { ref, uploadString } from 'firebase/storage';
 import type { Part } from 'firebase/ai';
 import { CREDIT_ACTIONS, type CreditAction } from '../credits';
 
@@ -251,7 +251,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
   const uploadImage = async (base64OrUrl: string, filename: string): Promise<string> => {
     try {
       // Already a persistent Firebase Storage URL — nothing to re-upload.
-      if (base64OrUrl.includes('firebasestorage.googleapis.com')) {
+      if (base64OrUrl.includes('firebasestorage.googleapis.com') || base64OrUrl.includes('storage.googleapis.com')) {
         return base64OrUrl;
       }
 
@@ -270,7 +270,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
       const storageRef = ref(storage, path);
 
       await uploadString(storageRef, dataUrl, 'data_url');
-      return await getDownloadURL(storageRef);
+      return `https://storage.googleapis.com/${storageRef.bucket}/${storageRef.fullPath}`;
     } catch (error) {
       console.error('Error uploading image to Firebase Storage:', error);
       throw error;
