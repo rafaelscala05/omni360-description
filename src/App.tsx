@@ -1119,7 +1119,9 @@ export default function App() {
         }
 
         // Apply modulo 4.3 - Atributos Dinâmicos na Exportação
-        if (prod.attributes) {
+        // O modelo TinyERP possui um schema de colunas fixo: atributos dinâmicos
+        // adicionados aqui quebram a importação no Tiny, então são omitidos.
+        if (modelToUse !== 'tinyerp' && prod.attributes) {
           Object.entries(prod.attributes).forEach(([key, attr]) => {
             if (Array.isArray(attr.value)) {
               row[key] = serializeCheckbox(attr.value);
@@ -1157,8 +1159,8 @@ export default function App() {
       });
     }
 
-    // Append dynamic columns
-    if (headersToUse) {
+    // Append dynamic columns (nunca no modelo TinyERP, cujo schema é fixo)
+    if (headersToUse && modelToUse !== 'tinyerp') {
       Array.from(dynamicAttrs).forEach(dynamicCol => {
         if (!headersToUse!.includes(dynamicCol)) {
           headersToUse!.push(dynamicCol);
@@ -1218,10 +1220,13 @@ export default function App() {
       }
 
       // Update parent
+      const tituloOtimizado = decodeHTMLEntities(generatedData.titulo_seo);
       updated[parentIdx] = {
         ...parent,
+        // O título otimizado também passa a ser o nome do produto (campo 'Descrição').
+        'Descrição': tituloOtimizado || parent['Descrição'],
         'Descrição complementar': decodeHTMLEntities(generatedData.descricao_html),
-        'Título SEO': decodeHTMLEntities(generatedData.titulo_seo),
+        'Título SEO': tituloOtimizado,
         'Descrição SEO': decodeHTMLEntities(generatedData.descricao_seo),
         'Palavras chave SEO': decodeHTMLEntities(generatedData.palavras_chave),
         attributes: newAttributes,
@@ -2463,7 +2468,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                                 {Object.keys(visibleColumns).map(col => (
                                   <label key={col} className="flex items-center gap-2 cursor-pointer py-1.5 px-2 hover:bg-slate-50 rounded-md transition-colors group">
                                     <input type="checkbox" checked={visibleColumns[col]} onChange={(e) => setVisibleColumns(prev => ({ ...prev, [col]: e.target.checked }))} className="rounded border-slate-300 text-[#004ac6] focus:ring-[#004ac6] opacity-70 group-hover:opacity-100 transition-opacity" />
-                                    <span className="text-sm text-slate-700 group-hover:text-slate-900 font-medium">{col}</span>
+                                    <span className="text-sm text-slate-700 group-hover:text-slate-900 font-medium">{col === 'Descrição' ? 'Título' : col}</span>
                                   </label>
                                 ))}
                               </div>
@@ -2486,7 +2491,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                             </th>
                                       {visibleColumns['Img'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">IMG</th>}
                             {visibleColumns['SKU'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">SKU</th>}
-                            {visibleColumns['Descrição'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">Descrição</th>}
+                            {visibleColumns['Descrição'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">Título</th>}
                             {visibleColumns['Categoria'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">Categoria</th>}
                             {visibleColumns['Marca'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">Marca</th>}
                             {visibleColumns['Status'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">Status</th>}
@@ -2736,6 +2741,8 @@ Retorne APENAS um JSON válido no seguinte formato:
           <ProductEditModal
             product={previewProduct}
             categories={existingCategories}
+            templates={templates}
+            selectedTemplateId={selectedTemplateId}
             initialTab={previewInitialTab}
             onClose={() => setPreviewProduct(null)}
             onOpenImageModal={() => {

@@ -28,10 +28,54 @@ export default function CreditPurchaseModal({ onClose }: Props) {
   const [credits, setCredits] = useState(10);
   const [name, setName] = useState('');
   const [cpfCnpj, setCpfCnpj] = useState('');
+  const [coupon, setCoupon] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
+  const [couponError, setCouponError] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; amount: number; discount: number } | null>(null);
 
-  const amount = (credits * 0.5).toFixed(2);
+  const baseAmount = credits * 0.5;
+  const finalAmount = appliedCoupon ? appliedCoupon.amount : baseAmount;
+
+  // Cupom validado deixa de valer se a quantidade de créditos mudar.
+  function resetCoupon() {
+    if (appliedCoupon) setAppliedCoupon(null);
+    if (couponError) setCouponError('');
+  }
+
+  async function handleValidateCoupon() {
+    if (!coupon.trim()) return;
+    setCouponError('');
+    setValidatingCoupon(true);
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error('Usuário não autenticado');
+      const token = await user.getIdToken();
+
+      const resp = await fetch('/api/payments/validate-coupon', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ credits, coupon: coupon.trim() }),
+      });
+
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        setAppliedCoupon(null);
+        throw new Error((data as { error?: string }).error ?? 'Cupom inválido');
+      }
+
+      const { code, amount, discount } = data as { code: string; amount: number; discount: number };
+      setAppliedCoupon({ code, amount, discount });
+    } catch (err: unknown) {
+      setCouponError(err instanceof Error ? err.message : 'Cupom inválido');
+    } finally {
+      setValidatingCoupon(false);
+    }
+  }
 
   function handleCpfCnpjChange(e: React.ChangeEvent<HTMLInputElement>) {
     setCpfCnpj(formatCpfCnpj(e.target.value));
@@ -53,7 +97,7 @@ export default function CreditPurchaseModal({ onClose }: Props) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ credits, name: name.trim(), cpfCnpj }),
+        body: JSON.stringify({ credits, name: name.trim(), cpfCnpj, coupon: coupon.trim() || undefined }),
       });
 
       if (!resp.ok) {
@@ -98,7 +142,7 @@ export default function CreditPurchaseModal({ onClose }: Props) {
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => setCredits((c) => Math.max(10, c - 10))}
+                    onClick={() => { setCredits((c) => Math.max(10, c - 10)); resetCoupon(); }}
                     className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 disabled:opacity-40"
                     disabled={credits <= 10}
                   >
@@ -109,14 +153,21 @@ export default function CreditPurchaseModal({ onClose }: Props) {
                   </span>
                   <button
                     type="button"
-                    onClick={() => setCredits((c) => c + 10)}
+                    onClick={() => { setCredits((c) => c + 10); resetCoupon(); }}
                     className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700"
                   >
                     <Plus className="w-4 h-4" />
                   </button>
                   <div className="ml-auto text-right">
                     <p className="text-sm text-gray-500">Total</p>
-                    <p className="text-xl font-bold text-gray-900">R$ {amount}</p>
+                    {appliedCoupon ? (
+                      <>
+                        <p className="text-xs text-gray-400 line-through">R$ {baseAmount.toFixed(2)}</p>
+                        <p className="text-xl font-bold text-green-600">R$ {finalAmount.toFixed(2)}</p>
+                      </>
+                    ) : (
+                      <p className="text-xl font-bold text-gray-900">R$ {finalAmount.toFixed(2)}</p>
+                    )}
                   </div>
                 </div>
                 <p className="text-xs text-gray-400 mt-1">
@@ -150,6 +201,38 @@ export default function CreditPurchaseModal({ onClose }: Props) {
                   maxLength={18}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004ac6] focus:border-transparent"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Cupom de desconto <span className="text-gray-400 font-normal">(opcional)</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={coupon}
+                    onChange={(e) => { setCoupon(e.target.value.toUpperCase()); resetCoupon(); }}
+                    placeholder="Ex: BEMVINDO10"
+                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-[#004ac6] focus:border-transparent"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleValidateCoupon}
+                    disabled={!coupon.trim() || validatingCoupon || !!appliedCoupon}
+                    className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                  >
+                    {validatingCoupon ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    {appliedCoupon ? 'Aplicado' : 'Aplicar'}
+                  </button>
+                </div>
+                {appliedCoupon && (
+                  <p className="text-xs text-green-600 mt-1 font-medium">
+                    Cupom {appliedCoupon.code} aplicado — desconto de R$ {appliedCoupon.discount.toFixed(2)}.
+                  </p>
+                )}
+                {couponError && (
+                  <p className="text-xs text-red-600 mt-1">{couponError}</p>
+                )}
               </div>
 
               {error && (

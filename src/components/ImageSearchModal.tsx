@@ -116,6 +116,8 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
   const [imageRegenerating, setImageRegenerating] = useState<boolean[]>([false, false, false]);
   const [tokenUsage, setTokenUsage] = useState({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
   const [productDescription, setProductDescription] = useState('');
+  // Confirmação de consumo de créditos antes de gerar/regenerar imagens.
+  const [confirmAction, setConfirmAction] = useState<{ type: 'ambient' } | { type: 'regenerate'; index: number } | null>(null);
 
   useEffect(() => {
     if (isOpen && product && step === 'search') {
@@ -150,12 +152,18 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
     return null;
   };
 
-  const handleGenerateAmbient = async () => {
+  const handleGenerateAmbient = () => {
     if (!selectedImageUrl || !product) return;
     if (credits < getCreditCost(CREDIT_ACTIONS.ambientImage.key)) {
       alert('Você não possui créditos suficientes. Por favor, adicione mais créditos.');
       return;
     }
+    // Pede confirmação do custo em créditos antes de gerar.
+    setConfirmAction({ type: 'ambient' });
+  };
+
+  const runGenerateAmbient = async () => {
+    if (!selectedImageUrl || !product) return;
 
     setIsGenerating(true);
     setStep('ambient');
@@ -218,12 +226,18 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
     }
   };
 
-  const handleRegenerateImage = async (index: number) => {
+  const handleRegenerateImage = (index: number) => {
     if (!selectedImageUrl || !product) return;
     if (credits < getCreditCost(CREDIT_ACTIONS.regenerateImage.key)) {
       alert('Você não possui créditos suficientes. Por favor, adicione mais créditos.');
       return;
     }
+    // Pede confirmação do custo em créditos antes de regenerar.
+    setConfirmAction({ type: 'regenerate', index });
+  };
+
+  const runRegenerateImage = async (index: number) => {
+    if (!selectedImageUrl || !product) return;
 
     setImageRegenerating(prev => { const n = [...prev]; n[index] = true; return n; });
 
@@ -305,13 +319,62 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
     setImagePrompts(['', '', '']);
     setImageRegenerating([false, false, false]);
     setProductDescription('');
+    setConfirmAction(null);
     onClose();
+  };
+
+  const handleConfirmAction = () => {
+    if (!confirmAction) return;
+    const action = confirmAction;
+    setConfirmAction(null);
+    if (action.type === 'ambient') {
+      runGenerateAmbient();
+    } else {
+      runRegenerateImage(action.index);
+    }
   };
 
   if (!isOpen || !product) return null;
 
+  const confirmCost = confirmAction
+    ? getCreditCost(confirmAction.type === 'ambient' ? CREDIT_ACTIONS.ambientImage.key : CREDIT_ACTIONS.regenerateImage.key)
+    : 0;
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
+      {confirmAction && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center px-4">
+          <div className="fixed inset-0 bg-gray-900/60" onClick={() => setConfirmAction(null)} />
+          <div className="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600">
+                <ImageIcon className="w-6 h-6" />
+              </div>
+              <h4 className="text-base font-bold text-gray-900">
+                {confirmAction.type === 'ambient' ? 'Gerar imagens de ambientação' : 'Regenerar imagem'}
+              </h4>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              Esta ação consumirá <span className="font-bold text-gray-900">{confirmCost} {confirmCost === 1 ? 'crédito' : 'créditos'}</span>.
+              Você possui <span className="font-bold text-gray-900">{credits}</span>.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmAction(null)}
+                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmAction}
+                className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:p-0">
         <div className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" onClick={handleClose} />
 

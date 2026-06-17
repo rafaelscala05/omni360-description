@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Product, Category, AttributeDefinition, ProductModalTab, getProductStatusFlags } from '../../types/models';
 import { getEffectiveAttributes } from '../../services/categoryService';
-import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText } from '../../services/productService';
+import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate, type Template } from '../../services/productService';
 import { 
   Sparkles, 
   Save, 
@@ -214,9 +214,14 @@ interface ProductEditModalProps {
   onSave: (updatedProduct: Product) => void;
   onCategoryUpdate?: (categoryId: string, newAttr: AttributeDefinition) => Promise<void>;
   onOpenImageModal?: () => void;
+  templates?: Template[];
+  selectedTemplateId?: string;
 }
 
-export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal }: ProductEditModalProps) {
+export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal, templates = [], selectedTemplateId }: ProductEditModalProps) {
+  // Template escolhido para (re)gerar a descrição. Inicia no template padrão da
+  // aplicação e pode ser trocado pelo usuário antes de gerar novamente.
+  const [chosenTemplateId, setChosenTemplateId] = useState<string>(selectedTemplateId || defaultTemplate.id);
   const [editedProduct, setEditedProduct] = useState<Product>({ ...product });
   const [initialProduct, setInitialProduct] = useState<Product>({ ...product });
   const [activeTab, setActiveTab] = useState<ProductModalTab>(initialTab);
@@ -252,7 +257,8 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
   const handleGenerateIA = async () => {
     setIsGeneratingIA(true);
     try {
-      const result = await generateDescriptionText(editedProduct, categories);
+      const template = templates.find(t => t.id === chosenTemplateId) || defaultTemplate;
+      const result = await generateDescriptionText(editedProduct, categories, template);
       
       let newAttrs = { ...(editedProduct.attributes || {}) };
       if (result.extracted_attributes) {
@@ -278,6 +284,8 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
 
       const finalProduct = {
         ...editedProduct,
+        // O título otimizado também passa a ser o nome do produto (campo 'Descrição').
+        'Descrição': result.titulo_seo || editedProduct['Descrição'],
         'Descrição complementar': result.descricao_html,
         'Título SEO': result.titulo_seo,
         'Descrição SEO': result.descricao_seo,
@@ -992,19 +1000,36 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                             Gere descrições ricas, otimizadas para conversão e SEO (Search Engine Optimization) com um clique.
                          </p>
                       </div>
-                      <button 
-                        onClick={handleGenerateIA} 
-                        disabled={isGeneratingIA} 
-                        className={cn(
-                          hasGeneratedContent 
-                            ? "px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 rounded-xl shadow-md" 
-                            : "px-8 py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-900/20 text-sm",
-                          "transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50"
+                      <div className="flex flex-col items-end gap-2">
+                        {templates.length > 1 && (
+                          <div className="flex flex-col items-end gap-1">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Template</label>
+                            <select
+                              value={chosenTemplateId}
+                              onChange={(e) => setChosenTemplateId(e.target.value)}
+                              disabled={isGeneratingIA}
+                              className="bg-slate-800 text-slate-200 text-xs font-medium rounded-lg px-3 py-2 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                            >
+                              {templates.map(t => (
+                                <option key={t.id} value={t.id}>{t.name}</option>
+                              ))}
+                            </select>
+                          </div>
                         )}
-                      >
-                        {isGeneratingIA ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                        {hasGeneratedContent ? "Gerar Conteúdo novamente" : "Gerar Conteúdo Premium"}
-                      </button>
+                        <button
+                          onClick={handleGenerateIA}
+                          disabled={isGeneratingIA}
+                          className={cn(
+                            hasGeneratedContent
+                              ? "px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 rounded-xl shadow-md"
+                              : "px-8 py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-900/20 text-sm",
+                            "transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50"
+                          )}
+                        >
+                          {isGeneratingIA ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                          {hasGeneratedContent ? "Gerar Conteúdo novamente" : "Gerar Conteúdo Premium"}
+                        </button>
+                      </div>
                    </header>
 
                    <div className="grid grid-cols-1 gap-10">

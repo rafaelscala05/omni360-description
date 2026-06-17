@@ -55,6 +55,40 @@ function getAsaasBaseUrl(): string {
   return raw.replace(/\/api\/v3$/, '/v3');
 }
 
+// Valida um cupom contra a coleção `coupons` no Firestore e calcula o valor com
+// desconto. Documento: id = código em maiúsculas, campos
+// { active: boolean, type: 'percent' | 'fixed', value: number, minCredits?: number }.
+// O desconto incide apenas sobre o valor pago; a quantidade de créditos é mantida.
+// Retorna `{ error }` quando inválido, ou os valores calculados quando válido.
+type CouponResult =
+  | { error: string }
+  | { code: string; baseAmount: number; amount: number; discount: number };
+
+async function resolveCoupon(coupon: string, credits: number, baseAmount: number): Promise<CouponResult> {
+  const code = coupon.trim().toUpperCase();
+  const snap = await adminDb.collection('coupons').doc(code).get();
+  const data = snap.exists ? snap.data() as {
+    active?: boolean; type?: string; value?: number; minCredits?: number;
+  } : null;
+
+  if (!data || data.active === false) {
+    return { error: 'Cupom inválido ou expirado' };
+  }
+  if (data.minCredits && credits < data.minCredits) {
+    return { error: `Este cupom exige no mínimo ${data.minCredits} créditos` };
+  }
+
+  const value = Number(data.value) || 0;
+  const rawDiscount = data.type === 'percent'
+    ? Math.round(baseAmount * (value / 100) * 100) / 100
+    : Math.round(value * 100) / 100;
+
+  // O valor mínimo de cobrança no Asaas é R$ 5,00.
+  const amount = Math.max(5, Math.round((baseAmount - rawDiscount) * 100) / 100);
+  const discount = Math.round((baseAmount - amount) * 100) / 100;
+  return { code, baseAmount, amount, discount };
+}
+
 async function getOrCreateAsaasCustomer(
   name: string,
   cpfCnpj: string,
@@ -163,13 +197,48 @@ async function startServer() {
     }
   });
 
+  // Valida um cupom e retorna o valor com desconto, sem criar cobrança.
+  // Usado pelo modal de compra para mostrar o total antes de ir ao Asaas.
+  app.post('/api/payments/validate-coupon', async (req, res) => {
+    try {
+      await verifyFirebaseToken(req);
+      const { credits, coupon } = req.body as { credits: number; coupon?: string };
+
+      if (!credits || !Number.isInteger(credits) || credits < 10 || credits % 10 !== 0) {
+        return res.status(400).json({ error: 'credits deve ser inteiro, múltiplo de 10 e mínimo 10' });
+      }
+      if (!coupon?.trim()) {
+        return res.status(400).json({ error: 'coupon é obrigatório' });
+      }
+
+      const baseAmount = Math.round(credits * 0.5 * 100) / 100;
+      const result = await resolveCoupon(coupon, credits, baseAmount);
+      if ('error' in result) {
+        return res.status(400).json({ error: result.error });
+      }
+
+      return res.json({
+        code: result.code,
+        baseAmount: result.baseAmount,
+        amount: result.amount,
+        discount: result.discount,
+      });
+    } catch (err: unknown) {
+      const error = err as { status?: number; message?: string };
+      if (error.status === 401) return res.status(401).json({ error: 'Não autorizado' });
+      console.error('validate-coupon error:', err);
+      return res.status(500).json({ error: 'Erro interno', detail: error.message });
+    }
+  });
+
   app.post('/api/payments/create-checkout', async (req, res) => {
     try {
       const decoded = await verifyFirebaseToken(req);
-      const { credits, name, cpfCnpj } = req.body as {
+      const { credits, name, cpfCnpj, coupon } = req.body as {
         credits: number;
         name: string;
         cpfCnpj: string;
+        coupon?: string;
       };
 
       if (!credits || !Number.isInteger(credits) || credits < 10 || credits % 10 !== 0) {
@@ -178,7 +247,20 @@ async function startServer() {
       if (!name?.trim()) return res.status(400).json({ error: 'name é obrigatório' });
       if (!cpfCnpj?.trim()) return res.status(400).json({ error: 'cpfCnpj é obrigatório' });
 
-      const amount = Math.round(credits * 0.5 * 100) / 100;
+      const baseAmount = Math.round(credits * 0.5 * 100) / 100;
+
+      // Cupom de desconto (opcional). Reaproveita a validação compartilhada.
+      let amount = baseAmount;
+      let appliedCoupon: { code: string; discount: number } | null = null;
+      if (coupon?.trim()) {
+        const result = await resolveCoupon(coupon, credits, baseAmount);
+        if ('error' in result) {
+          return res.status(400).json({ error: result.error });
+        }
+        amount = result.amount;
+        appliedCoupon = { code: result.code, discount: result.discount };
+      }
+
       const email = decoded.email ?? `${decoded.uid}@sem-email.com`;
 
       const baseUrl = getAsaasBaseUrl();
@@ -227,6 +309,8 @@ async function startServer() {
         uid: decoded.uid,
         credits,
         amount,
+        coupon: appliedCoupon?.code ?? null,
+        discount: appliedCoupon?.discount ?? 0,
         status: 'pending',
         createdAt: FieldValue.serverTimestamp(),
       });
