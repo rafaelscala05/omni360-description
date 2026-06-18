@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Coins, Minus, Plus, CreditCard, Loader2 } from 'lucide-react';
 import { auth } from '../../firebase';
+import { trackCreditPurchased } from '../../analytics';
 
 interface Props {
   onClose: () => void;
@@ -107,6 +108,7 @@ export default function CreditPurchaseModal({ onClose }: Props) {
 
       const { invoiceUrl } = await resp.json() as { invoiceUrl: string };
       window.open(invoiceUrl, '_blank', 'noopener,noreferrer');
+      trackCreditPurchased({ amount: finalAmount, coupon: appliedCoupon?.code });
       setStep('waiting');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Erro inesperado');
