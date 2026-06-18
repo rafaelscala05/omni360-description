@@ -19,6 +19,19 @@ import { generateAttributesFromImage, generateProductAttributes, generateDescrip
 import { fetchCategories, generateCategoryHierarchy, flattenHierarchy, getEffectiveAttributes, addAttributeToCategory } from './services/categoryService';
 import { generateGrounded, parseJsonResponse } from './services/aiService';
 import { CREDIT_ACTIONS, resolveCreditCost, type CreditAction } from './credits';
+import {
+  analyticsSetUser,
+  trackLogin,
+  trackSignUp,
+  trackSpreadsheetImport,
+  trackDescriptionGenerated,
+  trackSpreadsheetExport,
+  trackCreditPurchaseOpen,
+  trackTemplateSaved,
+  trackProductEnriched,
+  trackCategoryHierarchyGenerated,
+  trackTemplateDownloaded,
+} from './analytics';
 
 // Build version injected at build time by Vite (git short hash + UTC date)
 declare const __BUILD_VERSION__: string;
@@ -261,6 +274,7 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
+        analyticsSetUser(currentUser.uid);
         // Fetch credits
         const userRef = doc(db, `users/${currentUser.uid}`);
         try {
@@ -275,6 +289,7 @@ export default function App() {
               displayName: currentUser.displayName,
             });
             setCredits(initialCredits);
+            trackSignUp('google');
           }
           // Listener em tempo real para manter o saldo sempre atualizado
           unsubscribeCredits?.();
@@ -422,6 +437,7 @@ export default function App() {
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
+      trackLogin('google');
     } catch (error) {
       console.error("Login error:", error);
       alert("Erro ao fazer login com o Google.");
@@ -751,6 +767,7 @@ export default function App() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Produtos");
     XLSX.writeFile(wb, "template-planilha-alfreds.xlsx");
+    trackTemplateDownloaded();
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -863,6 +880,7 @@ export default function App() {
         }
 
         setSelectedIds(new Set());
+        trackSpreadsheetImport({ product_count: finalProducts.length, category_count: uniqueCategories.length });
         // Reset file input
         if (fileInputRef.current) fileInputRef.current.value = '';
       } catch (error) {
@@ -902,6 +920,7 @@ export default function App() {
              }
              // Debit only after the AI call succeeded.
              await consumeCredit(CREDIT_ACTIONS.generateHierarchy);
+             trackCategoryHierarchyGenerated({ category_count: selectedNewCategories.length });
           } catch(e) {
              console.error(e);
              alert("Erro na IA, criando categorias planas...");
@@ -1175,6 +1194,7 @@ export default function App() {
     const date = new Date().toISOString().split('T')[0];
     const modelName = modelToUse === 'tinyerp' ? 'TinyERP' : 'Padrao';
     XLSX.writeFile(wb, `produtos_exportacao_${modelName}_${date}.xlsx`);
+    trackSpreadsheetExport({ model: modelToUse, product_count: productsToExport.length });
   };
 
   const toggleSelection = (id: string) => {
@@ -1394,6 +1414,7 @@ Retorne APENAS um JSON válido no seguinte formato:
       const enrichedData = await enrichProductData(product);
       applyEnrichmentToProductAndChildren(id, enrichedData);
       await consumeCredit(CREDIT_ACTIONS.enrichSingle, product['Descrição'], product['Código (SKU)']);
+      trackProductEnriched({ mode: 'single' });
     } catch (error) {
       alert(`Erro ao enriquecer dados para ${product['Descrição']}`);
       setProducts(prev => {
@@ -1443,6 +1464,7 @@ Retorne APENAS um JSON válido no seguinte formato:
       const generatedData = await generateDescriptionText(product, existingCategories, template);
       applyGenerationToProductAndChildren(id, generatedData);
       await consumeCredit(CREDIT_ACTIONS.generateSeoSingle, product['Descrição'], product['Código (SKU)']);
+      trackDescriptionGenerated({ mode: 'single', sku: product['Código (SKU)'] as string });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       alert(`Erro ao gerar descrição para ${product['Descrição']}: ${errorMessage}`);
@@ -1545,6 +1567,7 @@ Retorne APENAS um JSON válido no seguinte formato:
     }
 
     setGenerationLog(`✅ ${successCount} produtos gerados com sucesso!`);
+    if (successCount > 0) trackDescriptionGenerated({ mode: 'mass', product_count: successCount });
     setTimeout(() => {
       setIsGeneratingMass(false);
       setGenerationLog('');
@@ -1620,6 +1643,7 @@ Retorne APENAS um JSON válido no seguinte formato:
     }
 
     setGenerationLog(`✅ ${successCount} produtos enriquecidos com sucesso!`);
+    if (successCount > 0) trackProductEnriched({ mode: 'mass', product_count: successCount });
     setTimeout(() => {
       setIsEnrichingMass(false);
       setGenerationLog('');
@@ -1760,6 +1784,7 @@ Retorne APENAS um JSON válido no seguinte formato:
       const template = templates.find(t => t.id === selectedTemplateId) || defaultTemplate;
       const generatedData = await generateDescriptionText(previewProduct, existingCategories, template);
       await consumeCredit(CREDIT_ACTIONS.regenerateSingle, previewProduct['Descrição'], previewProduct['Código (SKU)']);
+      trackDescriptionGenerated({ mode: 'single', sku: previewProduct['Código (SKU)'] as string });
       setEditedDescription(generatedData.descricao_html);
       setPreviewProduct(prev => prev ? { 
         ...prev, 
@@ -2129,7 +2154,7 @@ Retorne APENAS um JSON válido no seguinte formato:
 
           <div className="flex items-center gap-3 md:gap-5 shrink-0">
             <button
-              onClick={() => setIsCreditPurchaseOpen(true)}
+              onClick={() => { setIsCreditPurchaseOpen(true); trackCreditPurchaseOpen(); }}
               className="flex items-center gap-1.5 text-xs md:text-sm font-semibold text-slate-600 bg-slate-50 border border-slate-200 px-2.5 md:px-3 py-1 rounded-full shadow-sm hover:bg-amber-50 hover:border-amber-200 transition-colors"
               title="Comprar créditos"
             >
@@ -2879,6 +2904,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                                     setTemplates([...templates, editingTemplate]);
                                     setSelectedTemplateId(editingTemplate.id);
                                   }
+                                  trackTemplateSaved({ is_new: !exists, template_name: editingTemplate.name });
                                   setEditingTemplate(null);
                                 }}
                                 disabled={!editingTemplate.name.trim() || !editingTemplate.prompt.trim()}
@@ -2975,6 +3001,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                   onClick={() => {
                     setIsCreditHistoryOpen(false);
                     setIsCreditPurchaseOpen(true);
+                    trackCreditPurchaseOpen();
                   }}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 text-white text-xs font-medium rounded-lg hover:bg-amber-600 transition-colors"
                 >

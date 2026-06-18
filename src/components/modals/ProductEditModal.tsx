@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Product, Category, AttributeDefinition, ProductModalTab, getProductStatusFlags } from '../../types/models';
 import { getEffectiveAttributes } from '../../services/categoryService';
 import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate, type Template } from '../../services/productService';
+import { trackAttributesGenerated } from '../../analytics';
 import { 
   Sparkles, 
   Save, 
@@ -439,6 +440,8 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
 
     if (hasUpdates) {
         setEditedProduct(prev => ({ ...prev, attributes: newAttrs }));
+        const hasImage = !!(editedProduct._selectedImage || editedProduct['URL imagem 1']);
+        trackAttributesGenerated({ source: hasImage ? 'image' : 'text', sku: editedProduct['Código (SKU)'] as string });
     } else if (uniqueSuggested.length === 0) {
         alert("A IA não encontrou novos atributos.");
     }

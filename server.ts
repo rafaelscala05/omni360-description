@@ -2,6 +2,8 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import fs from "fs";
 import path from "path";
+import net from "net";
+import { lookup } from "dns/promises";
 import { fileURLToPath } from "url";
 import { initializeApp, getApps, applicationDefault } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
@@ -44,6 +46,49 @@ async function verifyFirebaseToken(req: express.Request): Promise<import('fireba
   }
   const idToken = authHeader.split('Bearer ')[1];
   return adminAuth.verifyIdToken(idToken);
+}
+
+// Bloqueia ranges privados/loopback/link-local para evitar SSRF (ex.: acessar o
+// endpoint de metadados 169.254.169.254 ou serviços internos da VPC).
+function isPrivateIp(ip: string): boolean {
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split('.').map(Number);
+    return (
+      a === 10 ||                          // 10.0.0.0/8
+      a === 127 ||                         // loopback
+      (a === 172 && b >= 16 && b <= 31) || // 172.16.0.0/12
+      (a === 192 && b === 168) ||          // 192.168.0.0/16
+      (a === 169 && b === 254) ||          // link-local (metadata)
+      a === 0
+    );
+  }
+  const v6 = ip.toLowerCase();
+  // ::1 (loopback), fc00::/7 (ULA), fe80::/10 (link-local) e IPv4-mapeado.
+  if (v6 === '::1' || v6.startsWith('fc') || v6.startsWith('fd') || v6.startsWith('fe8') || v6.startsWith('fe9') || v6.startsWith('fea') || v6.startsWith('feb')) {
+    return true;
+  }
+  if (v6.startsWith('::ffff:')) return isPrivateIp(v6.slice(7));
+  return false;
+}
+
+// Valida uma URL de imagem fornecida pelo cliente antes de o servidor buscá-la.
+// Só permite http/https e resolve o host para garantir que não aponta para a
+// rede interna (defesa contra SSRF). Lança em caso de URL não permitida.
+async function assertSafeImageUrl(rawUrl: string): Promise<void> {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw Object.assign(new Error('URL inválida'), { status: 400 });
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw Object.assign(new Error('Protocolo não permitido'), { status: 400 });
+  }
+  // Resolve TODOS os endereços do host e rejeita se qualquer um for interno.
+  const results = await lookup(url.hostname, { all: true });
+  if (!results.length || results.some((r) => isPrivateIp(r.address))) {
+    throw Object.assign(new Error('Destino não permitido'), { status: 400 });
+  }
 }
 
 // Asaas hosts (api.asaas.com / api-sandbox.asaas.com) expose the API under /v3,
@@ -101,7 +146,7 @@ async function getOrCreateAsaasCustomer(
   const rawCpfCnpj = cpfCnpj.replace(/\D/g, '');
 
   const listUrl = `${baseUrl}/customers?cpfCnpj=${rawCpfCnpj}&limit=1`;
-  console.log(`Asaas list customers → ${listUrl} (key ${apiKey ? apiKey.slice(0, 10) + '…' : 'MISSING'})`);
+  console.log(`Asaas list customers → ${listUrl} (key ${apiKey ? 'present' : 'MISSING'})`);
   const listResp = await fetch(listUrl, { headers });
   if (!listResp.ok) {
     const body = await listResp.text();
@@ -145,8 +190,14 @@ async function startServer() {
 
   app.post("/api/upload", async (req, res) => {
     try {
+      try {
+        await verifyFirebaseToken(req);
+      } catch {
+        return res.status(401).json({ error: "Não autorizado" });
+      }
+
       const { imageBase64, imageUrl, filename } = req.body;
-      
+
       let data = '';
       let extension = 'png';
 
@@ -162,7 +213,8 @@ async function startServer() {
         }
       } else if (imageUrl) {
         try {
-          const response = await fetch(imageUrl);
+          await assertSafeImageUrl(imageUrl);
+          const response = await fetch(imageUrl, { redirect: 'error' });
           if (!response.ok) throw new Error("Failed to fetch image");
           const arrayBuffer = await response.arrayBuffer();
           data = Buffer.from(arrayBuffer).toString('base64');

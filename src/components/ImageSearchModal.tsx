@@ -8,6 +8,7 @@ import { storage } from '../firebase';
 import { ref, uploadString } from 'firebase/storage';
 import type { Part } from 'firebase/ai';
 import { CREDIT_ACTIONS, type CreditAction } from '../credits';
+import { trackImageGenerated } from '../analytics';
 
 interface ImageSearchModalProps {
   isOpen: boolean;
@@ -212,6 +213,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
 
       // Debit only after at least one image was generated successfully.
       await consumeCredit(CREDIT_ACTIONS.ambientImage, product['Descrição'], product['Código (SKU)']);
+      trackImageGenerated({ type: 'ambient', sku: product['Código (SKU)'] as string });
 
     } catch (error: any) {
       console.error("Erro ao gerar ambientações:", error);
@@ -248,6 +250,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
         setAmbientImages(prev => { const n = [...prev]; n[index] = imgData; return n; });
         // Debit only after the image was regenerated successfully.
         await consumeCredit(CREDIT_ACTIONS.regenerateImage, product['Descrição'], product['Código (SKU)']);
+        trackImageGenerated({ type: 'regenerate', sku: product['Código (SKU)'] as string });
       }
     } catch (error: any) {
       const isQuota = /429|RESOURCE_EXHAUSTED|quota|limite/.test(error.message || "");
