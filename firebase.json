@@ -3,5 +3,8 @@
   "firestore": {
     "database": "alfstorage260612",
     "rules": "firestore.rules"
+  },
+  "storage": {
+    "rules": "storage.rules"
   }
 }
