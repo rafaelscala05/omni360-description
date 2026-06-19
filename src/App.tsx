@@ -13,6 +13,7 @@ const ImageSearchModal = lazy(() => import('./components/ImageSearchModal'));
 const CategoryManager = lazy(() => import('./components/categories/CategoryManager'));
 const CategoryImportModal = lazy(() => import('./components/modals/CategoryImportModal'));
 const ProductEditModal = lazy(() => import('./components/modals/ProductEditModal'));
+const ContentApp = lazy(() => import('./modules/content/ContentApp'));
 import CreditPurchaseModal from './components/modals/CreditPurchaseModal';
 import { Category, Product, AttributeValue, getProductStatusFlags, ProductModalTab } from './types/models';
 import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate } from './services/productService';
@@ -135,6 +136,8 @@ export default function App() {
   const [originalHeaders, setOriginalHeaders] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [mainView, setMainView] = useState<'products' | 'categories'>('products');
+  // Top-level workspace: the Product agent (this App) or the Content agency module.
+  const [workspace, setWorkspace] = useState<'product' | 'content'>('product');
   const [exportModel, setExportModel] = useState<'standard' | 'tinyerp'>('standard');
   const [existingCategories, setExistingCategories] = useState<Category[]>([]);
   const [showCategoryImport, setShowCategoryImport] = useState(false);
@@ -2052,6 +2055,20 @@ Retorne APENAS um JSON válido no seguinte formato:
     </div>
   );
 
+  if (workspace === 'content') {
+    return (
+      <Suspense fallback={<div className="h-screen flex items-center justify-center bg-[#f7f9fb] text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
+        <ContentApp
+          user={user}
+          credits={credits}
+          onSwitchToProduct={() => setWorkspace('product')}
+          onBuyCredits={() => setIsCreditPurchaseOpen(true)}
+          onLogout={handleLogout}
+        />
+      </Suspense>
+    );
+  }
+
   return (
     <div className="h-screen bg-[#f7f9fb] flex font-sans overflow-hidden">
       <input type="file" accept=".xlsx, .xls" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
@@ -2096,9 +2113,20 @@ Retorne APENAS um JSON válido no seguinte formato:
           </button>
         </div>
 
+        {/* Workspace switcher */}
+        <div className="px-3 mb-3">
+          <button
+            onClick={() => { setWorkspace('content'); setIsSidebarOpen(false); }}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 bg-white/5 hover:bg-white/10 transition-colors"
+            title="Trocar para a Agência de Conteúdo"
+          >
+            <FileText className="w-4 h-4" /> Ir para Agência de Conteúdo
+          </button>
+        </div>
+
         <nav className="mt-2 px-3 flex flex-col gap-1 flex-1">
-          <button 
-            onClick={() => { setMainView('products'); setIsSidebarOpen(false); }} 
+          <button
+            onClick={() => { setMainView('products'); setIsSidebarOpen(false); }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'products' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#004ac6] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
           >
             <Layout className="w-4 h-4" /> Produtos

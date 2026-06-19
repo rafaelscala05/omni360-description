@@ -42,6 +42,12 @@ const CREDIT_COSTS = {
   generate_hierarchy: 1,
   ambient_image: 1,
   regenerate_image: 1,
+  // Agência de Criação de Conteúdo (Alfred)
+  content_clusters: 2,
+  content_calendar: 2,
+  content_article: 5,
+  content_image: 1,
+  content_publish: 1,
 };
 
 const app = initializeApp({ projectId: args['project'] }, 'seed-credits');

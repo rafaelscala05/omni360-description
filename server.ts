@@ -5,32 +5,11 @@ import path from "path";
 import net from "net";
 import { lookup } from "dns/promises";
 import { fileURLToPath } from "url";
-import { initializeApp, getApps, applicationDefault } from 'firebase-admin/app';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { getAuth } from 'firebase-admin/auth';
 import dotenv from "dotenv";
-import firebaseAppletConfig from "./firebase-applet-config.json";
-
-// Pin the Admin SDK to the SAME Firebase project the client uses to mint ID
-// tokens, so verifyIdToken's expected "aud" always matches the token issuer.
-// Without this, the Admin SDK inherits the local ADC's project (which may differ)
-// and rejects tokens with an "incorrect aud claim" error.
-// Static import so esbuild inlines the JSON into the bundle (a runtime require
-// of a relative path would not resolve from dist/server.js in production).
-const { projectId: firebaseProjectId, firestoreDatabaseId } = firebaseAppletConfig;
-
-if (!getApps().length) {
-  initializeApp({
-    credential: applicationDefault(),
-    projectId: firebaseProjectId,
-  });
-}
-
-// The client uses a NAMED Firestore database (firestoreDatabaseId), not the
-// "(default)" one. The Admin SDK must target the same named database or writes
-// fail with "5 NOT_FOUND" (the default database does not exist in this project).
-export const adminDb = getFirestore(firestoreDatabaseId);
-export const adminAuth = getAuth();
+// Admin SDK init lives in a shared leaf module so server/contentAgent.ts can also
+// use adminDb/adminAuth without re-triggering this server's bootstrap.
+import { adminDb, adminAuth, FieldValue } from "./server/firebaseAdmin";
+import { registerContentRoutes, startContentScheduler } from "./server/contentAgent";
 
 // Do NOT override: in production the App Hosting environment (apphosting.yaml /
 // Secret Manager) must take precedence over any stray .env bundled in the image.
@@ -185,6 +164,9 @@ async function startServer() {
 
   // Serve uploads directory directly
   app.use('/uploads', express.static(uploadsDir));
+
+  // Agência de Criação de Conteúdo (Alfred) — server-side AI pipeline + scheduler.
+  registerContentRoutes(app, { verifyFirebaseToken, uploadsDir });
 
   // API routes FIRST (image upload — all AI generation now runs client-side via Firebase AI Logic)
 
@@ -490,6 +472,9 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+
+  // Dev-only autonomous content scheduler (production uses Cloud Scheduler).
+  startContentScheduler(uploadsDir);
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);

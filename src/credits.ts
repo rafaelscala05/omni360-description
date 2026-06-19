@@ -20,6 +20,12 @@ export const CREDIT_ACTIONS = {
   generateHierarchy: { key: 'generate_hierarchy', label: 'Geração de Hierarquia' },
   ambientImage: { key: 'ambient_image', label: 'Geração de Ambientação' },
   regenerateImage: { key: 'regenerate_image', label: 'Regeneração de Imagem' },
+  // Agência de Criação de Conteúdo (Alfred)
+  contentClusters: { key: 'content_clusters', label: 'Geração de Clusters de Conteúdo' },
+  contentCalendar: { key: 'content_calendar', label: 'Geração de Calendário Editorial' },
+  contentArticle: { key: 'content_article', label: 'Produção de Artigo' },
+  contentImage: { key: 'content_image', label: 'Geração de Imagem de Capa' },
+  contentPublish: { key: 'content_publish', label: 'Publicação no WordPress' },
 } as const satisfies Record<string, CreditAction>;
 
 // Fallback costs, used when the `config/credits` document has not loaded yet or
@@ -34,6 +40,11 @@ export const DEFAULT_CREDIT_COSTS: Record<string, number> = {
   generate_hierarchy: 1,
   ambient_image: 1,
   regenerate_image: 1,
+  content_clusters: 2,
+  content_calendar: 2,
+  content_article: 5,
+  content_image: 1,
+  content_publish: 1,
 };
 
 export const DEFAULT_COST = 1;

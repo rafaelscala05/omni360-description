@@ -3,6 +3,7 @@ import { Product, Category, AttributeDefinition, ProductModalTab, getProductStat
 import { getEffectiveAttributes } from '../../services/categoryService';
 import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate, type Template } from '../../services/productService';
 import { trackAttributesGenerated } from '../../analytics';
+import { listReusableArticles } from '../../services/contentService';
 import { 
   Sparkles, 
   Save, 
@@ -231,6 +232,38 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
   const [suggestedAttributes, setSuggestedAttributes] = useState<any[]>([]);
   const [isSavingCategoryAttr, setIsSavingCategoryAttr] = useState<string | null>(null);
   const [showConfirmClose, setShowConfirmClose] = useState(false);
+  // Cross-module reuse: artigos aprovados/publicados pela Agência de Conteúdo.
+  const [reusableArticles, setReusableArticles] = useState<Array<{ id: string; titulo: string; articleFinal: string }>>([]);
+
+  useEffect(() => {
+    listReusableArticles()
+      .then((r) => setReusableArticles(r.articles))
+      .catch(() => setReusableArticles([]));
+  }, []);
+
+  // Minimal Markdown → HTML for inserting an article body into the description.
+  const articleToHtml = (md: string): string =>
+    md
+      .replace(/^SLUG:.*$/gim, '')
+      .replace(/^META:.*$/gim, '')
+      .replace(/^### (.*)$/gim, '<h3>$1</h3>')
+      .replace(/^## (.*)$/gim, '<h2>$1</h2>')
+      .replace(/^# (.*)$/gim, '<h2>$1</h2>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .split(/\n{2,}/)
+      .map((b) => (/^<h[23]>/.test(b.trim()) ? b.trim() : b.trim() ? `<p>${b.trim().replace(/\n/g, '<br>')}</p>` : ''))
+      .filter(Boolean)
+      .join('\n');
+
+  const insertArticle = (articleId: string) => {
+    const art = reusableArticles.find((a) => a.id === articleId);
+    if (!art) return;
+    const html = articleToHtml(art.articleFinal);
+    setEditedProduct((prev) => ({
+      ...prev,
+      'Descrição complementar': `${prev['Descrição complementar'] || ''}\n${html}`.trim(),
+    }));
+  };
 
   const hasGeneratedContent = product?._statusDescricao === 'Gerado por IA' || editedProduct?._statusDescricao === 'Gerado por IA';
 
@@ -1037,11 +1070,26 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
 
                    <div className="grid grid-cols-1 gap-10">
                       <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
-                        <label className="block text-sm font-black text-slate-900 mb-4 uppercase tracking-widest flex items-center gap-2">
-                           <Layout className="w-4 h-4 text-blue-600" />
-                           Descrição Comercial (HTML)
-                        </label>
-                        <WYSIWYGEditor 
+                        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+                          <label className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                             <Layout className="w-4 h-4 text-blue-600" />
+                             Descrição Comercial (HTML)
+                          </label>
+                          {reusableArticles.length > 0 && (
+                            <select
+                              defaultValue=""
+                              onChange={(e) => { if (e.target.value) { insertArticle(e.target.value); e.target.value = ''; } }}
+                              className="text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              title="Inserir um artigo da Agência de Conteúdo"
+                            >
+                              <option value="">+ Inserir artigo do Alfred…</option>
+                              {reusableArticles.map((a) => (
+                                <option key={a.id} value={a.id}>{a.titulo}</option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                        <WYSIWYGEditor
                           value={editedProduct['Descrição complementar'] || ''} 
                           onChange={(val) => setEditedProduct({...editedProduct, 'Descrição complementar': val})} 
                         />

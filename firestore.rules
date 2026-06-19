@@ -141,15 +141,38 @@ service cloud.firestore {
       
       match /templates/{templateId} {
         allow read: if isOwner(userId);
-        allow create: if isOwner(userId) && 
-                     hasRequiredTemplateFields() && 
-                     isValidTemplate() && 
+        allow create: if isOwner(userId) &&
+                     hasRequiredTemplateFields() &&
+                     isValidTemplate() &&
                      request.resource.data.ownerId == userId;
-        allow update: if isOwner(userId) && 
-                     isValidTemplate() && 
+        allow update: if isOwner(userId) &&
+                     isValidTemplate() &&
                      request.resource.data.ownerId == resource.data.ownerId &&
                      request.resource.data.createdAt == resource.data.createdAt;
         allow delete: if isOwner(userId);
+      }
+
+      // Agência de Criação de Conteúdo (Alfred). The owner manages projects and
+      // their clusters/calendar from the client; the AI pipeline + credit debit
+      // run server-side via the Admin SDK (which bypasses these rules).
+      match /contentProjects/{projectId} {
+        allow read, write: if isOwner(userId);
+
+        match /clusters/{clusterId} {
+          allow read, write: if isOwner(userId);
+        }
+        match /calendar/{articleId} {
+          // The client reads status/content and may edit/approve drafts, but the
+          // pipeline writes happen server-side.
+          allow read, write: if isOwner(userId);
+        }
+        // Sensitive credentials (e.g. WordPress Application Password). The client
+        // may write/update them but must NEVER read them back; only the server
+        // (Admin SDK) reads this subcollection.
+        match /secrets/{secretId} {
+          allow read: if false;
+          allow write: if isOwner(userId);
+        }
       }
     }
   }

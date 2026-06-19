@@ -16,8 +16,12 @@ export const app = initializeApp(firebaseConfig);
 const RECAPTCHA_ENTERPRISE_SITE_KEY = '6LcDQiYtAAAAAD36ttqPFHGLKQ1Q_s4JVTekmwaH';
 
 if (import.meta.env.DEV && import.meta.env.VITE_APPCHECK_DEBUG_TOKEN) {
-  (self as unknown as { FIREBASE_APPCHECK_DEBUG_TOKEN?: string }).FIREBASE_APPCHECK_DEBUG_TOKEN =
-    import.meta.env.VITE_APPCHECK_DEBUG_TOKEN;
+  const debugEnv = import.meta.env.VITE_APPCHECK_DEBUG_TOKEN;
+  // VITE_APPCHECK_DEBUG_TOKEN=true → o Firebase GERA um token e o imprime no
+  // console (use uma vez para obter o UUID e registrá-lo no Firebase Console).
+  // Qualquer outro valor é usado como o token já registrado.
+  (self as unknown as { FIREBASE_APPCHECK_DEBUG_TOKEN?: string | boolean }).FIREBASE_APPCHECK_DEBUG_TOKEN =
+    debugEnv === 'true' ? true : debugEnv;
 }
 
 initializeAppCheck(app, {
