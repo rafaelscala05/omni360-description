@@ -11,7 +11,7 @@ export interface ContentProjectConfig {
   nomeEmpresa: string;
   descricao: string;
   produtoServico: string;
-  publicoAlvo: string;
+  publicoAlvo: string[];
   tomDeVoz: string;
   objetivos: string[];
   palavrasChave: string[];
@@ -22,6 +22,10 @@ export interface ContentProjectConfig {
   // is read only by the server via the Admin SDK.
   wordpressUrl: string;
   wordpressUser: string;
+  // Sanity publishing. The API token is sensitive — stored in a separate
+  // secrets subdoc (secrets/sanity), never readable by the client.
+  sanityProjectId: string;
+  sanityDataset: string;
 }
 
 export type ContentProjectStatus = 'onboarding' | 'ativo' | 'pausado';
@@ -41,21 +45,33 @@ export interface WordpressSecret {
   appPassword: string;
 }
 
+// Sensitive secret, stored at `.../contentProjects/{id}/secrets/sanity`.
+// Firestore rules forbid client reads; only the Admin SDK (server) reads it.
+export interface SanitySecret {
+  apiToken: string;
+}
+
 // ----------------------------------------------------------------------------
 // Clusters (Fase 2)
 // ----------------------------------------------------------------------------
 
-export interface ClusterArticleIdea {
-  titulo: string;
-  kw: string;
+// Search intent classification for cluster keywords. `volume` is reserved for a
+// future Search Insights integration (kept optional/undefined until then).
+export type SearchIntent = 'informacional' | 'comercial' | 'transacional' | 'navegacional';
+
+export interface ClusterKeyword {
+  termo: string;
+  intencao: SearchIntent;
+  volume?: number;
 }
 
 export interface ContentCluster {
   id: string;
-  nome: string;
-  estrategia: string;
-  artigos: ClusterArticleIdea[];
+  nome: string;        // Tema principal
+  estrategia: string;  // Descrição do tema abordado
+  palavrasChave: ClusterKeyword[];
   aprovado: boolean;
+  excluido?: boolean;  // soft-delete: mantém o doc, mas remove da listagem ativa
   createdAt: string;
 }
 

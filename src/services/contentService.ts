@@ -27,13 +27,14 @@ import type {
 // Server calls (Bearer token, same pattern as CreditPurchaseModal)
 // ---------------------------------------------------------------------------
 
-async function callJson<T>(url: string, method: 'GET' | 'POST'): Promise<T> {
+async function callJson<T>(url: string, method: 'GET' | 'POST', body?: unknown): Promise<T> {
   const user = auth.currentUser;
   if (!user) throw new Error('Não autenticado');
   const token = await user.getIdToken();
   const resp = await fetch(url, {
     method,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   if (!resp.ok) {
     const data = await resp.json().catch(() => ({}));
@@ -50,6 +51,20 @@ export const listReusableArticles = () =>
     '/api/content/articles/reusable',
     'GET',
   );
+
+// Analyzes a website with AI and returns an inferred company profile.
+export interface ScannedConfig {
+  nomeEmpresa?: string;
+  descricao?: string;
+  produtoServico?: string;
+  publicoAlvo?: string[];
+  tomDeVoz?: string;
+  objetivos?: string[];
+  palavrasChave?: string[];
+}
+
+export const scanWebsite = (url: string) =>
+  callJson<{ config: ScannedConfig }>('/api/content/scan-website', 'POST', { url });
 
 export const generateClusters = (projectId: string) =>
   postJson<{ clusters: ContentCluster[] }>(`/api/content/projects/${projectId}/generate-clusters`);
@@ -99,8 +114,28 @@ export async function saveWordpressSecret(uid: string, projectId: string, appPas
   });
 }
 
+// Stores the sensitive Sanity API Token in a separate subdoc the
+// client can write but never read back (Firestore rules: read=false).
+export async function saveSanitySecret(uid: string, projectId: string, apiToken: string): Promise<void> {
+  await setDoc(doc(db, `users/${uid}/contentProjects/${projectId}/secrets/sanity`), {
+    apiToken,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 export async function approveCluster(uid: string, projectId: string, clusterId: string, aprovado: boolean): Promise<void> {
   await updateDoc(doc(db, `users/${uid}/contentProjects/${projectId}/clusters/${clusterId}`), { aprovado });
+}
+
+// Edits only the cluster's main theme name.
+export async function updateClusterName(uid: string, projectId: string, clusterId: string, nome: string): Promise<void> {
+  await updateDoc(doc(db, `users/${uid}/contentProjects/${projectId}/clusters/${clusterId}`), { nome });
+}
+
+// Soft-delete: keeps the document (and any linked articles) but removes the
+// cluster from the active listing. Linked articles surface under "Sem cluster".
+export async function excludeCluster(uid: string, projectId: string, clusterId: string): Promise<void> {
+  await updateDoc(doc(db, `users/${uid}/contentProjects/${projectId}/clusters/${clusterId}`), { excluido: true, aprovado: false });
 }
 
 export async function updateArticle(
