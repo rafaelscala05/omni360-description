@@ -26,6 +26,7 @@ export interface ContentProjectConfig {
   // secrets subdoc (secrets/sanity), never readable by the client.
   sanityProjectId: string;
   sanityDataset: string;
+  estiloImagem?: 'Realista' | 'Ilustracao' | '3D' | 'Cartoon';
 }
 
 export type ContentProjectStatus = 'onboarding' | 'ativo' | 'pausado';
@@ -87,7 +88,7 @@ export type ArticleStatus =
   | 'publicado'
   | 'erro';
 
-// Pipeline stage 1..5: DeepResearch → Outline → Draft → Image → Review.
+// Pipeline stage 1..5: DeepResearch → Outline → Draft → Review → Image.
 export type ArticleStage = 0 | 1 | 2 | 3 | 4 | 5;
 
 export interface CalendarArticle {
@@ -96,6 +97,8 @@ export interface CalendarArticle {
   kwPrincipal: string;
   clusterId: string;
   scheduledDate: string; // ISO date (YYYY-MM-DD)
+  scheduledTime?: string;        // "HH:MM" — hora de publicação
+  produtosVinculados?: string[]; // nomes/IDs de produtos vinculados
   status: ArticleStatus;
   stage: ArticleStage;
   // Outputs accumulated by the 5-stage pipeline.
