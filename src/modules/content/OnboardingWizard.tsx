@@ -26,6 +26,9 @@ const FREQUENCIAS = [
   '4 vezes na semana', '5 vezes na semana', '6 vezes na semana', '7 vezes na semana',
 ];
 
+const ESTILOS_IMAGEM = ['Realista', 'Ilustracao', '3D', 'Cartoon'] as const;
+type EstiloImagem = typeof ESTILOS_IMAGEM[number];
+
 const STEPS = ['Identidade', 'Audiência & tom', 'Estratégia', 'Resumo'];
 
 // Fase 1 — onboarding redesenhado: importação por IA, campos de tag, seleção de
@@ -52,6 +55,7 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
   const [palavrasChave, setPalavrasChave] = useState<string[]>(c?.palavrasChave ?? []);
   const [referencias, setReferencias] = useState<string[]>(c?.referencias ?? []);
   const [frequenciaPostagens, setFrequenciaPostagens] = useState(c?.frequenciaPostagens || '2 vezes na semana');
+  const [estiloImagem, setEstiloImagem] = useState<EstiloImagem | undefined>(c?.estiloImagem);
 
   const tomOptions = Array.from(new Set([...TOM_SUGGESTIONS, ...(tomDeVoz ? [tomDeVoz] : [])]));
 
@@ -70,6 +74,7 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
     wordpressUser: c?.wordpressUser ?? '',
     sanityProjectId: c?.sanityProjectId ?? '',
     sanityDataset: c?.sanityDataset ?? 'production',
+    estiloImagem,
   });
 
   const handleScan = async () => {
@@ -203,6 +208,21 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1.5">Principal produto ou serviço *</label>
                   {input(produtoServico, setProdutoServico, 'Ex.: Plantas e jardinagem')}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Estilo de imagem</label>
+                  <div className="flex flex-wrap gap-2">
+                    {ESTILOS_IMAGEM.map((e) => (
+                      <button
+                        key={e}
+                        type="button"
+                        onClick={() => setEstiloImagem(e)}
+                        className={`rounded-xl border px-3 py-1.5 text-sm font-medium transition-all ${estiloImagem === e ? 'border-[#004ac6] bg-[#004ac6] text-white shadow-sm' : 'border-slate-300 bg-white text-slate-600 hover:border-[#004ac6] hover:text-[#004ac6]'}`}
+                      >
+                        {e === 'Ilustracao' ? 'Ilustração' : e}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
