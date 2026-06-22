@@ -19,3 +19,5 @@ env:
     value: https://api.asaas.com/v3
   - variable: GEMINI_API_KEY
     secret: gemini-api-key
+  - variable: CONTENT_CRON_SECRET
+    secret: content-cron-secret

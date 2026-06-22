@@ -977,19 +977,20 @@ export function registerContentRoutes(app: express.Application, deps: ContentDep
   });
 }
 
-// In development only, run the tick periodically so autonomous production can be
-// tested locally without Cloud Scheduler. Cloud Run scales to zero, so this is
-// NOT relied upon in production (Cloud Scheduler hits the endpoint instead).
+// Runs a periodic tick in any environment when CONTENT_CRON_SECRET is set.
+// Fires once on startup (to catch any overdue articles) then every hour.
+// In production, also accepts external calls via POST /api/content/cron/tick
+// (e.g. from Google Cloud Scheduler) for more precise scheduling.
 export function startContentScheduler(uploadsDir: string): void {
-  if (process.env.NODE_ENV === 'production') return;
   if (!process.env.CONTENT_CRON_SECRET) return;
   const baseUrl =
     process.env.APP_URL && process.env.APP_URL !== 'MY_APP_URL'
       ? process.env.APP_URL
       : `http://localhost:${process.env.PORT || '3000'}`;
   const ONE_HOUR = 60 * 60 * 1000;
-  setInterval(() => {
-    runCronTick(uploadsDir, baseUrl).catch((e) => console.error('dev content scheduler tick failed:', e));
-  }, ONE_HOUR);
-  console.log('Dev content scheduler started (hourly tick).');
+  const tick = () =>
+    runCronTick(uploadsDir, baseUrl).catch((e) => console.error('content scheduler tick failed:', e));
+  tick();
+  setInterval(tick, ONE_HOUR);
+  console.log('Content scheduler started (immediate tick + hourly).');
 }
