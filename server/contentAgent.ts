@@ -472,6 +472,8 @@ async function generateCalendar(uid: string, project: ContentProject): Promise<C
   const batch = adminDb.batch();
   const col = projectRef(uid, project.id).collection('calendar');
 
+  const defaultTime = project.config.frequenciaPostagens?.toLowerCase().includes('diár') ? '08:00' : '09:00';
+
   const created: CalendarArticle[] = topics.map((topic, position) => {
     const date = new Date();
     date.setDate(date.getDate() + (position + 1) * interval);
@@ -482,6 +484,7 @@ async function generateCalendar(uid: string, project: ContentProject): Promise<C
       kwPrincipal: topic.kwPrincipal,
       clusterId: topic.clusterId,
       scheduledDate: toIsoDate(date),
+      scheduledTime: defaultTime,
       status: 'agendado',
       stage: 0,
       createdAt: now,
@@ -550,23 +553,7 @@ async function runArticlePipeline(
     );
     await setStage(3, { articleDraft });
 
-    // ETAPA 4 — Cover image
-    let imageUrl: string | undefined;
-    try {
-      const imgPrompt = [
-        `Imagem de capa para um artigo de blog sobre "${article.titulo}".`,
-        'Composição limpa, elementos simbólicos do tema, sem texto e sem rostos hiperrealistas.',
-        `Estilo alinhado à marca ${project.config.nomeEmpresa}. Formato 16:9, alta resolução.`,
-      ].join(' ');
-      const base64 = await generateImageBase64(imgPrompt);
-      imageUrl = saveImage(base64, uploadsDir, baseUrl);
-      await debitCreditsAdmin(uid, CREDIT_ACTIONS.contentImage, { productName: article.titulo });
-    } catch (e) {
-      console.error('content image generation failed:', e);
-    }
-    await setStage(4, { imageUrl });
-
-    // ETAPA 5 — Review + humanization
+    // ETAPA 4 — Review + humanization
     const articleFinal = await generateText(
       [
         'Revise e humanize o artigo abaixo: elimine construções típicas de IA, adicione opiniões assertivas e exemplos concretos, mantenha o tom de voz.',
@@ -579,13 +566,35 @@ async function runArticlePipeline(
     const slug = articleFinal.match(/SLUG:\s*([a-z0-9-]+)/i)?.[1];
     const metaDescription = articleFinal.match(/META:\s*(.+)/i)?.[1]?.trim();
 
+    await setStage(4, { articleFinal, slug: slug ?? undefined, metaDescription: metaDescription ?? undefined });
+
+    // ETAPA 5 — Cover image (after review so the AI has full article context)
+    const estiloLabel = (() => {
+      const e = project.config.estiloImagem;
+      if (!e) return 'fotorrealista';
+      return e === 'Ilustracao' ? 'Ilustração' : e;
+    })();
+
+    let imageUrl: string | undefined;
+    try {
+      const imgPrompt = [
+        `Imagem de capa para um artigo de blog sobre "${article.titulo}".`,
+        `Contexto: ${articleFinal.slice(0, 400)}.`,
+        `Estilo visual: ${estiloLabel}. Composição limpa, elementos simbólicos do tema, sem texto e sem rostos hiperrealistas.`,
+        `Marca: ${project.config.nomeEmpresa}. Formato 16:9, alta resolução.`,
+      ].join(' ');
+      const base64 = await generateImageBase64(imgPrompt);
+      imageUrl = saveImage(base64, uploadsDir, baseUrl);
+      await debitCreditsAdmin(uid, CREDIT_ACTIONS.contentImage, { productName: article.titulo });
+    } catch (e) {
+      console.error('content image generation failed:', e);
+    }
+
     await debitCreditsAdmin(uid, CREDIT_ACTIONS.contentArticle, { productName: article.titulo });
     await artRef.update({
       stage: 5,
       status: 'revisao',
-      articleFinal,
-      slug: slug ?? null,
-      metaDescription: metaDescription ?? null,
+      imageUrl: imageUrl ?? null,
       lastError: null,
       updatedAt: new Date().toISOString(),
     });
