@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import {
   Sparkles, LayoutDashboard, Layers, CalendarDays, Settings, Plus, Coins,
-  LogOut, Menu, X, ChevronDown, Boxes, RefreshCw, Plug,
+  LogOut, Menu, X, ChevronDown, Boxes, RefreshCw, Plug, FileText,
 } from 'lucide-react';
 import type { User } from 'firebase/auth';
-import type { ContentProject } from './types';
-import { listenProjects } from '../../services/contentService';
+import type { ContentProject, ContentCluster } from './types';
+import { listenProjects, listenClusters } from '../../services/contentService';
 import OnboardingWizard from './OnboardingWizard';
 import ClustersView from './ClustersView';
 import CalendarView from './CalendarView';
+import ArticlesProductionView from './ArticlesProductionView';
 import DashboardPanel from './DashboardPanel';
 import CompanyProfile from './CompanyProfile';
 import IntegrationsView from './IntegrationsView';
@@ -21,11 +22,8 @@ interface Props {
   onLogout: () => void;
 }
 
-type ContentView = 'dashboard' | 'clusters' | 'calendar' | 'integrations' | 'settings';
+type ContentView = 'dashboard' | 'clusters' | 'producao' | 'calendar' | 'integrations' | 'settings';
 
-// Root of the "Agência de Criação de Conteúdo" workspace. Self-contained layout
-// (own sidebar + header) so the Product agent's App.tsx stays untouched; shared
-// auth/credits flow in via props.
 const ContentApp: React.FC<Props> = ({ user, credits, onSwitchToProduct, onBuyCredits, onLogout }) => {
   const uid = user.uid;
   const [projects, setProjects] = useState<ContentProject[]>([]);
@@ -36,6 +34,8 @@ const ContentApp: React.FC<Props> = ({ user, credits, onSwitchToProduct, onBuyCr
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [pendingClusterId, setPendingClusterId] = useState<string | null>(null);
+  const [clusters, setClusters] = useState<ContentCluster[]>([]);
+  const [openArticleId, setOpenArticleId] = useState<string | null>(null);
 
   useEffect(() =>
     listenProjects(uid, (list) => {
@@ -45,11 +45,25 @@ const ContentApp: React.FC<Props> = ({ user, credits, onSwitchToProduct, onBuyCr
     }),
   [uid]);
 
+  useEffect(() => {
+    if (!selectedId) return;
+    return listenClusters(uid, selectedId, setClusters);
+  }, [uid, selectedId]);
+
   const selected = projects.find((p) => p.id === selectedId) ?? null;
+
+  const goToArticle = (articleId: string) => {
+    setOpenArticleId(articleId);
+    setView('producao');
+  };
 
   const navItem = (key: ContentView, label: string, Icon: React.ElementType) => (
     <button
-      onClick={() => { setView(key); setIsSidebarOpen(false); }}
+      onClick={() => {
+        setView(key);
+        setIsSidebarOpen(false);
+        if (key !== 'producao') setOpenArticleId(null);
+      }}
       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${view === key ? 'bg-[#1e293b] text-white font-medium' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
     >
       <Icon className="w-4 h-4" /> {label}
@@ -123,6 +137,7 @@ const ContentApp: React.FC<Props> = ({ user, credits, onSwitchToProduct, onBuyCr
         <nav className="mt-2 px-3 flex flex-col gap-1 flex-1">
           {navItem('dashboard', 'Painel', LayoutDashboard)}
           {navItem('clusters', 'Clusters', Layers)}
+          {navItem('producao', 'Produção de Artigos', FileText)}
           {navItem('calendar', 'Calendário', CalendarDays)}
           <div className="my-2 border-t border-white/5 mx-4" />
           {navItem('integrations', 'Integrações', Plug)}
@@ -182,11 +197,20 @@ const ContentApp: React.FC<Props> = ({ user, credits, onSwitchToProduct, onBuyCr
             <ClustersView
               uid={uid}
               projectId={selected.id}
+              onGoArticle={goToArticle}
               initialSelectedId={pendingClusterId}
               onInitialClusterHandled={() => setPendingClusterId(null)}
             />
+          ) : view === 'producao' ? (
+            <ArticlesProductionView
+              uid={uid}
+              projectId={selected.id}
+              clusters={clusters}
+              initialOpenId={openArticleId ?? undefined}
+              onGoCluster={() => setView('clusters')}
+            />
           ) : view === 'calendar' ? (
-            <CalendarView uid={uid} projectId={selected.id} />
+            <CalendarView uid={uid} projectId={selected.id} onOpenArticle={goToArticle} />
           ) : view === 'integrations' ? (
             <IntegrationsView uid={uid} project={selected} />
           ) : (
