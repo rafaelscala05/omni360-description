@@ -1,20 +1,22 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, CheckCircle2, CalendarClock } from 'lucide-react';
-import type { CalendarArticle } from './types';
-import { listenCalendar } from '../../services/contentService';
+import { Activity, CheckCircle2, CalendarClock, Network } from 'lucide-react';
+import type { CalendarArticle, ContentCluster } from './types';
+import { listenCalendar, listenClusters } from '../../services/contentService';
+import ContentMapView from './ContentMapView';
 
 interface Props {
   uid: string;
   projectId: string;
   empresa: string;
+  onSelectCluster?: (clusterId: string) => void;
 }
 
-// "Painel de Operações" from alfred_agent_prompt.md — in production now,
-// recently completed, and upcoming publications. Updates in realtime.
-const DashboardPanel: React.FC<Props> = ({ uid, projectId, empresa }) => {
+const DashboardPanel: React.FC<Props> = ({ uid, projectId, empresa, onSelectCluster }) => {
   const [articles, setArticles] = useState<CalendarArticle[]>([]);
+  const [clusters, setClusters] = useState<ContentCluster[]>([]);
 
   useEffect(() => listenCalendar(uid, projectId, setArticles), [uid, projectId]);
+  useEffect(() => listenClusters(uid, projectId, setClusters), [uid, projectId]);
 
   const emProducao = articles.filter((a) => a.status === 'em_producao');
   const publicados = articles
@@ -40,7 +42,7 @@ const DashboardPanel: React.FC<Props> = ({ uid, projectId, empresa }) => {
         <p className="text-sm text-slate-500 mt-0.5">{empresa}</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         {card(
           'Em produção agora',
           <Activity className="w-4 h-4 text-amber-500" />,
@@ -91,6 +93,20 @@ const DashboardPanel: React.FC<Props> = ({ uid, projectId, empresa }) => {
             <p className="text-sm text-slate-400">Nada agendado.</p>
           ),
         )}
+      </div>
+
+      {/* Meu Mapa de Conteúdo */}
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <Network className="w-4 h-4 text-[#004ac6]" />
+          <h3 className="text-sm font-semibold text-slate-700">Meu Mapa de Conteúdo</h3>
+          <span className="ml-auto text-[11px] text-slate-400">Tamanho dos nós ∝ volume de pesquisa · Clique num cluster para abrir</span>
+        </div>
+        <ContentMapView
+          clusters={clusters}
+          articles={articles}
+          onSelectCluster={onSelectCluster ?? (() => {})}
+        />
       </div>
     </div>
   );

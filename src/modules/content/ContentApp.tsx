@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Sparkles, LayoutDashboard, Layers, CalendarDays, Settings, Plus, Coins,
-  LogOut, Menu, X, ChevronDown, Boxes, RefreshCw,
+  LogOut, Menu, X, ChevronDown, Boxes, RefreshCw, Plug,
 } from 'lucide-react';
 import type { User } from 'firebase/auth';
 import type { ContentProject } from './types';
@@ -10,6 +10,8 @@ import OnboardingWizard from './OnboardingWizard';
 import ClustersView from './ClustersView';
 import CalendarView from './CalendarView';
 import DashboardPanel from './DashboardPanel';
+import CompanyProfile from './CompanyProfile';
+import IntegrationsView from './IntegrationsView';
 
 interface Props {
   user: User;
@@ -19,7 +21,7 @@ interface Props {
   onLogout: () => void;
 }
 
-type ContentView = 'dashboard' | 'clusters' | 'calendar' | 'settings';
+type ContentView = 'dashboard' | 'clusters' | 'calendar' | 'integrations' | 'settings';
 
 // Root of the "Agência de Criação de Conteúdo" workspace. Self-contained layout
 // (own sidebar + header) so the Product agent's App.tsx stays untouched; shared
@@ -33,6 +35,7 @@ const ContentApp: React.FC<Props> = ({ user, credits, onSwitchToProduct, onBuyCr
   const [creatingProject, setCreatingProject] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [pendingClusterId, setPendingClusterId] = useState<string | null>(null);
 
   useEffect(() =>
     listenProjects(uid, (list) => {
@@ -122,6 +125,7 @@ const ContentApp: React.FC<Props> = ({ user, credits, onSwitchToProduct, onBuyCr
           {navItem('clusters', 'Clusters', Layers)}
           {navItem('calendar', 'Calendário', CalendarDays)}
           <div className="my-2 border-t border-white/5 mx-4" />
+          {navItem('integrations', 'Integrações', Plug)}
           {navItem('settings', 'Configurações', Settings)}
         </nav>
       </aside>
@@ -165,13 +169,28 @@ const ContentApp: React.FC<Props> = ({ user, credits, onSwitchToProduct, onBuyCr
           ) : !selected ? (
             <div className="text-center text-slate-400 py-16">Selecione um projeto.</div>
           ) : view === 'dashboard' ? (
-            <DashboardPanel uid={uid} projectId={selected.id} empresa={selected.config.nomeEmpresa} />
+            <DashboardPanel
+              uid={uid}
+              projectId={selected.id}
+              empresa={selected.config.nomeEmpresa}
+              onSelectCluster={(clusterId) => {
+                setPendingClusterId(clusterId);
+                setView('clusters');
+              }}
+            />
           ) : view === 'clusters' ? (
-            <ClustersView uid={uid} projectId={selected.id} />
+            <ClustersView
+              uid={uid}
+              projectId={selected.id}
+              initialSelectedId={pendingClusterId}
+              onInitialClusterHandled={() => setPendingClusterId(null)}
+            />
           ) : view === 'calendar' ? (
             <CalendarView uid={uid} projectId={selected.id} />
+          ) : view === 'integrations' ? (
+            <IntegrationsView uid={uid} project={selected} />
           ) : (
-            <OnboardingWizard uid={uid} existing={selected} onSaved={() => setView('dashboard')} onCancel={() => setView('dashboard')} />
+            <CompanyProfile uid={uid} project={selected} onGoClusters={() => setView('clusters')} />
           )}
         </main>
       </div>

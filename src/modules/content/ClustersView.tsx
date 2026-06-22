@@ -11,13 +11,15 @@ import ClusterDetailView from './ClusterDetailView';
 interface Props {
   uid: string;
   projectId: string;
-  onGoArticle: (id: string) => void;
+  onGoArticle?: (id: string) => void;
+  initialSelectedId?: string | null;
+  onInitialClusterHandled?: () => void;
 }
 
 // Fase 2 — clusters enxutos: tema + palavras-chave por intenção, com ações de
 // aprovar, editar (só o tema), ver mais e excluir (soft-delete). Artigos de
 // clusters excluídos aparecem na aba "Sem cluster".
-const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle }) => {
+const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSelectedId, onInitialClusterHandled }) => {
   const [clusters, setClusters] = useState<ContentCluster[]>([]);
   const [articles, setArticles] = useState<CalendarArticle[]>([]);
   const [loading, setLoading] = useState(false);
@@ -29,6 +31,13 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle }) => {
 
   useEffect(() => listenClusters(uid, projectId, setClusters), [uid, projectId]);
   useEffect(() => listenCalendar(uid, projectId, setArticles), [uid, projectId]);
+
+  useEffect(() => {
+    if (initialSelectedId) {
+      setSelectedId(initialSelectedId);
+      onInitialClusterHandled?.();
+    }
+  }, [initialSelectedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const active = useMemo(() => clusters.filter((c) => !c.excluido), [clusters]);
   const activeIds = useMemo(() => new Set(active.map((c) => c.id)), [active]);
