@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { ArrowLeft, ExternalLink, FileText, MoveRight, RefreshCw, TrendingUp, Pencil, Trash2, Plus, Check, X } from 'lucide-react';
 import type { ContentCluster, CalendarArticle, SearchIntent, ArticleStatus, ClusterKeyword } from './types';
 import { moveArticle, updateClusterKeywords } from '../../services/contentService';
-import ArticleView from './ArticleView';
 
 export const INTENT_META: Record<SearchIntent, { label: string; chip: string; dot: string }> = {
   informacional: { label: 'Informacional', chip: 'bg-blue-50 text-blue-700 border-blue-200', dot: 'bg-blue-500' },
@@ -44,7 +43,6 @@ interface Props {
 }
 
 const ClusterDetailView: React.FC<Props> = ({ uid, projectId, cluster, articles, allClusters, onBack, onGoArticle }) => {
-  const [openArticle, setOpenArticle] = useState<string | null>(null);
   const [movingArticleId, setMovingArticleId] = useState<string | null>(null);
   const [movingTargetClusterId, setMovingTargetClusterId] = useState('');
   const [movingBusy, setMovingBusy] = useState(false);
@@ -57,7 +55,6 @@ const ClusterDetailView: React.FC<Props> = ({ uid, projectId, cluster, articles,
   const [kwSaving, setKwSaving] = useState(false);
 
   const kws = cluster.palavrasChave ?? [];
-  const selectedArticle = articles.find((a) => a.id === openArticle) ?? null;
   const availableClusters = allClusters.filter((c) => c.id !== cluster.id && !c.excluido);
 
   const confirmMove = async () => {
@@ -88,7 +85,12 @@ const ClusterDetailView: React.FC<Props> = ({ uid, projectId, cluster, articles,
 
   const deleteKw = async (index: number) => {
     const updated = kws.filter((_, i) => i !== index);
-    await updateClusterKeywords(uid, projectId, cluster.id, updated);
+    setKwSaving(true);
+    try {
+      await updateClusterKeywords(uid, projectId, cluster.id, updated);
+    } finally {
+      setKwSaving(false);
+    }
   };
 
   const saveNewKw = async () => {
@@ -218,8 +220,9 @@ const ClusterDetailView: React.FC<Props> = ({ uid, projectId, cluster, articles,
                           </button>
                           <button
                             onClick={() => deleteKw(i)}
+                            disabled={kwSaving}
                             title="Excluir"
-                            className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
+                            className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-40"
                           >
                             <Trash2 className="w-3 h-3" />
                           </button>
@@ -366,9 +369,6 @@ const ClusterDetailView: React.FC<Props> = ({ uid, projectId, cluster, articles,
         </div>
       )}
 
-      {selectedArticle && (
-        <ArticleView uid={uid} projectId={projectId} article={selectedArticle} onClose={() => setOpenArticle(null)} />
-      )}
     </div>
   );
 };

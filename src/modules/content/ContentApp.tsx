@@ -188,6 +188,7 @@ const ContentApp: React.FC<Props> = ({ user, credits, onSwitchToProduct, onBuyCr
               uid={uid}
               projectId={selected.id}
               empresa={selected.config.nomeEmpresa}
+              clusters={clusters}
               onSelectCluster={(clusterId) => {
                 setPendingClusterId(clusterId);
                 setView('clusters');

@@ -11,7 +11,7 @@ import ClusterDetailView from './ClusterDetailView';
 interface Props {
   uid: string;
   projectId: string;
-  onGoArticle?: (id: string) => void;
+  onGoArticle: (id: string) => void;
   initialSelectedId?: string | null;
   onInitialClusterHandled?: () => void;
 }
@@ -32,12 +32,15 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
   useEffect(() => listenClusters(uid, projectId, setClusters), [uid, projectId]);
   useEffect(() => listenCalendar(uid, projectId, setArticles), [uid, projectId]);
 
+  const onInitialClusterHandledRef = React.useRef(onInitialClusterHandled);
+  useEffect(() => { onInitialClusterHandledRef.current = onInitialClusterHandled; });
+
   useEffect(() => {
     if (initialSelectedId) {
       setSelectedId(initialSelectedId);
-      onInitialClusterHandled?.();
+      onInitialClusterHandledRef.current?.();
     }
-  }, [initialSelectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [initialSelectedId]);
 
   const active = useMemo(() => clusters.filter((c) => !c.excluido), [clusters]);
   const activeIds = useMemo(() => new Set(active.map((c) => c.id)), [active]);

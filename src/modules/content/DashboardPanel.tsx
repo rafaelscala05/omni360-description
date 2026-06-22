@@ -1,22 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { Activity, CheckCircle2, CalendarClock, Network } from 'lucide-react';
 import type { CalendarArticle, ContentCluster } from './types';
-import { listenCalendar, listenClusters } from '../../services/contentService';
+import { listenCalendar } from '../../services/contentService';
 import ContentMapView from './ContentMapView';
 
 interface Props {
   uid: string;
   projectId: string;
   empresa: string;
+  clusters: ContentCluster[];
   onSelectCluster?: (clusterId: string) => void;
 }
 
-const DashboardPanel: React.FC<Props> = ({ uid, projectId, empresa, onSelectCluster }) => {
+const DashboardPanel: React.FC<Props> = ({ uid, projectId, empresa, clusters, onSelectCluster }) => {
   const [articles, setArticles] = useState<CalendarArticle[]>([]);
-  const [clusters, setClusters] = useState<ContentCluster[]>([]);
 
   useEffect(() => listenCalendar(uid, projectId, setArticles), [uid, projectId]);
-  useEffect(() => listenClusters(uid, projectId, setClusters), [uid, projectId]);
 
   const emProducao = articles.filter((a) => a.status === 'em_producao');
   const publicados = articles
