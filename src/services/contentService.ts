@@ -150,6 +150,18 @@ export async function updateArticle(
   });
 }
 
+export async function moveArticle(
+  uid: string,
+  projectId: string,
+  articleId: string,
+  novoClusterId: string,
+): Promise<void> {
+  await updateDoc(doc(db, `users/${uid}/contentProjects/${projectId}/calendar/${articleId}`), {
+    clusterId: novoClusterId,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Realtime listeners
 // ---------------------------------------------------------------------------
