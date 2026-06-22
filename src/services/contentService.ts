@@ -132,6 +132,18 @@ export async function updateClusterName(uid: string, projectId: string, clusterI
   await updateDoc(doc(db, `users/${uid}/contentProjects/${projectId}/clusters/${clusterId}`), { nome });
 }
 
+export async function updateClusterKeywords(
+  uid: string,
+  projectId: string,
+  clusterId: string,
+  keywords: import('../modules/content/types').ClusterKeyword[],
+): Promise<void> {
+  await updateDoc(
+    doc(db, `users/${uid}/contentProjects/${projectId}/clusters/${clusterId}`),
+    { palavrasChave: keywords },
+  );
+}
+
 // Soft-delete: keeps the document (and any linked articles) but removes the
 // cluster from the active listing. Linked articles surface under "Sem cluster".
 export async function excludeCluster(uid: string, projectId: string, clusterId: string): Promise<void> {
