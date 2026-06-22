@@ -8,12 +8,16 @@
 import type express from 'express';
 import fs from 'fs';
 import path from 'path';
+import net from 'net';
+import { lookup } from 'dns/promises';
+import * as cheerio from 'cheerio';
 import { GoogleGenAI } from '@google/genai';
 import { adminDb } from './firebaseAdmin';
 import { CREDIT_ACTIONS, resolveCreditCost, type CreditAction } from '../src/credits';
 import type {
   ContentProject,
   ContentCluster,
+  ClusterKeyword,
   CalendarArticle,
   ArticleStage,
 } from '../src/modules/content/types';
@@ -218,13 +222,21 @@ async function loadStoreContext(uid: string): Promise<string> {
   return parts.join('\n');
 }
 
+// publicoAlvo migrated from string → string[]; tolerate both shapes.
+function asList(v: unknown): string[] {
+  if (Array.isArray(v)) return v.filter(Boolean) as string[];
+  if (typeof v === 'string' && v.trim()) return [v.trim()];
+  return [];
+}
+
 function systemFor(project: ContentProject): string {
   const c = project.config;
+  const publico = asList(c.publicoAlvo);
   return [
     'Você é Alfred, um agente sênior de marketing de conteúdo.',
     `Empresa: ${c.nomeEmpresa}. ${c.descricao}`,
     `Produto/serviço principal: ${c.produtoServico}.`,
-    `Público-alvo: ${c.publicoAlvo}.`,
+    publico.length ? `Público-alvo: ${publico.join(', ')}.` : '',
     `Tom de voz: ${c.tomDeVoz}.`,
     c.objetivos?.length ? `Objetivos: ${c.objetivos.join(', ')}.` : '',
     c.palavrasChave?.length ? `Palavras-chave alvo: ${c.palavrasChave.join(', ')}.` : '',
@@ -235,23 +247,142 @@ function systemFor(project: ContentProject): string {
 }
 
 // ---------------------------------------------------------------------------
+// Onboarding aid — analyze a website with AI and pre-fill the config
+// ---------------------------------------------------------------------------
+
+// SSRF guard: block private/loopback/link-local targets (mirrors server.ts).
+function isPrivateIp(ip: string): boolean {
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split('.').map(Number);
+    return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || a === 0;
+  }
+  const v6 = ip.toLowerCase();
+  if (v6 === '::1' || v6.startsWith('fc') || v6.startsWith('fd') || v6.startsWith('fe8') || v6.startsWith('fe9') || v6.startsWith('fea') || v6.startsWith('feb')) return true;
+  if (v6.startsWith('::ffff:')) return isPrivateIp(v6.slice(7));
+  return false;
+}
+
+async function assertSafeUrl(rawUrl: string): Promise<URL> {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw Object.assign(new Error('URL inválida'), { status: 400 });
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw Object.assign(new Error('Protocolo não permitido'), { status: 400 });
+  }
+  const results = await lookup(url.hostname, { all: true });
+  if (!results.length || results.some((r) => isPrivateIp(r.address))) {
+    throw Object.assign(new Error('Destino não permitido'), { status: 400 });
+  }
+  return url;
+}
+
+export interface ScannedConfig {
+  nomeEmpresa?: string;
+  descricao?: string;
+  produtoServico?: string;
+  publicoAlvo?: string[];
+  tomDeVoz?: string;
+  objetivos?: string[];
+  palavrasChave?: string[];
+}
+
+// Fetches a website, extracts readable text, and asks the AI to infer the
+// company profile so the onboarding form can be pre-filled.
+async function scanWebsite(rawUrl: string): Promise<ScannedConfig> {
+  const url = await assertSafeUrl(rawUrl);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  let html: string;
+  try {
+    const resp = await fetch(url.toString(), {
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AlfredBot/1.0)' },
+    });
+    if (!resp.ok) throw Object.assign(new Error(`Não foi possível acessar o site (${resp.status})`), { status: 502 });
+    html = await resp.text();
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw Object.assign(new Error('Tempo esgotado ao acessar o site'), { status: 504 });
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+
+  // Extract a compact, readable digest of the page.
+  const $ = cheerio.load(html);
+  $('script, style, noscript, svg').remove();
+  const title = $('title').first().text().trim();
+  const metaDesc = $('meta[name="description"]').attr('content')?.trim() ?? '';
+  const headings = $('h1, h2, h3').map((_, el) => $(el).text().trim()).get().filter(Boolean).slice(0, 30);
+  const bodyText = $('body').text().replace(/\s+/g, ' ').trim().slice(0, 6000);
+  const digest = [
+    `URL: ${url.toString()}`,
+    title && `Título: ${title}`,
+    metaDesc && `Meta description: ${metaDesc}`,
+    headings.length && `Cabeçalhos: ${headings.join(' | ')}`,
+    `Conteúdo: ${bodyText}`,
+  ].filter(Boolean).join('\n');
+
+  const prompt = [
+    'Analise o conteúdo do site abaixo e infira o perfil da empresa para marketing de conteúdo.',
+    'Responda ESTRITAMENTE em JSON com as chaves:',
+    '{"nomeEmpresa":"","descricao":"","produtoServico":"","publicoAlvo":["..."],"tomDeVoz":"","objetivos":["..."],"palavrasChave":["..."]}',
+    '- publicoAlvo: 2 a 5 personas/segmentos curtos.',
+    '- tomDeVoz: uma ou duas palavras (ex.: "técnico e confiável").',
+    '- objetivos: 2 a 4 objetivos de conteúdo plausíveis.',
+    '- palavrasChave: 4 a 8 termos relevantes.',
+    'Use português do Brasil. Se algo não for inferível, deixe vazio.',
+    '',
+    digest,
+  ].join('\n');
+
+  const text = await generateText(prompt, { json: true, temperature: 0.4 });
+  const parsed = parseJson<ScannedConfig>(text);
+  return {
+    nomeEmpresa: parsed.nomeEmpresa ?? '',
+    descricao: parsed.descricao ?? '',
+    produtoServico: parsed.produtoServico ?? '',
+    publicoAlvo: Array.isArray(parsed.publicoAlvo) ? parsed.publicoAlvo : [],
+    tomDeVoz: parsed.tomDeVoz ?? '',
+    objetivos: Array.isArray(parsed.objetivos) ? parsed.objetivos : [],
+    palavrasChave: Array.isArray(parsed.palavrasChave) ? parsed.palavrasChave : [],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Fase 2 — Clusters
 // ---------------------------------------------------------------------------
+
+const SEARCH_INTENTS: ReadonlyArray<ClusterKeyword['intencao']> = ['informacional', 'comercial', 'transacional', 'navegacional'];
+
+function normalizeIntent(v: unknown): ClusterKeyword['intencao'] {
+  const s = String(v ?? '').toLowerCase();
+  return (SEARCH_INTENTS as readonly string[]).includes(s) ? (s as ClusterKeyword['intencao']) : 'informacional';
+}
 
 async function generateClusters(uid: string, project: ContentProject): Promise<ContentCluster[]> {
   const storeContext = await loadStoreContext(uid);
   const prompt = [
     'Pesquise o segmento da empresa e gere de 4 a 6 clusters temáticos estratégicos de conteúdo.',
     storeContext ? `Contexto da loja:\n${storeContext}` : '',
-    'Para cada cluster: nome, estratégia (por que importa) e de 5 a 8 ideias de artigos com título e palavra-chave principal.',
+    'Para cada cluster, forneça:',
+    '- "nome": o TEMA PRINCIPAL do cluster (curto).',
+    '- "estrategia": uma descrição do tema abordado e por que importa (2 a 3 frases).',
+    '- "palavrasChave": de 5 a 10 das PRINCIPAIS palavras-chave para atrair tráfego, cada uma classificada por intenção de pesquisa.',
+    'A "intencao" deve ser uma de: "informacional", "comercial", "transacional", "navegacional".',
+    'NÃO gere ideias de artigos.',
     'Responda ESTRITAMENTE em JSON no formato:',
-    '[{"nome":"...","estrategia":"...","artigos":[{"titulo":"...","kw":"..."}]}]',
+    '[{"nome":"...","estrategia":"...","palavrasChave":[{"termo":"...","intencao":"informacional"}]}]',
   ]
     .filter(Boolean)
     .join('\n\n');
 
   const text = await generateGrounded(prompt, { systemInstruction: systemFor(project), temperature: 0.7 });
-  const raw = parseJson<Array<{ nome: string; estrategia: string; artigos: Array<{ titulo: string; kw: string }> }>>(text);
+  const raw = parseJson<Array<{ nome: string; estrategia: string; palavrasChave: Array<{ termo: string; intencao: string }> }>>(text);
   const now = new Date().toISOString();
 
   const batch = adminDb.batch();
@@ -260,10 +391,13 @@ async function generateClusters(uid: string, project: ContentProject): Promise<C
     const ref = col.doc();
     const cluster: ContentCluster = {
       id: ref.id,
-      nome: c.nome ?? 'Cluster',
+      nome: c.nome ?? 'Tema',
       estrategia: c.estrategia ?? '',
-      artigos: Array.isArray(c.artigos) ? c.artigos : [],
+      palavrasChave: Array.isArray(c.palavrasChave)
+        ? c.palavrasChave.filter((k) => k?.termo).map((k) => ({ termo: k.termo, intencao: normalizeIntent(k.intencao) }))
+        : [],
       aprovado: false,
+      excluido: false,
       createdAt: now,
     };
     const { id, ...data } = cluster;
@@ -294,45 +428,59 @@ function toIsoDate(d: Date): string {
 
 async function generateCalendar(uid: string, project: ContentProject): Promise<CalendarArticle[]> {
   const clustersSnap = await projectRef(uid, project.id).collection('clusters').get();
-  const clusters = clustersSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ContentCluster, 'id'>) }));
+  const clusters = clustersSnap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as Omit<ContentCluster, 'id'>) }))
+    .filter((c) => !c.excluido);
   const approved = clusters.filter((c) => c.aprovado);
   const source = approved.length ? approved : clusters;
+  if (!source.length) throw Object.assign(new Error('Nenhum cluster ativo para agendar'), { status: 400 });
 
-  // Flatten all article ideas, tagging each with its cluster id.
-  const ideas = source.flatMap((c) => c.artigos.map((a) => ({ ...a, clusterId: c.id })));
-  if (!ideas.length) throw Object.assign(new Error('Nenhum cluster com artigos para agendar'), { status: 400 });
+  // Clusters no longer carry pre-made article ideas — derive article topics from
+  // each cluster's theme + keywords, tagging each topic with its cluster id.
+  const clusterBrief = source.map((c) => ({
+    clusterId: c.id,
+    tema: c.nome,
+    descricao: c.estrategia,
+    palavrasChave: (c.palavrasChave ?? []).map((k) => `${k.termo} (${k.intencao})`),
+  }));
 
-  // Ask the AI to prioritize; assign dates deterministically in code.
   const prompt = [
-    'Priorize estas ideias de artigos por relevância estratégica e potencial de busca.',
-    'Responda ESTRITAMENTE em JSON como um array de índices (0-based) na nova ordem:',
-    JSON.stringify(ideas.map((i, idx) => ({ idx, titulo: i.titulo, kw: i.kw }))),
-    'Exemplo de resposta: [3,0,1,2]',
-  ].join('\n\n');
+    'A partir dos clusters abaixo (tema + palavras-chave por intenção), proponha tópicos de artigos para o calendário editorial.',
+    'Para cada cluster, gere de 3 a 6 tópicos. Priorize por potencial de tráfego e relevância estratégica.',
+    'Cada tópico deve ter um título atraente e uma palavra-chave principal coerente com o cluster.',
+    'Responda ESTRITAMENTE em JSON, já na ordem de prioridade desejada:',
+    '[{"titulo":"...","kwPrincipal":"...","clusterId":"<id do cluster>"}]',
+    '',
+    `CLUSTERS:\n${JSON.stringify(clusterBrief)}`,
+  ].join('\n');
 
-  let order: number[];
+  let topics: Array<{ titulo: string; kwPrincipal: string; clusterId: string }>;
   try {
-    order = parseJson<number[]>(await generateText(prompt, { systemInstruction: systemFor(project), temperature: 0.3 }));
-    if (!Array.isArray(order) || order.length !== ideas.length) throw new Error('bad');
+    topics = parseJson<typeof topics>(await generateText(prompt, { systemInstruction: systemFor(project), temperature: 0.5 }));
+    topics = (Array.isArray(topics) ? topics : []).filter((t) => t?.titulo && source.some((c) => c.id === t.clusterId));
+    if (!topics.length) throw new Error('empty');
   } catch {
-    order = ideas.map((_, i) => i); // fallback: keep original order
+    // Fallback: one topic per cluster keyword.
+    topics = source.flatMap((c) =>
+      (c.palavrasChave ?? []).slice(0, 3).map((k) => ({ titulo: `${c.nome}: ${k.termo}`, kwPrincipal: k.termo, clusterId: c.id })),
+    );
   }
+  if (!topics.length) throw Object.assign(new Error('Não foi possível derivar tópicos dos clusters'), { status: 400 });
 
   const interval = frequencyToIntervalDays(project.config.frequenciaPostagens);
   const now = new Date().toISOString();
   const batch = adminDb.batch();
   const col = projectRef(uid, project.id).collection('calendar');
 
-  const created: CalendarArticle[] = order.map((origIdx, position) => {
-    const idea = ideas[origIdx];
+  const created: CalendarArticle[] = topics.map((topic, position) => {
     const date = new Date();
     date.setDate(date.getDate() + (position + 1) * interval);
     const ref = col.doc();
     const article: CalendarArticle = {
       id: ref.id,
-      titulo: idea.titulo,
-      kwPrincipal: idea.kw,
-      clusterId: idea.clusterId,
+      titulo: topic.titulo,
+      kwPrincipal: topic.kwPrincipal,
+      clusterId: topic.clusterId,
       scheduledDate: toIsoDate(date),
       status: 'agendado',
       stage: 0,
@@ -466,6 +614,56 @@ function markdownToHtml(md: string): string {
     .join('\n');
 }
 
+// Converts a subset of Markdown to Sanity Portable Text blocks.
+// Handles: headings (#, ##, ###), bold (**text**), paragraphs.
+function markdownToPortableText(md: string): object[] {
+  type PTSpan = { _type: 'span'; _key: string; text: string; marks: string[] };
+  type PTBlock = { _type: 'block'; _key: string; style: string; children: PTSpan[]; markDefs: [] };
+
+  let key = 0;
+  const nextKey = () => `k${key++}`;
+
+  const cleaned = md
+    .replace(/SLUG:.*$/im, '')
+    .replace(/META:.*$/im, '')
+    .trim();
+
+  const blocks: PTBlock[] = [];
+
+  for (const rawLine of cleaned.split(/\n{2,}/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    let style = 'normal';
+    let text = line;
+    if (line.startsWith('### ')) { style = 'h3'; text = line.slice(4); }
+    else if (line.startsWith('## ')) { style = 'h2'; text = line.slice(3); }
+    else if (line.startsWith('# ')) { style = 'h1'; text = line.slice(2); }
+
+    const children: PTSpan[] = [];
+    const boldRegex = /\*\*(.+?)\*\*/g;
+    let last = 0;
+    let match: RegExpExecArray | null;
+    while ((match = boldRegex.exec(text)) !== null) {
+      if (match.index > last) {
+        children.push({ _type: 'span', _key: nextKey(), text: text.slice(last, match.index), marks: [] });
+      }
+      children.push({ _type: 'span', _key: nextKey(), text: match[1], marks: ['strong'] });
+      last = match.index + match[0].length;
+    }
+    if (last < text.length) {
+      children.push({ _type: 'span', _key: nextKey(), text: text.slice(last), marks: [] });
+    }
+    if (!children.length) {
+      children.push({ _type: 'span', _key: nextKey(), text, marks: [] });
+    }
+
+    blocks.push({ _type: 'block', _key: nextKey(), style, children, markDefs: [] });
+  }
+
+  return blocks;
+}
+
 async function publishToWordpress(uid: string, projectId: string, articleId: string): Promise<string> {
   const project = await loadProject(uid, projectId);
   const { wordpressUrl, wordpressUser } = project.config;
@@ -534,6 +732,69 @@ async function publishToWordpress(uid: string, projectId: string, articleId: str
     updatedAt: new Date().toISOString(),
   });
   return post.link;
+}
+
+async function publishToSanity(uid: string, projectId: string, articleId: string): Promise<string> {
+  const project = await loadProject(uid, projectId);
+  const { sanityProjectId, sanityDataset } = project.config;
+  if (!sanityProjectId) {
+    throw Object.assign(new Error('Project ID do Sanity não configurado'), { status: 400 });
+  }
+  const dataset = sanityDataset || 'production';
+
+  const secretSnap = await projectRef(uid, projectId).collection('secrets').doc('sanity').get();
+  const apiToken = secretSnap.exists ? (secretSnap.data() as { apiToken?: string }).apiToken : undefined;
+  if (!apiToken) throw Object.assign(new Error('API Token do Sanity ausente'), { status: 400 });
+
+  const artRef = projectRef(uid, projectId).collection('calendar').doc(articleId);
+  const snap = await artRef.get();
+  if (!snap.exists) throw Object.assign(new Error('Artigo não encontrado'), { status: 404 });
+  const article = { id: snap.id, ...(snap.data() as Omit<CalendarArticle, 'id'>) };
+  if (!article.articleFinal) throw Object.assign(new Error('Artigo ainda não produzido'), { status: 400 });
+
+  const slug = article.slug || article.titulo.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const docId = `article-${articleId}`;
+
+  const mutations = [
+    {
+      createOrReplace: {
+        _id: docId,
+        _type: 'post',
+        title: article.titulo,
+        slug: { _type: 'slug', current: slug },
+        body: markdownToPortableText(article.articleFinal),
+        excerpt: article.metaDescription || undefined,
+        publishedAt: new Date().toISOString(),
+      },
+    },
+  ];
+
+  const apiUrl = `https://${sanityProjectId}.api.sanity.io/v2021-10-21/data/mutate/${dataset}`;
+  const mutateResp = await fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ mutations }),
+  });
+
+  if (!mutateResp.ok) {
+    const body = await mutateResp.text();
+    throw Object.assign(new Error(`Falha ao publicar no Sanity: ${mutateResp.status} — ${body}`), { status: 502 });
+  }
+
+  const documentUrl = `https://${sanityProjectId}.sanity.studio/desk/post;${docId}`;
+
+  await debitCreditsAdmin(uid, CREDIT_ACTIONS.contentPublish, { productName: article.titulo });
+  await artRef.update({
+    status: 'publicado',
+    urlPublicado: documentUrl,
+    dataPublicacao: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+
+  return documentUrl;
 }
 
 // Approved/published articles the Product agent can reuse in descriptions
@@ -643,6 +904,18 @@ export function registerContentRoutes(app: express.Application, deps: ContentDep
     }
   });
 
+  app.post('/api/content/scan-website', async (req, res) => {
+    try {
+      await verifyFirebaseToken(req);
+      const { url } = req.body as { url?: string };
+      if (!url?.trim()) return res.status(400).json({ error: 'url é obrigatória' });
+      const config = await scanWebsite(url.trim());
+      res.json({ config });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
   app.get('/api/content/articles/reusable', async (req, res) => {
     try {
       const decoded = await verifyFirebaseToken(req);
@@ -666,7 +939,13 @@ export function registerContentRoutes(app: express.Application, deps: ContentDep
   app.post('/api/content/projects/:projectId/articles/:articleId/publish', async (req, res) => {
     try {
       const decoded = await verifyFirebaseToken(req);
-      const url = await publishToWordpress(decoded.uid, req.params.projectId, req.params.articleId);
+      const project = await loadProject(decoded.uid, req.params.projectId);
+      let url: string;
+      if (project.config.sanityProjectId) {
+        url = await publishToSanity(decoded.uid, req.params.projectId, req.params.articleId);
+      } else {
+        url = await publishToWordpress(decoded.uid, req.params.projectId, req.params.articleId);
+      }
       res.json({ url });
     } catch (err) {
       sendError(res, err);
