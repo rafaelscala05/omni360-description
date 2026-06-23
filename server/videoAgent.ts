@@ -1,6 +1,11 @@
 import type express from 'express';
 import { GoogleGenAI } from '@google/genai';
 import sharp from 'sharp';
+import { spawn } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import ffmpegPath from 'ffmpeg-static';
 import { adminDb, adminStorage } from './firebaseAdmin';
 import { CREDIT_ACTIONS, resolveCreditCost } from '../src/credits';
 import type { CreditAction } from '../src/credits';
@@ -13,23 +18,41 @@ const VEO_MODEL = 'veo-3.1-fast-generate-001';
 const TEXT_MODEL = 'gemini-2.5-flash';
 
 // Output video is always 9:16 (vertical/portrait) for marketplace product pages.
-// The input image is pre-cropped to the same 9:16 ratio to match.
+// The product image is pre-cropped to the same 9:16 ratio to match.
 const VIDEO_ASPECT_RATIO = '9:16';
 const INPUT_IMAGE_W = 720;
 const INPUT_IMAGE_H = 1280; // 9:16 portrait crop
 
-// Veo 3.1 generates at most 8s per call (and exactly 8s when given an input
-// image). To reach the requested ~15s we generate the first 8s beat and then
-// extend it by ~7s — yielding a single ~15s vertical clip.
-const SEGMENT_1_SECONDS = 8;
-const SEGMENT_2_SECONDS = 7;
+// Background music + TTS voice for the final mix. The audio is added AFTER the
+// video is generated (segments are generated MUTE), so there is never any lip
+// sync — the narration is always a voice-over on top of the footage.
+const MUSIC_PATH = path.join(process.cwd(), 'server', 'assets', 'background-music.mp3');
+const TTS_VOICE = 'pt-BR-Neural2-B';
+const TTS_LANGUAGE = 'pt-BR';
+
+// Veo 3.1 generates at most 8s per call. To reach ~30s we generate four shots
+// and concatenate them with ffmpeg. The shots follow an e-commerce 3-act
+// structure: Início (hook) → Meio (uso + benefícios) → Fim (CTA). Each shot's
+// last frame seeds the next shot so the footage stays visually continuous.
+const SHOTS = [
+  { key: 'inicio', seconds: 8, ato: 'INÍCIO — Hook (chama atenção e apresenta o produto)' },
+  { key: 'meioDemonstracao', seconds: 8, ato: 'MEIO — Demonstração do produto em uso/funcionamento' },
+  { key: 'meioBeneficios', seconds: 8, ato: 'MEIO — Close-ups destacando atributos e benefícios' },
+  { key: 'fim', seconds: 6, ato: 'FIM — Fechamento e chamada para ação' },
+] as const;
+
+interface VideoScriptShot {
+  acao: string;
+  narracao: string;
+}
 
 interface VideoScript {
   cena: string;
-  acaoInicio: string;
-  narracaoInicio: string;
-  acaoFinal: string;
-  narracaoFinal: string;
+  trilha: string;
+  inicio: VideoScriptShot;
+  meioDemonstracao: VideoScriptShot;
+  meioBeneficios: VideoScriptShot;
+  fim: VideoScriptShot;
 }
 
 interface VideoDeps {
@@ -69,8 +92,7 @@ async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeTy
   return { base64, mimeType };
 }
 
-// Crops the image to 9:16 portrait (centered) so Veo receives a vertical frame
-// matching the 9:16 output video used on marketplace product pages.
+// Crops the image to 9:16 portrait (centered) so it matches the vertical output video.
 async function cropToPortrait(inputBuffer: Buffer): Promise<{ base64: string; mimeType: string }> {
   const portrait = await sharp(inputBuffer)
     .resize({
@@ -82,6 +104,89 @@ async function cropToPortrait(inputBuffer: Buffer): Promise<{ base64: string; mi
     .jpeg({ quality: 90 })
     .toBuffer();
   return { base64: portrait.toString('base64'), mimeType: 'image/jpeg' };
+}
+
+// ---------------------------------------------------------------------------
+// ffmpeg helpers (uses the bundled ffmpeg-static binary, no system install)
+// ---------------------------------------------------------------------------
+
+function runFfmpeg(args: string[]): Promise<void> {
+  if (!ffmpegPath) throw new Error('ffmpeg-static não encontrado');
+  return new Promise((resolve, reject) => {
+    const proc = spawn(ffmpegPath as string, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+    proc.on('error', reject);
+    proc.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`ffmpeg saiu com código ${code}: ${stderr.slice(-800)}`));
+    });
+  });
+}
+
+// Grabs the last frame of a clip as a JPEG — used to seed the next shot so the
+// generated footage stays visually continuous across segments.
+async function extractLastFrame(videoPath: string, outJpgPath: string): Promise<{ base64: string; mimeType: string }> {
+  await runFfmpeg(['-y', '-sseof', '-0.2', '-i', videoPath, '-update', '1', '-frames:v', '1', '-q:v', '2', outJpgPath]);
+  const buf = await fs.readFile(outJpgPath);
+  return { base64: buf.toString('base64'), mimeType: 'image/jpeg' };
+}
+
+// Concatenates the silent shots into one continuous clip. Re-encodes (instead
+// of stream copy) because the shots are generated independently and may differ
+// slightly in timebase/SAR, which would break a `-c copy` concat. Output is
+// muted — the narration + music are mixed in afterwards.
+async function concatVideos(segmentPaths: string[], workDir: string, outPath: string): Promise<void> {
+  const listPath = path.join(workDir, 'concat.txt');
+  const list = segmentPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n');
+  await fs.writeFile(listPath, list, 'utf8');
+  await runFfmpeg([
+    '-y', '-f', 'concat', '-safe', '0', '-i', listPath,
+    '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p',
+    '-an', outPath,
+  ]);
+}
+
+// Mixes the muted video with a continuous TTS voice-over and a looped, low
+// background-music bed. Output length is bounded by the video (-shortest),
+// music loops forever (-stream_loop -1) and narration is padded with silence.
+async function mixAudio(videoPath: string, narrationPath: string, musicPath: string, outPath: string): Promise<void> {
+  await runFfmpeg([
+    '-y',
+    '-i', videoPath,
+    '-stream_loop', '-1', '-i', musicPath,
+    '-i', narrationPath,
+    '-filter_complex',
+    '[1:a]volume=0.14[mus];[2:a]volume=1.6[nar];[mus][nar]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mix]',
+    '-map', '0:v', '-map', '[mix]',
+    '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
+    '-shortest',
+    outPath,
+  ]);
+}
+
+// ---------------------------------------------------------------------------
+// Text-to-speech (Google Cloud TTS, shares the server's ADC credentials)
+// ---------------------------------------------------------------------------
+
+async function synthesizeNarration(text: string): Promise<Buffer> {
+  const { TextToSpeechClient } = await import('@google-cloud/text-to-speech');
+  // Set a quota/billing project explicitly. Application Default Credentials
+  // (especially user creds from `gcloud auth application-default login`) have no
+  // quota project by default, which makes texttospeech.googleapis.com return
+  // "7 PERMISSION_DENIED ... requires a quota project". This sends the
+  // x-goog-user-project header so the call is billed to GCP_PROJECT.
+  const client = new TextToSpeechClient({
+    projectId: GCP_PROJECT,
+    clientOptions: { quotaProjectId: GCP_PROJECT },
+  });
+  const [resp] = await client.synthesizeSpeech({
+    input: { text },
+    voice: { languageCode: TTS_LANGUAGE, name: TTS_VOICE },
+    audioConfig: { audioEncoding: 'MP3', speakingRate: 1.02, pitch: 0 },
+  });
+  if (!resp.audioContent) throw new Error('TTS não retornou áudio');
+  return Buffer.from(resp.audioContent as Uint8Array);
 }
 
 async function debitCreditsAdmin(
@@ -134,7 +239,7 @@ async function generateScript(
 
   const prompt = `Você é um diretor de vídeos de e-commerce especialista em conteúdo para PÁGINAS DE PRODUTO em marketplaces (Mercado Livre, Amazon, Shopee) e lojas virtuais.
 
-Seu objetivo é criar um roteiro de VÍDEO COMERCIAL E EXPLICATIVO, na VERTICAL (9:16), com aproximadamente 15 segundos, que faça o cliente entender o produto e querer comprá-lo.
+Crie um roteiro de VÍDEO COMERCIAL E EXPLICATIVO, VERTICAL (9:16), com cerca de 30 segundos, estruturado em INÍCIO, MEIO e FIM, seguindo as melhores práticas de vídeo para e-commerce.
 
 Analise CUIDADOSAMENTE a imagem fornecida antes de escrever.
 
@@ -144,35 +249,35 @@ ${productName ? `Nome: ${productName}\n` : ''}${category ? `Categoria: ${categor
 **Atributos do produto (use de 2 a 3 dos mais relevantes ao longo do roteiro):**
 ${formatAttributes(attributes)}
 
-**REGRAS OBRIGATÓRIAS:**
-- O vídeo é VERTICAL (9:16) — pense em enquadramento de celular, produto grande no centro.
+**BOAS PRÁTICAS OBRIGATÓRIAS:**
+- Formato VERTICAL (9:16): produto grande e centralizado, pensado para tela de celular.
 - Tom COMERCIAL e EXPLICATIVO: mostre o que o produto é, do que é feito e por que vale a pena.
-- Cite naturalmente de 2 a 3 ATRIBUTOS REAIS do produto (da lista acima ou visíveis na imagem). Nada de inventar características.
-- As mãos devem MANIPULAR o produto de forma rica e realista: pegar, girar para mostrar ângulos/detalhes, abrir/fechar, acionar botões/zíperes/tampas, demonstrar o uso real, apontar para partes específicas. Evite gestos passivos (apenas segurar parado).
-- O vídeo tem DOIS MOMENTOS encadeados:
-  • ABERTURA (0–8s): gancho visual + apresentação do produto e início da manipulação.
-  • DEMONSTRAÇÃO (8–15s): manipulação mais complexa mostrando funcionamento/benefício + fechamento.
+- Cite naturalmente de 2 a 3 ATRIBUTOS REAIS (da lista acima ou visíveis na imagem). Nunca invente características.
+- As mãos devem MANIPULAR o produto de forma rica e realista: pegar, girar para mostrar ângulos/detalhes, abrir/fechar, acionar botões/zíperes/tampas, demonstrar o uso real, apontar partes específicas. Evite gestos passivos.
+- A NARRAÇÃO é uma locução em OFF (voice-over): ninguém aparece falando para a câmera, não há diálogo, não há lip sync. Há música de fundo.
+- Estrutura de 4 shots encadeados (continuidade visual entre eles):
+  1) INÍCIO (~8s): gancho que prende a atenção nos 3 primeiros segundos + apresentação do produto.
+  2) MEIO/uso (~8s): produto em uso real, funcionamento, manipulação rica.
+  3) MEIO/benefícios (~8s): close-ups destacando 2–3 atributos/benefícios.
+  4) FIM (~6s): fechamento com chamada para ação (ex.: "Garanta o seu agora").
 - Sem texto na tela. Sem efeitos artificiais. Realista, luz natural ou de estúdio.
+- NARRAÇÃO CURTA: cada "narracao" deve ter no máximo ~16 palavras (o total será lido em ~30s).
 
-**CAMPOS DO ROTEIRO (responda em pt-BR):**
-
-1. cena — Ambiente e enquadramento vertical inicial, baseado NO QUE VOCÊ VÊ na imagem (superfície, iluminação, clima). Máx. 120 caracteres.
-
-2. acaoInicio — Ação dos primeiros ~8s: movimento de câmera + como as mãos começam a manipular o produto, destacando 1 atributo visível. Gestos concretos. Máx. 200 caracteres.
-
-3. narracaoInicio — Narração de abertura, comercial e direta, citando 1 atributo/benefício. Frase curta e falada. Máx. 110 caracteres.
-
-4. acaoFinal — Ação dos ~7s finais: manipulação MAIS COMPLEXA demonstrando o funcionamento/uso real do produto (abrir, acionar, montar, vestir, etc.), revelando mais 1–2 atributos. Máx. 200 caracteres.
-
-5. narracaoFinal — Narração explicativa de fechamento citando 2–3 atributos/benefícios e convidando à compra, sem soar exagerado. Máx. 120 caracteres.
+**CAMPOS (responda em pt-BR):**
+- cena: ambientação/visual geral, coerente em todos os shots, baseada na imagem (máx. 120 caracteres).
+- trilha: mood da música de fundo (ex.: "moderna, leve e otimista") (máx. 60 caracteres).
+- inicio, meioDemonstracao, meioBeneficios, fim: cada um com:
+   - acao: o que acontece visualmente (câmera + manipulação) (máx. 200 caracteres).
+   - narracao: a locução em off desse trecho (frase curta, máx. ~16 palavras).
 
 Retorne APENAS um JSON válido neste formato exato (sem markdown, sem texto extra):
 {
   "cena": "...",
-  "acaoInicio": "...",
-  "narracaoInicio": "...",
-  "acaoFinal": "...",
-  "narracaoFinal": "..."
+  "trilha": "...",
+  "inicio": { "acao": "...", "narracao": "..." },
+  "meioDemonstracao": { "acao": "...", "narracao": "..." },
+  "meioBeneficios": { "acao": "...", "narracao": "..." },
+  "fim": { "acao": "...", "narracao": "..." }
 }`;
 
   const result = await ai.models.generateContent({
@@ -192,23 +297,24 @@ Retorne APENAS um JSON válido neste formato exato (sem markdown, sem texto extr
   const text = result.text?.trim() ?? '{}';
   const cleaned = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
   const parsed = JSON.parse(cleaned) as VideoScript;
-  if (!parsed.cena || !parsed.acaoInicio || !parsed.narracaoInicio || !parsed.acaoFinal || !parsed.narracaoFinal) {
+  const shotsOk = SHOTS.every((s) => parsed[s.key]?.acao && parsed[s.key]?.narracao);
+  if (!parsed.cena || !shotsOk) {
     throw new Error('Roteiro gerado inválido — campos obrigatórios ausentes');
   }
   return parsed;
 }
 
 // Runs a Veo generateVideos operation and polls until it completes, returning
-// the produced video. Used for both the initial 8s beat and the extension.
+// the produced video bytes.
 async function runVeoOperation(
   ai: GoogleGenAI,
   jobId: string,
   label: string,
   request: Parameters<GoogleGenAI['models']['generateVideos']>[0],
-): Promise<{ videoBytes?: string; mimeType?: string }> {
+): Promise<string> {
   let operation = await ai.models.generateVideos(request);
 
-  // Poll until done — each Veo beat typically takes 2–5 minutes
+  // Poll until done — each Veo shot typically takes 2–5 minutes
   let pollCount = 0;
   while (!operation.done) {
     await new Promise((r) => setTimeout(r, 15000));
@@ -221,13 +327,13 @@ async function runVeoOperation(
     throw new Error(String((operation.error as any).message ?? operation.error));
   }
 
-  const video = operation.response?.generatedVideos?.[0]?.video;
-  if (!video?.videoBytes) throw new Error(`Veo não retornou bytes de vídeo (${label})`);
+  const videoBytes = operation.response?.generatedVideos?.[0]?.video?.videoBytes;
+  if (!videoBytes) throw new Error(`Veo não retornou bytes de vídeo (${label})`);
   console.log(`[video] ${label} done jobId=${jobId} polls=${pollCount}`);
-  return video;
+  return videoBytes;
 }
 
-async function runVeoJob(
+async function runVideoJob(
   uid: string,
   jobId: string,
   productId: string,
@@ -236,78 +342,85 @@ async function runVeoJob(
   mimeType: string,
 ): Promise<void> {
   const jobRef = adminDb.collection('users').doc(uid).collection('videoJobs').doc(jobId);
-  console.log(`[video] runVeoJob start uid=${uid} jobId=${jobId} productId=${productId}`);
+  console.log(`[video] runVideoJob start uid=${uid} jobId=${jobId} productId=${productId}`);
+
+  const workDir = await fs.mkdtemp(path.join(os.tmpdir(), `video-${jobId}-`));
 
   try {
     await jobRef.update({ status: 'processing', updatedAt: now() });
 
-    // Pre-process image to 9:16 portrait so it matches the vertical output video.
+    // Pre-process the product image to a 9:16 portrait to seed the first shot.
     const inputBuffer = Buffer.from(imageBase64, 'base64');
-    const { base64: portraitBase64, mimeType: portraitMime } = await cropToPortrait(inputBuffer);
+    const portrait = await cropToPortrait(inputBuffer);
     console.log(`[video] image cropped to ${INPUT_IMAGE_W}x${INPUT_IMAGE_H} portrait jobId=${jobId}`);
 
     const ai = getVeoClient();
-
     const styleLine = 'Formato: vertical 9:16, comercial e explicativo para página de produto, luz natural ou de estúdio, câmera fluida, realista, alta qualidade.';
-    const rulesLine = 'IMPORTANTE: As mãos devem MANIPULAR o produto de forma rica (girar, abrir, acionar, demonstrar o uso). Sem texto na tela. Sem efeitos artificiais.';
+    const rulesLine = 'As mãos devem MANIPULAR o produto de forma rica (girar, abrir, acionar, demonstrar o uso). Nenhuma pessoa falando para a câmera. Sem texto na tela. Sem efeitos artificiais.';
+    const negativePrompt = 'texto na tela, legendas, marca d\'água, logotipos, pessoa falando para a câmera, lip sync, distorções, baixa qualidade';
 
-    // Beat 1 (0–8s): hook + start of manipulation, generated from the image.
-    const promptInicio = [
-      `Cena: ${script.cena}`,
-      `Ação (abertura, ${SEGMENT_1_SECONDS}s): ${script.acaoInicio}`,
-      `Narração: ${script.narracaoInicio}`,
-      styleLine,
-      rulesLine,
-    ].join('\n');
+    // Generate the four shots sequentially, seeding each from the previous
+    // shot's last frame. Shots are generated MUTE (generateAudio:false) so the
+    // narration we add later is a clean voice-over with zero lip sync.
+    let seedImage = { base64: portrait.base64, mimeType: portrait.mimeType };
+    const segmentPaths: string[] = [];
 
-    // Beat 2 (8–15s): more complex manipulation + demo, continues the first clip.
-    const promptFinal = [
-      `Continuação da mesma cena: ${script.cena}`,
-      `Ação (demonstração, ${SEGMENT_2_SECONDS}s): ${script.acaoFinal}`,
-      `Narração: ${script.narracaoFinal}`,
-      styleLine,
-      rulesLine,
-    ].join('\n');
+    for (let i = 0; i < SHOTS.length; i++) {
+      const shot = SHOTS[i];
+      const shotScript = script[shot.key];
+      const prompt = [
+        `Cena: ${script.cena}`,
+        `Ato (${shot.ato}, ~${shot.seconds}s): ${shotScript.acao}`,
+        styleLine,
+        rulesLine,
+      ].join('\n');
 
-    console.log(`[video] beat#1 generate model=${VEO_MODEL} aspectRatio=${VIDEO_ASPECT_RATIO} jobId=${jobId}`);
-    const firstVideo = await runVeoOperation(ai, jobId, 'beat#1', {
-      model: VEO_MODEL,
-      prompt: promptInicio,
-      image: { imageBytes: portraitBase64, mimeType: portraitMime },
-      config: {
-        numberOfVideos: 1,
-        durationSeconds: SEGMENT_1_SECONDS,
-        aspectRatio: VIDEO_ASPECT_RATIO,
-        personGeneration: 'allow_adult',
-        generateAudio: true,
-      },
-    });
-
-    // Extend the first beat by ~7s → ~15s total. Best-effort: if the extend
-    // call fails (e.g. model/feature unavailable), fall back to the 8s clip so
-    // the user still gets a video instead of losing the job and the credits.
-    let finalVideo = firstVideo;
-    try {
-      console.log(`[video] beat#2 extend +${SEGMENT_2_SECONDS}s jobId=${jobId}`);
-      finalVideo = await runVeoOperation(ai, jobId, 'beat#2', {
+      console.log(`[video] shot ${i + 1}/${SHOTS.length} (${shot.key}) generate jobId=${jobId}`);
+      const videoBytes = await runVeoOperation(ai, jobId, `shot#${i + 1}`, {
         model: VEO_MODEL,
-        prompt: promptFinal,
-        video: { videoBytes: firstVideo.videoBytes, mimeType: firstVideo.mimeType ?? 'video/mp4' },
+        prompt,
+        image: { imageBytes: seedImage.base64, mimeType: seedImage.mimeType },
         config: {
           numberOfVideos: 1,
-          durationSeconds: SEGMENT_2_SECONDS,
+          durationSeconds: shot.seconds,
+          aspectRatio: VIDEO_ASPECT_RATIO,
           personGeneration: 'allow_adult',
-          generateAudio: true,
+          generateAudio: false,
+          negativePrompt,
         },
       });
-    } catch (extendErr) {
-      console.error(`[video] extend failed jobId=${jobId}, falling back to 8s clip:`, extendErr);
-      finalVideo = firstVideo;
+
+      const segPath = path.join(workDir, `seg${i}.mp4`);
+      await fs.writeFile(segPath, Buffer.from(videoBytes, 'base64'));
+      segmentPaths.push(segPath);
+
+      // Seed the next shot from this shot's last frame (skip after the last one)
+      if (i < SHOTS.length - 1) {
+        const framePath = path.join(workDir, `seg${i}_last.jpg`);
+        seedImage = await extractLastFrame(segPath, framePath);
+      }
     }
 
-    const videoBytes = finalVideo.videoBytes;
-    if (!videoBytes) throw new Error('Veo não retornou bytes de vídeo');
-    console.log(`[video] Veo done jobId=${jobId}`);
+    // Concatenate the muted shots into one continuous clip.
+    const combinedPath = path.join(workDir, 'combined.mp4');
+    await concatVideos(segmentPaths, workDir, combinedPath);
+    console.log(`[video] concatenated ${segmentPaths.length} shots jobId=${jobId}`);
+
+    // Build a single continuous narration from the per-shot voice-over lines.
+    const narrationText = SHOTS.map((s) => script[s.key].narracao.trim())
+      .filter(Boolean)
+      .join(' ');
+    const narrationBuffer = await synthesizeNarration(narrationText);
+    const narrationPath = path.join(workDir, 'narration.mp3');
+    await fs.writeFile(narrationPath, narrationBuffer);
+    console.log(`[video] narration synthesized jobId=${jobId} chars=${narrationText.length}`);
+
+    // Mix voice-over + background music over the muted video.
+    const finalPath = path.join(workDir, 'final.mp4');
+    await mixAudio(combinedPath, narrationPath, MUSIC_PATH, finalPath);
+    console.log(`[video] audio mixed jobId=${jobId}`);
+
+    const finalBuffer = await fs.readFile(finalPath);
 
     // Upload to Firebase Storage.
     // Uniform bucket-level access is enabled, so object ACLs are not allowed.
@@ -317,7 +430,7 @@ async function runVeoJob(
     const filePath = `product-videos/${uid}/${productId}/${jobId}.mp4`;
     const file = bucket.file(filePath);
     const downloadToken = crypto.randomUUID();
-    await file.save(Buffer.from(videoBytes, 'base64'), {
+    await file.save(finalBuffer, {
       contentType: 'video/mp4',
       metadata: {
         cacheControl: 'public, max-age=31536000',
@@ -337,8 +450,10 @@ async function runVeoJob(
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[video] runVeoJob failed jobId=${jobId}:`, err);
+    console.error(`[video] runVideoJob failed jobId=${jobId}:`, err);
     await jobRef.update({ status: 'error', error: message, updatedAt: now() }).catch(() => {});
+  } finally {
+    await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -415,7 +530,7 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
       const { base64, mimeType } = await fetchImageAsBase64(imageUrl);
 
       // Fire and forget — does not block the HTTP response
-      runVeoJob(decoded.uid, jobId, productId, script, base64, mimeType);
+      runVideoJob(decoded.uid, jobId, productId, script, base64, mimeType);
 
       res.json({ jobId });
     } catch (err) {

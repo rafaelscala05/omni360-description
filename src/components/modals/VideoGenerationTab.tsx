@@ -19,6 +19,34 @@ export interface VideoGenerationTabProps {
 
 type Stage = 'prereqs' | 'select-image' | 'script' | 'generate';
 
+// Shot keys of VideoScript that carry an { acao, narracao } pair, in screen order.
+type ShotKey = 'inicio' | 'meioDemonstracao' | 'meioBeneficios' | 'fim';
+
+const SHOT_FIELDS: Array<{
+  key: ShotKey; title: string; badge: string; acaoHint: string; narracaoHint: string;
+}> = [
+  {
+    key: 'inicio', title: 'Início — Hook (0–8s)', badge: 'Início',
+    acaoHint: 'Gancho que prende a atenção + apresentação do produto',
+    narracaoHint: 'Frase de abertura comercial citando um atributo',
+  },
+  {
+    key: 'meioDemonstracao', title: 'Meio — Demonstração (8–16s)', badge: 'Meio',
+    acaoHint: 'Produto em uso real / funcionamento, manipulação rica',
+    narracaoHint: 'Explica o que o produto faz / como se usa',
+  },
+  {
+    key: 'meioBeneficios', title: 'Meio — Benefícios (16–24s)', badge: 'Meio',
+    acaoHint: 'Close-ups destacando 2–3 atributos e benefícios',
+    narracaoHint: 'Reforça atributos/benefícios reais do produto',
+  },
+  {
+    key: 'fim', title: 'Fim — Fechamento (24–30s)', badge: 'Fim',
+    acaoHint: 'Plano de fechamento do produto / embalagem',
+    narracaoHint: 'Chamada para ação curta (ex.: "Garanta o seu agora")',
+  },
+];
+
 const cn = (...classes: (string | boolean | undefined)[]) => classes.filter(Boolean).join(' ');
 
 export default function VideoGenerationTab({
@@ -287,41 +315,51 @@ export default function VideoGenerationTab({
             Roteiro gerado pela IA
           </h2>
           <p className="text-sm text-slate-500 mb-6 leading-relaxed">
-            Revise e edite o roteiro antes de gerar o vídeo vertical (9:16) de ~15 segundos.
-            O vídeo tem dois momentos: <strong>abertura</strong> (0–8s) e <strong>demonstração/fechamento</strong> (8–15s).
+            Revise e edite o roteiro antes de gerar o vídeo vertical (9:16) de ~30 segundos,
+            com estrutura <strong>Início → Meio → Fim</strong>. A narração é uma locução em off
+            (voz por cima) com música de fundo — não há ninguém falando na tela.
           </p>
 
-          <div className="space-y-4 mb-6">
-            <ScriptField
-              label="Cena / Contexto"
-              hint="Ambiente e enquadramento vertical da câmera"
-              value={script.cena}
-              onChange={(v) => setScript({ ...script, cena: v })}
-            />
-            <ScriptField
-              label="Abertura — Ação (0–8s)"
-              hint="Gancho comercial e início da manipulação do produto"
-              value={script.acaoInicio}
-              onChange={(v) => setScript({ ...script, acaoInicio: v })}
-            />
-            <ScriptField
-              label="Abertura — Narração"
-              hint="Frase de abertura com viés comercial citando um atributo"
-              value={script.narracaoInicio}
-              onChange={(v) => setScript({ ...script, narracaoInicio: v })}
-            />
-            <ScriptField
-              label="Demonstração — Ação (8–15s)"
-              hint="Manipulação mais complexa demonstrando uso/funcionamento do produto"
-              value={script.acaoFinal}
-              onChange={(v) => setScript({ ...script, acaoFinal: v })}
-            />
-            <ScriptField
-              label="Demonstração — Narração"
-              hint="Frase explicativa citando 2–3 atributos/benefícios + fechamento"
-              value={script.narracaoFinal}
-              onChange={(v) => setScript({ ...script, narracaoFinal: v })}
-            />
+          <div className="space-y-6 mb-6">
+            <div className="grid sm:grid-cols-2 gap-4">
+              <ScriptField
+                label="Cena / Contexto visual"
+                hint="Ambientação vertical comum a todos os trechos"
+                value={script.cena}
+                onChange={(v) => setScript({ ...script, cena: v })}
+              />
+              <ScriptField
+                label="Trilha sonora (mood)"
+                hint="Clima da música de fundo (ex.: moderna, leve)"
+                value={script.trilha}
+                onChange={(v) => setScript({ ...script, trilha: v })}
+              />
+            </div>
+
+            {SHOT_FIELDS.map(({ key, title, badge, acaoHint, narracaoHint }) => (
+              <div key={key} className="rounded-xl border border-slate-200 p-4 bg-slate-50/60">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-[11px] font-bold uppercase tracking-wide">
+                    {badge}
+                  </span>
+                  <h3 className="text-sm font-bold text-slate-800">{title}</h3>
+                </div>
+                <div className="space-y-3">
+                  <ScriptField
+                    label="Ação / Imagem"
+                    hint={acaoHint}
+                    value={script[key].acao}
+                    onChange={(v) => setScript({ ...script, [key]: { ...script[key], acao: v } })}
+                  />
+                  <ScriptField
+                    label="Narração (voz em off)"
+                    hint={narracaoHint}
+                    value={script[key].narracao}
+                    onChange={(v) => setScript({ ...script, [key]: { ...script[key], narracao: v } })}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
 
           <div className="flex gap-3 flex-wrap">
@@ -372,7 +410,7 @@ export default function VideoGenerationTab({
                   {job?.status === 'processing' ? 'Gerando seu vídeo...' : 'Na fila de processamento...'}
                 </p>
                 <p className="text-sm text-slate-500 max-w-sm mx-auto leading-relaxed">
-                  O Veo 3.1 está gerando o vídeo vertical de ~15s em dois trechos (abertura + extensão). Esse processo leva em média 4–10 minutos.
+                  O Veo 3.1 está gerando o vídeo vertical de ~30s em 4 trechos (Início, Meio e Fim) e montando a narração + música. Esse processo pode levar de 10 a 20 minutos.
                   Você pode fechar essa janela — o vídeo ficará disponível aqui quando pronto.
                 </p>
               </div>

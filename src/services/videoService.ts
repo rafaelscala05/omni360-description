@@ -1,13 +1,22 @@
 import { onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 
+export interface VideoScriptShot {
+  acao: string;     // o que acontece visualmente (câmera + manipulação do produto)
+  narracao: string; // texto da locução em off (voz por cima) deste trecho
+}
+
+// Vídeo vertical (9:16) de ~30s, dividido em 4 shots encadeados (8+8+8+6s)
+// formando a estrutura Início → Meio → Fim, conforme boas práticas de
+// vídeo para e-commerce. O áudio é montado depois (TTS + música), portanto
+// o vídeo é gerado MUDO e SEM lip sync.
 export interface VideoScript {
-  cena: string;
-  // Vídeo de ~15s dividido em dois momentos (8s + extensão de 7s):
-  acaoInicio: string;    // 0–8s: gancho comercial + início da manipulação do produto
-  narracaoInicio: string; // narração do 1º trecho — abertura comercial
-  acaoFinal: string;      // 8–15s: manipulação mais complexa + demonstração de uso
-  narracaoFinal: string;  // narração do 2º trecho — explicativo + fechamento/CTA
+  cena: string;   // ambientação/visual geral coerente em todos os shots
+  trilha: string; // mood da música de fundo (ex.: "upbeat, leve, moderna")
+  inicio: VideoScriptShot;           // 0–8s  — Hook: chama atenção e apresenta o produto
+  meioDemonstracao: VideoScriptShot; // 8–16s — Meio: produto em uso / funcionamento
+  meioBeneficios: VideoScriptShot;   // 16–24s — Meio: close-ups de 2–3 atributos/benefícios
+  fim: VideoScriptShot;              // 24–30s — Fim: fechamento + chamada para ação
 }
 
 export type VideoJobStatus = 'queued' | 'processing' | 'done' | 'error';
