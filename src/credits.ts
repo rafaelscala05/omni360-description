@@ -26,6 +26,7 @@ export const CREDIT_ACTIONS = {
   contentArticle: { key: 'content_article', label: 'Produção de Artigo' },
   contentImage: { key: 'content_image', label: 'Geração de Imagem de Capa' },
   contentPublish: { key: 'content_publish', label: 'Publicação no WordPress' },
+  videoGeneration: { key: 'video_generation', label: 'Geração de Vídeo de Produto' },
 } as const satisfies Record<string, CreditAction>;
 
 // Fallback costs, used when the `config/credits` document has not loaded yet or
@@ -45,6 +46,7 @@ export const DEFAULT_CREDIT_COSTS: Record<string, number> = {
   content_article: 5,
   content_image: 1,
   content_publish: 1,
+  video_generation: 5,
 };
 
 export const DEFAULT_COST = 1;

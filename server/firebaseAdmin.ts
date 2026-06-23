@@ -7,6 +7,7 @@
 import { initializeApp, getApps, applicationDefault } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
+import { getStorage } from 'firebase-admin/storage';
 import firebaseAppletConfig from '../firebase-applet-config.json';
 
 // Pin the Admin SDK to the SAME Firebase project the client uses to mint ID
@@ -25,4 +26,5 @@ if (!getApps().length) {
 // fail with "5 NOT_FOUND".
 export const adminDb = getFirestore(firestoreDatabaseId);
 export const adminAuth = getAuth();
+export const adminStorage = getStorage();
 export { FieldValue };

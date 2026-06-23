@@ -137,6 +137,12 @@ export interface Product {
   _selectedImage?: string;
   _ambientImages?: string[];
   _isDirty?: boolean;
+  _videoScript?: { cena: string; acao: string; audio: string };
+  _videoJobId?: string;
+  _videoStatus?: 'idle' | 'generating_script' | 'script_ready' | 'queued' | 'processing' | 'done' | 'error';
+  _videoUrl?: string;
+  _videoSelectedImage?: string;
+  _videoError?: string;
 
   // Modulo 1 / 3
   categoryId?: string; // FK to actual Category
@@ -150,7 +156,7 @@ export interface Product {
   variantValues?: { [key: string]: string }; // ex: { 'Cor': 'Azul', 'Tamanho': 'M'}
 }
 
-export type ProductModalTab = 'geral' | 'atributos' | 'tecnico' | 'ia' | 'imagem' | 'simular';
+export type ProductModalTab = 'geral' | 'atributos' | 'tecnico' | 'ia' | 'imagem' | 'video' | 'simular';
 
 export interface ProductStatusFlags {
   descricaoGerada: boolean;
