@@ -129,6 +129,25 @@ const decodeHTMLEntities = (text: string | undefined | null) => {
   return textArea.value;
 };
 
+const truncateHtml = (html: string | undefined | null, maxChars = 2500): string => {
+  if (!html || html.length <= maxChars) return html ?? '';
+  const cut = html.lastIndexOf('</', maxChars);
+  if (cut === -1) return html.slice(0, maxChars);
+  const closeEnd = html.indexOf('>', cut);
+  return closeEnd === -1 ? html.slice(0, maxChars) : html.slice(0, closeEnd + 1);
+};
+
+const htmlToPlainText = (html: string | undefined | null): string => {
+  if (!html) return '';
+  return html
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/?(p|h[1-6]|li|div|section|article|header|footer|blockquote)[^>]*>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
 export default function App() {
   // State
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -156,6 +175,7 @@ export default function App() {
     atributos: false,
   });
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
+  const [expandedParentIds, setExpandedParentIds] = useState<Set<string>>(new Set());
   
   // Generation State
   const [isGeneratingMass, setIsGeneratingMass] = useState(false);
@@ -1065,7 +1085,7 @@ export default function App() {
             if (header === 'Peso bruto (Kg)') row[header] = prod['Peso bruto (Kg)'] || '';
             if (header === 'GTIN/EAN') row[header] = prod['GTIN/EAN'] || '';
             if (header === 'GTIN/EAN tributável') row[header] = prod['GTIN/EAN tributável'] || '';
-            if (header === 'Descrição complementar') row[header] = prod['Descrição complementar'] || '';
+            if (header === 'Descrição complementar') row[header] = htmlToPlainText(prod['Descrição complementar'] as string) || '';
             if (header === 'CEST') row[header] = prod['CEST'] || '';
             if (header === 'Código de Enquadramento IPI') row[header] = prod['Código de Enquadramento IPI'] || '';
             if (header === 'Formato embalagem') row[header] = prod['Formato embalagem'] || '';
@@ -1113,7 +1133,7 @@ export default function App() {
           // Standard System Model
           row = { ...prod._originalRow };
           // Update with generated fields
-          row['Descrição complementar'] = prod['Descrição complementar'] || row['Descrição complementar'];
+          row['Descrição complementar'] = htmlToPlainText(prod['Descrição complementar'] as string) || htmlToPlainText(row['Descrição complementar']) || '';
           row['Título SEO'] = prod['Título SEO'] || row['Título SEO'];
           row['Descrição SEO'] = prod['Descrição SEO'] || row['Descrição SEO'];
           row['Palavras chave SEO'] = prod['Palavras chave SEO'] || row['Palavras chave SEO'];
@@ -1248,7 +1268,7 @@ export default function App() {
         ...parent,
         // O título otimizado também passa a ser o nome do produto (campo 'Descrição').
         'Descrição': tituloOtimizado || parent['Descrição'],
-        'Descrição complementar': decodeHTMLEntities(generatedData.descricao_html),
+        'Descrição complementar': truncateHtml(decodeHTMLEntities(generatedData.descricao_html)),
         'Título SEO': tituloOtimizado,
         'Descrição SEO': decodeHTMLEntities(generatedData.descricao_seo),
         'Palavras chave SEO': decodeHTMLEntities(generatedData.palavras_chave),
@@ -1788,10 +1808,11 @@ Retorne APENAS um JSON válido no seguinte formato:
       const generatedData = await generateDescriptionText(previewProduct, existingCategories, template);
       await consumeCredit(CREDIT_ACTIONS.regenerateSingle, previewProduct['Descrição'], previewProduct['Código (SKU)']);
       trackDescriptionGenerated({ mode: 'single', sku: previewProduct['Código (SKU)'] as string });
-      setEditedDescription(generatedData.descricao_html);
-      setPreviewProduct(prev => prev ? { 
-        ...prev, 
-        'Descrição complementar': generatedData.descricao_html,
+      const truncatedHtml = truncateHtml(generatedData.descricao_html);
+      setEditedDescription(truncatedHtml);
+      setPreviewProduct(prev => prev ? {
+        ...prev,
+        'Descrição complementar': truncatedHtml,
         'Título SEO': generatedData.titulo_seo,
         'Descrição SEO': generatedData.descricao_seo,
         'Palavras chave SEO': generatedData.palavras_chave,
@@ -2588,16 +2609,34 @@ Retorne APENAS um JSON válido no seguinte formato:
                             const isError = !!product._generationError || product._statusDescricao === 'Erro';
                             const isEnriched = !!product._enrichmentLog;
                             const flags = getProductStatusFlags(product);
+                            const hasChildren = !!(product._children && product._children.length > 0);
+                            const isExpanded = expandedParentIds.has(product._id);
 
                             return (
-                            <tr key={product._id} className={cn(
+                            <React.Fragment key={product._id}>
+                            <tr className={cn(
                               "hover:bg-[#f1f5f9]/60 transition-colors group relative",
-                              product._generationError 
-                                ? "bg-red-50/40 hover:bg-red-50/60" 
+                              product._generationError
+                                ? "bg-red-50/40 hover:bg-red-50/60"
                                 : selectedIds.has(product._id) ? "bg-blue-50/40" : "bg-white"
                             )}>
                               <td className="px-5 py-3 border-r border-slate-100 bg-inherit">
                                 <div className={`absolute left-0 top-0 bottom-0 w-1 transition-colors ${product._generationError ? 'bg-red-500' : isProcessed ? 'bg-indigo-500' : isOriginal ? 'bg-emerald-500' : 'bg-transparent'}`}></div>
+                                <div className="flex items-center gap-1.5">
+                                {hasChildren && (
+                                  <button
+                                    onClick={() => setExpandedParentIds(prev => {
+                                      const next = new Set(prev);
+                                      if (next.has(product._id)) next.delete(product._id);
+                                      else next.add(product._id);
+                                      return next;
+                                    })}
+                                    className="text-slate-400 hover:text-slate-700 transition-colors"
+                                    title={isExpanded ? 'Recolher variantes' : `Expandir ${product._children!.length} variante(s)`}
+                                  >
+                                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
+                                  </button>
+                                )}
                                 <input
                                   type="checkbox"
                                   checked={selectedIds.has(product._id)}
@@ -2609,6 +2648,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                                   }}
                                   className="rounded border-slate-300 text-[#004ac6] focus:ring-[#004ac6]"
                                 />
+                                </div>
                               </td>
                               {visibleColumns['Img'] && (
                                 <td className="px-4 py-2.5 bg-inherit">
@@ -2644,6 +2684,13 @@ Retorne APENAS um JSON válido no seguinte formato:
                               {visibleColumns['Descrição'] && (
                                 <td className="px-4 py-3 text-slate-900 bg-inherit">
                                   <div className="max-w-[400px] 2xl:max-w-[600px] truncate" title={product['Descrição']}>{product['Descrição']}</div>
+                                  {hasChildren && (
+                                    <div className="mt-0.5">
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-200 uppercase tracking-wide cursor-pointer" onClick={() => setExpandedParentIds(prev => { const next = new Set(prev); if (next.has(product._id)) next.delete(product._id); else next.add(product._id); return next; })}>
+                                        {product._children!.length} variante{product._children!.length > 1 ? 's' : ''} {isExpanded ? '▲' : '▼'}
+                                      </span>
+                                    </div>
+                                  )}
                                 </td>
                               )}
                               {visibleColumns['Categoria'] && <td className="px-4 py-3 text-slate-500 text-xs bg-inherit"><div className="max-w-[120px] truncate">{product['Categoria'] || '-'}</div></td>}
@@ -2746,6 +2793,63 @@ Retorne APENAS um JSON válido no seguinte formato:
                                  </div>
                               </td>
                             </tr>
+                            {hasChildren && isExpanded && product._children!.map(child => (
+                              <tr key={child._id} className="bg-slate-50/70 border-l-2 border-indigo-300">
+                                <td className="pl-10 pr-3 py-2.5 border-r border-slate-100">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedIds.has(child._id)}
+                                    onChange={(e) => {
+                                      const next = new Set(selectedIds);
+                                      if (e.target.checked) next.add(child._id);
+                                      else next.delete(child._id);
+                                      setSelectedIds(next);
+                                    }}
+                                    className="rounded border-slate-300 text-[#004ac6] focus:ring-[#004ac6]"
+                                  />
+                                </td>
+                                {visibleColumns['Img'] && (
+                                  <td className="px-4 py-2.5">
+                                    {(child._selectedImage || child['URL imagem 1']) ? (
+                                      <img src={child._selectedImage || child['URL imagem 1']!.toString()} alt="" className="w-8 h-8 object-contain rounded border border-slate-200" />
+                                    ) : (
+                                      <div className="w-8 h-8 rounded border border-slate-200 bg-slate-100 flex items-center justify-center">
+                                        <ImageIcon className="w-3.5 h-3.5 text-slate-400" />
+                                      </div>
+                                    )}
+                                  </td>
+                                )}
+                                {visibleColumns['SKU'] && (
+                                  <td className="px-4 py-2.5 font-mono text-xs text-slate-500">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-200 uppercase tracking-wide">variante</span>
+                                      {child['Código (SKU)']}
+                                    </div>
+                                  </td>
+                                )}
+                                {visibleColumns['Descrição'] && (
+                                  <td className="px-4 py-2.5 text-slate-600 text-sm" colSpan={1}>
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className="truncate max-w-[300px]" title={child['Descrição']}>{child['Descrição']}</span>
+                                      {child['Variações'] && (
+                                        <div className="flex flex-wrap gap-1">
+                                          {child['Variações'].split('||').map((v, i) => (
+                                            <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                                              {v.trim()}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </td>
+                                )}
+                                {visibleColumns['Categoria'] && <td className="px-4 py-2.5 text-slate-400 text-xs">{child['Categoria'] || '-'}</td>}
+                                {visibleColumns['Marca'] && <td className="px-4 py-2.5 text-slate-400 text-xs">{child['Marca'] || '-'}</td>}
+                                {visibleColumns['Status'] && <td className="px-4 py-2.5 text-slate-400 text-xs">—</td>}
+                                <td className="px-4 py-2.5"></td>
+                              </tr>
+                            ))}
+                            </React.Fragment>
                             )
                           })
                         }
@@ -2811,6 +2915,21 @@ Retorne APENAS um JSON válido no seguinte formato:
               if (!user) return;
               const updatedCategory = await addAttributeToCategory(user.uid, categoryId, existingCategories, newAttr);
               setExistingCategories(existingCategories.map(c => c.id === categoryId ? updatedCategory : c));
+            }}
+            uid={user?.uid ?? ''}
+            getIdToken={async () => {
+              const currentUser = auth.currentUser;
+              if (!currentUser) throw new Error('Não autenticado');
+              return currentUser.getIdToken();
+            }}
+            onVideoGenerated={(productId, videoUrl, jobId) => {
+              setProducts((prev) =>
+                prev.map((p) =>
+                  p._id === productId
+                    ? { ...p, _videoUrl: videoUrl, _videoJobId: jobId, _videoStatus: 'done' as const }
+                    : p,
+                ),
+              );
             }}
           />
         </Suspense>

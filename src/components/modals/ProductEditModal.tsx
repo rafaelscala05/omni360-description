@@ -4,13 +4,14 @@ import { getEffectiveAttributes } from '../../services/categoryService';
 import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate, type Template } from '../../services/productService';
 import { trackAttributesGenerated } from '../../analytics';
 import { listReusableArticles } from '../../services/contentService';
-import { 
-  Sparkles, 
-  Save, 
-  X, 
-  Image as ImageIcon, 
-  Loader2, 
-  Wand2, 
+import VideoGenerationTab from './VideoGenerationTab';
+import {
+  Sparkles,
+  Save,
+  X,
+  Image as ImageIcon,
+  Loader2,
+  Wand2,
   Database,
   Layout,
   Tag,
@@ -25,7 +26,8 @@ import {
   List,
   ListOrdered,
   Eye,
-  Code
+  Code,
+  Video,
 } from 'lucide-react';
 
 const cn = (...classes: (string | boolean | undefined)[]) => classes.filter(Boolean).join(' ');
@@ -218,9 +220,12 @@ interface ProductEditModalProps {
   onOpenImageModal?: () => void;
   templates?: Template[];
   selectedTemplateId?: string;
+  uid?: string;
+  getIdToken?: () => Promise<string>;
+  onVideoGenerated?: (productId: string, videoUrl: string, jobId: string) => void;
 }
 
-export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal, templates = [], selectedTemplateId }: ProductEditModalProps) {
+export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal, templates = [], selectedTemplateId, uid = '', getIdToken, onVideoGenerated }: ProductEditModalProps) {
   // Template escolhido para (re)gerar a descrição. Inicia no template padrão da
   // aplicação e pode ser trocado pelo usuário antes de gerar novamente.
   const [chosenTemplateId, setChosenTemplateId] = useState<string>(selectedTemplateId || defaultTemplate.id);
@@ -489,6 +494,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
     // { id: 'tecnico', label: 'Técnico', icon: Cpu, done: statusFlags.enriquecido }, // Aba técnica desativada temporariamente
     { id: 'ia', label: 'Conteúdo', icon: Sparkles, done: statusFlags.descricaoGerada },
     { id: 'imagem', label: 'Imagens', icon: ImageIcon, done: statusFlags.imagensGeradas },
+    { id: 'video', label: 'Vídeo', icon: Video, done: !!editedProduct._videoUrl },
     { id: 'simular', label: 'Simular Produto', icon: Eye, done: false },
   ] as const;
 
@@ -1018,6 +1024,32 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                         ))}
                       </div>
                     </section>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'video' && (
+                <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-300 pb-20">
+                  {uid && getIdToken ? (
+                    <VideoGenerationTab
+                      product={editedProduct}
+                      uid={uid}
+                      getIdToken={getIdToken}
+                      onVideoGenerated={(productId, videoUrl, jobId) => {
+                        setEditedProduct((prev) => ({
+                          ...prev,
+                          _videoUrl: videoUrl,
+                          _videoJobId: jobId,
+                          _videoStatus: 'done',
+                        }));
+                        onVideoGenerated?.(productId, videoUrl, jobId);
+                      }}
+                      onNavigateToTab={(tab) => setActiveTab(tab)}
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center py-16 text-slate-400 text-sm">
+                      Autenticação necessária para gerar vídeos.
+                    </div>
                   )}
                 </div>
               )}
