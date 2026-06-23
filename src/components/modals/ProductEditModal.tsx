@@ -564,6 +564,11 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
               >
                 <Icon className={cn("w-5 h-5", isActive ? "text-[#004ac6]" : "text-slate-400")} />
                 {tab.label}
+                {tab.id === 'video' && (
+                  <span className="ml-1 px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 text-[10px] font-bold uppercase tracking-wide">
+                    Beta
+                  </span>
+                )}
                 {tab.id === 'atributos' && effectiveAttributes.length > 0 && (
                    <span className="ml-1 px-1.5 py-0.5 rounded-full bg-blue-100 text-[#004ac6] text-[10px]">
                       {effectiveAttributes.length}

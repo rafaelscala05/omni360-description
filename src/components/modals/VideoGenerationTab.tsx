@@ -140,6 +140,9 @@ export default function VideoGenerationTab({
           <h2 className="text-lg font-bold text-slate-900 mb-2 flex items-center gap-2">
             <Video className="w-5 h-5 text-violet-600" />
             Gerar Vídeo com IA
+            <span className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-xs font-bold uppercase tracking-wide">
+              Beta
+            </span>
           </h2>
           <p className="text-sm text-slate-500 mb-6 leading-relaxed">
             Para gerar um vídeo de qualidade com interação humana e roteiro cinematográfico,
