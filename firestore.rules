@@ -152,6 +152,13 @@ service cloud.firestore {
         allow delete: if isOwner(userId);
       }
 
+      // Video generation jobs. Written server-side via Admin SDK; the client
+      // only reads to track progress via onSnapshot.
+      match /videoJobs/{jobId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+
       // Agência de Criação de Conteúdo (Alfred). The owner manages projects and
       // their clusters/calendar from the client; the AI pipeline + credit debit
       // run server-side via the Admin SDK (which bypasses these rules).

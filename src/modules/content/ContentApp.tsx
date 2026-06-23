@@ -85,7 +85,7 @@ const ContentApp: React.FC<Props> = ({ user, credits, onSwitchToProduct, onBuyCr
             </div>
             <div className="flex flex-col">
               <span className="font-display text-base font-extrabold text-white tracking-tight leading-tight">Alfreds</span>
-              <span className="text-[10px] text-slate-400">Agência de Conteúdo</span>
+              <span className="text-[10px] text-slate-400">Agente de Conteúdo</span>
             </div>
           </div>
           <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-1 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg">

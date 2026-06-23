@@ -2139,9 +2139,9 @@ Retorne APENAS um JSON válido no seguinte formato:
           <button
             onClick={() => { setWorkspace('content'); setIsSidebarOpen(false); }}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 bg-white/5 hover:bg-white/10 transition-colors"
-            title="Trocar para a Agência de Conteúdo"
+            title="Trocar para a Agente de Conteúdo"
           >
-            <FileText className="w-4 h-4" /> Ir para Agência de Conteúdo
+            <FileText className="w-4 h-4" /> Ir para Agente de Conteúdo
           </button>
         </div>
 

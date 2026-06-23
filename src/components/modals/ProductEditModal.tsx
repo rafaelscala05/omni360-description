@@ -237,7 +237,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
   const [suggestedAttributes, setSuggestedAttributes] = useState<any[]>([]);
   const [isSavingCategoryAttr, setIsSavingCategoryAttr] = useState<string | null>(null);
   const [showConfirmClose, setShowConfirmClose] = useState(false);
-  // Cross-module reuse: artigos aprovados/publicados pela Agência de Conteúdo.
+  // Cross-module reuse: artigos aprovados/publicados pela Agente de Conteúdo.
   const [reusableArticles, setReusableArticles] = useState<Array<{ id: string; titulo: string; articleFinal: string }>>([]);
 
   useEffect(() => {
@@ -1117,7 +1117,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                               defaultValue=""
                               onChange={(e) => { if (e.target.value) { insertArticle(e.target.value); e.target.value = ''; } }}
                               className="text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              title="Inserir um artigo da Agência de Conteúdo"
+                              title="Inserir um artigo do Agente de Conteúdo"
                             >
                               <option value="">+ Inserir artigo do Alfred…</option>
                               {reusableArticles.map((a) => (

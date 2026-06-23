@@ -43,15 +43,14 @@ Incorpore essas características visuais de forma natural e persuasiva na descri
 }
 
 **REGRAS para descricao_html:**
-- Estrutura Rica e Detalhada: 
+- Estrutura Rica e Detalhada:
   <h2> [Frase de efeito sobre o produto] </h2>
   <p> [Apresentação detalhada do produto, o que é, para que serve, qual problema resolve] </p>
   <h3>Principais Benefícios</h3> <ul> [Lista com os maiores benefícios e diferenciais] </ul>
   <h3>Detalhes e Especificações</h3> <ul> [Lista de características técnicas, material, medidas, etc] </ul>
   <h3>Dicas de Uso / Como Usar</h3> <p> [Explicação de como extrair o melhor do produto no dia a dia] </p>
   <p> [Fechamento persuasivo mencionando a marca e categoria] </p>
-- Seja extremamente detalhista e explicativo. Não economize nas palavras se for para agregar valor.
-- 300 a 600 palavras.
+- LIMITE ABSOLUTO: o valor de descricao_html deve ter no máximo 2.500 caracteres (contando as tags HTML). Respeite esse limite — corte o conteúdo se necessário, encerrando com uma tag de fechamento válida.
 - Português do Brasil, tom profissional mas acessível.
 - Inclua o nome do produto e categoria como palavras-chave naturais ao longo do texto.
 - Se houver variações, mencione as opções disponíveis no texto.

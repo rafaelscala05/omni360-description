@@ -138,6 +138,7 @@ async function runVeoJob(
   mimeType: string,
 ): Promise<void> {
   const jobRef = adminDb.collection('users').doc(uid).collection('videoJobs').doc(jobId);
+  console.log(`[video] runVeoJob start uid=${uid} jobId=${jobId} productId=${productId}`);
 
   try {
     await jobRef.update({ status: 'processing', updatedAt: now() });
@@ -150,6 +151,7 @@ async function runVeoJob(
       'IMPORTANTE: A pessoa deve interagir naturalmente com o produto. Sem texto na tela. Sem efeitos artificiais.',
     ].join('\n');
 
+    console.log(`[video] calling Veo model=${VEO_MODEL} jobId=${jobId}`);
     const ai = getVeoClient();
     let operation = await ai.models.generateVideos({
       model: VEO_MODEL,
@@ -165,9 +167,12 @@ async function runVeoJob(
     });
 
     // Poll until done — Veo typically takes 2–5 minutes
+    let pollCount = 0;
     while (!operation.done) {
       await new Promise((r) => setTimeout(r, 15000));
       operation = await ai.operations.getVideosOperation({ operation });
+      pollCount++;
+      console.log(`[video] polling jobId=${jobId} attempt=${pollCount} done=${operation.done}`);
     }
 
     if (operation.error) {
@@ -176,6 +181,7 @@ async function runVeoJob(
 
     const videoBytes = operation.response?.generatedVideos?.[0]?.video?.videoBytes;
     if (!videoBytes) throw new Error('Veo não retornou bytes de vídeo');
+    console.log(`[video] Veo done jobId=${jobId} polls=${pollCount}`);
 
     // Upload to Firebase Storage
     const bucket = adminStorage.bucket(STORAGE_BUCKET);
@@ -188,6 +194,7 @@ async function runVeoJob(
     await file.makePublic();
     const videoUrl = file.publicUrl();
 
+    console.log(`[video] uploaded jobId=${jobId} url=${videoUrl}`);
     await jobRef.update({ status: 'done', videoUrl, updatedAt: now() });
 
     // Also write video URL to the product document for convenience
@@ -198,6 +205,7 @@ async function runVeoJob(
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    console.error(`[video] runVeoJob failed jobId=${jobId}:`, err);
     await jobRef.update({ status: 'error', error: message, updatedAt: now() }).catch(() => {});
   }
 }

@@ -135,7 +135,7 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
             <Sparkles className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="font-display text-xl font-bold tracking-tight">{existing ? 'Editar projeto' : 'Configurar a Agência de Conteúdo'}</h2>
+            <h2 className="font-display text-xl font-bold tracking-tight">{existing ? 'Editar projeto' : 'Configurar o Agente de Conteúdo'}</h2>
             <p className="text-sm text-white/70">Conte sobre a empresa para o Alfred trabalhar por você.</p>
           </div>
         </div>
