@@ -196,8 +196,8 @@ export default function VideoGenerationTab({
             Escolha a imagem base do vídeo
           </h2>
           <p className="text-sm text-slate-500 mb-6">
-            Esta imagem será o ponto de partida do vídeo. O Veo 3.1 vai animar a cena a partir dela.
-            Imagens ambientadas tendem a produzir vídeos mais naturais.
+            Esta imagem será o ponto de partida do vídeo. Ela será automaticamente recortada no formato vertical (9:16)
+            para corresponder ao vídeo gerado. Imagens ambientadas tendem a produzir vídeos mais naturais.
           </p>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
@@ -275,14 +275,14 @@ export default function VideoGenerationTab({
               onChange={(v) => setScript({ ...script, cena: v })}
             />
             <ScriptField
-              label="Ação / Interação"
-              hint="O que a pessoa faz com o produto"
+              label="Ação / Movimento de câmera"
+              hint="Movimento de câmera e como a pessoa interage com o produto"
               value={script.acao}
               onChange={(v) => setScript({ ...script, acao: v })}
             />
             <ScriptField
-              label="Áudio / Narração"
-              hint="Sons ambiente, trilha ou fala da pessoa"
+              label="Narração"
+              hint="Frase falada baseada nos benefícios do produto"
               value={script.audio}
               onChange={(v) => setScript({ ...script, audio: v })}
             />
@@ -336,7 +336,7 @@ export default function VideoGenerationTab({
                   {job?.status === 'processing' ? 'Gerando seu vídeo...' : 'Na fila de processamento...'}
                 </p>
                 <p className="text-sm text-slate-500 max-w-sm mx-auto leading-relaxed">
-                  O Veo 3.1 está animando a cena. Esse processo leva em média 2–5 minutos.
+                  O Veo 3.1 está gerando o vídeo vertical. Esse processo leva em média 2–5 minutos.
                   Você pode fechar essa janela — o vídeo ficará disponível aqui quando pronto.
                 </p>
               </div>

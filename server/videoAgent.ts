@@ -1,5 +1,6 @@
 import type express from 'express';
 import { GoogleGenAI } from '@google/genai';
+import sharp from 'sharp';
 import { adminDb, adminStorage } from './firebaseAdmin';
 import { CREDIT_ACTIONS, resolveCreditCost } from '../src/credits';
 import type { CreditAction } from '../src/credits';
@@ -10,6 +11,12 @@ const STORAGE_BUCKET = firebaseAppletConfig.storageBucket;
 const GCP_PROJECT = firebaseAppletConfig.projectId;
 const VEO_MODEL = 'veo-3.1-fast-generate-001';
 const TEXT_MODEL = 'gemini-2.5-flash';
+
+// Output video is always 9:16 (vertical/portrait).
+// The input image is pre-cropped to the same 9:16 ratio to match.
+const VIDEO_ASPECT_RATIO = '9:16';
+const INPUT_IMAGE_W = 720;
+const INPUT_IMAGE_H = 1280; // 9:16 portrait crop
 
 interface VideoScript {
   cena: string;
@@ -54,6 +61,21 @@ async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeTy
   return { base64, mimeType };
 }
 
+// Crops the image to 9:16 portrait (centered) so that Veo receives a vertical
+// frame and AI-extends the scene horizontally when generating the 16:9 video.
+async function cropToPortrait(inputBuffer: Buffer): Promise<{ base64: string; mimeType: string }> {
+  const portrait = await sharp(inputBuffer)
+    .resize({
+      width: INPUT_IMAGE_W,
+      height: INPUT_IMAGE_H,
+      fit: 'cover',
+      position: 'centre',
+    })
+    .jpeg({ quality: 90 })
+    .toBuffer();
+  return { base64: portrait.toString('base64'), mimeType: 'image/jpeg' };
+}
+
 async function debitCreditsAdmin(
   uid: string,
   action: CreditAction,
@@ -89,21 +111,46 @@ async function generateScript(
   mimeType: string,
 ): Promise<VideoScript> {
   const ai = getGeminiClient();
-  const prompt = `Você é um diretor de vídeo especialista em e-commerce. Crie um roteiro curto e cinematográfico para um vídeo de 8 segundos que apresenta o produto abaixo de forma envolvente, com interação humana natural.
 
-Produto: ${description}${brand ? `\nMarca: ${brand}` : ''}
+  const prompt = `Você é um diretor de cinema especialista em vídeos de e-commerce.
 
-O vídeo deve ter:
-- UMA pessoa interagindo naturalmente com o produto no seu contexto de uso real
-- Movimento de câmera suave (close → plano médio ou vice-versa)
-- Ambiente realista e específico para este produto (não estúdio genérico)
-- Sensação de vida real, não propaganda
+Analise CUIDADOSAMENTE a imagem do produto fornecida e crie um roteiro cinematográfico para um vídeo VERTICAL (9:16) de 8 segundos.
 
-Retorne APENAS um JSON válido neste formato exato:
+**Informações do produto:**
+Descrição: ${description}${brand ? `\nMarca: ${brand}` : ''}
+
+**INSTRUÇÕES DE ANÁLISE DA IMAGEM (obrigatório antes de escrever o roteiro):**
+Observe na imagem:
+- Tipo de produto: formato, tamanho, cores dominantes, materiais visíveis
+- Contexto/ambiente da foto (se houver): superfície, iluminação, elementos ao redor
+- Ponto focal e composição: onde o produto está posicionado
+
+**CAMPOS DO ROTEIRO:**
+
+1. CENA — Ambiente e enquadramento inicial do vídeo horizontal.
+   - Descreva o local específico baseado NO QUE VOCÊ VÊ na imagem (não invente cenário genérico)
+   - Inclua: tipo de iluminação (natural/estúdio/exterior), superfície, clima da cena
+   - Exemplo bom: "Bancada de cozinha em mármore, luz natural lateral, produto centralizado em close frontal"
+   - Máximo 100 caracteres
+
+2. AÇÃO — Movimento de câmera + interação humana com o produto.
+   - Descreva um movimento específico de câmera coerente com o produto (close-up → afastamento, travelling, pan)
+   - Inclua o que a pessoa faz: como pega, usa ou interage com o produto de forma natural
+   - Seja detalhado: "Mãos femininas pegam o produto; câmera recua em dolly suave revelando mesa posta ao fundo"
+   - O movimento deve fazer sentido visual para ESTE produto específico
+   - Máximo 150 caracteres
+
+3. ÁUDIO — Narração falada baseada nos benefícios reais do produto.
+   - Escreva uma frase de narração curta que destaque o PRINCIPAL benefício extraído da descrição acima
+   - Tom: natural, confiante, não publicitário — como uma pessoa recomendando para um amigo
+   - Exemplo: "Resistente, leve e pronto para o seu dia a dia"
+   - Máximo 100 caracteres
+
+Retorne APENAS um JSON válido neste formato exato (sem markdown, sem texto extra):
 {
-  "cena": "Descrição do ambiente e enquadramento inicial em português (max 80 chars)",
-  "acao": "O que a pessoa faz com o produto, como interage (max 120 chars)",
-  "audio": "Sons ambiente, trilha, ou fala breve da pessoa (max 80 chars)"
+  "cena": "...",
+  "acao": "...",
+  "audio": "..."
 }`;
 
   const result = await ai.models.generateContent({
@@ -143,26 +190,32 @@ async function runVeoJob(
   try {
     await jobRef.update({ status: 'processing', updatedAt: now() });
 
+    // Pre-process image to 9:16 portrait so Veo AI-extends horizontally
+    // when generating the 16:9 landscape video, creating a cinematic reveal.
+    const inputBuffer = Buffer.from(imageBase64, 'base64');
+    const { base64: portraitBase64, mimeType: portraitMime } = await cropToPortrait(inputBuffer);
+    console.log(`[video] image cropped to ${INPUT_IMAGE_W}x${INPUT_IMAGE_H} portrait jobId=${jobId}`);
+
     const fullPrompt = [
       `Cena: ${script.cena}`,
       `Ação: ${script.acao}`,
-      `Áudio: ${script.audio}`,
-      'Estilo: cinematográfico, luz natural, câmera lenta suave, realista, alta qualidade, 4K',
+      `Narração: ${script.audio}`,
+      'Formato: vertical 9:16, cinematográfico, luz natural, câmera lenta suave, realista, alta qualidade',
       'IMPORTANTE: A pessoa deve interagir naturalmente com o produto. Sem texto na tela. Sem efeitos artificiais.',
     ].join('\n');
 
-    console.log(`[video] calling Veo model=${VEO_MODEL} jobId=${jobId}`);
+    console.log(`[video] calling Veo model=${VEO_MODEL} aspectRatio=${VIDEO_ASPECT_RATIO} jobId=${jobId}`);
     const ai = getVeoClient();
     let operation = await ai.models.generateVideos({
       model: VEO_MODEL,
       prompt: fullPrompt,
-      image: { imageBytes: imageBase64, mimeType },
+      image: { imageBytes: portraitBase64, mimeType: portraitMime },
       config: {
         numberOfVideos: 1,
         durationSeconds: 8,
-        aspectRatio: '9:16',
+        aspectRatio: VIDEO_ASPECT_RATIO,
         personGeneration: 'allow_adult',
-        generateAudio: false,
+        generateAudio: true,
       },
     });
 
@@ -183,16 +236,22 @@ async function runVeoJob(
     if (!videoBytes) throw new Error('Veo não retornou bytes de vídeo');
     console.log(`[video] Veo done jobId=${jobId} polls=${pollCount}`);
 
-    // Upload to Firebase Storage
+    // Upload to Firebase Storage.
+    // Uniform bucket-level access is enabled, so object ACLs are not allowed.
+    // We embed a Firebase download token in the object metadata —
+    // this produces the same permanent URL format the client SDK uses.
     const bucket = adminStorage.bucket(STORAGE_BUCKET);
     const filePath = `product-videos/${uid}/${productId}/${jobId}.mp4`;
     const file = bucket.file(filePath);
+    const downloadToken = crypto.randomUUID();
     await file.save(Buffer.from(videoBytes, 'base64'), {
       contentType: 'video/mp4',
-      metadata: { cacheControl: 'public, max-age=31536000' },
+      metadata: {
+        cacheControl: 'public, max-age=31536000',
+        metadata: { firebaseStorageDownloadTokens: downloadToken },
+      },
     });
-    await file.makePublic();
-    const videoUrl = file.publicUrl();
+    const videoUrl = `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/${encodeURIComponent(filePath)}?alt=media&token=${downloadToken}`;
 
     console.log(`[video] uploaded jobId=${jobId} url=${videoUrl}`);
     await jobRef.update({ status: 'done', videoUrl, updatedAt: now() });
@@ -215,7 +274,7 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
 
   app.post('/api/video/generate-script', async (req, res) => {
     try {
-      const decoded = await verifyFirebaseToken(req);
+      await verifyFirebaseToken(req);
       const { description, brand, imageUrl } = req.body as {
         description: string;
         brand?: string;
