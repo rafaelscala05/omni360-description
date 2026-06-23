@@ -12,16 +12,24 @@ const GCP_PROJECT = firebaseAppletConfig.projectId;
 const VEO_MODEL = 'veo-3.1-fast-generate-001';
 const TEXT_MODEL = 'gemini-2.5-flash';
 
-// Output video is always 9:16 (vertical/portrait).
+// Output video is always 9:16 (vertical/portrait) for marketplace product pages.
 // The input image is pre-cropped to the same 9:16 ratio to match.
 const VIDEO_ASPECT_RATIO = '9:16';
 const INPUT_IMAGE_W = 720;
 const INPUT_IMAGE_H = 1280; // 9:16 portrait crop
 
+// Veo 3.1 generates at most 8s per call (and exactly 8s when given an input
+// image). To reach the requested ~15s we generate the first 8s beat and then
+// extend it by ~7s — yielding a single ~15s vertical clip.
+const SEGMENT_1_SECONDS = 8;
+const SEGMENT_2_SECONDS = 7;
+
 interface VideoScript {
   cena: string;
-  acao: string;
-  audio: string;
+  acaoInicio: string;
+  narracaoInicio: string;
+  acaoFinal: string;
+  narracaoFinal: string;
 }
 
 interface VideoDeps {
@@ -61,8 +69,8 @@ async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeTy
   return { base64, mimeType };
 }
 
-// Crops the image to 9:16 portrait (centered) so that Veo receives a vertical
-// frame and AI-extends the scene horizontally when generating the 16:9 video.
+// Crops the image to 9:16 portrait (centered) so Veo receives a vertical frame
+// matching the 9:16 output video used on marketplace product pages.
 async function cropToPortrait(inputBuffer: Buffer): Promise<{ base64: string; mimeType: string }> {
   const portrait = await sharp(inputBuffer)
     .resize({
@@ -104,53 +112,67 @@ async function debitCreditsAdmin(
   });
 }
 
+function formatAttributes(attributes: Record<string, string>): string {
+  const entries = Object.entries(attributes ?? {}).filter(([, v]) => v && v.trim());
+  if (entries.length === 0) return '(nenhum atributo estruturado informado — extraia da descrição e da imagem)';
+  return entries.map(([k, v]) => `- ${k}: ${v}`).join('\n');
+}
+
 async function generateScript(
-  description: string,
-  brand: string,
+  params: {
+    description: string;
+    brand: string;
+    productName: string;
+    category: string;
+    attributes: Record<string, string>;
+  },
   imageBase64: string,
   mimeType: string,
 ): Promise<VideoScript> {
   const ai = getGeminiClient();
+  const { description, brand, productName, category, attributes } = params;
 
-  const prompt = `Você é um diretor de cinema especialista em vídeos de e-commerce.
+  const prompt = `Você é um diretor de vídeos de e-commerce especialista em conteúdo para PÁGINAS DE PRODUTO em marketplaces (Mercado Livre, Amazon, Shopee) e lojas virtuais.
 
-Analise CUIDADOSAMENTE a imagem do produto fornecida e crie um roteiro cinematográfico para um vídeo VERTICAL (9:16) de 8 segundos.
+Seu objetivo é criar um roteiro de VÍDEO COMERCIAL E EXPLICATIVO, na VERTICAL (9:16), com aproximadamente 15 segundos, que faça o cliente entender o produto e querer comprá-lo.
+
+Analise CUIDADOSAMENTE a imagem fornecida antes de escrever.
 
 **Informações do produto:**
-Descrição: ${description}${brand ? `\nMarca: ${brand}` : ''}
+${productName ? `Nome: ${productName}\n` : ''}${category ? `Categoria: ${category}\n` : ''}${brand ? `Marca: ${brand}\n` : ''}Descrição: ${description}
 
-**INSTRUÇÕES DE ANÁLISE DA IMAGEM (obrigatório antes de escrever o roteiro):**
-Observe na imagem:
-- Tipo de produto: formato, tamanho, cores dominantes, materiais visíveis
-- Contexto/ambiente da foto (se houver): superfície, iluminação, elementos ao redor
-- Ponto focal e composição: onde o produto está posicionado
+**Atributos do produto (use de 2 a 3 dos mais relevantes ao longo do roteiro):**
+${formatAttributes(attributes)}
 
-**CAMPOS DO ROTEIRO:**
+**REGRAS OBRIGATÓRIAS:**
+- O vídeo é VERTICAL (9:16) — pense em enquadramento de celular, produto grande no centro.
+- Tom COMERCIAL e EXPLICATIVO: mostre o que o produto é, do que é feito e por que vale a pena.
+- Cite naturalmente de 2 a 3 ATRIBUTOS REAIS do produto (da lista acima ou visíveis na imagem). Nada de inventar características.
+- As mãos devem MANIPULAR o produto de forma rica e realista: pegar, girar para mostrar ângulos/detalhes, abrir/fechar, acionar botões/zíperes/tampas, demonstrar o uso real, apontar para partes específicas. Evite gestos passivos (apenas segurar parado).
+- O vídeo tem DOIS MOMENTOS encadeados:
+  • ABERTURA (0–8s): gancho visual + apresentação do produto e início da manipulação.
+  • DEMONSTRAÇÃO (8–15s): manipulação mais complexa mostrando funcionamento/benefício + fechamento.
+- Sem texto na tela. Sem efeitos artificiais. Realista, luz natural ou de estúdio.
 
-1. CENA — Ambiente e enquadramento inicial do vídeo horizontal.
-   - Descreva o local específico baseado NO QUE VOCÊ VÊ na imagem (não invente cenário genérico)
-   - Inclua: tipo de iluminação (natural/estúdio/exterior), superfície, clima da cena
-   - Exemplo bom: "Bancada de cozinha em mármore, luz natural lateral, produto centralizado em close frontal"
-   - Máximo 100 caracteres
+**CAMPOS DO ROTEIRO (responda em pt-BR):**
 
-2. AÇÃO — Movimento de câmera + interação humana com o produto.
-   - Descreva um movimento específico de câmera coerente com o produto (close-up → afastamento, travelling, pan)
-   - Inclua o que a pessoa faz: como pega, usa ou interage com o produto de forma natural
-   - Seja detalhado: "Mãos femininas pegam o produto; câmera recua em dolly suave revelando mesa posta ao fundo"
-   - O movimento deve fazer sentido visual para ESTE produto específico
-   - Máximo 150 caracteres
+1. cena — Ambiente e enquadramento vertical inicial, baseado NO QUE VOCÊ VÊ na imagem (superfície, iluminação, clima). Máx. 120 caracteres.
 
-3. ÁUDIO — Narração falada baseada nos benefícios reais do produto.
-   - Escreva uma frase de narração curta que destaque o PRINCIPAL benefício extraído da descrição acima
-   - Tom: natural, confiante, não publicitário — como uma pessoa recomendando para um amigo
-   - Exemplo: "Resistente, leve e pronto para o seu dia a dia"
-   - Máximo 100 caracteres
+2. acaoInicio — Ação dos primeiros ~8s: movimento de câmera + como as mãos começam a manipular o produto, destacando 1 atributo visível. Gestos concretos. Máx. 200 caracteres.
+
+3. narracaoInicio — Narração de abertura, comercial e direta, citando 1 atributo/benefício. Frase curta e falada. Máx. 110 caracteres.
+
+4. acaoFinal — Ação dos ~7s finais: manipulação MAIS COMPLEXA demonstrando o funcionamento/uso real do produto (abrir, acionar, montar, vestir, etc.), revelando mais 1–2 atributos. Máx. 200 caracteres.
+
+5. narracaoFinal — Narração explicativa de fechamento citando 2–3 atributos/benefícios e convidando à compra, sem soar exagerado. Máx. 120 caracteres.
 
 Retorne APENAS um JSON válido neste formato exato (sem markdown, sem texto extra):
 {
   "cena": "...",
-  "acao": "...",
-  "audio": "..."
+  "acaoInicio": "...",
+  "narracaoInicio": "...",
+  "acaoFinal": "...",
+  "narracaoFinal": "..."
 }`;
 
   const result = await ai.models.generateContent({
@@ -170,10 +192,39 @@ Retorne APENAS um JSON válido neste formato exato (sem markdown, sem texto extr
   const text = result.text?.trim() ?? '{}';
   const cleaned = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
   const parsed = JSON.parse(cleaned) as VideoScript;
-  if (!parsed.cena || !parsed.acao || !parsed.audio) {
+  if (!parsed.cena || !parsed.acaoInicio || !parsed.narracaoInicio || !parsed.acaoFinal || !parsed.narracaoFinal) {
     throw new Error('Roteiro gerado inválido — campos obrigatórios ausentes');
   }
   return parsed;
+}
+
+// Runs a Veo generateVideos operation and polls until it completes, returning
+// the produced video. Used for both the initial 8s beat and the extension.
+async function runVeoOperation(
+  ai: GoogleGenAI,
+  jobId: string,
+  label: string,
+  request: Parameters<GoogleGenAI['models']['generateVideos']>[0],
+): Promise<{ videoBytes?: string; mimeType?: string }> {
+  let operation = await ai.models.generateVideos(request);
+
+  // Poll until done — each Veo beat typically takes 2–5 minutes
+  let pollCount = 0;
+  while (!operation.done) {
+    await new Promise((r) => setTimeout(r, 15000));
+    operation = await ai.operations.getVideosOperation({ operation });
+    pollCount++;
+    console.log(`[video] polling jobId=${jobId} ${label} attempt=${pollCount} done=${operation.done}`);
+  }
+
+  if (operation.error) {
+    throw new Error(String((operation.error as any).message ?? operation.error));
+  }
+
+  const video = operation.response?.generatedVideos?.[0]?.video;
+  if (!video?.videoBytes) throw new Error(`Veo não retornou bytes de vídeo (${label})`);
+  console.log(`[video] ${label} done jobId=${jobId} polls=${pollCount}`);
+  return video;
 }
 
 async function runVeoJob(
@@ -190,51 +241,73 @@ async function runVeoJob(
   try {
     await jobRef.update({ status: 'processing', updatedAt: now() });
 
-    // Pre-process image to 9:16 portrait so Veo AI-extends horizontally
-    // when generating the 16:9 landscape video, creating a cinematic reveal.
+    // Pre-process image to 9:16 portrait so it matches the vertical output video.
     const inputBuffer = Buffer.from(imageBase64, 'base64');
     const { base64: portraitBase64, mimeType: portraitMime } = await cropToPortrait(inputBuffer);
     console.log(`[video] image cropped to ${INPUT_IMAGE_W}x${INPUT_IMAGE_H} portrait jobId=${jobId}`);
 
-    const fullPrompt = [
+    const ai = getVeoClient();
+
+    const styleLine = 'Formato: vertical 9:16, comercial e explicativo para página de produto, luz natural ou de estúdio, câmera fluida, realista, alta qualidade.';
+    const rulesLine = 'IMPORTANTE: As mãos devem MANIPULAR o produto de forma rica (girar, abrir, acionar, demonstrar o uso). Sem texto na tela. Sem efeitos artificiais.';
+
+    // Beat 1 (0–8s): hook + start of manipulation, generated from the image.
+    const promptInicio = [
       `Cena: ${script.cena}`,
-      `Ação: ${script.acao}`,
-      `Narração: ${script.audio}`,
-      'Formato: vertical 9:16, cinematográfico, luz natural, câmera lenta suave, realista, alta qualidade',
-      'IMPORTANTE: A pessoa deve interagir naturalmente com o produto. Sem texto na tela. Sem efeitos artificiais.',
+      `Ação (abertura, ${SEGMENT_1_SECONDS}s): ${script.acaoInicio}`,
+      `Narração: ${script.narracaoInicio}`,
+      styleLine,
+      rulesLine,
     ].join('\n');
 
-    console.log(`[video] calling Veo model=${VEO_MODEL} aspectRatio=${VIDEO_ASPECT_RATIO} jobId=${jobId}`);
-    const ai = getVeoClient();
-    let operation = await ai.models.generateVideos({
+    // Beat 2 (8–15s): more complex manipulation + demo, continues the first clip.
+    const promptFinal = [
+      `Continuação da mesma cena: ${script.cena}`,
+      `Ação (demonstração, ${SEGMENT_2_SECONDS}s): ${script.acaoFinal}`,
+      `Narração: ${script.narracaoFinal}`,
+      styleLine,
+      rulesLine,
+    ].join('\n');
+
+    console.log(`[video] beat#1 generate model=${VEO_MODEL} aspectRatio=${VIDEO_ASPECT_RATIO} jobId=${jobId}`);
+    const firstVideo = await runVeoOperation(ai, jobId, 'beat#1', {
       model: VEO_MODEL,
-      prompt: fullPrompt,
+      prompt: promptInicio,
       image: { imageBytes: portraitBase64, mimeType: portraitMime },
       config: {
         numberOfVideos: 1,
-        durationSeconds: 8,
+        durationSeconds: SEGMENT_1_SECONDS,
         aspectRatio: VIDEO_ASPECT_RATIO,
         personGeneration: 'allow_adult',
         generateAudio: true,
       },
     });
 
-    // Poll until done — Veo typically takes 2–5 minutes
-    let pollCount = 0;
-    while (!operation.done) {
-      await new Promise((r) => setTimeout(r, 15000));
-      operation = await ai.operations.getVideosOperation({ operation });
-      pollCount++;
-      console.log(`[video] polling jobId=${jobId} attempt=${pollCount} done=${operation.done}`);
+    // Extend the first beat by ~7s → ~15s total. Best-effort: if the extend
+    // call fails (e.g. model/feature unavailable), fall back to the 8s clip so
+    // the user still gets a video instead of losing the job and the credits.
+    let finalVideo = firstVideo;
+    try {
+      console.log(`[video] beat#2 extend +${SEGMENT_2_SECONDS}s jobId=${jobId}`);
+      finalVideo = await runVeoOperation(ai, jobId, 'beat#2', {
+        model: VEO_MODEL,
+        prompt: promptFinal,
+        video: { videoBytes: firstVideo.videoBytes, mimeType: firstVideo.mimeType ?? 'video/mp4' },
+        config: {
+          numberOfVideos: 1,
+          durationSeconds: SEGMENT_2_SECONDS,
+          personGeneration: 'allow_adult',
+          generateAudio: true,
+        },
+      });
+    } catch (extendErr) {
+      console.error(`[video] extend failed jobId=${jobId}, falling back to 8s clip:`, extendErr);
+      finalVideo = firstVideo;
     }
 
-    if (operation.error) {
-      throw new Error(String((operation.error as any).message ?? operation.error));
-    }
-
-    const videoBytes = operation.response?.generatedVideos?.[0]?.video?.videoBytes;
+    const videoBytes = finalVideo.videoBytes;
     if (!videoBytes) throw new Error('Veo não retornou bytes de vídeo');
-    console.log(`[video] Veo done jobId=${jobId} polls=${pollCount}`);
+    console.log(`[video] Veo done jobId=${jobId}`);
 
     // Upload to Firebase Storage.
     // Uniform bucket-level access is enabled, so object ACLs are not allowed.
@@ -275,16 +348,29 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
   app.post('/api/video/generate-script', async (req, res) => {
     try {
       await verifyFirebaseToken(req);
-      const { description, brand, imageUrl } = req.body as {
+      const { description, brand, imageUrl, productName, category, attributes } = req.body as {
         description: string;
         brand?: string;
         imageUrl: string;
+        productName?: string;
+        category?: string;
+        attributes?: Record<string, string>;
       };
       if (!description || !imageUrl) {
         return res.status(400).json({ error: 'description e imageUrl são obrigatórios' });
       }
       const { base64, mimeType } = await fetchImageAsBase64(imageUrl);
-      const script = await generateScript(description, brand ?? '', base64, mimeType);
+      const script = await generateScript(
+        {
+          description,
+          brand: brand ?? '',
+          productName: productName ?? '',
+          category: category ?? '',
+          attributes: attributes ?? {},
+        },
+        base64,
+        mimeType,
+      );
       res.json({ script });
     } catch (err) {
       sendError(res, err);

@@ -137,7 +137,7 @@ export interface Product {
   _selectedImage?: string;
   _ambientImages?: string[];
   _isDirty?: boolean;
-  _videoScript?: { cena: string; acao: string; audio: string };
+  _videoScript?: { cena: string; acaoInicio: string; narracaoInicio: string; acaoFinal: string; narracaoFinal: string };
   _videoJobId?: string;
   _videoStatus?: 'idle' | 'generating_script' | 'script_ready' | 'queued' | 'processing' | 'done' | 'error';
   _videoUrl?: string;

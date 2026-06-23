@@ -62,6 +62,27 @@ export default function VideoGenerationTab({
     return () => { unsubRef.current?.(); };
   }, [jobId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Coleta atributos do produto (categoria + campos relevantes) para o roteiro.
+  // O servidor seleciona os 2–3 mais relevantes para citar no vídeo.
+  function collectAttributes(): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const [key, attr] of Object.entries(product.attributes ?? {})) {
+      const raw = Array.isArray(attr?.value) ? attr.value.join(', ') : attr?.value;
+      const val = (raw ?? '').toString().trim();
+      if (val) out[key] = val;
+    }
+    // Campos da planilha que ajudam a descrever o produto no vídeo
+    const extras: Array<[string, unknown]> = [
+      ['Tipo do produto', product['Tipo do produto']],
+      ['Garantia', product['Garantia']],
+    ];
+    for (const [label, value] of extras) {
+      const val = (value ?? '').toString().trim();
+      if (val && !(label in out)) out[label] = val;
+    }
+    return out;
+  }
+
   async function handleGenerateScript() {
     if (!selectedImage) return;
     setScriptLoading(true);
@@ -72,6 +93,9 @@ export default function VideoGenerationTab({
         description: product['Descrição complementar'] ?? product['Descrição'] ?? '',
         brand: product['Marca'] ?? '',
         imageUrl: selectedImage,
+        productName: product['Título SEO'] ?? product['Descrição'] ?? '',
+        category: product['Categoria'] ?? (product.categoryPath?.join(' > ') ?? ''),
+        attributes: collectAttributes(),
       });
       setScript(result);
       setStage('script');
@@ -263,28 +287,40 @@ export default function VideoGenerationTab({
             Roteiro gerado pela IA
           </h2>
           <p className="text-sm text-slate-500 mb-6 leading-relaxed">
-            Revise e edite o roteiro antes de gerar o vídeo.
-            Cada campo orienta uma parte dos 8 segundos do vídeo.
+            Revise e edite o roteiro antes de gerar o vídeo vertical (9:16) de ~15 segundos.
+            O vídeo tem dois momentos: <strong>abertura</strong> (0–8s) e <strong>demonstração/fechamento</strong> (8–15s).
           </p>
 
           <div className="space-y-4 mb-6">
             <ScriptField
               label="Cena / Contexto"
-              hint="Ambiente e enquadramento da câmera"
+              hint="Ambiente e enquadramento vertical da câmera"
               value={script.cena}
               onChange={(v) => setScript({ ...script, cena: v })}
             />
             <ScriptField
-              label="Ação / Movimento de câmera"
-              hint="Movimento de câmera e como a pessoa interage com o produto"
-              value={script.acao}
-              onChange={(v) => setScript({ ...script, acao: v })}
+              label="Abertura — Ação (0–8s)"
+              hint="Gancho comercial e início da manipulação do produto"
+              value={script.acaoInicio}
+              onChange={(v) => setScript({ ...script, acaoInicio: v })}
             />
             <ScriptField
-              label="Narração"
-              hint="Frase falada baseada nos benefícios do produto"
-              value={script.audio}
-              onChange={(v) => setScript({ ...script, audio: v })}
+              label="Abertura — Narração"
+              hint="Frase de abertura com viés comercial citando um atributo"
+              value={script.narracaoInicio}
+              onChange={(v) => setScript({ ...script, narracaoInicio: v })}
+            />
+            <ScriptField
+              label="Demonstração — Ação (8–15s)"
+              hint="Manipulação mais complexa demonstrando uso/funcionamento do produto"
+              value={script.acaoFinal}
+              onChange={(v) => setScript({ ...script, acaoFinal: v })}
+            />
+            <ScriptField
+              label="Demonstração — Narração"
+              hint="Frase explicativa citando 2–3 atributos/benefícios + fechamento"
+              value={script.narracaoFinal}
+              onChange={(v) => setScript({ ...script, narracaoFinal: v })}
             />
           </div>
 
@@ -336,7 +372,7 @@ export default function VideoGenerationTab({
                   {job?.status === 'processing' ? 'Gerando seu vídeo...' : 'Na fila de processamento...'}
                 </p>
                 <p className="text-sm text-slate-500 max-w-sm mx-auto leading-relaxed">
-                  O Veo 3.1 está gerando o vídeo vertical. Esse processo leva em média 2–5 minutos.
+                  O Veo 3.1 está gerando o vídeo vertical de ~15s em dois trechos (abertura + extensão). Esse processo leva em média 4–10 minutos.
                   Você pode fechar essa janela — o vídeo ficará disponível aqui quando pronto.
                 </p>
               </div>
