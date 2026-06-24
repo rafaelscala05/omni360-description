@@ -152,13 +152,12 @@ function buildProductPutBody(current: any, novos: { nome: string; valor: string 
   for (const a of (Array.isArray(current?.atributos) ? current.atributos : [])) {
     if (a?.nome) byName.set(a.nome, { ...a, exibir: a.exibir ?? true });
   }
-  // Wake rejects attributes that don't already exist as a definition, and the
-  // product PUT is atomic — one unknown attribute aborts the whole update. So we
-  // only update values for attributes the product already has.
+  // Override existing values / add new attributes. Callers must ensure each
+  // attribute already exists as a definition (POST /atributos) before the PUT,
+  // since the product PUT is atomic and rejects unknown attributes.
   for (const a of novos) {
-    const existing = byName.get(a.nome);
-    if (!existing) continue;
-    byName.set(a.nome, { ...existing, valor: a.valor, exibir: true });
+    const existing = byName.get(a.nome) ?? {};
+    byName.set(a.nome, { ...existing, nome: a.nome, valor: a.valor, exibir: true });
   }
 
   const pick = (k: string) => (current?.[k] !== undefined && current?.[k] !== null ? current[k] : undefined);
@@ -353,6 +352,19 @@ export function registerWakeRoutes(app: express.Express, { verifyFirebaseToken }
               token, 'GET',
               `/produtos/${id}${q}&camposAdicionais=Estoque&camposAdicionais=Atributo`,
             );
+            // Create the definition for any attribute the product doesn't have
+            // yet (Wake rejects unknown attributes in the product PUT). POST is
+            // a no-op error if the definition already exists globally.
+            const existentes = new Set(
+              (Array.isArray(current?.atributos) ? current.atributos : []).map((a: any) => a?.nome),
+            );
+            for (const a of prod.atributos) {
+              if (!existentes.has(a.nome)) {
+                await fbitsFetch(token, 'POST', '/atributos', {
+                  nome: a.nome, tipo: 'Comparacao', tipoExibicao: 'Div', prioridade: 0,
+                }).catch(() => { /* já existe globalmente — segue */ });
+              }
+            }
             const body = buildProductPutBody(current, prod.atributos);
             await fbitsFetch(token, 'PUT', `/produtos/${id}${q}`, body);
             steps.atributos = 'ok';
