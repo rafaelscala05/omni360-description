@@ -3,9 +3,10 @@ buildCommand: npm run build
 runConfig:
   cpu: 1
   memoryMiB: 1024
-  minInstances: 0
+  minInstances: 1
   maxInstances: 2
   concurrency: 80
+  timeoutSeconds: 3600
   startupCpuBoost: true
 
 env:

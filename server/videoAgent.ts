@@ -586,10 +586,19 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
 
       const { base64, mimeType } = await fetchImageAsBase64(imageUrl);
 
-      // Fire and forget — does not block the HTTP response
-      runVideoJob(decoded.uid, jobId, productId, script, base64, mimeType, creditCost, creditMeta);
+      // Send the jobId immediately in the first chunk so the client can
+      // start listening on Firestore without waiting for the full job.
+      // Keeping the HTTP connection open (not calling res.end() here) is
+      // intentional: Cloud Run will not scale down or kill an instance that
+      // has an active request. The connection closes when the job finishes.
+      res.setHeader('Content-Type', 'application/json');
+      res.write(JSON.stringify({ jobId }));
 
-      res.json({ jobId });
+      try {
+        await runVideoJob(decoded.uid, jobId, productId, script, base64, mimeType, creditCost, creditMeta);
+      } finally {
+        res.end();
+      }
     } catch (err) {
       sendError(res, err);
     }
