@@ -1422,6 +1422,7 @@ export default function App() {
       out.push({
         produtoId: p._wakeProductId!,
         sku: p['Código (SKU)'],
+        nome: p['Título SEO'] || undefined,
         informacaoId: p._wakeInformacaoId,
         descricaoHtml: p['Descrição complementar'],
         seoTitle: p['Título SEO'],

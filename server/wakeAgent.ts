@@ -125,6 +125,7 @@ async function aggregateProduct(token: string, p: any): Promise<WakeNormalizedPr
 export interface WakePushProduct {
   produtoId: string;
   sku?: string;
+  nome?: string;
   informacaoId?: number;
   descricaoHtml?: string;
   seoTitle?: string;
@@ -145,7 +146,7 @@ export interface WakePushResult {
 // Builds a valid body for PUT /produtos from the current product, echoing the
 // fields the API requires/validates and swapping in the merged attribute list.
 // Existing attributes are preserved; new values override matching names.
-function buildProductPutBody(current: any, novos: { nome: string; valor: string }[]): Record<string, unknown> {
+function buildProductPutBody(current: any, novos: { nome: string; valor: string }[], novaNome?: string): Record<string, unknown> {
   // Preserve the full existing attribute objects (tipoAtributo, isFiltro, …);
   // only override the value when a new attribute matches by name.
   const byName = new Map<string, Record<string, unknown>>();
@@ -164,7 +165,7 @@ function buildProductPutBody(current: any, novos: { nome: string; valor: string 
   const body: Record<string, unknown> = {
     sku: current?.sku,
     nome: current?.nome,
-    nomeProdutoPai: pick('nomeProdutoPai'),
+    nomeProdutoPai: novaNome ?? pick('nomeProdutoPai'),
     fabricante: pick('fabricante'),
     precoCusto: pick('precoCusto'),
     precoDe: pick('precoDe'),
@@ -365,7 +366,7 @@ export function registerWakeRoutes(app: express.Express, { verifyFirebaseToken }
                 }).catch(() => { /* já existe globalmente — segue */ });
               }
             }
-            const body = buildProductPutBody(current, prod.atributos);
+            const body = buildProductPutBody(current, prod.atributos, prod.nome);
             await fbitsFetch(token, 'PUT', `/produtos/${id}${q}`, body);
             steps.atributos = 'ok';
           } catch (e: any) { steps.atributos = e?.message ?? 'erro'; }

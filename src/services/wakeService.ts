@@ -30,6 +30,7 @@ export interface WakeNormalizedProduct {
 export interface WakePushProduct {
   produtoId: string;
   sku?: string;
+  nome?: string;
   informacaoId?: number;
   descricaoHtml?: string;
   seoTitle?: string;
