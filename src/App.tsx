@@ -208,6 +208,7 @@ export default function App() {
   // Auth State
   const [user, setUser] = useState<User | null>(null);
   const [credits, setCredits] = useState<number>(0);
+  const [hasContentAgent, setHasContentAgent] = useState<boolean>(false);
   // Per-action credit costs loaded from the read-only Firestore doc `config/credits`.
   const [creditCosts, setCreditCosts] = useState<Record<string, number>>({});
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -324,7 +325,10 @@ export default function App() {
           // Listener em tempo real para manter o saldo sempre atualizado
           unsubscribeCredits?.();
           unsubscribeCredits = onSnapshot(userRef, (snap) => {
-            if (snap.exists()) setCredits(snap.data().credits ?? 0);
+            if (snap.exists()) {
+              setCredits(snap.data().credits ?? 0);
+              setHasContentAgent(snap.data().modules?.contentAgent === true);
+            }
           });
 
           // Load admin-controlled per-action credit costs (read-only config doc)
@@ -2265,16 +2269,18 @@ Retorne APENAS um JSON válido no seguinte formato:
           </button>
         </div>
 
-        {/* Workspace switcher */}
-        <div className="px-3 mb-3">
-          <button
-            onClick={() => { setWorkspace('content'); setIsSidebarOpen(false); }}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 bg-white/5 hover:bg-white/10 transition-colors"
-            title="Trocar para a Agente de Conteúdo"
-          >
-            <FileText className="w-4 h-4" /> Ir para Agente de Conteúdo
-          </button>
-        </div>
+        {/* Workspace switcher — only when Content Agent module is enabled */}
+        {hasContentAgent && (
+          <div className="px-3 mb-3">
+            <button
+              onClick={() => { setWorkspace('content'); setIsSidebarOpen(false); }}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 bg-white/5 hover:bg-white/10 transition-colors"
+              title="Trocar para a Agente de Conteúdo"
+            >
+              <FileText className="w-4 h-4" /> Ir para Agente de Conteúdo
+            </button>
+          </div>
+        )}
 
         <nav className="mt-2 px-3 flex flex-col gap-1 flex-1">
           <button
@@ -3056,6 +3062,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               setExistingCategories(existingCategories.map(c => c.id === categoryId ? updatedCategory : c));
             }}
             uid={user?.uid ?? ''}
+            hasContentAgent={hasContentAgent}
             getIdToken={async () => {
               const currentUser = auth.currentUser;
               if (!currentUser) throw new Error('Não autenticado');

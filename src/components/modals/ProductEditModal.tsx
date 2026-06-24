@@ -221,11 +221,12 @@ interface ProductEditModalProps {
   templates?: Template[];
   selectedTemplateId?: string;
   uid?: string;
+  hasContentAgent?: boolean;
   getIdToken?: () => Promise<string>;
   onVideoGenerated?: (productId: string, videoUrl: string, jobId: string) => void;
 }
 
-export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal, templates = [], selectedTemplateId, uid = '', getIdToken, onVideoGenerated }: ProductEditModalProps) {
+export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal, templates = [], selectedTemplateId, uid = '', hasContentAgent = false, getIdToken, onVideoGenerated }: ProductEditModalProps) {
   // Template escolhido para (re)gerar a descrição. Inicia no template padrão da
   // aplicação e pode ser trocado pelo usuário antes de gerar novamente.
   const [chosenTemplateId, setChosenTemplateId] = useState<string>(selectedTemplateId || defaultTemplate.id);
@@ -1112,7 +1113,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                              <Layout className="w-4 h-4 text-blue-600" />
                              Descrição Comercial (HTML)
                           </label>
-                          {reusableArticles.length > 0 && (
+                          {hasContentAgent && reusableArticles.length > 0 && (
                             <select
                               defaultValue=""
                               onChange={(e) => { if (e.target.value) { insertArticle(e.target.value); e.target.value = ''; } }}
