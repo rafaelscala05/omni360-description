@@ -217,6 +217,26 @@ async function debitCreditsAdmin(
   });
 }
 
+async function refundCreditsAdmin(
+  uid: string,
+  cost: number,
+  meta: { productName?: string; userName?: string } = {},
+): Promise<void> {
+  const userRef = adminDb.collection('users').doc(uid);
+  const logRef = adminDb.collection('users').doc(uid).collection('credit_logs').doc();
+  await adminDb.runTransaction(async (tx) => {
+    tx.update(userRef, { credits: FieldValue.increment(cost) });
+    tx.set(logRef, {
+      action: 'video_generation_refund',
+      label: 'Estorno — Geração de Vídeo',
+      cost: +cost,
+      productName: meta.productName ?? '',
+      userName: meta.userName ?? '',
+      createdAt: now(),
+    });
+  });
+}
+
 function formatAttributes(attributes: Record<string, string>): string {
   const entries = Object.entries(attributes ?? {}).filter(([, v]) => v && v.trim());
   if (entries.length === 0) return '(nenhum atributo estruturado informado — extraia da descrição e da imagem)';
@@ -304,33 +324,65 @@ Retorne APENAS um JSON válido neste formato exato (sem markdown, sem texto extr
   return parsed;
 }
 
+const VEO_RETRYABLE_PATTERNS = /high load|high demand|try again|overload|quota/i;
+const VEO_MAX_RETRIES = 3;
+// Backoff delays in ms: 30s, 60s, 120s
+const VEO_RETRY_DELAYS = [30_000, 60_000, 120_000];
+
+function isVeoRetryable(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return VEO_RETRYABLE_PATTERNS.test(msg);
+}
+
 // Runs a Veo generateVideos operation and polls until it completes, returning
-// the produced video bytes.
+// the produced video bytes. Retries up to VEO_MAX_RETRIES times on transient
+// errors (high load, quota) with exponential backoff.
 async function runVeoOperation(
   ai: GoogleGenAI,
   jobId: string,
   label: string,
   request: Parameters<GoogleGenAI['models']['generateVideos']>[0],
 ): Promise<string> {
-  let operation = await ai.models.generateVideos(request);
+  let lastError: unknown;
 
-  // Poll until done — each Veo shot typically takes 2–5 minutes
-  let pollCount = 0;
-  while (!operation.done) {
-    await new Promise((r) => setTimeout(r, 15000));
-    operation = await ai.operations.getVideosOperation({ operation });
-    pollCount++;
-    console.log(`[video] polling jobId=${jobId} ${label} attempt=${pollCount} done=${operation.done}`);
+  for (let attempt = 0; attempt <= VEO_MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      const delay = VEO_RETRY_DELAYS[attempt - 1];
+      console.log(`[video] ${label} retry attempt=${attempt} after=${delay / 1000}s jobId=${jobId}`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+
+    try {
+      let operation = await ai.models.generateVideos(request);
+
+      // Poll until done — each Veo shot typically takes 2–5 minutes
+      let pollCount = 0;
+      while (!operation.done) {
+        await new Promise((r) => setTimeout(r, 15000));
+        operation = await ai.operations.getVideosOperation({ operation });
+        pollCount++;
+        console.log(`[video] polling jobId=${jobId} ${label} attempt=${pollCount} done=${operation.done}`);
+      }
+
+      if (operation.error) {
+        throw new Error(String((operation.error as any).message ?? operation.error));
+      }
+
+      const videoBytes = operation.response?.generatedVideos?.[0]?.video?.videoBytes;
+      if (!videoBytes) throw new Error(`Veo não retornou bytes de vídeo (${label})`);
+      console.log(`[video] ${label} done jobId=${jobId} polls=${pollCount}`);
+      return videoBytes;
+    } catch (err) {
+      lastError = err;
+      if (attempt < VEO_MAX_RETRIES && isVeoRetryable(err)) {
+        console.warn(`[video] ${label} transient error, will retry (${attempt + 1}/${VEO_MAX_RETRIES}) jobId=${jobId}:`, (err as Error).message);
+        continue;
+      }
+      throw err;
+    }
   }
 
-  if (operation.error) {
-    throw new Error(String((operation.error as any).message ?? operation.error));
-  }
-
-  const videoBytes = operation.response?.generatedVideos?.[0]?.video?.videoBytes;
-  if (!videoBytes) throw new Error(`Veo não retornou bytes de vídeo (${label})`);
-  console.log(`[video] ${label} done jobId=${jobId} polls=${pollCount}`);
-  return videoBytes;
+  throw lastError;
 }
 
 async function runVideoJob(
@@ -340,6 +392,8 @@ async function runVideoJob(
   script: VideoScript,
   imageBase64: string,
   mimeType: string,
+  creditCost: number,
+  meta: { productName?: string; userName?: string } = {},
 ): Promise<void> {
   const jobRef = adminDb.collection('users').doc(uid).collection('videoJobs').doc(jobId);
   console.log(`[video] runVideoJob start uid=${uid} jobId=${jobId} productId=${productId}`);
@@ -420,24 +474,23 @@ async function runVideoJob(
     await mixAudio(combinedPath, narrationPath, MUSIC_PATH, finalPath);
     console.log(`[video] audio mixed jobId=${jobId}`);
 
-    const finalBuffer = await fs.readFile(finalPath);
-
-    // Upload to Firebase Storage.
+    // Upload to Firebase Storage by streaming from disk — avoids loading the
+    // entire video into a Node.js Buffer, which is the main memory spike.
     // Uniform bucket-level access is enabled, so object ACLs are not allowed.
     // We embed a Firebase download token in the object metadata —
     // this produces the same permanent URL format the client SDK uses.
     const bucket = adminStorage.bucket(STORAGE_BUCKET);
-    const filePath = `product-videos/${uid}/${productId}/${jobId}.mp4`;
-    const file = bucket.file(filePath);
+    const storagePath = `product-videos/${uid}/${productId}/${jobId}.mp4`;
     const downloadToken = crypto.randomUUID();
-    await file.save(finalBuffer, {
+    await bucket.upload(finalPath, {
+      destination: storagePath,
       contentType: 'video/mp4',
       metadata: {
         cacheControl: 'public, max-age=31536000',
         metadata: { firebaseStorageDownloadTokens: downloadToken },
       },
     });
-    const videoUrl = `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/${encodeURIComponent(filePath)}?alt=media&token=${downloadToken}`;
+    const videoUrl = `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
 
     console.log(`[video] uploaded jobId=${jobId} url=${videoUrl}`);
     await jobRef.update({ status: 'done', videoUrl, updatedAt: now() });
@@ -452,6 +505,12 @@ async function runVideoJob(
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[video] runVideoJob failed jobId=${jobId}:`, err);
     await jobRef.update({ status: 'error', error: message, updatedAt: now() }).catch(() => {});
+    if (creditCost > 0) {
+      await refundCreditsAdmin(uid, creditCost, meta).catch((refundErr) => {
+        console.error(`[video] refund failed uid=${uid} jobId=${jobId}:`, refundErr);
+      });
+      console.log(`[video] refunded ${creditCost} credits uid=${uid} jobId=${jobId}`);
+    }
   } finally {
     await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
   }
@@ -505,10 +564,8 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
         return res.status(400).json({ error: 'productId, script e imageUrl são obrigatórios' });
       }
 
-      await debitCreditsAdmin(decoded.uid, CREDIT_ACTIONS.videoGeneration, {
-        productName,
-        userName: decoded.name ?? decoded.email,
-      });
+      const creditMeta = { productName, userName: decoded.name ?? decoded.email ?? '' };
+      const creditCost = await debitCreditsAdmin(decoded.uid, CREDIT_ACTIONS.videoGeneration, creditMeta);
 
       const jobRef = adminDb
         .collection('users')
@@ -530,7 +587,7 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
       const { base64, mimeType } = await fetchImageAsBase64(imageUrl);
 
       // Fire and forget — does not block the HTTP response
-      runVideoJob(decoded.uid, jobId, productId, script, base64, mimeType);
+      runVideoJob(decoded.uid, jobId, productId, script, base64, mimeType, creditCost, creditMeta);
 
       res.json({ jobId });
     } catch (err) {
