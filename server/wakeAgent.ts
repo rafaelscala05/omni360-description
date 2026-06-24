@@ -80,19 +80,24 @@ export interface WakeNormalizedProduct {
 async function aggregateProduct(token: string, p: any): Promise<WakeNormalizedProduct> {
   const id = String(p.produtoId ?? p.produtoVarianteId);
   const q = `?tipoIdentificador=ProdutoId`;
+  // The images endpoint rejects ProdutoId (422); it requires Sku or
+  // ProdutoVarianteId. We key it by produtoVarianteId, always present here.
+  const varianteId = String(p.produtoVarianteId ?? id);
   const [informacoes, categorias, imagens, seo, metaTag] = await Promise.all([
     fbitsFetch<any[]>(token, 'GET', `/produtos/${id}/informacoes${q}`).catch(() => []),
     fbitsFetch<any[]>(token, 'GET', `/produtos/${id}/categorias${q}`).catch(() => []),
-    fbitsFetch<any[]>(token, 'GET', `/produtos/${id}/imagens${q}`).catch(() => []),
+    fbitsFetch<any[]>(token, 'GET', `/produtos/${varianteId}/imagens?tipoIdentificador=ProdutoVarianteId`).catch(() => []),
     fbitsFetch<any>(token, 'GET', `/produtos/${id}/seo${q}`).catch(() => null),
     fbitsFetch<any[]>(token, 'GET', `/produtos/${id}/seo/metaTag${q}`).catch(() => []),
   ]);
   const infoBloco = Array.isArray(informacoes)
     ? (informacoes.find((i) => i?.tipoInformacao === 'Informacoes') ?? informacoes[0])
     : undefined;
+  // The SEO GET returns metatags (lowercase); the dedicated metaTag endpoint
+  // returns the same array. Read both, lowercase-keyed.
   const metaByName = (n: string): string | undefined =>
     (Array.isArray(metaTag) ? metaTag.find((m) => (m?.name ?? '').toLowerCase() === n)?.content : undefined)
-    ?? (Array.isArray(seo?.metaTags) ? seo.metaTags.find((m: any) => (m?.name ?? '').toLowerCase() === n)?.content : undefined);
+    ?? (Array.isArray(seo?.metatags) ? seo.metatags.find((m: any) => (m?.name ?? '').toLowerCase() === n)?.content : undefined);
   return {
     produtoId: id,
     sku: p.sku ?? '',
@@ -135,6 +140,56 @@ export interface WakePushResult {
   sku?: string;
   ok: boolean;
   steps: Record<'descricao' | 'seo' | 'atributos' | 'imagens', string>;
+}
+
+// Builds a valid body for PUT /produtos from the current product, echoing the
+// fields the API requires/validates and swapping in the merged attribute list.
+// Existing attributes are preserved; new values override matching names.
+function buildProductPutBody(current: any, novos: { nome: string; valor: string }[]): Record<string, unknown> {
+  // Preserve the full existing attribute objects (tipoAtributo, isFiltro, …);
+  // only override the value when a new attribute matches by name.
+  const byName = new Map<string, Record<string, unknown>>();
+  for (const a of (Array.isArray(current?.atributos) ? current.atributos : [])) {
+    if (a?.nome) byName.set(a.nome, { ...a, exibir: a.exibir ?? true });
+  }
+  // Wake rejects attributes that don't already exist as a definition, and the
+  // product PUT is atomic — one unknown attribute aborts the whole update. So we
+  // only update values for attributes the product already has.
+  for (const a of novos) {
+    const existing = byName.get(a.nome);
+    if (!existing) continue;
+    byName.set(a.nome, { ...existing, valor: a.valor, exibir: true });
+  }
+
+  const pick = (k: string) => (current?.[k] !== undefined && current?.[k] !== null ? current[k] : undefined);
+  const body: Record<string, unknown> = {
+    sku: current?.sku,
+    nome: current?.nome,
+    nomeProdutoPai: pick('nomeProdutoPai'),
+    fabricante: pick('fabricante'),
+    precoCusto: pick('precoCusto'),
+    precoDe: pick('precoDe'),
+    precoPor: current?.precoPor, // required
+    fatorMultiplicadorPreco: pick('fatorMultiplicadorPreco'),
+    peso: pick('peso'),
+    altura: pick('altura'),
+    comprimento: pick('comprimento'),
+    largura: pick('largura'),
+    ean: pick('ean'),
+    prazoEntrega: pick('prazoEntrega'),
+    freteGratis: pick('freteGratis'),
+    exibirSite: pick('exibirSite'),
+    marketplace: pick('marketplace'),
+    spot: pick('spot'),
+    condicao: pick('condicao'),
+    garantia: pick('garantia'),
+    estoque: Array.isArray(current?.estoque) ? current.estoque : [],
+    listaAtacado: Array.isArray(current?.listaAtacado) ? current.listaAtacado : [],
+    listaAtributos: Array.from(byName.values()),
+  };
+  // Drop undefined keys so we never send nulls the API may reject.
+  Object.keys(body).forEach((k) => { if (body[k] === undefined) delete body[k]; });
+  return body;
 }
 
 interface Deps {
@@ -231,23 +286,38 @@ export function registerWakeRoutes(app: express.Express, { verifyFirebaseToken }
       const resultados: WakePushResult[] = [];
 
       for (const prod of produtos) {
-        const id = prod.produtoId;
-        const q = `?tipoIdentificador=ProdutoId`;
         const steps: WakePushResult['steps'] = { descricao: 'skip', seo: 'skip', atributos: 'skip', imagens: 'skip' };
+
+        // Writes are keyed by SKU — the only identifier accepted across all
+        // write endpoints (produto, informacoes, seo, imagens). ProdutoId is
+        // rejected by the images endpoint, so we never use it here.
+        if (!prod.sku) {
+          resultados.push({ produtoId: prod.produtoId, sku: prod.sku, ok: false, steps: {
+            descricao: 'Sem SKU', seo: 'Sem SKU', atributos: 'Sem SKU', imagens: 'Sem SKU',
+          } });
+          continue;
+        }
+        const id = encodeURIComponent(prod.sku);
+        const q = `?tipoIdentificador=Sku`;
 
         // 1) Description -> product information block
         if (prod.campos.descricao && prod.descricaoHtml) {
           try {
-            let infoId = prod.informacaoId;
-            if (!infoId) {
-              const infos = await fbitsFetch<any[]>(token, 'GET', `/produtos/${id}/informacoes${q}`).catch(() => []);
-              infoId = (Array.isArray(infos)
-                ? (infos.find((i) => i?.tipoInformacao === 'Informacoes') ?? infos[0])
-                : undefined)?.informacaoId;
-            }
+            // Fetch the current info block to preserve its title/visibility and
+            // resolve the id when the import didn't capture it.
+            const infos = await fbitsFetch<any[]>(token, 'GET', `/produtos/${id}/informacoes${q}`).catch(() => []);
+            const block = Array.isArray(infos)
+              ? (infos.find((i) => i?.informacaoId === prod.informacaoId)
+                 ?? infos.find((i) => i?.tipoInformacao === 'Informacoes')
+                 ?? infos[0])
+              : undefined;
+            const infoId = block?.informacaoId ?? prod.informacaoId;
             if (infoId) {
               await fbitsFetch(token, 'PUT', `/produtos/${id}/informacoes/${infoId}${q}`, {
-                texto: prod.descricaoHtml, exibirSite: true, tipoInformacao: 'Informacoes',
+                titulo: block?.titulo ?? 'Informações',
+                texto: prod.descricaoHtml,
+                exibirSite: block?.exibirSite ?? true,
+                tipoInformacao: block?.tipoInformacao ?? 'Informacoes',
               });
               steps.descricao = 'ok';
             } else {
@@ -256,23 +326,35 @@ export function registerWakeRoutes(app: express.Express, { verifyFirebaseToken }
           } catch (e: any) { steps.descricao = e?.message ?? 'erro'; }
         }
 
-        // 2) SEO + metatags
+        // 2) SEO + metatags — PUT (update/replace) to avoid duplicating metatags.
+        // Preserve the existing tagCanonical by reading the current SEO first.
         if (prod.campos.seo && (prod.seoTitle || prod.seoDescription || prod.seoKeywords)) {
           try {
             const metaTags: { name: string; content: string }[] = [];
             if (prod.seoDescription) metaTags.push({ name: 'description', content: prod.seoDescription });
             if (prod.seoKeywords) metaTags.push({ name: 'keywords', content: prod.seoKeywords });
-            await fbitsFetch(token, 'POST', `/produtos/${id}/seo${q}`, { title: prod.seoTitle, metaTags });
+            const currentSeo = await fbitsFetch<any>(token, 'GET', `/produtos/${id}/seo${q}`).catch(() => null);
+            await fbitsFetch(token, 'PUT', `/produtos/${id}/seo${q}`, {
+              tagCanonical: currentSeo?.tagCanonical ?? undefined,
+              title: prod.seoTitle,
+              metaTags,
+            });
             steps.seo = 'ok';
           } catch (e: any) { steps.seo = e?.message ?? 'erro'; }
         }
 
-        // 3) Attributes -> PUT product
+        // 3) Attributes -> full-product PUT. The product PUT is atomic and
+        // requires a valid body (price, stock, etc.), so we fetch the current
+        // product and echo its fields, only swapping in the merged attributes.
         if (prod.campos.atributos && prod.atributos?.length) {
           try {
-            await fbitsFetch(token, 'PUT', `/produtos/${id}${q}`, {
-              listaAtributos: prod.atributos.map((a) => ({ nome: a.nome, valor: a.valor, exibir: true })),
-            });
+            // Fetch stock + attributes so the atomic PUT body stays valid.
+            const current = await fbitsFetch<any>(
+              token, 'GET',
+              `/produtos/${id}${q}&camposAdicionais=Estoque&camposAdicionais=Atributo`,
+            );
+            const body = buildProductPutBody(current, prod.atributos);
+            await fbitsFetch(token, 'PUT', `/produtos/${id}${q}`, body);
             steps.atributos = 'ok';
           } catch (e: any) { steps.atributos = e?.message ?? 'erro'; }
         }
