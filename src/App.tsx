@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'react';
-import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, FileSpreadsheet, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3 } from 'lucide-react';
+import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, FileSpreadsheet, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3, Plug } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import LoginLanding from './components/LoginLanding';
 import ReactQuill from 'react-quill-new';
@@ -18,6 +18,10 @@ import CreditPurchaseModal from './components/modals/CreditPurchaseModal';
 import { Category, Product, AttributeValue, getProductStatusFlags, ProductModalTab } from './types/models';
 import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate } from './services/productService';
 import { fetchCategories, generateCategoryHierarchy, flattenHierarchy, getEffectiveAttributes, addAttributeToCategory } from './services/categoryService';
+import IntegrationsView from './components/integrations/IntegrationsView';
+import type { WakePushFields } from './components/integrations/WakeConnector';
+import type { WakeNormalizedProduct, WakePushProduct } from './services/wakeService';
+import { fetchAndProcessImage } from './utils/imageUtils';
 import { generateGrounded, parseJsonResponse } from './services/aiService';
 import { CREDIT_ACTIONS, resolveCreditCost, type CreditAction } from './credits';
 import {
@@ -152,9 +156,12 @@ export default function App() {
   // State
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
+  // Mirror of products for deterministic merges during multi-page Wake imports.
+  const productsRef = useRef<Product[]>([]);
+  useEffect(() => { productsRef.current = products; }, [products]);
   const [originalHeaders, setOriginalHeaders] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [mainView, setMainView] = useState<'products' | 'categories'>('products');
+  const [mainView, setMainView] = useState<'products' | 'categories' | 'history' | 'integrations'>('products');
   // Top-level workspace: the Product agent (this App) or the Content agency module.
   const [workspace, setWorkspace] = useState<'product' | 'content'>('product');
   const [exportModel, setExportModel] = useState<'standard' | 'tinyerp'>('standard');
@@ -1305,6 +1312,129 @@ export default function App() {
     });
   };
 
+  // --- Wake Commerce integration ---------------------------------------------
+
+  // Removes undefined values recursively so the payload is Firestore-safe.
+  const stripUndefined = (obj: any): any => {
+    if (obj === null || obj === undefined) return null;
+    if (Array.isArray(obj)) return obj.map(stripUndefined);
+    if (typeof obj === 'object') {
+      const out: any = {};
+      Object.keys(obj).forEach((k) => { if (obj[k] !== undefined) out[k] = stripUndefined(obj[k]); });
+      return out;
+    }
+    return obj;
+  };
+
+  // Imports a batch of Wake products: merges by produtoId, maps fields, and saves
+  // a raw snapshot to users/{uid}/products/{id}/wake_versions before any enrichment.
+  const handleWakeImport = async (incoming: WakeNormalizedProduct[]) => {
+    if (!user) { alert('Faça login para importar produtos da Wake.'); return; }
+    const uid = user.uid;
+    const next = [...productsRef.current];
+    const backups: { id: string; raw: unknown }[] = [];
+
+    for (const w of incoming) {
+      const mapped: Partial<Product> = stripUndefined({
+        'Código (SKU)': w.sku || undefined,
+        'Descrição': w.nome || undefined,
+        'Descrição complementar': w.descricaoHtml || undefined,
+        'Título SEO': w.seoTitle || undefined,
+        'Descrição SEO': w.seoDescription || undefined,
+        'Palavras chave SEO': w.seoKeywords || undefined,
+        'Categoria': w.categorias[0] || undefined,
+        'Preço': w.precoPor,
+        'Preço promocional': w.precoDe,
+        'GTIN/EAN': w.ean || undefined,
+        _wakeProductId: w.produtoId,
+        _wakeInformacaoId: w.informacaoId,
+      });
+      w.imagens.slice(0, 6).forEach((url, i) => { (mapped as any)[`URL imagem ${i + 1}`] = url; });
+
+      const idx = next.findIndex((p) => p._wakeProductId === w.produtoId);
+      if (idx >= 0) {
+        next[idx] = { ...next[idx], ...mapped, _isDirty: true };
+        backups.push({ id: next[idx]._id, raw: w.raw });
+      } else {
+        const newId = `wake_${w.produtoId}_${Date.now()}`;
+        next.push({
+          _id: newId,
+          _statusDescricao: w.descricaoHtml ? 'Descrição original' : 'Sem descrição',
+          _statusSEO: w.seoTitle ? 'Gerado por IA' : 'Sem SEO',
+          _isDirty: true,
+          _selectedImage: w.imagens[0] || '',
+          ...mapped,
+        } as Product);
+        backups.push({ id: newId, raw: w.raw });
+      }
+    }
+
+    productsRef.current = next;
+    setProducts(next);
+    setHasUnsavedChanges(true);
+
+    // Backup/versioning snapshots (append-only history).
+    for (const b of backups) {
+      try {
+        const versionRef = doc(collection(db, `users/${uid}/products/${b.id}/wake_versions`));
+        await setDoc(versionRef, {
+          source: 'wake-import',
+          raw: stripUndefined(b.raw),
+          importedAt: new Date().toISOString(),
+        });
+      } catch (e) {
+        console.warn('Falha ao salvar backup da versão Wake:', e);
+      }
+    }
+  };
+
+  // Builds the push payload from selected products that originated from Wake.
+  const buildWakePushPayload = async (campos: WakePushFields): Promise<WakePushProduct[]> => {
+    const fromWake = productsRef.current.filter((p) => p._wakeProductId);
+    const selected = selectedIds.size > 0 ? fromWake.filter((p) => selectedIds.has(p._id)) : fromWake;
+    const out: WakePushProduct[] = [];
+
+    for (const p of selected) {
+      let imagensBase64: WakePushProduct['imagensBase64'];
+      if (campos.imagens && p._ambientImages?.length) {
+        imagensBase64 = [];
+        for (const url of p._ambientImages) {
+          try {
+            const { base64Data, mimeType } = await fetchAndProcessImage(url);
+            const b64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+            imagensBase64.push({ base64: b64, formato: mimeType.toLowerCase().includes('png') ? 'PNG' : 'JPG' });
+          } catch (e) {
+            console.warn('Falha ao converter imagem para envio Wake:', e);
+          }
+        }
+      }
+
+      const atributos = Object.entries(p.attributes ?? {})
+        .map(([nome, rawAv]) => {
+          const av = rawAv as AttributeValue;
+          return {
+            nome,
+            valor: Array.isArray(av?.value) ? av.value.join(', ') : String(av?.value ?? ''),
+          };
+        })
+        .filter((a) => a.valor.trim());
+
+      out.push({
+        produtoId: p._wakeProductId!,
+        sku: p['Código (SKU)'],
+        informacaoId: p._wakeInformacaoId,
+        descricaoHtml: p['Descrição complementar'],
+        seoTitle: p['Título SEO'],
+        seoDescription: p['Descrição SEO'],
+        seoKeywords: p['Palavras chave SEO'],
+        atributos: campos.atributos ? atributos : undefined,
+        imagensBase64,
+        campos,
+      });
+    }
+    return out;
+  };
+
   const handleSaveImages = (productId: string, selectedImage: string, ambientImages: string[], tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number }) => {
     setProducts(prev => {
       const updated = [...prev];
@@ -2167,9 +2297,15 @@ Retorne APENAS um JSON válido no seguinte formato:
           </button>
         </nav>
 
-        <div className="p-4 mt-auto mb-2 border-t border-white/5 mx-3">
-          <button 
-            onClick={() => { setIsTemplateModalOpen(true); setIsSidebarOpen(false); }} 
+        <div className="p-4 mt-auto mb-2 border-t border-white/5 mx-3 flex flex-col gap-1">
+          <button
+            onClick={() => { setMainView('integrations'); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${mainView === 'integrations' ? 'bg-[#1e293b] text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+          >
+            <Plug className="w-4 h-4" /> Integrações
+          </button>
+          <button
+            onClick={() => { setIsTemplateModalOpen(true); setIsSidebarOpen(false); }}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 font-medium hover:text-white hover:bg-white/5 transition-colors"
           >
             <Settings className="w-4 h-4" /> Configurações
@@ -2264,6 +2400,8 @@ Retorne APENAS um JSON válido no seguinte formato:
             </div>
           ) : mainView === 'history' ? (
             renderHistoryView()
+          ) : mainView === 'integrations' ? (
+            <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} />
           ) : (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 h-full flex flex-col max-w-[1600px] mx-auto">
                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-5 gap-4 flex-shrink-0">

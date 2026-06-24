@@ -113,6 +113,12 @@ service cloud.firestore {
         allow write: if isOwner(userId);
       }
 
+      // Integration secrets (e.g. Wake token). Written only server-side via the
+      // Admin SDK, which bypasses these rules. Clients are fully denied.
+      match /integration_secrets/{docId} {
+        allow read, write: if false;
+      }
+
       match /credit_logs/{logId} {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId);
@@ -132,13 +138,18 @@ service cloud.firestore {
                      hasRequiredProductFields() && 
                      isValidProduct() && 
                      request.resource.data.ownerId == userId;
-        allow update: if isOwner(userId) && 
-                     isValidProduct() && 
+        allow update: if isOwner(userId) &&
+                     isValidProduct() &&
                      request.resource.data.ownerId == resource.data.ownerId &&
                      (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt);
         allow delete: if isOwner(userId);
+
+        // Wake import backups / versioning (append-only history owned by the user).
+        match /wake_versions/{versionId} {
+          allow read, write: if isOwner(userId);
+        }
       }
-      
+
       match /templates/{templateId} {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) &&
