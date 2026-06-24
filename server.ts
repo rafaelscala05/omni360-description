@@ -11,6 +11,7 @@ import dotenv from "dotenv";
 import { adminDb, adminAuth, FieldValue } from "./server/firebaseAdmin";
 import { registerContentRoutes, startContentScheduler } from "./server/contentAgent";
 import { registerVideoRoutes } from "./server/videoAgent";
+import { registerWakeRoutes } from "./server/wakeAgent";
 
 // Do NOT override: in production the App Hosting environment (apphosting.yaml /
 // Secret Manager) must take precedence over any stray .env bundled in the image.
@@ -169,6 +170,7 @@ async function startServer() {
   // Agência de Criação de Conteúdo (Alfred) — server-side AI pipeline + scheduler.
   registerContentRoutes(app, { verifyFirebaseToken, uploadsDir });
   registerVideoRoutes(app, { verifyFirebaseToken });
+  registerWakeRoutes(app, { verifyFirebaseToken });
 
   // API routes FIRST (image upload — all AI generation now runs client-side via Firebase AI Logic)
 

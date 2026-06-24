@@ -144,6 +144,11 @@ export interface Product {
   _videoSelectedImage?: string;
   _videoError?: string;
 
+  // Wake Commerce integration
+  _wakeProductId?: string;      // produtoId na Wake — chave de merge
+  _wakeInformacaoId?: number;   // informacaoId do bloco de descrição na Wake
+  _wakeVersionId?: string;      // id da última versão salva em wake_versions
+
   // Modulo 1 / 3
   categoryId?: string; // FK to actual Category
   categoryPath?: string[]; // cache of path
