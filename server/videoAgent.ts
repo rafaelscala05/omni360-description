@@ -401,7 +401,7 @@ async function runVideoJob(
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), `video-${jobId}-`));
 
   try {
-    await jobRef.update({ status: 'processing', updatedAt: now() });
+    await jobRef.update({ status: 'processing', currentShot: 0, totalShots: SHOTS.length, step: 'shot', updatedAt: now() });
 
     // Pre-process the product image to a 9:16 portrait to seed the first shot.
     const inputBuffer = Buffer.from(imageBase64, 'base64');
@@ -428,6 +428,9 @@ async function runVideoJob(
         styleLine,
         rulesLine,
       ].join('\n');
+
+      // Write progress before starting each shot so the client can show "Shot X de 4"
+      await jobRef.update({ currentShot: i, step: 'shot', updatedAt: now() });
 
       console.log(`[video] shot ${i + 1}/${SHOTS.length} (${shot.key}) generate jobId=${jobId}`);
       const videoBytes = await runVeoOperation(ai, jobId, `shot#${i + 1}`, {
@@ -456,11 +459,13 @@ async function runVideoJob(
     }
 
     // Concatenate the muted shots into one continuous clip.
+    await jobRef.update({ currentShot: SHOTS.length, step: 'concat', updatedAt: now() });
     const combinedPath = path.join(workDir, 'combined.mp4');
     await concatVideos(segmentPaths, workDir, combinedPath);
     console.log(`[video] concatenated ${segmentPaths.length} shots jobId=${jobId}`);
 
     // Build a single continuous narration from the per-shot voice-over lines.
+    await jobRef.update({ step: 'tts', updatedAt: now() });
     const narrationText = SHOTS.map((s) => script[s.key].narracao.trim())
       .filter(Boolean)
       .join(' ');
@@ -470,6 +475,7 @@ async function runVideoJob(
     console.log(`[video] narration synthesized jobId=${jobId} chars=${narrationText.length}`);
 
     // Mix voice-over + background music over the muted video.
+    await jobRef.update({ step: 'mixing', updatedAt: now() });
     const finalPath = path.join(workDir, 'final.mp4');
     await mixAudio(combinedPath, narrationPath, MUSIC_PATH, finalPath);
     console.log(`[video] audio mixed jobId=${jobId}`);

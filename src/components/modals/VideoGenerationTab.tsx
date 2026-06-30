@@ -6,7 +6,7 @@ import {
 import type { Product } from '../../types/models';
 import {
   generateVideoScript, startVideoJob, listenVideoJob,
-  type VideoScript, type VideoJob,
+  type VideoScript, type VideoJob, type VideoJobStep,
 } from '../../services/videoService';
 
 export interface VideoGenerationTabProps {
@@ -424,26 +424,7 @@ export default function VideoGenerationTab({
           </h2>
 
           {(!job || job.status === 'queued' || job.status === 'processing') && (
-            <div className="flex flex-col items-center py-12 gap-6 text-center">
-              <div className="relative w-16 h-16">
-                <div className="absolute inset-0 rounded-full border-4 border-violet-100" />
-                <div className="absolute inset-0 rounded-full border-4 border-violet-600 border-t-transparent animate-spin" />
-                <Video className="absolute inset-0 m-auto w-6 h-6 text-violet-600" />
-              </div>
-              <div>
-                <p className="font-bold text-slate-800 text-lg mb-1">
-                  {job?.status === 'processing' ? 'Gerando seu vídeo...' : 'Na fila de processamento...'}
-                </p>
-                <p className="text-sm text-slate-500 max-w-sm mx-auto leading-relaxed">
-                  O Veo 3.1 está gerando o vídeo vertical de ~30s em 4 trechos (Início, Meio e Fim) e montando a narração + música. Esse processo pode levar de 10 a 20 minutos.
-                  Você pode fechar essa janela — o vídeo ficará disponível aqui quando pronto.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 px-4 py-2 bg-violet-50 rounded-xl text-sm text-violet-700 font-medium">
-                <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
-                {job?.status === 'processing' ? 'Processando no servidor' : 'Aguardando processamento'}
-              </div>
-            </div>
+            <VideoProgressDisplay job={job ?? null} />
           )}
 
           {job?.status === 'done' && job.videoUrl && (
@@ -516,6 +497,104 @@ export default function VideoGenerationTab({
           )}
         </section>
       )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Progress helpers
+// ────────────────────────────────────────────────────────────────────────────
+
+const STEP_PROGRESS: Record<VideoJobStep, number> = {
+  shot: 0,   // dynamic — computed from currentShot
+  concat: 82,
+  tts: 88,
+  mixing: 94,
+};
+
+const STEP_LABELS: Record<VideoJobStep, string> = {
+  shot: '',   // overridden below
+  concat: 'Montando o vídeo...',
+  tts: 'Gerando narração...',
+  mixing: 'Mixando áudio e música...',
+};
+
+function computeVideoProgress(job: VideoJob | null): { pct: number; label: string } {
+  if (!job || job.status === 'queued') return { pct: 2, label: 'Aguardando na fila...' };
+  if (job.status === 'done') return { pct: 100, label: 'Concluído!' };
+
+  const step = job.step;
+  const total = job.totalShots ?? 4;
+  const current = job.currentShot ?? 0;
+
+  if (!step || step === 'shot') {
+    // Each shot spans 20% of the bar (0-80%)
+    const pct = Math.min(5 + Math.round((current / total) * 75), 79);
+    const label = `Gerando trecho ${current + 1} de ${total}...`;
+    return { pct, label };
+  }
+
+  return { pct: STEP_PROGRESS[step], label: STEP_LABELS[step] };
+}
+
+function VideoProgressDisplay({ job }: { job: VideoJob | null }) {
+  const { pct, label } = computeVideoProgress(job);
+  const total = job?.totalShots ?? 4;
+  const current = job?.currentShot ?? 0;
+  const isShot = !job?.step || job?.step === 'shot';
+
+  return (
+    <div className="flex flex-col items-center py-10 gap-6 text-center">
+      <div className="relative w-16 h-16">
+        <div className="absolute inset-0 rounded-full border-4 border-violet-100" />
+        <div className="absolute inset-0 rounded-full border-4 border-violet-600 border-t-transparent animate-spin" />
+        <Video className="absolute inset-0 m-auto w-6 h-6 text-violet-600" />
+      </div>
+
+      <div className="w-full max-w-sm space-y-3">
+        <p className="font-bold text-slate-800 text-lg">
+          {job?.status === 'processing' ? 'Gerando seu vídeo...' : 'Na fila de processamento...'}
+        </p>
+
+        {/* Progress bar */}
+        <div className="space-y-1.5">
+          <div className="flex justify-between text-xs text-slate-500 font-medium">
+            <span>{label}</span>
+            <span>{pct}%</span>
+          </div>
+          <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-violet-500 to-purple-500 transition-all duration-700"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Shot dots — only while generating shots */}
+        {isShot && job?.status === 'processing' && (
+          <div className="flex justify-center gap-2 pt-1">
+            {Array.from({ length: total }).map((_, i) => (
+              <div
+                key={i}
+                className={cn(
+                  'w-2.5 h-2.5 rounded-full transition-all',
+                  i < current ? 'bg-violet-500' : i === current ? 'bg-violet-400 animate-pulse' : 'bg-slate-200',
+                )}
+              />
+            ))}
+          </div>
+        )}
+
+        <p className="text-xs text-slate-400 leading-relaxed">
+          O Veo 3.1 gera 4 trechos sequencialmente e monta narração + música. Esse processo pode levar de 10 a 20 minutos.
+          Você pode fechar essa janela — o vídeo ficará disponível aqui quando pronto.
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2 px-4 py-2 bg-violet-50 rounded-xl text-sm text-violet-700 font-medium">
+        <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
+        {job?.status === 'processing' ? 'Processando no servidor' : 'Aguardando processamento'}
+      </div>
     </div>
   );
 }

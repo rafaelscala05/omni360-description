@@ -24,6 +24,7 @@ import type { WakeNormalizedProduct, WakePushProduct } from './services/wakeServ
 import { fetchAndProcessImage } from './utils/imageUtils';
 import { generateGrounded, parseJsonResponse } from './services/aiService';
 import { CREDIT_ACTIONS, resolveCreditCost, type CreditAction } from './credits';
+import { listenVideoJob, type VideoJob } from './services/videoService';
 import {
   analyticsSetUser,
   trackLogin,
@@ -215,6 +216,8 @@ export default function App() {
     productName: string;
     videoUrl: string;
   } | null>(null);
+  const [activeVideoJob, setActiveVideoJob] = useState<VideoJob | null>(null);
+  const activeVideoJobUnsubRef = useRef<(() => void) | null>(null);
   // Per-action credit costs loaded from the read-only Firestore doc `config/credits`.
   const [creditCosts, setCreditCosts] = useState<Record<string, number>>({});
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -514,6 +517,21 @@ export default function App() {
       } catch (err) {
         console.error('Erro ao persistir jobId do vídeo:', err);
       }
+      // Start global listener so sidebar widget always shows progress
+      activeVideoJobUnsubRef.current?.();
+      activeVideoJobUnsubRef.current = listenVideoJob(user.uid, jobId, (j) => {
+        setActiveVideoJob(j);
+        if (j.status === 'done' || j.status === 'error') {
+          activeVideoJobUnsubRef.current?.();
+          activeVideoJobUnsubRef.current = null;
+          if (j.status === 'done') {
+            // Keep widget visible briefly so user sees "Concluído!", then clear after 8s
+            setTimeout(() => setActiveVideoJob(null), 8000);
+          } else {
+            setActiveVideoJob(null);
+          }
+        }
+      });
     }
   };
 
@@ -2356,6 +2374,63 @@ Retorne APENAS um JSON válido no seguinte formato:
             <RefreshCw className="w-4 h-4" /> Histórico
           </button>
         </nav>
+
+        {/* Production queue widget — visible whenever a video job is active */}
+        {activeVideoJob && (() => {
+          const step = activeVideoJob.step;
+          const total = activeVideoJob.totalShots ?? 4;
+          const current = activeVideoJob.currentShot ?? 0;
+          const isShot = !step || step === 'shot';
+          let pct = 2;
+          let stepLabel = 'Aguardando na fila...';
+          if (activeVideoJob.status === 'done') {
+            pct = 100; stepLabel = 'Concluído!';
+          } else if (step === 'concat') {
+            pct = 82; stepLabel = 'Montando vídeo...';
+          } else if (step === 'tts') {
+            pct = 88; stepLabel = 'Gerando narração...';
+          } else if (step === 'mixing') {
+            pct = 94; stepLabel = 'Mixando áudio...';
+          } else if (activeVideoJob.status === 'processing') {
+            pct = Math.min(5 + Math.round((current / total) * 75), 79);
+            stepLabel = `Trecho ${current + 1} de ${total}`;
+          }
+          const productName = products.find(p => p._id === activeVideoJob.productId)?.['Descrição'] ?? 'Produto';
+          return (
+            <div className="mx-3 mb-3 p-3 rounded-xl bg-[#1e293b] border border-white/10">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 rounded-full bg-violet-400 animate-pulse shrink-0" />
+                <span className="text-[11px] font-bold text-violet-300 uppercase tracking-wide">Fila de Produção</span>
+              </div>
+              <p className="text-xs text-slate-300 font-medium truncate mb-2" title={productName}>{productName}</p>
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] text-slate-400">
+                  <span>{stepLabel}</span>
+                  <span>{pct}%</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-slate-700 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-violet-500 to-purple-500 transition-all duration-700"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                {isShot && activeVideoJob.status === 'processing' && (
+                  <div className="flex gap-1 pt-1">
+                    {Array.from({ length: total }).map((_, i) => (
+                      <div
+                        key={i}
+                        className={`flex-1 h-1 rounded-full transition-all ${i < current ? 'bg-violet-500' : i === current ? 'bg-violet-400 animate-pulse' : 'bg-slate-600'}`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+              {activeVideoJob.status === 'done' && (
+                <p className="text-[10px] text-green-400 font-bold mt-1.5">✓ Vídeo pronto!</p>
+              )}
+            </div>
+          );
+        })()}
 
         <div className="p-4 mt-auto mb-2 border-t border-white/5 mx-3 flex flex-col gap-1">
           <button
