@@ -7,8 +7,8 @@ import 'react-quill-new/dist/quill.snow.css';
 import 'react-quill-new/dist/quill.bubble.css';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from './firebase';
-import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, doc, writeBatch, getDocs, setDoc, getDoc, deleteDoc, getDocFromServer, runTransaction, onSnapshot } from 'firebase/firestore';
+import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, User } from 'firebase/auth';
+import { collection, doc, writeBatch, getDocs, setDoc, getDoc, deleteDoc, getDocFromServer, runTransaction, onSnapshot, updateDoc } from 'firebase/firestore';
 const ImageSearchModal = lazy(() => import('./components/ImageSearchModal'));
 const CategoryManager = lazy(() => import('./components/categories/CategoryManager'));
 const CategoryImportModal = lazy(() => import('./components/modals/CategoryImportModal'));
@@ -476,6 +476,20 @@ export default function App() {
       console.error("Login error:", error);
       alert("Erro ao fazer login com o Google.");
     }
+  };
+
+  const handleEmailLogin = async (email: string, password: string) => {
+    await signInWithEmailAndPassword(auth, email, password);
+    trackLogin('email');
+  };
+
+  const handleEmailRegister = async (email: string, password: string) => {
+    await createUserWithEmailAndPassword(auth, email, password);
+    trackLogin('email_register');
+  };
+
+  const handlePasswordReset = async (email: string) => {
+    await sendPasswordResetEmail(auth, email);
   };
 
   const handleLogout = async () => {
@@ -2096,7 +2110,14 @@ Retorne APENAS um JSON válido no seguinte formato:
   }
 
   if (!user) {
-    return <LoginLanding onLogin={handleLogin} />;
+    return (
+      <LoginLanding
+        onGoogleLogin={handleLogin}
+        onEmailLogin={handleEmailLogin}
+        onEmailRegister={handleEmailRegister}
+        onPasswordReset={handlePasswordReset}
+      />
+    );
   }
 
   
