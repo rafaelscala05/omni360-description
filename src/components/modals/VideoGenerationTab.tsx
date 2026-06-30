@@ -16,6 +16,7 @@ export interface VideoGenerationTabProps {
   onVideoGenerated: (productId: string, videoUrl: string, jobId: string) => void;
   onVideoJobStarted?: (productId: string, jobId: string) => void;
   onNavigateToTab: (tab: 'imagem' | 'ia') => void;
+  activeVideoProductId?: string;
 }
 
 type Stage = 'prereqs' | 'select-image' | 'script' | 'generate';
@@ -51,7 +52,7 @@ const SHOT_FIELDS: Array<{
 const cn = (...classes: (string | boolean | undefined)[]) => classes.filter(Boolean).join(' ');
 
 export default function VideoGenerationTab({
-  product, uid, getIdToken, onVideoGenerated, onVideoJobStarted, onNavigateToTab,
+  product, uid, getIdToken, onVideoGenerated, onVideoJobStarted, onNavigateToTab, activeVideoProductId,
 }: VideoGenerationTabProps) {
   const hasDescription = !!product['Descrição complementar']?.trim();
   const hasSeoTitle = !!product['Título SEO']?.trim();
@@ -163,6 +164,28 @@ export default function VideoGenerationTab({
     'generate': 'Gerar Vídeo',
   };
   const stageOrder: Stage[] = ['prereqs', 'select-image', 'script', 'generate'];
+
+  const anotherVideoActive = activeVideoProductId && activeVideoProductId !== product._id && !product._videoJobId;
+
+  if (anotherVideoActive) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center gap-4 animate-in fade-in duration-300">
+        <div className="w-14 h-14 bg-violet-100 rounded-2xl flex items-center justify-center">
+          <Video className="w-7 h-7 text-violet-500" />
+        </div>
+        <div className="max-w-sm">
+          <p className="font-bold text-slate-800 text-lg mb-2">Vídeo em produção</p>
+          <p className="text-sm text-slate-500 leading-relaxed">
+            Já estamos com um vídeo em produção. Aguarde a conclusão para iniciar a produção de outro vídeo.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 px-4 py-2 bg-violet-50 rounded-xl text-sm text-violet-700 font-medium">
+          <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
+          Processando no servidor
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-300">

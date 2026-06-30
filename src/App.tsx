@@ -3094,6 +3094,7 @@ Retorne APENAS um JSON válido no seguinte formato:
       {previewProduct && (
         <Suspense fallback={<div className="fixed inset-0 z-[100] bg-slate-50 flex items-center justify-center"><RefreshCw className="w-7 h-7 animate-spin text-[#004ac6]" /></div>}>
           <ProductEditModal
+            key={previewProduct._id}
             product={previewProduct}
             categories={existingCategories}
             templates={templates}
@@ -3117,6 +3118,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             uid={user?.uid ?? ''}
             hasContentAgent={hasContentAgent}
             hasVideoModule={hasVideoModule}
+            activeVideoProductId={products.find(p => p._videoStatus === 'queued' || p._videoStatus === 'processing')?._id}
             getIdToken={async () => {
               const currentUser = auth.currentUser;
               if (!currentUser) throw new Error('Não autenticado');

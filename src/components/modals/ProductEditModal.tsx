@@ -223,12 +223,13 @@ interface ProductEditModalProps {
   uid?: string;
   hasContentAgent?: boolean;
   hasVideoModule?: boolean;
+  activeVideoProductId?: string;
   getIdToken?: () => Promise<string>;
   onVideoGenerated?: (productId: string, videoUrl: string, jobId: string) => void;
   onVideoJobStarted?: (productId: string, jobId: string) => void;
 }
 
-export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal, templates = [], selectedTemplateId, uid = '', hasContentAgent = false, hasVideoModule = false, getIdToken, onVideoGenerated, onVideoJobStarted }: ProductEditModalProps) {
+export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal, templates = [], selectedTemplateId, uid = '', hasContentAgent = false, hasVideoModule = false, activeVideoProductId, getIdToken, onVideoGenerated, onVideoJobStarted }: ProductEditModalProps) {
   // Template escolhido para (re)gerar a descrição. Inicia no template padrão da
   // aplicação e pode ser trocado pelo usuário antes de gerar novamente.
   const [chosenTemplateId, setChosenTemplateId] = useState<string>(selectedTemplateId || defaultTemplate.id);
@@ -1043,6 +1044,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                       product={editedProduct}
                       uid={uid}
                       getIdToken={getIdToken}
+                      activeVideoProductId={activeVideoProductId}
                       onVideoGenerated={(productId, videoUrl, jobId) => {
                         setEditedProduct((prev) => ({
                           ...prev,
