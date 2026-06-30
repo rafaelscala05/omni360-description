@@ -20,6 +20,7 @@ interface ImageSearchModalProps {
   getCreditCost: (key: string) => number;
   consumeCredit: (action: CreditAction, productName?: string, sku?: string) => Promise<boolean>;
   existingCategories?: Category[];
+  defaultAspectRatio?: string;
 }
 
 const IMAGE_TITLES = ['Produto Ambientado', 'Produto em Uso', 'Escala e Tamanho'];
@@ -106,9 +107,10 @@ Return ONLY valid JSON with this exact structure, no markdown, no explanations:
   return { prompts: parsed.prompts, productDescription: parsed.productDescription || '' };
 }
 
-export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave, credits, getCreditCost, consumeCredit, existingCategories = [] }: ImageSearchModalProps) {
+export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave, credits, getCreditCost, consumeCredit, existingCategories = [], defaultAspectRatio = '1:1' }: ImageSearchModalProps) {
   const [step, setStep] = useState<'search' | 'ambient'>('search');
   const [selectedImageUrl, setSelectedImageUrl] = useState<string>('');
+  const [aspectRatio, setAspectRatio] = useState<string>(defaultAspectRatio);
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -140,7 +142,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
   const callGenerateImage = async (base64Data: string, mimeType: string, prompt: string, _imageIndex: number, retries = 2): Promise<string | null> => {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        return await generateImage(base64Data, mimeType, prompt);
+        return await generateImage(base64Data, mimeType, prompt, aspectRatio);
       } catch (error: any) {
         const isQuotaError = /429|RESOURCE_EXHAUSTED|quota|limite/.test(error.message || "");
         if (isQuotaError && attempt < retries) {
@@ -469,6 +471,30 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
                   <ImageIcon className="w-4 h-4" />
                   Gerar Ambientações
                 </button>
+              </div>
+
+              {/* Aspect Ratio Selector */}
+              <div className="pt-3 border-t border-gray-100">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold text-gray-700">Formato:</span>
+                  {['1:1', '4:3', '3:4', '16:9', '9:16'].map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setAspectRatio(r)}
+                      className={`px-2.5 py-1 rounded-lg border text-xs font-bold transition-all ${
+                        aspectRatio === r
+                          ? 'border-blue-500 bg-blue-600 text-white'
+                          : 'border-gray-200 text-gray-600 hover:border-gray-300 bg-white'
+                      }`}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                  <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                    Padrão configurável em Configurações → Imagens
+                  </span>
+                </div>
               </div>
             </div>
           )}

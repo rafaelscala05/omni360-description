@@ -142,7 +142,7 @@ export function extractImage(result: GenerateContentResult): string | null {
 }
 
 // Generates an ambient/lifestyle image from an input image + prompt. Returns a data URL.
-export async function generateImage(base64Data: string, mimeType: string, prompt: string): Promise<string> {
+export async function generateImage(base64Data: string, mimeType: string, prompt: string, aspectRatio: string = '1:1'): Promise<string> {
   const model = getGenerativeModel(ai, {
     model: IMAGE_MODEL,
     generationConfig: {
@@ -152,10 +152,11 @@ export async function generateImage(base64Data: string, mimeType: string, prompt
   });
 
   const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+  const fullPrompt = `${prompt}\n\nOutput the image in ${aspectRatio} aspect ratio.`;
   const result = await withRetry(() =>
     model.generateContent([
       { inlineData: { mimeType: mimeType || 'image/jpeg', data: cleanBase64 } },
-      { text: prompt },
+      { text: fullPrompt },
     ] as any),
   );
 

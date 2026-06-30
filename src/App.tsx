@@ -750,6 +750,9 @@ export default function App() {
   const [enableCategoryImagePrompts, setEnableCategoryImagePrompts] = useState<boolean>(
     () => localStorage.getItem('enableCategoryImagePrompts') === 'true'
   );
+  const [defaultAspectRatio, setDefaultAspectRatio] = useState<string>(
+    () => localStorage.getItem('defaultAspectRatio') ?? '1:1'
+  );
 
   // Save templates to local storage whenever they change
   useEffect(() => {
@@ -759,6 +762,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('enableCategoryImagePrompts', String(enableCategoryImagePrompts));
   }, [enableCategoryImagePrompts]);
+
+  useEffect(() => {
+    localStorage.setItem('defaultAspectRatio', defaultAspectRatio);
+  }, [defaultAspectRatio]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -3274,6 +3281,35 @@ Retorne APENAS um JSON válido no seguinte formato:
 
                 {settingsTab === 'images' && (
                   <div className="max-w-2xl space-y-6">
+                    {/* Aspect Ratio Padrão */}
+                    <div>
+                      <label className="block text-sm font-bold text-gray-900 mb-1">Aspecto Ratio Padrão das Imagens</label>
+                      <p className="text-xs text-gray-500 mb-3">Define o formato padrão das fotos ambientadas geradas. Pode ser alterado individualmente em cada geração.</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {[
+                          { value: '1:1', label: '1:1 — Quadrado', desc: 'Amazon, Shopee, Mercado Livre' },
+                          { value: '4:3', label: '4:3 — Paisagem', desc: 'Marketplace tradicional, banners' },
+                          { value: '3:4', label: '3:4 — Retrato', desc: 'Mobile-first, Pinterest, Moda' },
+                          { value: '16:9', label: '16:9 — Wide', desc: 'Banners, hero images' },
+                          { value: '9:16', label: '9:16 — Vertical', desc: 'Stories, Reels, TikTok' },
+                        ].map(({ value, label, desc }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setDefaultAspectRatio(value)}
+                            className={`p-3 rounded-xl border-2 text-left transition-all ${
+                              defaultAspectRatio === value
+                                ? 'border-blue-500 bg-blue-50'
+                                : 'border-gray-200 hover:border-gray-300 bg-white'
+                            }`}
+                          >
+                            <p className={`text-sm font-bold ${defaultAspectRatio === value ? 'text-blue-700' : 'text-gray-900'}`}>{label}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <hr className="border-gray-100" />
                     <div className="flex items-center gap-3">
                       <input
                         type="checkbox"
@@ -3582,6 +3618,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             getCreditCost={getCreditCost}
             consumeCredit={consumeCredit}
             existingCategories={existingCategories}
+            defaultAspectRatio={defaultAspectRatio}
           />
         </Suspense>
       )}
