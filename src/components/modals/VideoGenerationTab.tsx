@@ -14,6 +14,7 @@ export interface VideoGenerationTabProps {
   uid: string;
   getIdToken: () => Promise<string>;
   onVideoGenerated: (productId: string, videoUrl: string, jobId: string) => void;
+  onVideoJobStarted?: (productId: string, jobId: string) => void;
   onNavigateToTab: (tab: 'imagem' | 'ia') => void;
 }
 
@@ -50,7 +51,7 @@ const SHOT_FIELDS: Array<{
 const cn = (...classes: (string | boolean | undefined)[]) => classes.filter(Boolean).join(' ');
 
 export default function VideoGenerationTab({
-  product, uid, getIdToken, onVideoGenerated, onNavigateToTab,
+  product, uid, getIdToken, onVideoGenerated, onVideoJobStarted, onNavigateToTab,
 }: VideoGenerationTabProps) {
   const hasDescription = !!product['Descrição complementar']?.trim();
   const hasSeoTitle = !!product['Título SEO']?.trim();
@@ -147,6 +148,7 @@ export default function VideoGenerationTab({
         imageUrl: selectedImage,
       });
       setJobId(id);
+      onVideoJobStarted?.(product._id, id);
       setStage('generate');
     } catch (err) {
       setJobError(err instanceof Error ? err.message : 'Erro ao iniciar geração');

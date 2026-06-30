@@ -222,11 +222,13 @@ interface ProductEditModalProps {
   selectedTemplateId?: string;
   uid?: string;
   hasContentAgent?: boolean;
+  hasVideoModule?: boolean;
   getIdToken?: () => Promise<string>;
   onVideoGenerated?: (productId: string, videoUrl: string, jobId: string) => void;
+  onVideoJobStarted?: (productId: string, jobId: string) => void;
 }
 
-export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal, templates = [], selectedTemplateId, uid = '', hasContentAgent = false, getIdToken, onVideoGenerated }: ProductEditModalProps) {
+export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal, templates = [], selectedTemplateId, uid = '', hasContentAgent = false, hasVideoModule = false, getIdToken, onVideoGenerated, onVideoJobStarted }: ProductEditModalProps) {
   // Template escolhido para (re)gerar a descrição. Inicia no template padrão da
   // aplicação e pode ser trocado pelo usuário antes de gerar novamente.
   const [chosenTemplateId, setChosenTemplateId] = useState<string>(selectedTemplateId || defaultTemplate.id);
@@ -489,15 +491,15 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
 
   const statusFlags = getProductStatusFlags(editedProduct);
 
-  const tabs = [
+  const tabs: Array<{ id: ProductModalTab; label: string; icon: React.ElementType; done: boolean }> = [
     { id: 'geral', label: 'Geral', icon: Layout, done: false },
     { id: 'atributos', label: 'Atributos', icon: Tag, done: statusFlags.atributosGerados },
     // { id: 'tecnico', label: 'Técnico', icon: Cpu, done: statusFlags.enriquecido }, // Aba técnica desativada temporariamente
     { id: 'ia', label: 'Conteúdo', icon: Sparkles, done: statusFlags.descricaoGerada },
     { id: 'imagem', label: 'Imagens', icon: ImageIcon, done: statusFlags.imagensGeradas },
-    { id: 'video', label: 'Vídeo', icon: Video, done: !!editedProduct._videoUrl },
+    ...(hasVideoModule ? [{ id: 'video' as ProductModalTab, label: 'Vídeo', icon: Video, done: !!editedProduct._videoUrl }] : []),
     { id: 'simular', label: 'Simular Produto', icon: Eye, done: false },
-  ] as const;
+  ];
 
   return (
     <div className="fixed inset-0 z-[100] bg-slate-50 flex flex-col animate-in fade-in duration-300">
@@ -1050,6 +1052,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                         }));
                         onVideoGenerated?.(productId, videoUrl, jobId);
                       }}
+                      onVideoJobStarted={onVideoJobStarted}
                       onNavigateToTab={(tab) => setActiveTab(tab)}
                     />
                   ) : (

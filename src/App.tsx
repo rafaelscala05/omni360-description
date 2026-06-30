@@ -209,6 +209,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [credits, setCredits] = useState<number>(0);
   const [hasContentAgent, setHasContentAgent] = useState<boolean>(false);
+  const [hasVideoModule, setHasVideoModule] = useState<boolean>(false);
   // Per-action credit costs loaded from the read-only Firestore doc `config/credits`.
   const [creditCosts, setCreditCosts] = useState<Record<string, number>>({});
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -328,6 +329,7 @@ export default function App() {
             if (snap.exists()) {
               setCredits(snap.data().credits ?? 0);
               setHasContentAgent(snap.data().modules?.contentAgent === true);
+              setHasVideoModule(snap.data().modules?.video === true);
             }
           });
 
@@ -490,6 +492,24 @@ export default function App() {
 
   const handlePasswordReset = async (email: string) => {
     await sendPasswordResetEmail(auth, email);
+  };
+
+  const handleVideoJobStarted = async (productId: string, jobId: string) => {
+    setProducts((prev) =>
+      prev.map((p) =>
+        p._id === productId
+          ? { ...p, _videoJobId: jobId, _videoStatus: 'queued' as const }
+          : p,
+      ),
+    );
+    if (user) {
+      try {
+        const productRef = doc(db, `users/${user.uid}/products/${productId}`);
+        await updateDoc(productRef, { _videoJobId: jobId, _videoStatus: 'queued' });
+      } catch (err) {
+        console.error('Erro ao persistir jobId do vídeo:', err);
+      }
+    }
   };
 
   const handleLogout = async () => {
@@ -3084,11 +3104,13 @@ Retorne APENAS um JSON válido no seguinte formato:
             }}
             uid={user?.uid ?? ''}
             hasContentAgent={hasContentAgent}
+            hasVideoModule={hasVideoModule}
             getIdToken={async () => {
               const currentUser = auth.currentUser;
               if (!currentUser) throw new Error('Não autenticado');
               return currentUser.getIdToken();
             }}
+            onVideoJobStarted={handleVideoJobStarted}
             onVideoGenerated={(productId, videoUrl, jobId) => {
               setProducts((prev) =>
                 prev.map((p) =>
