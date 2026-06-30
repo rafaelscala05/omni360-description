@@ -141,7 +141,52 @@ export function extractImage(result: GenerateContentResult): string | null {
   return null;
 }
 
+// Center-crops a data URL to the given aspect ratio (e.g. "3:4") using an offscreen canvas.
+// This guarantees the correct ratio regardless of what the generative model returns.
+function cropToAspectRatio(dataUrl: string, aspectRatio: string): Promise<string> {
+  const [wStr, hStr] = aspectRatio.split(':');
+  const targetW = parseInt(wStr, 10);
+  const targetH = parseInt(hStr, 10);
+
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const srcW = img.naturalWidth;
+      const srcH = img.naturalHeight;
+      const targetRatio = targetW / targetH;
+      const srcRatio = srcW / srcH;
+
+      let cropW: number, cropH: number, cropX: number, cropY: number;
+      if (srcRatio > targetRatio) {
+        cropH = srcH;
+        cropW = srcH * targetRatio;
+        cropX = (srcW - cropW) / 2;
+        cropY = 0;
+      } else {
+        cropW = srcW;
+        cropH = srcW / targetRatio;
+        cropX = 0;
+        cropY = (srcH - cropH) / 2;
+      }
+
+      const canvas = document.createElement('canvas');
+      const maxDim = 1024;
+      const scale = Math.min(maxDim / cropW, maxDim / cropH, 1);
+      canvas.width = Math.round(cropW * scale);
+      canvas.height = Math.round(cropH * scale);
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(dataUrl); return; }
+      ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => reject(new Error('Falha ao carregar imagem para recorte'));
+    img.src = dataUrl;
+  });
+}
+
 // Generates an ambient/lifestyle image from an input image + prompt. Returns a data URL.
+// The output is center-cropped to the requested aspectRatio to guarantee the correct dimensions.
 export async function generateImage(base64Data: string, mimeType: string, prompt: string, aspectRatio: string = '1:1'): Promise<string> {
   const model = getGenerativeModel(ai, {
     model: IMAGE_MODEL,
@@ -152,15 +197,17 @@ export async function generateImage(base64Data: string, mimeType: string, prompt
   });
 
   const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-  const fullPrompt = `${prompt}\n\nOutput the image in ${aspectRatio} aspect ratio.`;
   const result = await withRetry(() =>
     model.generateContent([
       { inlineData: { mimeType: mimeType || 'image/jpeg', data: cleanBase64 } },
-      { text: fullPrompt },
+      { text: prompt },
     ] as any),
   );
 
   const imageData = extractImage(result);
   if (!imageData) throw new Error('O modelo não retornou uma imagem. Tente novamente.');
-  return `data:image/png;base64,${imageData}`;
+  const raw = `data:image/png;base64,${imageData}`;
+
+  if (aspectRatio === '1:1') return raw;
+  return cropToAspectRatio(raw, aspectRatio);
 }
