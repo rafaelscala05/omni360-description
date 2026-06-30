@@ -210,6 +210,11 @@ export default function App() {
   const [credits, setCredits] = useState<number>(0);
   const [hasContentAgent, setHasContentAgent] = useState<boolean>(false);
   const [hasVideoModule, setHasVideoModule] = useState<boolean>(false);
+  const [videoReadyNotification, setVideoReadyNotification] = useState<{
+    productId: string;
+    productName: string;
+    videoUrl: string;
+  } | null>(null);
   // Per-action credit costs loaded from the read-only Firestore doc `config/credits`.
   const [creditCosts, setCreditCosts] = useState<Record<string, number>>({});
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -3112,13 +3117,18 @@ Retorne APENAS um JSON válido no seguinte formato:
             }}
             onVideoJobStarted={handleVideoJobStarted}
             onVideoGenerated={(productId, videoUrl, jobId) => {
-              setProducts((prev) =>
-                prev.map((p) =>
+              setProducts((prev) => {
+                const updated = prev.map((p) =>
                   p._id === productId
                     ? { ...p, _videoUrl: videoUrl, _videoJobId: jobId, _videoStatus: 'done' as const }
                     : p,
-                ),
-              );
+                );
+                const prod = prev.find(p => p._id === productId);
+                const name = prod?.['Descrição'] ?? prod?.['Título SEO'] ?? 'Produto';
+                setVideoReadyNotification({ productId, productName: name, videoUrl });
+                setTimeout(() => setVideoReadyNotification(null), 12000);
+                return updated;
+              });
             }}
           />
         </Suspense>
@@ -3598,6 +3608,44 @@ Retorne APENAS um JSON válido no seguinte formato:
       <div className="fixed bottom-1 right-2 z-40 text-[10px] text-slate-400 pointer-events-none select-none">
         build {BUILD_VERSION}
       </div>
+
+      {/* Toast: Vídeo pronto */}
+      {videoReadyNotification && (
+        <div className="fixed bottom-6 right-6 z-[200] max-w-sm w-full animate-in slide-in-from-bottom-4 duration-300">
+          <div className="bg-white border border-green-200 rounded-2xl shadow-xl p-4 flex items-start gap-3">
+            <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center shrink-0">
+              <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.069A1 1 0 0121 8.883v6.234a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-gray-900">Vídeo pronto!</p>
+              <p className="text-xs text-gray-500 mt-0.5 truncate">{videoReadyNotification.productName}</p>
+              <button
+                onClick={() => {
+                  const prod = products.find(p => p._id === videoReadyNotification.productId);
+                  if (prod) {
+                    setPreviewProduct(prod);
+                    setPreviewInitialTab('video');
+                  }
+                  setVideoReadyNotification(null);
+                }}
+                className="mt-2 text-xs font-bold text-violet-600 hover:text-violet-800 transition-colors"
+              >
+                Ver vídeo →
+              </button>
+            </div>
+            <button
+              onClick={() => setVideoReadyNotification(null)}
+              className="text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   );
