@@ -20,7 +20,7 @@ export interface VideoScript {
 }
 
 export type VideoJobStatus = 'queued' | 'processing' | 'done' | 'error';
-export type VideoJobStep = 'shot' | 'concat' | 'tts' | 'mixing';
+export type VideoJobStep = 'shot' | 'concat' | 'tts' | 'mixing' | 'uploading';
 
 export interface VideoJob {
   jobId: string;

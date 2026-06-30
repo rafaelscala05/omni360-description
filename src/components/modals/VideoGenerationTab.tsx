@@ -506,17 +506,19 @@ export default function VideoGenerationTab({
 // ────────────────────────────────────────────────────────────────────────────
 
 const STEP_PROGRESS: Record<VideoJobStep, number> = {
-  shot: 0,   // dynamic — computed from currentShot
+  shot: 0,        // dynamic — computed from currentShot
   concat: 82,
   tts: 88,
   mixing: 94,
+  uploading: 97,
 };
 
 const STEP_LABELS: Record<VideoJobStep, string> = {
-  shot: '',   // overridden below
+  shot: '',       // overridden below
   concat: 'Montando o vídeo...',
   tts: 'Gerando narração...',
   mixing: 'Mixando áudio e música...',
+  uploading: 'Enviando vídeo...',
 };
 
 function computeVideoProgress(job: VideoJob | null): { pct: number; label: string } {
@@ -528,9 +530,9 @@ function computeVideoProgress(job: VideoJob | null): { pct: number; label: strin
   const current = job.currentShot ?? 0;
 
   if (!step || step === 'shot') {
-    // Each shot spans 20% of the bar (0-80%)
+    // Each shot spans ~20% of the bar (range 5-80%)
     const pct = Math.min(5 + Math.round((current / total) * 75), 79);
-    const label = `Gerando trecho ${current + 1} de ${total}...`;
+    const label = `Trecho ${current + 1} de ${total} — aguarde 1 a 3 min`;
     return { pct, label };
   }
 

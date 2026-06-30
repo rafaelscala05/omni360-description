@@ -738,6 +738,28 @@ export default function App() {
         setLastSaved(new Date());
         setHasUnsavedChanges(false);
         if (!silent) alert(`${loadedProducts.length} produtos carregados com sucesso!`);
+
+        // Resume sidebar video job listener if an active job survived a page refresh.
+        // Only start if we don't already have an active listener (avoids double-sub).
+        if (!activeVideoJobUnsubRef.current) {
+          const activeProduct = loadedProducts.find(
+            p => (p._videoStatus === 'queued' || p._videoStatus === 'processing') && p._videoJobId,
+          );
+          if (activeProduct?._videoJobId) {
+            activeVideoJobUnsubRef.current = listenVideoJob(targetUid, activeProduct._videoJobId, (j) => {
+              setActiveVideoJob(j);
+              if (j.status === 'done' || j.status === 'error') {
+                activeVideoJobUnsubRef.current?.();
+                activeVideoJobUnsubRef.current = null;
+                if (j.status === 'done') {
+                  setTimeout(() => setActiveVideoJob(null), 8000);
+                } else {
+                  setActiveVideoJob(null);
+                }
+              }
+            });
+          }
+        }
       } else {
         if (!silent) alert("Nenhum produto encontrado na nuvem.");
       }
@@ -2391,9 +2413,11 @@ Retorne APENAS um JSON válido no seguinte formato:
             pct = 88; stepLabel = 'Gerando narração...';
           } else if (step === 'mixing') {
             pct = 94; stepLabel = 'Mixando áudio...';
+          } else if (step === 'uploading') {
+            pct = 97; stepLabel = 'Enviando vídeo...';
           } else if (activeVideoJob.status === 'processing') {
             pct = Math.min(5 + Math.round((current / total) * 75), 79);
-            stepLabel = `Trecho ${current + 1} de ${total}`;
+            stepLabel = `Trecho ${current + 1} de ${total} (~2 min)`;
           }
           const productName = products.find(p => p._id === activeVideoJob.productId)?.['Descrição'] ?? 'Produto';
           return (

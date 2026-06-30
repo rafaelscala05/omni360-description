@@ -480,6 +480,8 @@ async function runVideoJob(
     await mixAudio(combinedPath, narrationPath, MUSIC_PATH, finalPath);
     console.log(`[video] audio mixed jobId=${jobId}`);
 
+    await jobRef.update({ step: 'uploading', updatedAt: now() });
+
     // Upload to Firebase Storage by streaming from disk — avoids loading the
     // entire video into a Node.js Buffer, which is the main memory spike.
     // Uniform bucket-level access is enabled, so object ACLs are not allowed.
