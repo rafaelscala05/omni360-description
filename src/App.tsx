@@ -182,6 +182,7 @@ export default function App() {
     imagens: false,
     atributos: false,
   });
+  const [statusFilterMode, setStatusFilterMode] = useState<'esconder' | 'mostrar'>('esconder');
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   const [expandedParentIds, setExpandedParentIds] = useState<Set<string>>(new Set());
   
@@ -825,15 +826,23 @@ export default function App() {
       const matchesMarca = filterMarca ? p['Marca'] === filterMarca : true;
       const matchesCategoria = filterCategoria ? p['Categoria'] === filterCategoria : true;
 
-      // Status filters (AND): se ligado, esconde produtos que JÁ têm aquele dado gerado
-      if (statusFilters.descricao && flags.descricaoGerada) return false;
-      if (statusFilters.enriquecido && flags.enriquecido) return false;
-      if (statusFilters.imagens && flags.imagensGeradas) return false;
-      if (statusFilters.atributos && flags.atributosGerados) return false;
+      // Status filters (AND): modo "esconder" oculta produtos que JÁ têm aquele dado gerado;
+      // modo "mostrar" inverte e só mantém os que têm aquele dado gerado
+      if (statusFilterMode === 'esconder') {
+        if (statusFilters.descricao && flags.descricaoGerada) return false;
+        if (statusFilters.enriquecido && flags.enriquecido) return false;
+        if (statusFilters.imagens && flags.imagensGeradas) return false;
+        if (statusFilters.atributos && flags.atributosGerados) return false;
+      } else {
+        if (statusFilters.descricao && !flags.descricaoGerada) return false;
+        if (statusFilters.enriquecido && !flags.enriquecido) return false;
+        if (statusFilters.imagens && !flags.imagensGeradas) return false;
+        if (statusFilters.atributos && !flags.atributosGerados) return false;
+      }
 
       return matchesSearch && matchesMarca && matchesCategoria;
     });
-  }, [products, searchQuery, filterMarca, filterCategoria, statusFilters]);
+  }, [products, searchQuery, filterMarca, filterCategoria, statusFilters, statusFilterMode]);
 
   const paginatedProducts = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -2684,12 +2693,29 @@ Retorne APENAS um JSON válido no seguinte formato:
                                 />
                                 <div className="absolute left-0 mt-1.5 w-64 bg-white border border-slate-200 rounded-lg shadow-lg z-40 py-2 animate-in fade-in slide-in-from-top-1">
                                   <div className="flex items-center justify-between px-3.5 py-1.5">
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                                      Esconder produtos com
-                                    </span>
+                                    <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider">
+                                      <button
+                                        type="button"
+                                        onClick={() => setStatusFilterMode('esconder')}
+                                        className={`px-1.5 py-0.5 rounded transition-colors ${statusFilterMode === 'esconder' ? 'bg-[#004ac6] text-white' : 'text-slate-400 hover:text-slate-600'}`}
+                                      >
+                                        Esconder
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setStatusFilterMode('mostrar')}
+                                        className={`px-1.5 py-0.5 rounded transition-colors ${statusFilterMode === 'mostrar' ? 'bg-[#004ac6] text-white' : 'text-slate-400 hover:text-slate-600'}`}
+                                      >
+                                        Mostrar
+                                      </button>
+                                      <span className="text-slate-400 font-bold normal-case ml-0.5">produtos com</span>
+                                    </div>
                                     {activeStatusCount > 0 && (
                                       <button
-                                        onClick={() => setStatusFilters({ descricao: false, enriquecido: false, imagens: false, atributos: false })}
+                                        onClick={() => {
+                                          setStatusFilters({ descricao: false, enriquecido: false, imagens: false, atributos: false });
+                                          setStatusFilterMode('esconder');
+                                        }}
                                         className="text-[10px] font-bold text-[#004ac6] hover:underline"
                                       >
                                         Limpar
