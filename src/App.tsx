@@ -9,7 +9,7 @@ import ContentAgentPage from './marketing/pages/ContentAgentPage';
 import PricingPage from './marketing/pages/PricingPage';
 import CasesPage from './marketing/pages/CasesPage';
 import ContactPage from './marketing/pages/ContactPage';
-import LoginLanding from './components/LoginLanding';
+import AuthPage from './marketing/pages/AuthPage';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import 'react-quill-new/dist/quill.bubble.css';
@@ -3823,7 +3823,7 @@ Retorne APENAS um JSON válido no seguinte formato:
       <Route
         path="/entrar"
         element={user ? <Navigate to="/app" replace /> : (
-          <LoginLanding
+          <AuthPage
             onGoogleLogin={handleLogin}
             onEmailLogin={handleEmailLogin}
             onEmailRegister={handleEmailRegister}
