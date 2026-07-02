@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CheckCircle, Mail, Lock, Eye, EyeOff, ArrowLeft, Sparkles } from 'lucide-react';
-import logoAlfreds from '../assets/brand/logo-alfreds-produtos.png';
+import logoAlfreds from '../../assets/brand/logo-alfreds-produtos.png';
 import { THEMES } from '../theme';
 
 interface AuthPageProps {
