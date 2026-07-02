@@ -102,6 +102,14 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Leads do site de marketing (formulário de contato). Criação pública
+    // (sem autenticação), mas ninguém — nem o próprio autor — pode ler,
+    // atualizar ou apagar pelo cliente; leitura é só via console/Admin SDK.
+    match /leads/{id} {
+      allow create: if true;
+      allow read, update, delete: if false;
+    }
+
     match /users/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUser();
