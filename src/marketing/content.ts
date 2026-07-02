@@ -1,3 +1,8 @@
+import produtoCatalogo from '../assets/marketing/alfreds-produto-catalogo.png';
+import produtoEdicao from '../assets/marketing/alfreds-produto-edicao.png';
+import produtoImagem from '../assets/marketing/alfreds-produto-imagem.png';
+import produtoVideo from '../assets/marketing/alfreds-produto-video.png';
+
 export interface FeatureItem {
   title: string;
   description: string;
@@ -27,10 +32,10 @@ export const howItWorks = [
 ];
 
 export const productFeatures: FeatureItem[] = [
-  { title: 'Enriquecimento de dados', description: 'O agente busca GTIN/EAN, NCM, peso e dimensões reais e completa o cadastro por você.' },
-  { title: 'SEO automático', description: 'Título, descrição e palavras-chave otimizados para o Google, no seu tom de marca.' },
-  { title: 'Ambientação de imagens', description: 'Gera fotos realistas do produto em cenários profissionais e lifestyle.' },
-  { title: 'Geração de vídeo', description: 'Cria vídeos curtos do produto para acelerar a conversão.' },
+  { title: 'Enriquecimento de dados', description: 'O agente busca GTIN/EAN, NCM, peso e dimensões reais e completa o cadastro por você.', screenshot: produtoCatalogo },
+  { title: 'SEO automático', description: 'Título, descrição e palavras-chave otimizados para o Google, no seu tom de marca.', screenshot: produtoEdicao },
+  { title: 'Ambientação de imagens', description: 'Gera fotos realistas do produto em cenários profissionais e lifestyle.', screenshot: produtoImagem },
+  { title: 'Geração de vídeo', description: 'Cria vídeos curtos do produto para acelerar a conversão.', screenshot: produtoVideo },
   { title: 'Categorias e integrações', description: 'Organiza a árvore de categorias e sincroniza com a sua plataforma (ex.: Wake).' },
 ];
 
