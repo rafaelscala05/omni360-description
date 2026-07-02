@@ -151,7 +151,7 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
     return cats.map(cat => (
       <div key={cat.id} className="flex flex-col">
         <div
-          className={`flex items-center gap-2 p-2 rounded hover:bg-gray-100 cursor-pointer ${selectedCategory?.id === cat.id ? 'bg-blue-50 text-blue-600' : ''}`}
+          className={`flex items-center gap-2 p-2 rounded hover:bg-gray-100 cursor-pointer ${selectedCategory?.id === cat.id ? 'bg-orange-50 text-orange-600' : ''}`}
           style={{ paddingLeft: `${indent * 20 + 8}px` }}
           onClick={() => handleSelect(cat)}
         >
@@ -194,7 +194,7 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
             <Sparkles className="w-3.5 h-3.5" />
             <span>Sugestão IA</span>
           </button>
-          <button onClick={handleCreate} className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3 py-2 bg-[#004ac6] text-white rounded-lg text-xs font-semibold hover:bg-[#003ea8] transition-colors shadow-sm whitespace-nowrap">
+          <button onClick={handleCreate} className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3 py-2 bg-[#FF5B03] text-white rounded-lg text-xs font-semibold hover:bg-[#E14E00] transition-colors shadow-sm whitespace-nowrap">
             <Plus className="w-4 h-4" />
             <span>Nova Categoria</span>
           </button>
@@ -237,7 +237,7 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                         setEditForm(selectedCategory || {});
                         setIsEditing(true);
                       }}
-                      className="flex items-center gap-2 px-3 py-1.5 text-blue-600 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-100"
+                      className="flex items-center gap-2 px-3 py-1.5 text-orange-600 bg-orange-50 border border-orange-100 rounded-lg hover:bg-orange-100"
                     >
                       <Edit className="w-4 h-4" />
                       <span className="text-sm font-bold">Editar</span>
@@ -254,7 +254,7 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                           type="text"
                           value={editForm.name || ''}
                           onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500"
                         />
                       </div>
                       <div>
@@ -262,7 +262,7 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                         <select
                           value={editForm.parentId || ''}
                           onChange={(e) => setEditForm(prev => ({ ...prev, parentId: e.target.value || null }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500"
                         >
                           <option value="">-- Nenhuma (Raiz) --</option>
                           {categories.filter(c => c.id !== editForm.id).map(c => (
@@ -277,7 +277,7 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                           id="inherit"
                           checked={editForm.inheritParentAttributes ?? true}
                           onChange={(e) => setEditForm(prev => ({ ...prev, inheritParentAttributes: e.target.checked }))}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
                         />
                         <label htmlFor="inherit" className="text-sm text-gray-700">
                           Herdar atributos da categoria pai
@@ -302,7 +302,7 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                               };
                               setEditForm(prev => ({ ...prev, attributes: [...(prev.attributes || []), newAttr] }));
                             }}
-                            className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700"
+                            className="flex items-center gap-1 text-xs font-bold text-orange-600 hover:text-orange-700"
                           >
                             <Plus className="w-3 h-3" />
                             Adicionar Atributo
@@ -413,7 +413,7 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                         </button>
                         <button
                           onClick={handleSave}
-                          className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg font-bold"
+                          className="flex items-center gap-2 px-4 py-2 text-white bg-orange-600 hover:bg-orange-700 rounded-lg font-bold"
                         >
                           <Save className="w-4 h-4" />
                           Salvar

@@ -121,15 +121,15 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
       value={val}
       onChange={(e) => set(e.target.value)}
       placeholder={ph}
-      className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004ac6]/30 focus:border-[#004ac6] transition-all"
+      className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03] transition-all"
     />
   );
 
   return (
     <div className="max-w-2xl mx-auto">
       {/* Header */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0f172a] to-[#1e3a8a] p-6 mb-6 text-white shadow-lg">
-        <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-[#004ac6]/30 blur-2xl" />
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#141311] to-[#1e3a8a] p-6 mb-6 text-white shadow-lg">
+        <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-[#FF5B03]/30 blur-2xl" />
         <div className="relative flex items-center gap-3">
           <div className="bg-white/10 backdrop-blur p-2.5 rounded-2xl ring-1 ring-white/20">
             <Sparkles className="w-5 h-5" />
@@ -163,8 +163,8 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
             {step === 0 && (
               <div className="space-y-5">
                 {/* AI site import */}
-                <div className="rounded-2xl border border-[#cdddff] bg-gradient-to-br from-[#eef3ff] to-white p-4">
-                  <div className="flex items-center gap-2 mb-2 text-[#004ac6]">
+                <div className="rounded-2xl border border-[#FFD3BF] bg-gradient-to-br from-[#FFF3EC] to-white p-4">
+                  <div className="flex items-center gap-2 mb-2 text-[#FF5B03]">
                     <Wand2 className="w-4 h-4" />
                     <span className="text-sm font-bold">Preencher com IA a partir do site</span>
                   </div>
@@ -177,13 +177,13 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
                         onChange={(e) => setSiteUrl(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleScan()}
                         placeholder="suaempresa.com.br"
-                        className="w-full border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004ac6]/30 focus:border-[#004ac6]"
+                        className="w-full border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
                       />
                     </div>
                     <button
                       onClick={handleScan}
                       disabled={scanning || !siteUrl.trim()}
-                      className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white bg-[#004ac6] hover:bg-[#003ea8] disabled:opacity-50 rounded-xl shadow-sm transition-colors whitespace-nowrap"
+                      className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-50 rounded-xl shadow-sm transition-colors whitespace-nowrap"
                     >
                       {scanning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                       {scanning ? 'Analisando…' : 'Analisar'}
@@ -203,7 +203,7 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1.5">O que a empresa faz?</label>
                   <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} rows={3} placeholder="Breve descrição do negócio"
-                    className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004ac6]/30 focus:border-[#004ac6]" />
+                    className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]" />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1.5">Principal produto ou serviço *</label>
@@ -217,7 +217,7 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
                         key={e}
                         type="button"
                         onClick={() => setEstiloImagem(e)}
-                        className={`rounded-xl border px-3 py-1.5 text-sm font-medium transition-all ${estiloImagem === e ? 'border-[#004ac6] bg-[#004ac6] text-white shadow-sm' : 'border-slate-300 bg-white text-slate-600 hover:border-[#004ac6] hover:text-[#004ac6]'}`}
+                        className={`rounded-xl border px-3 py-1.5 text-sm font-medium transition-all ${estiloImagem === e ? 'border-[#FF5B03] bg-[#FF5B03] text-white shadow-sm' : 'border-slate-300 bg-white text-slate-600 hover:border-[#FF5B03] hover:text-[#FF5B03]'}`}
                       >
                         {e === 'Ilustracao' ? 'Ilustração' : e}
                       </button>
@@ -245,7 +245,7 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
                         key={t}
                         type="button"
                         onClick={() => setTomDeVoz(t)}
-                        className={`rounded-xl border px-3 py-1.5 text-sm font-medium transition-all ${tomDeVoz === t ? 'border-[#004ac6] bg-[#004ac6] text-white shadow-sm' : 'border-slate-300 bg-white text-slate-600 hover:border-[#004ac6] hover:text-[#004ac6]'}`}
+                        className={`rounded-xl border px-3 py-1.5 text-sm font-medium transition-all ${tomDeVoz === t ? 'border-[#FF5B03] bg-[#FF5B03] text-white shadow-sm' : 'border-slate-300 bg-white text-slate-600 hover:border-[#FF5B03] hover:text-[#FF5B03]'}`}
                       >
                         {t}
                       </button>
@@ -257,7 +257,7 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
                       onChange={(e) => setTomCustom(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter' && tomCustom.trim()) { e.preventDefault(); setTomDeVoz(tomCustom.trim()); setTomCustom(''); } }}
                       placeholder="Ou crie um tom personalizado…"
-                      className="flex-1 border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004ac6]/30 focus:border-[#004ac6]"
+                      className="flex-1 border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
                     />
                     <button
                       type="button"
@@ -281,7 +281,7 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
                   <select
                     value={frequenciaPostagens}
                     onChange={(e) => setFrequenciaPostagens(e.target.value)}
-                    className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#004ac6]/30 focus:border-[#004ac6]"
+                    className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
                   >
                     {FREQUENCIAS.map((f) => <option key={f} value={f}>{f}</option>)}
                   </select>
@@ -316,7 +316,7 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
             <button
               disabled={!canAdvance}
               onClick={() => go(step + 1)}
-              className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#004ac6] hover:bg-[#003ea8] disabled:opacity-40 rounded-xl shadow-sm transition-colors"
+              className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-40 rounded-xl shadow-sm transition-colors"
             >
               Próximo <ChevronRight className="w-4 h-4" />
             </button>
@@ -328,7 +328,7 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
               <button
                 disabled={saving}
                 onClick={handleSave}
-                className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#004ac6] hover:bg-[#003ea8] disabled:opacity-60 rounded-xl shadow-sm transition-colors"
+                className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-xl shadow-sm transition-colors"
               >
                 {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ChevronRight className="w-4 h-4" />}
                 {existing ? 'Salvar alterações' : 'Salvar e criar clusters'}

@@ -69,15 +69,15 @@ export default function CategoryImportModal({
                 Nenhuma categoria nova encontrada na planilha.
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 border border-blue-50 bg-blue-50/30 rounded-xl">
+              <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 border border-orange-50 bg-orange-50/30 rounded-xl">
                 {newCategories.map(cat => (
-                  <label key={cat} className="flex items-center gap-2 p-2 hover:bg-blue-50 cursor-pointer rounded-lg border border-transparent hover:border-blue-100 transition-colors">
+                  <label key={cat} className="flex items-center gap-2 p-2 hover:bg-orange-50 cursor-pointer rounded-lg border border-transparent hover:border-orange-100 transition-colors">
                     <input 
                       type="checkbox" 
                       checked={selectedCategories.has(cat)} 
                       onChange={() => toggleCategory(cat)}
                       disabled={isProcessing}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
                     />
                     <span className="text-sm font-medium text-gray-800 truncate" title={cat}>{cat}</span>
                   </label>
@@ -142,7 +142,7 @@ export default function CategoryImportModal({
           <button 
             onClick={handleConfirm}
             disabled={isProcessing}
-            className="flex items-center gap-2 px-5 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-md font-bold disabled:opacity-50 transition-colors"
+            className="flex items-center gap-2 px-5 py-2 text-white bg-orange-600 hover:bg-orange-700 rounded-lg shadow-md font-bold disabled:opacity-50 transition-colors"
           >
             {isProcessing ? (
               <>

@@ -146,14 +146,14 @@ const WakeConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
                 placeholder="Cole seu token aqui"
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#004ac6] focus:border-[#004ac6]"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03] focus:border-[#FF5B03]"
                 onKeyDown={(e) => { if (e.key === 'Enter') handleValidate(); }}
               />
             </div>
             <button
               onClick={handleValidate}
               disabled={validating || !token.trim()}
-              className="inline-flex items-center gap-2 bg-[#004ac6] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#003a9e] disabled:opacity-50 transition-colors"
+              className="inline-flex items-center gap-2 bg-[#FF5B03] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#003a9e] disabled:opacity-50 transition-colors"
             >
               {validating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
               Conectar e validar
@@ -223,7 +223,7 @@ const WakeConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
                     type="checkbox"
                     checked={campos[key]}
                     onChange={(e) => setCampos((c) => ({ ...c, [key]: e.target.checked }))}
-                    className="rounded border-slate-300 text-[#004ac6] focus:ring-[#004ac6]"
+                    className="rounded border-slate-300 text-[#FF5B03] focus:ring-[#FF5B03]"
                   />
                   {label}
                 </label>
@@ -232,7 +232,7 @@ const WakeConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
             <button
               onClick={handlePush}
               disabled={pushing}
-              className="inline-flex items-center gap-2 bg-[#004ac6] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#003a9e] disabled:opacity-50 transition-colors"
+              className="inline-flex items-center gap-2 bg-[#FF5B03] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#003a9e] disabled:opacity-50 transition-colors"
             >
               {pushing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudUpload className="w-4 h-4" />}
               Enviar selecionados para Wake

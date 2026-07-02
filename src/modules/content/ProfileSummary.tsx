@@ -10,7 +10,7 @@ const Chips: React.FC<{ items: string[] }> = ({ items }) =>
   items.length ? (
     <div className="flex flex-wrap gap-1.5">
       {items.map((t) => (
-        <span key={t} className="rounded-lg border border-[#cdddff] bg-[#eef3ff] px-2 py-0.5 text-xs font-medium text-[#004ac6]">{t}</span>
+        <span key={t} className="rounded-lg border border-[#FFD3BF] bg-[#FFF3EC] px-2 py-0.5 text-xs font-medium text-[#FF5B03]">{t}</span>
       ))}
     </div>
   ) : (

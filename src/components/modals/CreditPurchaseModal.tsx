@@ -187,7 +187,7 @@ export default function CreditPurchaseModal({ onClose }: Props) {
                   onChange={(e) => setName(e.target.value)}
                   required
                   placeholder="Seu nome completo"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004ac6] focus:border-transparent"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03] focus:border-transparent"
                 />
               </div>
               <div>
@@ -201,7 +201,7 @@ export default function CreditPurchaseModal({ onClose }: Props) {
                   required
                   placeholder="000.000.000-00"
                   maxLength={18}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004ac6] focus:border-transparent"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03] focus:border-transparent"
                 />
               </div>
 
@@ -215,7 +215,7 @@ export default function CreditPurchaseModal({ onClose }: Props) {
                     value={coupon}
                     onChange={(e) => { setCoupon(e.target.value.toUpperCase()); resetCoupon(); }}
                     placeholder="Ex: BEMVINDO10"
-                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-[#004ac6] focus:border-transparent"
+                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-[#FF5B03] focus:border-transparent"
                   />
                   <button
                     type="button"
@@ -244,7 +244,7 @@ export default function CreditPurchaseModal({ onClose }: Props) {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#004ac6] text-white rounded-xl font-medium hover:bg-[#003aa0] disabled:opacity-60 transition-colors"
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#FF5B03] text-white rounded-xl font-medium hover:bg-[#003aa0] disabled:opacity-60 transition-colors"
               >
                 {loading ? (
                   <>

@@ -85,7 +85,7 @@ const ContentMapView: React.FC<Props> = ({ clusters, articles, onSelectCluster }
       type: 'circle',
       position: { x: -SITE_R, y: -SITE_R },
       data: {
-        bg: '#004ac6',
+        bg: '#FF5B03',
         size: SITE_R * 2,
         label: 'Site',
         tooltip: 'Site principal',

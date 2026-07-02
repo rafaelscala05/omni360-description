@@ -352,7 +352,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
           <div className="fixed inset-0 bg-gray-900/60" onClick={() => setConfirmAction(null)} />
           <div className="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
             <div className="flex items-center gap-3 mb-3">
-              <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600">
+              <div className="p-2.5 rounded-xl bg-orange-50 text-orange-600">
                 <ImageIcon className="w-6 h-6" />
               </div>
               <h4 className="text-base font-bold text-gray-900">
@@ -372,7 +372,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
               </button>
               <button
                 onClick={handleConfirmAction}
-                className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors"
+                className="flex-1 px-4 py-2.5 bg-orange-600 text-white rounded-xl text-sm font-bold hover:bg-orange-700 transition-colors"
               >
                 Confirmar
               </button>
@@ -402,18 +402,18 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
 
           {step === 'search' && (
             <div className="space-y-6">
-              <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 flex items-start gap-3">
-                <Search className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div className="bg-orange-50 border border-orange-100 rounded-lg p-4 flex items-start gap-3">
+                <Search className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" />
                 <div>
-                  <h4 className="text-sm font-medium text-blue-900">Como adicionar uma imagem:</h4>
-                  <ol className="mt-1 text-sm text-blue-800 list-decimal list-inside space-y-1">
+                  <h4 className="text-sm font-medium text-orange-900">Como adicionar uma imagem:</h4>
+                  <ol className="mt-1 text-sm text-orange-800 list-decimal list-inside space-y-1">
                     <li>Clique no botão abaixo para buscar o produto no Google Imagens.</li>
                     <li>Encontre a imagem desejada, clique com o botão direito e selecione <strong>"Copiar endereço da imagem"</strong>.</li>
                     <li>Cole a URL no campo abaixo.</li>
                   </ol>
                   <button
                     onClick={handleOpenGoogleImages}
-                    className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-700 bg-white border border-blue-200 rounded-md hover:bg-blue-50 transition-colors"
+                    className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-orange-700 bg-white border border-orange-200 rounded-md hover:bg-orange-50 transition-colors"
                   >
                     <ExternalLink className="w-4 h-4" />
                     Buscar no Google Imagens
@@ -431,7 +431,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
                   value={selectedImageUrl}
                   onChange={(e) => setSelectedImageUrl(e.target.value)}
                   placeholder="https://exemplo.com/imagem.jpg"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 sm:text-sm"
                 />
               </div>
 
@@ -459,14 +459,14 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
                 <button
                   onClick={handleSave}
                   disabled={!selectedImageUrl || isSaving}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-orange-700 bg-orange-50 border border-orange-200 rounded-md hover:bg-orange-100 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSaving ? <><Loader2 className="w-4 h-4 animate-spin" />Salvando...</> : 'Salvar Apenas Imagem'}
                 </button>
                 <button
                   onClick={handleGenerateAmbient}
                   disabled={!selectedImageUrl}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-orange-600 border border-transparent rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ImageIcon className="w-4 h-4" />
                   Gerar Ambientações
@@ -484,14 +484,14 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
                       onClick={() => setAspectRatio(r)}
                       className={`px-2.5 py-1 rounded-lg border text-xs font-bold transition-all ${
                         aspectRatio === r
-                          ? 'border-blue-500 bg-blue-600 text-white'
+                          ? 'border-orange-500 bg-orange-600 text-white'
                           : 'border-gray-200 text-gray-600 hover:border-gray-300 bg-white'
                       }`}
                     >
                       {r}
                     </button>
                   ))}
-                  <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                  <span className="text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
                     Padrão configurável em Configurações → Imagens
                   </span>
                 </div>
@@ -503,7 +503,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
             <div className="space-y-6">
               {isGenerating ? (
                 <div className="flex flex-col items-center justify-center py-12">
-                  <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-4" />
+                  <Loader2 className="w-8 h-8 text-orange-600 animate-spin mb-4" />
                   <p className="text-gray-600">A IA está analisando o produto e gerando 3 imagens personalizadas...</p>
                   <p className="text-sm text-gray-400 mt-2">Isso pode levar alguns segundos.</p>
                 </div>
@@ -524,7 +524,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
                           )}
                           {imageRegenerating[idx] && (
                             <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
-                              <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                              <Loader2 className="w-8 h-8 text-orange-600 animate-spin" />
                             </div>
                           )}
                         </div>
@@ -534,14 +534,14 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
                           onChange={(e) => setImagePrompts(prev => { const n = [...prev]; n[idx] = e.target.value; return n; })}
                           rows={3}
                           placeholder="Sugerir um novo prompt..."
-                          className="w-full px-3 py-2 text-xs border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 resize-none"
+                          className="w-full px-3 py-2 text-xs border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500 resize-none"
                         />
 
                         <div className="flex gap-2">
                           <button
                             onClick={() => handleRegenerateImage(idx)}
                             disabled={imageRegenerating[idx] || imageRegenerating.some(r => r)}
-                            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-orange-600 border border-transparent rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <RefreshCw className="w-3 h-3" />
                             Gerar novamente
@@ -572,7 +572,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
                     <button
                       onClick={handleSave}
                       disabled={isSaving}
-                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50"
+                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-orange-600 border border-transparent rounded-md hover:bg-orange-700 disabled:opacity-50"
                     >
                       {isSaving ? <><Loader2 className="w-4 h-4 animate-spin" />Salvando...</> : 'Salvar Imagens no Produto'}
                     </button>

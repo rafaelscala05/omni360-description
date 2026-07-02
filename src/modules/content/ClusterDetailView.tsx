@@ -4,7 +4,7 @@ import type { ContentCluster, CalendarArticle, SearchIntent, ArticleStatus, Clus
 import { moveArticle, updateClusterKeywords } from '../../services/contentService';
 
 export const INTENT_META: Record<SearchIntent, { label: string; chip: string; dot: string }> = {
-  informacional: { label: 'Informacional', chip: 'bg-blue-50 text-blue-700 border-blue-200', dot: 'bg-blue-500' },
+  informacional: { label: 'Informacional', chip: 'bg-orange-50 text-orange-700 border-orange-200', dot: 'bg-orange-500' },
   comercial:     { label: 'Comercial',     chip: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
   transacional:  { label: 'Transacional',  chip: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
   navegacional:  { label: 'Navegacional',  chip: 'bg-violet-50 text-violet-700 border-violet-200', dot: 'bg-violet-500' },
@@ -13,9 +13,9 @@ export const INTENT_META: Record<SearchIntent, { label: string; chip: string; do
 const STATUS_STYLE: Record<ArticleStatus, string> = {
   agendado:    'bg-slate-100 text-slate-600',
   em_producao: 'bg-amber-100 text-amber-700',
-  revisao:     'bg-indigo-100 text-indigo-700',
+  revisao:     'bg-orange-100 text-orange-700',
   aprovado:    'bg-emerald-100 text-emerald-700',
-  publicado:   'bg-[#004ac6] text-white',
+  publicado:   'bg-[#FF5B03] text-white',
   erro:        'bg-red-100 text-red-700',
 };
 
@@ -165,12 +165,12 @@ const ClusterDetailView: React.FC<Props> = ({ uid, projectId, cluster, articles,
                           onChange={(e) => setEditDraft((d) => ({ ...d, termo: e.target.value }))}
                           onKeyDown={(e) => { if (e.key === 'Enter') saveKwEdit(); if (e.key === 'Escape') cancelEdit(); }}
                           placeholder="Palavra-chave"
-                          className="border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#004ac6] w-44"
+                          className="border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03] w-44"
                         />
                         <select
                           value={editDraft.intencao}
                           onChange={(e) => setEditDraft((d) => ({ ...d, intencao: e.target.value as SearchIntent }))}
-                          className="border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#004ac6]"
+                          className="border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
                         >
                           {INTENTS.map((int) => (
                             <option key={int} value={int}>{INTENT_META[int].label}</option>
@@ -186,7 +186,7 @@ const ClusterDetailView: React.FC<Props> = ({ uid, projectId, cluster, articles,
                               volume: e.target.value ? Number(e.target.value) : undefined,
                             }))}
                             placeholder="Volume/mês"
-                            className="border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#004ac6] w-32"
+                            className="border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03] w-32"
                           />
                           <span className="text-[11px] text-slate-400">/mês</span>
                         </div>
@@ -249,12 +249,12 @@ const ClusterDetailView: React.FC<Props> = ({ uid, projectId, cluster, articles,
               onChange={(e) => setNewKw((d) => ({ ...d, termo: e.target.value }))}
               onKeyDown={(e) => { if (e.key === 'Enter') saveNewKw(); if (e.key === 'Escape') { setAddingKw(false); setNewKw(BLANK_KW); } }}
               placeholder="Palavra-chave"
-              className="border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#004ac6] w-44"
+              className="border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03] w-44"
             />
             <select
               value={newKw.intencao}
               onChange={(e) => setNewKw((d) => ({ ...d, intencao: e.target.value as SearchIntent }))}
-              className="border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#004ac6]"
+              className="border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
             >
               {INTENTS.map((int) => (
                 <option key={int} value={int}>{INTENT_META[int].label}</option>
@@ -270,14 +270,14 @@ const ClusterDetailView: React.FC<Props> = ({ uid, projectId, cluster, articles,
                   volume: e.target.value ? Number(e.target.value) : undefined,
                 }))}
                 placeholder="Volume/mês"
-                className="border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#004ac6] w-32"
+                className="border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03] w-32"
               />
               <span className="text-[11px] text-slate-400">/mês</span>
             </div>
             <button
               onClick={saveNewKw}
               disabled={kwSaving || !newKw.termo.trim()}
-              className="px-3 py-1 text-sm font-medium text-white bg-[#004ac6] hover:bg-[#003ea8] disabled:opacity-40 rounded-lg transition-colors"
+              className="px-3 py-1 text-sm font-medium text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-40 rounded-lg transition-colors"
             >
               Salvar
             </button>
@@ -291,7 +291,7 @@ const ClusterDetailView: React.FC<Props> = ({ uid, projectId, cluster, articles,
         ) : (
           <button
             onClick={openAdd}
-            className="mt-4 flex items-center gap-1.5 text-[12px] font-medium text-[#004ac6] hover:text-[#003ea8] hover:bg-[#eef3ff] px-3 py-1.5 rounded-lg transition-colors"
+            className="mt-4 flex items-center gap-1.5 text-[12px] font-medium text-[#FF5B03] hover:text-[#E14E00] hover:bg-[#FFF3EC] px-3 py-1.5 rounded-lg transition-colors"
           >
             <Plus className="w-3.5 h-3.5" /> Adicionar palavra-chave
           </button>
@@ -348,7 +348,7 @@ const ClusterDetailView: React.FC<Props> = ({ uid, projectId, cluster, articles,
             <select
               value={movingTargetClusterId}
               onChange={(e) => setMovingTargetClusterId(e.target.value)}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-[#004ac6] mb-4"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-[#FF5B03] mb-4"
             >
               <option value="">Selecionar cluster…</option>
               {availableClusters.map((c) => (
@@ -360,7 +360,7 @@ const ClusterDetailView: React.FC<Props> = ({ uid, projectId, cluster, articles,
               <button
                 onClick={confirmMove}
                 disabled={!movingTargetClusterId || movingBusy}
-                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-[#004ac6] hover:bg-[#003ea8] disabled:opacity-60 rounded-lg"
+                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-lg"
               >
                 {movingBusy ? <RefreshCw className="w-4 h-4 animate-spin" /> : <MoveRight className="w-4 h-4" />} Mover
               </button>

@@ -62,11 +62,11 @@ function WYSIWYGEditor({ value, onChange }: WYSIWYGEditorProps) {
   };
 
   return (
-    <div className="border border-slate-200 rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500 transition-all bg-white">
+    <div className="border border-slate-200 rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-orange-500/20 focus-within:border-orange-500 transition-all bg-white">
       <style>{`
         .visual-wysiwyg ul { list-style-type: disc !important; padding-left: 1.5rem !important; margin-top: 0.5rem !important; margin-bottom: 0.5rem !important; }
         .visual-wysiwyg ol { list-style-type: decimal !important; padding-left: 1.5rem !important; margin-top: 0.5rem !important; margin-bottom: 0.5rem !important; }
-        .visual-wysiwyg h2 { font-size: 1.25rem !important; font-weight: 700 !important; margin-top: 1rem !important; margin-bottom: 0.5rem !important; color: #0f172a !important; }
+        .visual-wysiwyg h2 { font-size: 1.25rem !important; font-weight: 700 !important; margin-top: 1rem !important; margin-bottom: 0.5rem !important; color: #141311 !important; }
         .visual-wysiwyg h3 { font-size: 1.1rem !important; font-weight: 700 !important; margin-top: 0.75rem !important; margin-bottom: 0.5rem !important; color: #1e293b !important; }
         .visual-wysiwyg p { margin-bottom: 0.75rem !important; }
         .visual-wysiwyg strong, .visual-wysiwyg b { font-weight: bold !important; }
@@ -540,7 +540,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
           </button>
           <button 
             onClick={() => { handleSave(); onClose(); }}
-            className="px-3 md:px-6 py-2 bg-[#004ac6] text-white text-xs md:text-sm font-bold rounded-xl shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap"
+            className="px-3 md:px-6 py-2 bg-[#FF5B03] text-white text-xs md:text-sm font-bold rounded-xl shadow-lg shadow-orange-200 hover:bg-orange-700 transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap"
           >
             <Save className="w-4 h-4" />
             <span className="hidden xs:inline">Salvar e Fechar</span>
@@ -562,11 +562,11 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                 className={cn(
                   "flex items-center gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 rounded-lg md:rounded-xl text-xs md:text-sm font-bold transition-all shrink-0",
                   isActive 
-                    ? "bg-blue-50 text-[#004ac6] shadow-sm" 
+                    ? "bg-orange-50 text-[#FF5B03] shadow-sm" 
                     : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
-                <Icon className={cn("w-5 h-5", isActive ? "text-[#004ac6]" : "text-slate-400")} />
+                <Icon className={cn("w-5 h-5", isActive ? "text-[#FF5B03]" : "text-slate-400")} />
                 {tab.label}
                 {tab.id === 'video' && (
                   <span className="ml-1 px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 text-[10px] font-bold uppercase tracking-wide">
@@ -574,7 +574,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                   </span>
                 )}
                 {tab.id === 'atributos' && effectiveAttributes.length > 0 && (
-                   <span className="ml-1 px-1.5 py-0.5 rounded-full bg-blue-100 text-[#004ac6] text-[10px]">
+                   <span className="ml-1 px-1.5 py-0.5 rounded-full bg-orange-100 text-[#FF5B03] text-[10px]">
                       {effectiveAttributes.length}
                    </span>
                 )}
@@ -648,7 +648,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                 <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-300">
                   <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                     <h2 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
-                       <Layout className="w-5 h-5 text-blue-600" />
+                       <Layout className="w-5 h-5 text-orange-600" />
                        Informações Básicas
                     </h2>
 
@@ -659,7 +659,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                           type="text" 
                           value={editedProduct['Descrição'] || ''} 
                           onChange={(e) => setEditedProduct({...editedProduct, 'Descrição': e.target.value})} 
-                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all" 
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all" 
                           placeholder="Ex: Tênis Esportivo Pro"
                         />
                       </div>
@@ -673,7 +673,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                             const cat = categories.find(c => c.id === cid);
                             setEditedProduct({...editedProduct, categoryId: cid, categoryPath: cat?.path, 'Categoria': cat?.path.join(' > ')});
                           }} 
-                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all appearance-none cursor-pointer"
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all appearance-none cursor-pointer"
                         >
                           <option value="">Selecione uma categoria...</option>
                           {categories.map(c => (
@@ -689,7 +689,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                             type="text" 
                             value={editedProduct['Marca'] || ''} 
                             onChange={(e) => setEditedProduct({...editedProduct, 'Marca': e.target.value})} 
-                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all" 
+                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all" 
                           />
                         </div>
                         <div className="space-y-1.5">
@@ -699,7 +699,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                             step="0.01" 
                             value={editedProduct['Preço'] as string || ''} 
                             onChange={(e) => setEditedProduct({...editedProduct, 'Preço': e.target.value})} 
-                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all font-mono" 
+                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all font-mono" 
                           />
                         </div>
                       </div>
@@ -718,7 +718,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                   ) : (
                     <>
                       {/* AI Header Dashboard */}
-                      <header className="bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 p-8 rounded-3xl shadow-xl shadow-purple-100 flex items-center justify-between gap-8 mb-10 overflow-hidden relative">
+                      <header className="bg-gradient-to-br from-orange-600 via-purple-600 to-pink-600 p-8 rounded-3xl shadow-xl shadow-purple-100 flex items-center justify-between gap-8 mb-10 overflow-hidden relative">
                          <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-20 -mt-20 blur-3xl"></div>
                          <div className="relative z-10 flex-1">
                             <div className="flex items-center gap-3 mb-2">
@@ -766,11 +766,11 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                                 "group p-6 rounded-2xl border transition-all relative overflow-hidden",
                                 isAI 
                                   ? "bg-purple-50/50 border-purple-200 shadow-sm" 
-                                  : "bg-white border-slate-200 hover:border-blue-300"
+                                  : "bg-white border-slate-200 hover:border-orange-300"
                               )}
                             >
                                {attr.inherited && (
-                                <div className="absolute top-4 right-4 px-2 py-0.5 bg-blue-50 text-[#004ac6] text-[90%] font-bold rounded-lg border border-blue-100">Herdado</div>
+                                <div className="absolute top-4 right-4 px-2 py-0.5 bg-orange-50 text-[#FF5B03] text-[90%] font-bold rounded-lg border border-orange-100">Herdado</div>
                               )}
                               
                               <div className="flex items-center gap-2 mb-4">
@@ -786,7 +786,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                                   "w-full px-4 py-2.5 rounded-xl border outline-none transition-all text-slate-900 font-medium",
                                   isAI 
                                     ? "bg-white border-purple-200 focus:ring-2 focus:ring-purple-400" 
-                                    : "bg-slate-50 border-slate-200 focus:bg-white focus:ring-2 focus:ring-blue-500"
+                                    : "bg-slate-50 border-slate-200 focus:bg-white focus:ring-2 focus:ring-orange-500"
                                 )}
                                 placeholder={`Definir ${attr.label.toLowerCase()}...`}
                               />
@@ -811,23 +811,23 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                         {extraAttributeKeys.map(key => {
                           const valObj = editedProduct.attributes![key];
                           return (
-                            <div key={key} className="p-6 bg-blue-50/30 border border-blue-200 rounded-2xl relative group">
+                            <div key={key} className="p-6 bg-orange-50/30 border border-orange-200 rounded-2xl relative group">
                                <div className="absolute top-4 right-4">
-                                  <div className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-black rounded-lg shadow-sm uppercase tracking-tighter">EXTRA</div>
+                                  <div className="px-2 py-0.5 bg-orange-600 text-white text-[9px] font-black rounded-lg shadow-sm uppercase tracking-tighter">EXTRA</div>
                                </div>
                                
                                <div className="mb-4">
-                                  <label className="text-[11px] font-black text-blue-400 uppercase tracking-widest">{key.replace(/_/g, ' ')}</label>
+                                  <label className="text-[11px] font-black text-orange-400 uppercase tracking-widest">{key.replace(/_/g, ' ')}</label>
                                </div>
 
                                <input 
                                 type="text" 
                                 value={valObj.value as string} 
                                 onChange={(e) => handleAttributeChange(key, e.target.value)}
-                                className="w-full px-4 py-2.5 bg-white border border-blue-100 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 font-medium"
+                                className="w-full px-4 py-2.5 bg-white border border-orange-100 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 text-slate-900 font-medium"
                               />
 
-                               <div className="mt-4 flex items-center justify-between pt-4 border-t border-blue-100">
+                               <div className="mt-4 flex items-center justify-between pt-4 border-t border-orange-100">
                                   <button 
                                     onClick={() => {
                                       const next = { ...editedProduct.attributes };
@@ -842,7 +842,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                                     <button 
                                       onClick={() => handleSyncToCategory({ key, label: key.replace(/_/g, ' '), type: 'text' })} 
                                       disabled={isSavingCategoryAttr === key}
-                                      className="flex items-center gap-1.5 text-xs font-bold text-[#004ac6] hover:underline"
+                                      className="flex items-center gap-1.5 text-xs font-bold text-[#FF5B03] hover:underline"
                                     >
                                       {isSavingCategoryAttr === key ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                                       Criar na Categoria
@@ -890,7 +890,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                                             setSuggestedAttributes(prev => prev.filter(s => s.key !== suggestion.key));
                                           }} 
                                           disabled={isSavingCategoryAttr === suggestion.key}
-                                          className="flex items-center justify-center gap-1 text-[10px] font-bold text-slate-400 hover:text-blue-600 transition-colors uppercase"
+                                          className="flex items-center justify-center gap-1 text-[10px] font-bold text-slate-400 hover:text-orange-600 transition-colors uppercase"
                                         >
                                           {isSavingCategoryAttr === suggestion.key ? <Loader2 className="w-3 h-3 animate-spin" /> : <Database className="w-3 h-3" />}
                                           Criar na Categoria
@@ -912,7 +912,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                 <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-300">
                    <section className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
                       <h2 className="text-lg font-bold text-slate-900 mb-8 flex items-center gap-2">
-                        <Cpu className="w-5 h-5 text-blue-600" />
+                        <Cpu className="w-5 h-5 text-orange-600" />
                         Logística e Identificação
                       </h2>
                       <div className="grid grid-cols-2 gap-8">
@@ -922,7 +922,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                             type="text"
                             value={editedProduct['GTIN/EAN'] || ''}
                             onChange={(e) => setEditedProduct({...editedProduct, 'GTIN/EAN': e.target.value})}
-                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-mono"
+                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-orange-500 outline-none font-mono"
                             placeholder="789..."
                           />
                         </div>
@@ -932,7 +932,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                             type="text"
                             value={editedProduct['NCM (Classificação fiscal)'] || ''}
                             onChange={(e) => setEditedProduct({...editedProduct, 'NCM (Classificação fiscal)': e.target.value})}
-                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm"
+                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-orange-500 outline-none font-mono text-sm"
                             placeholder="0000.00.00"
                           />
                         </div>
@@ -943,7 +943,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                             step="0.001"
                             value={editedProduct['Peso bruto (Kg)'] as string || ''}
                             onChange={(e) => setEditedProduct({...editedProduct, 'Peso bruto (Kg)': e.target.value})}
-                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-mono"
+                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-orange-500 outline-none font-mono"
                           />
                         </div>
                       </div>
@@ -956,7 +956,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                 <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-300">
                   <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                     <h2 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
-                       <ImageIcon className="w-5 h-5 text-blue-600" />
+                       <ImageIcon className="w-5 h-5 text-orange-600" />
                        Imagens & Ambientação (IA)
                     </h2>
                     
@@ -989,7 +989,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                               <button 
                                 type="button"
                                 onClick={onOpenImageModal}
-                                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-sm font-bold transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 flex items-center gap-2 active:scale-95"
+                                className="px-6 py-3 bg-gradient-to-r from-orange-600 to-orange-600 text-white rounded-xl text-sm font-bold transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 flex items-center gap-2 active:scale-95"
                               >
                                 <Sparkles className="w-4 h-4" />
                                 Gerar Imagens com IA
@@ -1070,7 +1070,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                    <header className="bg-slate-900 p-8 rounded-3xl shadow-xl flex items-center justify-between gap-8 mb-10">
                       <div className="flex-1">
                          <div className="flex items-center gap-3 mb-2">
-                            <div className="p-2 bg-blue-500 rounded-xl">
+                            <div className="p-2 bg-orange-500 rounded-xl">
                                <Wand2 className="w-5 h-5 text-white" />
                             </div>
                             <h2 className="text-xl font-bold text-white tracking-tight">Escritor Criativo IA</h2>
@@ -1087,7 +1087,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                               value={chosenTemplateId}
                               onChange={(e) => setChosenTemplateId(e.target.value)}
                               disabled={isGeneratingIA}
-                              className="bg-slate-800 text-slate-200 text-xs font-medium rounded-lg px-3 py-2 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                              className="bg-slate-800 text-slate-200 text-xs font-medium rounded-lg px-3 py-2 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-50"
                             >
                               {templates.map(t => (
                                 <option key={t.id} value={t.id}>{t.name}</option>
@@ -1101,7 +1101,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                           className={cn(
                             hasGeneratedContent
                               ? "px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 rounded-xl shadow-md"
-                              : "px-8 py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-900/20 text-sm",
+                              : "px-8 py-4 bg-orange-600 text-white rounded-2xl font-bold hover:bg-orange-700 shadow-lg shadow-orange-900/20 text-sm",
                             "transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50"
                           )}
                         >
@@ -1115,14 +1115,14 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                       <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
                         <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
                           <label className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
-                             <Layout className="w-4 h-4 text-blue-600" />
+                             <Layout className="w-4 h-4 text-orange-600" />
                              Descrição Comercial (HTML)
                           </label>
                           {hasContentAgent && reusableArticles.length > 0 && (
                             <select
                               defaultValue=""
                               onChange={(e) => { if (e.target.value) { insertArticle(e.target.value); e.target.value = ''; } }}
-                              className="text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              className="text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-500"
                               title="Inserir um artigo do Agente de Conteúdo"
                             >
                               <option value="">+ Inserir artigo do Alfred…</option>
@@ -1151,7 +1151,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                                 type="text" 
                                 value={editedProduct['Título SEO'] || ''} 
                                 onChange={(e) => setEditedProduct({...editedProduct, 'Título SEO': e.target.value})} 
-                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" 
+                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none" 
                               />
                             </div>
                             <div className="space-y-1.5">
@@ -1160,7 +1160,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                                 rows={3}
                                 value={editedProduct['Descrição SEO'] || ''} 
                                 onChange={(e) => setEditedProduct({...editedProduct, 'Descrição SEO': e.target.value})} 
-                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none" 
+                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none resize-none" 
                               />
                             </div>
                             <div className="space-y-1.5">
@@ -1169,7 +1169,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                                 type="text" 
                                 value={editedProduct['Palavras chave SEO'] || ''} 
                                 onChange={(e) => setEditedProduct({...editedProduct, 'Palavras chave SEO': e.target.value})} 
-                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" 
+                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none" 
                               />
                             </div>
                          </div>
@@ -1206,7 +1206,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                 return (
                 <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-300 pb-20">
                   <style>{`
-                    .sim-desc h2 { font-size: 1.25rem; font-weight: 700; margin: 1rem 0 0.5rem 0; color: #0f172a; }
+                    .sim-desc h2 { font-size: 1.25rem; font-weight: 700; margin: 1rem 0 0.5rem 0; color: #141311; }
                     .sim-desc h3 { font-size: 1.1rem; font-weight: 700; margin: 0.75rem 0 0.5rem 0; color: #1e293b; }
                     .sim-desc p { margin-bottom: 0.75rem; line-height: 1.7; color: #334155; }
                     .sim-desc ul { list-style-type: disc; padding-left: 1.5rem; margin: 0.5rem 0; }
@@ -1247,7 +1247,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                       {/* Info */}
                       <div className="flex flex-col">
                         {editedProduct['Marca'] && (
-                          <span className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">{editedProduct['Marca']}</span>
+                          <span className="text-xs font-bold text-orange-600 uppercase tracking-widest mb-2">{editedProduct['Marca']}</span>
                         )}
                         <h1 className="font-display text-2xl md:text-3xl font-bold text-slate-900 leading-tight">
                           {editedProduct['Descrição'] || 'Produto Sem Nome'}
@@ -1273,7 +1273,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
 
                         <button
                           disabled
-                          className="mt-8 w-full sm:w-auto px-8 py-3.5 bg-[#004ac6] text-white font-bold rounded-xl shadow-lg shadow-blue-200 opacity-90 cursor-default flex items-center justify-center gap-2"
+                          className="mt-8 w-full sm:w-auto px-8 py-3.5 bg-[#FF5B03] text-white font-bold rounded-xl shadow-lg shadow-orange-200 opacity-90 cursor-default flex items-center justify-center gap-2"
                         >
                           Comprar agora
                         </button>

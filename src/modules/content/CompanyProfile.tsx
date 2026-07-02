@@ -46,7 +46,7 @@ const CompanyProfile: React.FC<Props> = ({ uid, project, onGoClusters }) => {
       <div className="flex justify-end mt-6">
         <button
           onClick={onGoClusters}
-          className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#004ac6] hover:bg-[#003ea8] rounded-xl shadow-sm transition-colors"
+          className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] rounded-xl shadow-sm transition-colors"
         >
           Avançar para Clusters <ArrowRight className="w-4 h-4" />
         </button>

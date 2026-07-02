@@ -102,19 +102,19 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
             <div className="relative">
               <Globe className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input value={wordpressUrl} onChange={(e) => setWordpressUrl(e.target.value)} placeholder="https://blog.empresa.com"
-                className="w-full border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004ac6]/30 focus:border-[#004ac6]" />
+                className="w-full border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]" />
             </div>
           </div>
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1.5">Usuário</label>
             <input value={wordpressUser} onChange={(e) => setWordpressUser(e.target.value)} placeholder="autor"
-              className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004ac6]/30 focus:border-[#004ac6]" />
+              className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]" />
           </div>
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1.5">Application Password</label>
             <input type="password" value={appPassword} onChange={(e) => setAppPassword(e.target.value)}
               placeholder={connected ? '•••• (deixe vazio para manter)' : 'xxxx xxxx xxxx xxxx'}
-              className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004ac6]/30 focus:border-[#004ac6]" />
+              className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]" />
             <p className="text-xs text-slate-400 mt-1">Gere em <strong>WordPress → Usuários → Application Passwords</strong>. Guardada com segurança; usada apenas pelo servidor.</p>
           </div>
         </div>
@@ -124,7 +124,7 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
         <div className="flex items-center justify-end gap-3 mt-6">
           {saved && <span className="flex items-center gap-1 text-sm text-emerald-600 font-medium"><Check className="w-4 h-4" /> Salvo</span>}
           <button onClick={handleSave} disabled={saving}
-            className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#004ac6] hover:bg-[#003ea8] disabled:opacity-60 rounded-xl shadow-sm transition-colors">
+            className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-xl shadow-sm transition-colors">
             {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Salvar integração
           </button>
         </div>
@@ -152,7 +152,7 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
               value={sanityProjectId}
               onChange={(e) => setSanityProjectId(e.target.value)}
               placeholder="abc123xy"
-              className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004ac6]/30 focus:border-[#004ac6]"
+              className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
             />
             <p className="text-xs text-slate-400 mt-1">Encontre em <strong>sanity.io/manage → Project → Settings</strong>.</p>
           </div>
@@ -162,7 +162,7 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
               value={sanityDataset}
               onChange={(e) => setSanityDataset(e.target.value)}
               placeholder="production"
-              className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004ac6]/30 focus:border-[#004ac6]"
+              className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
             />
           </div>
           <div>
@@ -172,7 +172,7 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
               value={sanityToken}
               onChange={(e) => setSanityToken(e.target.value)}
               placeholder={sanityConnected ? '•••• (deixe vazio para manter)' : 'skTokenAbc...'}
-              className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004ac6]/30 focus:border-[#004ac6]"
+              className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
             />
             <p className="text-xs text-slate-400 mt-1">Gere em <strong>sanity.io/manage → API → Tokens</strong> com permissão <strong>Editor</strong>. Guardado com segurança; usado apenas pelo servidor.</p>
           </div>
@@ -191,7 +191,7 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
           <button
             onClick={handleSaveSanity}
             disabled={savingSanity}
-            className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#004ac6] hover:bg-[#003ea8] disabled:opacity-60 rounded-xl shadow-sm transition-colors"
+            className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-xl shadow-sm transition-colors"
           >
             {savingSanity ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Salvar integração
           </button>

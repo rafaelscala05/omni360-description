@@ -90,7 +90,7 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
         <button
           onClick={handleGenerate}
           disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#004ac6] hover:bg-[#003ea8] disabled:opacity-60 rounded-xl shadow-sm transition-colors"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-xl shadow-sm transition-colors"
         >
           {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           {active.length ? 'Gerar novamente' : 'Gerar clusters'}
@@ -103,7 +103,7 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === key ? 'border-[#004ac6] text-[#004ac6]' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === key ? 'border-[#FF5B03] text-[#FF5B03]' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
           >
             {label}
           </button>
@@ -131,7 +131,7 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.97 }}
                     transition={{ duration: 0.18 }}
-                    className={`group bg-white border rounded-xl shadow-sm p-4 transition-colors ${cluster.aprovado ? 'border-[#004ac6]' : 'border-slate-200'}`}
+                    className={`group bg-white border rounded-xl shadow-sm p-4 transition-colors ${cluster.aprovado ? 'border-[#FF5B03]' : 'border-slate-200'}`}
                   >
                     {/* Title row */}
                     <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -142,7 +142,7 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
                             value={editName}
                             onChange={(e) => setEditName(e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditingId(null); }}
-                            className="flex-1 border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#004ac6]"
+                            className="flex-1 border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
                           />
                           <button onClick={saveEdit} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"><Check className="w-4 h-4" /></button>
                           <button onClick={() => setEditingId(null)} className="p-1 text-slate-400 hover:bg-slate-100 rounded"><X className="w-4 h-4" /></button>
@@ -175,7 +175,7 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
                             <button
                               onClick={() => approveCluster(uid, projectId, cluster.id, !cluster.aprovado)}
                               title={cluster.aprovado ? 'Aprovado' : 'Aprovar'}
-                              className={`p-1.5 rounded-lg transition-colors ${cluster.aprovado ? 'text-[#004ac6] bg-[#eef3ff]' : 'text-slate-400 hover:text-[#004ac6] hover:bg-slate-100'}`}
+                              className={`p-1.5 rounded-lg transition-colors ${cluster.aprovado ? 'text-[#FF5B03] bg-[#FFF3EC]' : 'text-slate-400 hover:text-[#FF5B03] hover:bg-slate-100'}`}
                             >
                               <Check className="w-4 h-4" />
                             </button>

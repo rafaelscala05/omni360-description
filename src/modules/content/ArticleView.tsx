@@ -57,7 +57,7 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose }) => {
                     if (e.key === 'Enter') saveTitle();
                     if (e.key === 'Escape') { setTitleDraft(article.titulo); setEditingTitle(false); }
                   }}
-                  className="flex-1 border border-slate-300 rounded-lg px-2 py-1 text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-[#004ac6]"
+                  className="flex-1 border border-slate-300 rounded-lg px-2 py-1 text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
                 />
                 <button onClick={saveTitle} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded">
                   <Check className="w-4 h-4" />
@@ -86,7 +86,7 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose }) => {
             const active = article.status === 'em_producao' && article.stage === i + 1;
             return (
               <div key={s} className="flex-1 flex flex-col items-center gap-1">
-                <div className={`w-full h-1.5 rounded-full ${done ? 'bg-[#004ac6]' : active ? 'bg-amber-400 animate-pulse' : 'bg-slate-200'}`} />
+                <div className={`w-full h-1.5 rounded-full ${done ? 'bg-[#FF5B03]' : active ? 'bg-amber-400 animate-pulse' : 'bg-slate-200'}`} />
                 <span className="text-[10px] text-slate-400">{s}</span>
               </div>
             );
@@ -111,7 +111,7 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose }) => {
                 produtosVinculados: produtos.split(',').map((s) => s.trim()).filter(Boolean),
               }))}
               placeholder="Nome ou ID dos produtos, separados por vírgula"
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#004ac6] focus:border-[#004ac6]"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03] focus:border-[#FF5B03]"
             />
           </div>
 
@@ -124,14 +124,14 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose }) => {
                 value={edited}
                 onChange={(e) => setEdited(e.target.value)}
                 rows={16}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-[#004ac6] focus:border-[#004ac6]"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-[#FF5B03] focus:border-[#FF5B03]"
               />
               {article.metaDescription && <p className="text-xs text-slate-400 mt-1">Meta: {article.metaDescription}</p>}
             </div>
           )}
 
           {article.urlPublicado && (
-            <a href={article.urlPublicado} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm text-[#004ac6] hover:underline">
+            <a href={article.urlPublicado} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm text-[#FF5B03] hover:underline">
               <ExternalLink className="w-4 h-4" /> Ver artigo publicado
             </a>
           )}
@@ -143,7 +143,7 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose }) => {
             <button
               onClick={() => run('produce', () => produceArticle(projectId, article.id))}
               disabled={!!busy}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-[#004ac6] hover:bg-[#003ea8] disabled:opacity-60 rounded-lg"
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-lg"
             >
               {busy === 'produce' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />} Produzir agora
             </button>

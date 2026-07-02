@@ -12,8 +12,8 @@ const IntegrationsView: React.FC<Props> = ({ onImport, getPushPayload }) => {
   return (
     <div className="max-w-3xl mx-auto px-4 md:px-6 py-6 space-y-6">
       <div className="flex items-center gap-3">
-        <div className="bg-[#004ac6]/10 p-2 rounded-lg">
-          <Plug className="w-5 h-5 text-[#004ac6]" />
+        <div className="bg-[#FF5B03]/10 p-2 rounded-lg">
+          <Plug className="w-5 h-5 text-[#FF5B03]" />
         </div>
         <div>
           <h2 className="text-lg font-bold text-slate-800">Integrações</h2>

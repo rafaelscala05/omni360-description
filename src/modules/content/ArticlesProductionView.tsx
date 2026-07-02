@@ -26,9 +26,9 @@ const STATUS_LABEL: Record<ArticleStatus, string> = {
 const STATUS_STYLE: Record<ArticleStatus, string> = {
   agendado: 'bg-slate-100 text-slate-600',
   em_producao: 'bg-amber-100 text-amber-700',
-  revisao: 'bg-indigo-100 text-indigo-700',
+  revisao: 'bg-orange-100 text-orange-700',
   aprovado: 'bg-emerald-100 text-emerald-700',
-  publicado: 'bg-[#004ac6] text-white',
+  publicado: 'bg-[#FF5B03] text-white',
   erro: 'bg-red-100 text-red-700',
 };
 
@@ -126,7 +126,7 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
         <button
           onClick={handleGenerate}
           disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#004ac6] hover:bg-[#003ea8] disabled:opacity-60 rounded-lg shadow-sm transition-colors"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-lg shadow-sm transition-colors"
         >
           {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           {articles.length ? 'Regerar calendário' : 'Gerar calendário'}
@@ -159,14 +159,14 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
                       value={titleDraft}
                       onChange={(e) => setTitleDraft(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') saveTitleEdit(); if (e.key === 'Escape') setEditingTitleId(null); }}
-                      className="flex-1 border border-slate-300 rounded px-2 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#004ac6]"
+                      className="flex-1 border border-slate-300 rounded px-2 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
                     />
                     <button onClick={saveTitleEdit} className="p-0.5 text-emerald-600 hover:bg-emerald-50 rounded"><Check className="w-3.5 h-3.5" /></button>
                     <button onClick={() => setEditingTitleId(null)} className="p-0.5 text-slate-400 hover:bg-slate-100 rounded"><X className="w-3.5 h-3.5" /></button>
                   </div>
                 ) : (
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <button onClick={() => setSelected(a.id)} className="text-sm font-medium text-slate-900 hover:text-[#004ac6] truncate text-left">
+                    <button onClick={() => setSelected(a.id)} className="text-sm font-medium text-slate-900 hover:text-[#FF5B03] truncate text-left">
                       {a.titulo}
                     </button>
                     <button onClick={() => startTitleEdit(a)} className="p-0.5 text-slate-300 hover:text-slate-600 rounded shrink-0">
@@ -179,7 +179,7 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
                   {cName && (
                     <button
                       onClick={() => onGoCluster(a.clusterId)}
-                      className="text-[11px] font-medium text-[#004ac6] bg-[#eef3ff] px-1.5 py-0.5 rounded hover:bg-[#cdddff] transition-colors"
+                      className="text-[11px] font-medium text-[#FF5B03] bg-[#FFF3EC] px-1.5 py-0.5 rounded hover:bg-[#FFD3BF] transition-colors"
                     >
                       {cName}
                     </button>
@@ -235,7 +235,7 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
                   type="date"
                   value={reschedDate}
                   onChange={(e) => setReschedDate(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#004ac6]"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
                 />
               </div>
               <div>
@@ -244,13 +244,13 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
                   type="time"
                   value={reschedTime}
                   onChange={(e) => setReschedTime(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#004ac6]"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
                 />
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-5">
               <button onClick={() => setReschedulingId(null)} className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg">Cancelar</button>
-              <button onClick={confirmReschedule} className="px-4 py-2 text-sm font-medium text-white bg-[#004ac6] hover:bg-[#003ea8] rounded-lg">Confirmar</button>
+              <button onClick={confirmReschedule} className="px-4 py-2 text-sm font-medium text-white bg-[#FF5B03] hover:bg-[#E14E00] rounded-lg">Confirmar</button>
             </div>
           </div>
         </div>

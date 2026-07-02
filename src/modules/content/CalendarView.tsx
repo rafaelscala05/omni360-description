@@ -12,9 +12,9 @@ interface Props {
 const STATUS_DOT: Record<ArticleStatus, string> = {
   agendado: 'bg-slate-400',
   em_producao: 'bg-amber-400',
-  revisao: 'bg-indigo-400',
+  revisao: 'bg-orange-400',
   aprovado: 'bg-emerald-400',
-  publicado: 'bg-[#004ac6]',
+  publicado: 'bg-[#FF5B03]',
   erro: 'bg-red-400',
 };
 
@@ -100,8 +100,8 @@ const CalendarView: React.FC<Props> = ({ uid, projectId, onOpenArticle }) => {
             const dayArticles = byDate.get(iso) ?? [];
             const isToday = iso === todayIso;
             return (
-              <div key={day} className={`min-h-[80px] p-1.5 border-b border-r border-slate-100 ${isToday ? 'bg-[#eef3ff]' : ''}`}>
-                <span className={`inline-flex text-xs font-semibold mb-1 w-5 h-5 items-center justify-center rounded-full ${isToday ? 'bg-[#004ac6] text-white' : 'text-slate-500'}`}>{day}</span>
+              <div key={day} className={`min-h-[80px] p-1.5 border-b border-r border-slate-100 ${isToday ? 'bg-[#FFF3EC]' : ''}`}>
+                <span className={`inline-flex text-xs font-semibold mb-1 w-5 h-5 items-center justify-center rounded-full ${isToday ? 'bg-[#FF5B03] text-white' : 'text-slate-500'}`}>{day}</span>
                 <div className="space-y-0.5">
                   {dayArticles.slice(0, 3).map((a) => (
                     <button
@@ -110,7 +110,7 @@ const CalendarView: React.FC<Props> = ({ uid, projectId, onOpenArticle }) => {
                       className="w-full flex items-center gap-1 text-left px-1 py-0.5 rounded hover:bg-white/80 transition-colors group"
                     >
                       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[a.status]}`} />
-                      <span className="text-[10px] text-slate-700 truncate group-hover:text-[#004ac6]">{a.titulo}</span>
+                      <span className="text-[10px] text-slate-700 truncate group-hover:text-[#FF5B03]">{a.titulo}</span>
                     </button>
                   ))}
                   {dayArticles.length > 3 && (

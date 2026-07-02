@@ -39,7 +39,7 @@ const TagInput: React.FC<Props> = ({ label, hint, value, onChange, suggestions =
   return (
     <div>
       {label && <label className="block text-sm font-semibold text-slate-700 mb-1.5">{label}</label>}
-      <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-2.5 py-2 focus-within:ring-2 focus-within:ring-[#004ac6]/30 focus-within:border-[#004ac6] transition-all">
+      <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-2.5 py-2 focus-within:ring-2 focus-within:ring-[#FF5B03]/30 focus-within:border-[#FF5B03] transition-all">
         <AnimatePresence initial={false}>
           {value.map((tag) => (
             <motion.span
@@ -49,7 +49,7 @@ const TagInput: React.FC<Props> = ({ label, hint, value, onChange, suggestions =
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.8, opacity: 0 }}
               transition={{ duration: 0.15 }}
-              className="inline-flex items-center gap-1 rounded-lg border border-[#cdddff] bg-[#eef3ff] px-2 py-0.5 text-xs font-medium text-[#004ac6]"
+              className="inline-flex items-center gap-1 rounded-lg border border-[#FFD3BF] bg-[#FFF3EC] px-2 py-0.5 text-xs font-medium text-[#FF5B03]"
             >
               {tag}
               <button type="button" onClick={() => remove(tag)} className="hover:text-slate-900/70">
@@ -75,7 +75,7 @@ const TagInput: React.FC<Props> = ({ label, hint, value, onChange, suggestions =
               key={s}
               type="button"
               onClick={() => add(s)}
-              className="inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-500 hover:border-[#004ac6] hover:text-[#004ac6] transition-colors"
+              className="inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-500 hover:border-[#FF5B03] hover:text-[#FF5B03] transition-colors"
             >
               <Plus className="w-3 h-3" /> {s}
             </button>

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Sparkles, LayoutDashboard, Layers, CalendarDays, Settings, Plus, Coins,
+  LayoutDashboard, Layers, CalendarDays, Settings, Plus, Coins,
   LogOut, Menu, X, ChevronDown, Boxes, RefreshCw, Plug, FileText,
 } from 'lucide-react';
 import type { User } from 'firebase/auth';
+import logoAlfreds from '../../assets/brand/logo-alfreds-produtos.png';
 import type { ContentProject, ContentCluster } from './types';
 import { listenProjects, listenClusters } from '../../services/contentService';
 import OnboardingWizard from './OnboardingWizard';
@@ -77,16 +78,11 @@ const ContentApp: React.FC<Props> = ({ user, credits, onSwitchToProduct, onBuyCr
       )}
 
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 w-[260px] bg-[#0f172a] text-white flex-shrink-0 flex flex-col z-40 shadow-[4px_0_24px_rgba(0,0,0,0.05)] pt-4 transition-transform duration-300 md:static md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 w-[260px] bg-[#141311] text-white flex-shrink-0 flex flex-col z-40 shadow-[4px_0_24px_rgba(0,0,0,0.05)] pt-4 transition-transform duration-300 md:static md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="px-5 flex items-center justify-between border-b border-white/5 mx-3 mb-4 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="bg-[#004ac6] p-1.5 rounded-lg shadow-sm">
-              <Sparkles className="w-4 h-4 text-white" />
-            </div>
-            <div className="flex flex-col">
-              <span className="font-display text-base font-extrabold text-white tracking-tight leading-tight">Alfreds</span>
-              <span className="text-[10px] text-slate-400">Agente de Conteúdo</span>
-            </div>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <img src={logoAlfreds} alt="Alfreds" className="h-8 w-auto" />
+            <span className="text-[10px] text-white/50 font-semibold border-l border-white/15 pl-2.5 leading-tight">Agente de<br />Conteúdo</span>
           </div>
           <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-1 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg">
             <X className="w-5 h-5" />
@@ -126,7 +122,7 @@ const ContentApp: React.FC<Props> = ({ user, credits, onSwitchToProduct, onBuyCr
               ))}
               <button
                 onClick={() => { setCreatingProject(true); setProjectMenuOpen(false); }}
-                className="w-full text-left px-3 py-2 text-sm text-[#7aa2ff] hover:bg-white/10 flex items-center gap-2"
+                className="w-full text-left px-3 py-2 text-sm text-[#FF9E78] hover:bg-white/10 flex items-center gap-2"
               >
                 <Plus className="w-4 h-4" /> Novo projeto
               </button>

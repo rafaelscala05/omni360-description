@@ -78,7 +78,7 @@ const DashboardPanel: React.FC<Props> = ({ uid, projectId, empresa, clusters, on
 
         {card(
           'Próximas publicações',
-          <CalendarClock className="w-4 h-4 text-[#004ac6]" />,
+          <CalendarClock className="w-4 h-4 text-[#FF5B03]" />,
           proximos.length ? (
             <ul className="space-y-2">
               {proximos.map((a) => (
@@ -97,7 +97,7 @@ const DashboardPanel: React.FC<Props> = ({ uid, projectId, empresa, clusters, on
       {/* Meu Mapa de Conteúdo */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
         <div className="flex items-center gap-2 mb-4">
-          <Network className="w-4 h-4 text-[#004ac6]" />
+          <Network className="w-4 h-4 text-[#FF5B03]" />
           <h3 className="text-sm font-semibold text-slate-700">Meu Mapa de Conteúdo</h3>
           <span className="ml-auto text-[11px] text-slate-400">Tamanho dos nós ∝ volume de pesquisa · Clique num cluster para abrir</span>
         </div>
