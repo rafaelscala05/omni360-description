@@ -3,9 +3,14 @@
 @import "react-quill-new/dist/quill.snow.css";
 
 @theme {
-  --color-primary: #004ac6;
-  --color-sidebar: #0f172a;
-  --color-sidebar-active: #1e293b;
+  --color-primary: #FF5B03;
+  --color-porcelain: #E8E0D5;
+  --color-ink: #141311;
+  --color-orange: #FF5B03;
+  --color-blue: #3053FF;
+  --color-periwinkle: #828ED1;
+  --color-sidebar: #141311;
+  --color-sidebar-active: #26221d;
   --color-surface-bg: #f7f9fb;
   --font-display: "Bricolage Grotesque", "Inter", ui-sans-serif, system-ui, sans-serif;
 }
