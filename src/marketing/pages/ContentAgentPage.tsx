@@ -3,8 +3,14 @@ import Section from '../components/Section';
 import FeatureShowcase from '../components/FeatureShowcase';
 import FinalCTA from '../components/FinalCTA';
 import { contentFeatures } from '../content';
+import { usePageMeta } from '../usePageMeta';
 
 export default function ContentAgentPage() {
+  usePageMeta({
+    title: 'Agente de Conteúdo | Alfreds',
+    description: 'Produza conteúdo que ranqueia, na voz da sua marca, com IA.'
+  });
+
   return (
     <>
       <Hero

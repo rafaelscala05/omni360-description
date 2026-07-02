@@ -11,8 +11,14 @@ import TrustSection from '../components/TrustSection';
 import FAQ from '../components/FAQ';
 import FinalCTA from '../components/FinalCTA';
 import { productFeatures, contentFeatures, segments, cases, homeFaq } from '../content';
+import { usePageMeta } from '../usePageMeta';
 
 export default function HomePage() {
+  usePageMeta({
+    title: 'Alfreds — Agentes de IA para E-commerce',
+    description: 'Uma equipe de Agentes de IA que cuidam do cadastro, SEO, imagens e conteúdo do seu e-commerce.'
+  });
+
   return (
     <>
       <Hero

@@ -4,8 +4,14 @@ import CaseCard from '../components/CaseCard';
 import SegmentGrid from '../components/SegmentGrid';
 import FinalCTA from '../components/FinalCTA';
 import { cases, segments } from '../content';
+import { usePageMeta } from '../usePageMeta';
 
 export default function CasesPage() {
+  usePageMeta({
+    title: 'Casos | Alfreds',
+    description: 'Resultados de quem usa os Agentes de IA do Alfreds.'
+  });
+
   return (
     <>
       <Hero

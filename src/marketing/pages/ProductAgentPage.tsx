@@ -3,8 +3,14 @@ import Section from '../components/Section';
 import FeatureShowcase from '../components/FeatureShowcase';
 import FinalCTA from '../components/FinalCTA';
 import { productFeatures } from '../content';
+import { usePageMeta } from '../usePageMeta';
 
 export default function ProductAgentPage() {
+  usePageMeta({
+    title: 'Agente de Produto | Alfreds',
+    description: 'Cadastre, enriqueça e gere SEO, imagens e vídeos do seu catálogo com IA.'
+  });
+
   return (
     <>
       <Hero

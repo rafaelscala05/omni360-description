@@ -2,12 +2,18 @@ import { FormEvent, useState } from 'react';
 import Hero from '../components/Hero';
 import Section from '../components/Section';
 import { saveLead, LeadInput } from '../leadService';
+import { usePageMeta } from '../usePageMeta';
 
 type Status = 'idle' | 'sending' | 'done' | 'error';
 
 const emptyForm: LeadInput = { nome: '', email: '', mensagem: '' };
 
 export default function ContactPage() {
+  usePageMeta({
+    title: 'Contato | Alfreds',
+    description: 'Fale com um especialista do Alfreds.'
+  });
+
   const [form, setForm] = useState<LeadInput>(emptyForm);
   const [status, setStatus] = useState<Status>('idle');
 

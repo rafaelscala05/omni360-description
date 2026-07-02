@@ -3,6 +3,7 @@ import Section from '../components/Section';
 import FAQ from '../components/FAQ';
 import FinalCTA from '../components/FinalCTA';
 import { FaqItem } from '../content';
+import { usePageMeta } from '../usePageMeta';
 
 interface CreditRow {
   action: string;
@@ -40,6 +41,11 @@ const pricingFaq: FaqItem[] = [
 ];
 
 export default function PricingPage() {
+  usePageMeta({
+    title: 'Preços | Alfreds',
+    description: 'Preço transparente por créditos. Comece com 10 créditos grátis.'
+  });
+
   return (
     <>
       <Hero
