@@ -2309,7 +2309,7 @@ Retorne APENAS um JSON válido no seguinte formato:
     </div>
   );
 
-  if (workspace === 'content') {
+  if (user && workspace === 'content') {
     return (
       <Suspense fallback={<div className="h-screen flex items-center justify-center bg-[#f7f9fb] text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
         <ContentApp

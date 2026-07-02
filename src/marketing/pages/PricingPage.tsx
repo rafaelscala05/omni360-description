@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import Hero from '../components/Hero';
 import Section from '../components/Section';
 import FAQ from '../components/FAQ';
@@ -101,12 +102,12 @@ export default function PricingPage() {
             Para catálogos grandes ou operações de conteúdo intensas, montamos um pacote de créditos sob medida para
             o seu volume.
           </p>
-          <a
-            href="/contato"
+          <Link
+            to="/contato"
             className="inline-block px-8 py-4 rounded-xl font-bold text-lg bg-orange text-white hover:brightness-95 transition"
           >
             Falar com especialista
-          </a>
+          </Link>
         </div>
       </Section>
 
