@@ -35,10 +35,31 @@ export default function FeatureShowcase({ theme, eyebrow, title, features }: Fea
           ))}
         </ul>
       </div>
-      <div className={`rounded-3xl aspect-[4/3] border ${dark ? 'border-porcelain/15 bg-porcelain/5' : 'border-ink/10 bg-white'} overflow-hidden flex items-center justify-center`}>
-        {features[active].screenshot
-          ? <img src={features[active].screenshot} alt={features[active].title} className="w-full h-full object-cover" />
-          : <span className={`text-sm ${dark ? 'text-porcelain/40' : 'text-ink/30'}`}>Screenshot: {features[active].title}</span>}
+      <div
+        className={`relative rounded-3xl aspect-[4/3] border overflow-hidden flex items-center justify-center ${
+          dark ? 'border-porcelain/15 bg-porcelain/5' : 'border-ink/10 bg-white'
+        }`}
+      >
+        {features[active].screenshot ? (
+          <img src={features[active].screenshot} alt={features[active].title} className="w-full h-full object-cover" />
+        ) : (
+          <div
+            className="absolute inset-0 flex items-center justify-center"
+            style={{
+              backgroundImage: `radial-gradient(circle at 30% 20%, ${dark ? 'rgba(255,91,3,0.10)' : 'rgba(255,91,3,0.06)'}, transparent 60%), radial-gradient(${dark ? 'rgba(232,224,213,0.10)' : 'rgba(20,19,17,0.07)'} 1px, transparent 1px)`,
+              backgroundSize: 'auto, 16px 16px',
+            }}
+          >
+            <div
+              className={`flex flex-col items-center gap-2 px-6 py-4 rounded-2xl border ${
+                dark ? 'border-porcelain/15 bg-ink/40' : 'border-ink/10 bg-porcelain/60'
+              }`}
+            >
+              <span className={`text-[10px] font-bold uppercase tracking-widest ${accentText}`}>Prévia em breve</span>
+              <span className={`text-sm text-center ${dark ? 'text-porcelain/50' : 'text-ink/40'}`}>{features[active].title}</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
