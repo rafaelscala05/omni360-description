@@ -1,6 +1,14 @@
 import React, { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'react';
 import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, FileSpreadsheet, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3, Plug } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import MarketingLayout from './marketing/MarketingLayout';
+import HomePage from './marketing/pages/HomePage';
+import ProductAgentPage from './marketing/pages/ProductAgentPage';
+import ContentAgentPage from './marketing/pages/ContentAgentPage';
+import PricingPage from './marketing/pages/PricingPage';
+import CasesPage from './marketing/pages/CasesPage';
+import ContactPage from './marketing/pages/ContactPage';
 import LoginLanding from './components/LoginLanding';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
@@ -2190,18 +2198,6 @@ Retorne APENAS um JSON válido no seguinte formato:
     );
   }
 
-  if (!user) {
-    return (
-      <LoginLanding
-        onGoogleLogin={handleLogin}
-        onEmailLogin={handleEmailLogin}
-        onEmailRegister={handleEmailRegister}
-        onPasswordReset={handlePasswordReset}
-      />
-    );
-  }
-
-  
   const renderHistoryView = () => (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-5xl mx-auto w-full">
       <div className="flex justify-between items-end mb-6">
@@ -2327,7 +2323,7 @@ Retorne APENAS um JSON válido no seguinte formato:
     );
   }
 
-  return (
+  const renderApp = () => (
     <div className="h-screen bg-[#f7f9fb] flex font-sans overflow-hidden">
       <input type="file" accept=".xlsx, .xls" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
       {isFirebaseUnavailable && (
@@ -3812,5 +3808,31 @@ Retorne APENAS um JSON válido no seguinte formato:
       )}
 
     </div>
+  );
+
+  return (
+    <Routes>
+      <Route element={<MarketingLayout />}>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/agente-de-produto" element={<ProductAgentPage />} />
+        <Route path="/agente-de-conteudo" element={<ContentAgentPage />} />
+        <Route path="/precos" element={<PricingPage />} />
+        <Route path="/casos" element={<CasesPage />} />
+        <Route path="/contato" element={<ContactPage />} />
+      </Route>
+      <Route
+        path="/entrar"
+        element={user ? <Navigate to="/app" replace /> : (
+          <LoginLanding
+            onGoogleLogin={handleLogin}
+            onEmailLogin={handleEmailLogin}
+            onEmailRegister={handleEmailRegister}
+            onPasswordReset={handlePasswordReset}
+          />
+        )}
+      />
+      <Route path="/app/*" element={user ? renderApp() : <Navigate to="/entrar" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
