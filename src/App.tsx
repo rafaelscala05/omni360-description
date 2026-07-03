@@ -1247,6 +1247,9 @@ export default function App() {
         } else {
           // Standard System Model
           row = { ...prod._originalRow };
+          // Código (SKU) precisa vir do produto atual: produtos sem _originalRow
+          // (ex.: importados da Wake) não têm essa chave e o export ficava sem a coluna.
+          row['Código (SKU)'] = prod['Código (SKU)'] || row['Código (SKU)'] || '';
           // Update with generated fields
           row['Descrição complementar'] = htmlToPlainText(prod['Descrição complementar'] as string) || htmlToPlainText(row['Descrição complementar']) || '';
           row['Título SEO'] = prod['Título SEO'] || row['Título SEO'];
@@ -1308,6 +1311,9 @@ export default function App() {
     
     // Ensure new columns are added to standard model if they weren't in the original file
     if (modelToUse === 'standard' && headersToUse) {
+      if (!headersToUse.includes('Código (SKU)')) {
+        headersToUse.unshift('Código (SKU)');
+      }
       const newColumns = ['Título SEO', 'Descrição SEO', 'Palavras chave SEO', 'URL imagem 1', 'URL imagem 2', 'URL imagem 3', 'URL imagem 4', 'URL imagem 5'];
       newColumns.forEach(col => {
         if (!headersToUse!.includes(col)) {
