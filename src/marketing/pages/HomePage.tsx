@@ -107,8 +107,11 @@ export default function HomePage() {
       </Section>
 
       {/* Integrações */}
-      <Section tone="light">
-        <div className="text-center mb-12"><h2 className="font-display text-3xl md:text-4xl font-extrabold">Integrações</h2></div>
+      <Section tone="dark">
+        <div className="text-center mb-12">
+          <h2 className="font-display text-3xl md:text-4xl font-extrabold">Integrações</h2>
+          <p className="text-porcelain/60 mt-3">Conecte com as ferramentas que você já usa.</p>
+        </div>
         <IntegrationsGrid />
       </Section>
 
