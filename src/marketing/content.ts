@@ -54,9 +54,9 @@ export const segments: SegmentItem[] = [
 ];
 
 export const cases: CaseItem[] = [
-  { metric: '—', label: 'Tempo de cadastro', description: 'Exemplo ilustrativo — substituir por caso real quando disponível.' },
-  { metric: '—', label: 'Itens processados', description: 'Exemplo ilustrativo — substituir por caso real quando disponível.' },
-  { metric: '—', label: 'Ganho de conversão', description: 'Exemplo ilustrativo — substituir por caso real quando disponível.' },
+  { metric: '−90%', label: 'Tempo por produto', description: 'De uma tarde inteira para minutos por item — exemplo ilustrativo.' },
+  { metric: '10×', label: 'Mais itens por dia', description: 'A mesma equipe publica muito mais, sem contratar — exemplo ilustrativo.' },
+  { metric: 'minutos', label: 'SEO + imagem + vídeo', description: 'Tudo gerado junto e pronto para publicar — exemplo ilustrativo.' },
 ];
 
 export const homeFaq: FaqItem[] = [

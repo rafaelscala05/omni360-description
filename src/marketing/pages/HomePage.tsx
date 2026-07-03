@@ -1,3 +1,4 @@
+import { ArrowRight, TrendingUp, Boxes } from 'lucide-react';
 import Hero from '../components/Hero';
 import Section from '../components/Section';
 import AgentCard from '../components/AgentCard';
@@ -44,13 +45,14 @@ export default function HomePage() {
       <Section tone="light">
         <div className="text-center mb-12">
           <h2 className="font-display text-3xl md:text-4xl font-extrabold">Conheça o esquadrão</h2>
-          <p className="text-ink/60 mt-3">Dois agentes disponíveis hoje. Novos agentes chegando em breve.</p>
+          <p className="text-ink/60 mt-3">Dois agentes trabalhando hoje. Outros dois a caminho.</p>
         </div>
         <div className="grid gap-6 md:grid-cols-2">
-          <AgentCard theme="product" title="Agente de Produto" description="Cadastra, enriquece, gera SEO, imagens e vídeos do seu catálogo." to="/agente-de-produto" />
-          <AgentCard theme="content" title="Agente de Conteúdo" description="Planeja, escreve e otimiza o conteúdo que faz sua marca ranquear." to="/agente-de-conteudo" />
+          <AgentCard variant="product" title="Agente de Produto" description="Cadastra, enriquece, gera SEO, imagens e vídeos do seu catálogo." to="/agente-de-produto" />
+          <AgentCard variant="content" title="Agente de Conteúdo" description="Planeja, escreve e otimiza o conteúdo que faz sua marca ranquear." to="/agente-de-conteudo" />
+          <AgentCard variant="sales" title="Agente de Força de Vendas" description="Prioriza oportunidades, acompanha metas e apoia seu time a vender mais." Icon={TrendingUp} comingSoon />
+          <AgentCard variant="ops" title="Agente Operacional" description="Cuida de estoque, pedidos e rotinas para a operação rodar sem atrito." Icon={Boxes} comingSoon />
         </div>
-        <p className="text-center text-ink/40 mt-8 text-sm">🔜 Novos agentes em breve</p>
       </Section>
 
       {/* Como funciona */}
@@ -75,9 +77,32 @@ export default function HomePage() {
         <SegmentGrid segments={segments} />
       </Section>
 
-      {/* Cases */}
+      {/* Resultados — foco em redução de tempo */}
       <Section tone="light">
-        <div className="text-center mb-12"><h2 className="font-display text-3xl md:text-4xl font-extrabold">Resultados</h2></div>
+        <div className="max-w-3xl mx-auto text-center mb-10">
+          <span className="text-xs font-bold uppercase tracking-widest text-orange">Resultados</span>
+          <h2 className="font-display text-3xl md:text-5xl font-extrabold mt-3 leading-[1.05]">
+            De <span className="text-ink/35 line-through decoration-orange/50 decoration-[3px]">dias</span> para <span className="text-orange">horas</span>.
+          </h2>
+          <p className="text-ink/60 text-lg mt-4">
+            Cadastrar um produto completo — dados técnicos, descrição com SEO, imagens e vídeo — levava uma tarde inteira por item. Com o Agente de Produto, são minutos.
+          </p>
+        </div>
+
+        <div className="max-w-4xl mx-auto mb-10 rounded-3xl bg-ink text-porcelain p-8 md:p-12 flex flex-col sm:flex-row items-center justify-center gap-6 sm:gap-12">
+          <div className="text-center">
+            <p className="text-[11px] uppercase tracking-widest text-porcelain/40 mb-1">Antes</p>
+            <p className="font-display text-4xl md:text-5xl font-extrabold text-porcelain/60">Dias</p>
+            <p className="text-porcelain/45 text-sm mt-1">cadastro manual, item a item</p>
+          </div>
+          <ArrowRight className="w-9 h-9 text-orange shrink-0 rotate-90 sm:rotate-0" strokeWidth={2.25} />
+          <div className="text-center">
+            <p className="text-[11px] uppercase tracking-widest text-orange mb-1">Depois</p>
+            <p className="font-display text-5xl md:text-6xl font-extrabold text-orange">Horas</p>
+            <p className="text-porcelain/45 text-sm mt-1">o esquadrão trabalhando por você</p>
+          </div>
+        </div>
+
         <div className="grid gap-6 md:grid-cols-3">{cases.map((c) => <CaseCard key={c.label} item={c} />)}</div>
       </Section>
 
