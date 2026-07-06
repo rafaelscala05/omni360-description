@@ -151,17 +151,6 @@ const truncateHtml = (html: string | undefined | null, maxChars = 2500): string 
   return closeEnd === -1 ? html.slice(0, maxChars) : html.slice(0, closeEnd + 1);
 };
 
-const htmlToPlainText = (html: string | undefined | null): string => {
-  if (!html) return '';
-  return html
-    .replace(/<br\s*\/?>/gi, ' ')
-    .replace(/<\/?(p|h[1-6]|li|div|section|article|header|footer|blockquote)[^>]*>/gi, ' ')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-};
-
 export default function App() {
   // State
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -1200,7 +1189,7 @@ export default function App() {
             if (header === 'Peso bruto (Kg)') row[header] = prod['Peso bruto (Kg)'] || '';
             if (header === 'GTIN/EAN') row[header] = prod['GTIN/EAN'] || '';
             if (header === 'GTIN/EAN tributável') row[header] = prod['GTIN/EAN tributável'] || '';
-            if (header === 'Descrição complementar') row[header] = htmlToPlainText(prod['Descrição complementar'] as string) || '';
+            if (header === 'Descrição complementar') row[header] = prod['Descrição complementar'] || '';
             if (header === 'CEST') row[header] = prod['CEST'] || '';
             if (header === 'Código de Enquadramento IPI') row[header] = prod['Código de Enquadramento IPI'] || '';
             if (header === 'Formato embalagem') row[header] = prod['Formato embalagem'] || '';
@@ -1251,7 +1240,7 @@ export default function App() {
           // (ex.: importados da Wake) não têm essa chave e o export ficava sem a coluna.
           row['Código (SKU)'] = prod['Código (SKU)'] || row['Código (SKU)'] || '';
           // Update with generated fields
-          row['Descrição complementar'] = htmlToPlainText(prod['Descrição complementar'] as string) || htmlToPlainText(row['Descrição complementar']) || '';
+          row['Descrição complementar'] = prod['Descrição complementar'] || row['Descrição complementar'] || '';
           row['Título SEO'] = prod['Título SEO'] || row['Título SEO'];
           row['Descrição SEO'] = prod['Descrição SEO'] || row['Descrição SEO'];
           row['Palavras chave SEO'] = prod['Palavras chave SEO'] || row['Palavras chave SEO'];
