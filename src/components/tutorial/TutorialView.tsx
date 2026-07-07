@@ -342,10 +342,99 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
 
           <main className="flex-1 p-6 md:p-8 min-h-[420px]">
             {activeTab === 'geral' && (
-              <div className="text-center py-12 text-slate-400 text-sm">Aba "Geral" ainda não implementada.</div>
+              <div className="space-y-6 max-w-xl">
+                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <Layout className="w-5 h-5 text-orange-600" /> Informações Básicas
+                </h2>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-500 uppercase ml-1">Título do Produto</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={MOCK_PRODUCT.rawName}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 ml-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase">Categoria</label>
+                    {attributesDone && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full">
+                        <Sparkles className="w-2.5 h-2.5" /> Sugerido por IA
+                      </span>
+                    )}
+                  </div>
+                  <select disabled value="mock" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none appearance-none">
+                    <option value="mock">{MOCK_CATEGORY_PATH.join(' > ')}</option>
+                  </select>
+                </div>
+              </div>
             )}
             {activeTab === 'atributos' && (
-              <div className="text-center py-12 text-slate-400 text-sm">Aba "Atributos" ainda não implementada.</div>
+              <div className="space-y-8">
+                <header className="bg-gradient-to-br from-orange-600 via-purple-600 to-pink-600 p-8 rounded-3xl shadow-xl flex items-center justify-between gap-8 overflow-hidden relative">
+                  <div className="relative z-10 flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="p-2 bg-white/20 backdrop-blur-md rounded-xl">
+                        <Sparkles className="w-6 h-6 text-white" />
+                      </div>
+                      <h2 className="text-xl font-bold text-white tracking-tight">Atributos Inteligentes</h2>
+                    </div>
+                    <p className="text-purple-100 text-sm max-w-lg leading-relaxed">
+                      O Gemini analisa a descrição e a categoria do produto para detectar automaticamente cor, material e tamanho.
+                    </p>
+                  </div>
+                  {!attributesGenerated && (
+                    <button
+                      onClick={simulateAttributes}
+                      disabled={attributesLoading}
+                      className="relative z-10 flex items-center gap-3 px-6 py-3.5 bg-white text-purple-700 rounded-2xl font-bold transition-all shadow-xl hover:scale-105 active:scale-95 disabled:opacity-50 whitespace-nowrap"
+                    >
+                      {attributesLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Wand2 className="w-5 h-5" />}
+                      {attributesLoading ? 'Analisando...' : 'Preencher com IA'}
+                    </button>
+                  )}
+                </header>
+
+                {attributesGenerated && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {MOCK_ATTRIBUTES.map((attr) => {
+                      const isConfirmed = confirmedAttrs.has(attr.key);
+                      return (
+                        <div
+                          key={attr.key}
+                          className={`p-6 rounded-2xl border transition-all ${!isConfirmed ? 'bg-purple-50/50 border-purple-200 shadow-sm' : 'bg-white border-slate-200'}`}
+                        >
+                          <div className="flex items-center gap-2 mb-4">
+                            <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{attr.label}</label>
+                            {!isConfirmed && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full">
+                                <Sparkles className="w-2.5 h-2.5" /> SUGESTÃO
+                              </span>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            readOnly
+                            value={attr.value}
+                            className={`w-full px-4 py-2.5 rounded-xl border outline-none font-medium text-slate-900 ${!isConfirmed ? 'bg-white border-purple-200' : 'bg-slate-50 border-slate-200'}`}
+                          />
+                          {!isConfirmed && (
+                            <div className="mt-4 flex items-center justify-end pt-4 border-t border-purple-100">
+                              <button
+                                onClick={() => confirmAttribute(attr.key)}
+                                className="flex items-center gap-1.5 text-xs font-bold text-purple-600 bg-white px-3 py-1.5 rounded-lg border border-purple-200 shadow-sm hover:bg-purple-600 hover:text-white transition-all"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" /> Confirmar
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             )}
             {activeTab === 'conteudo' && (
               <div className="text-center py-12 text-slate-400 text-sm">Aba "Conteúdo" ainda não implementada.</div>
