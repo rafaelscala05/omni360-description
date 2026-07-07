@@ -489,7 +489,51 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
               </div>
             )}
             {activeTab === 'imagens' && (
-              <div className="text-center py-12 text-slate-400 text-sm">Aba "Imagens" ainda não implementada.</div>
+              <div className="space-y-8">
+                <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                  <h2 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
+                    <ImageIcon className="w-5 h-5 text-orange-600" /> Imagens & Ambientação (IA)
+                  </h2>
+                  <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
+                    <div className="w-48 h-48 rounded-2xl border border-slate-200 bg-slate-50 shrink-0 flex flex-col items-center justify-center text-slate-400">
+                      <ImageIcon className="w-12 h-12 mb-2" />
+                      <span className="text-xs font-bold uppercase tracking-wider">Foto do produto</span>
+                    </div>
+                    <div className="flex-1 space-y-4">
+                      <div className="space-y-2">
+                        <h3 className="text-base font-bold text-slate-800">Visual Mídia & Geração de Cenários</h3>
+                        <p className="text-sm text-slate-500 leading-relaxed">A IA gera 3 variações realistas a partir da imagem original.</p>
+                      </div>
+                      {!imagesGenerated && (
+                        <button
+                          onClick={simulateImages}
+                          disabled={imagesLoading}
+                          className="px-6 py-3 bg-gradient-to-r from-orange-600 to-orange-600 text-white rounded-xl text-sm font-bold transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 flex items-center gap-2 active:scale-95 disabled:opacity-50"
+                        >
+                          {imagesLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                          {imagesLoading ? 'Gerando...' : 'Gerar Imagens com IA'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </section>
+
+                {imagesGenerated && (
+                  <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-purple-600" /> Ambientações Geradas
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                      {[1, 2, 3].map((n) => (
+                        <div key={n} className="aspect-square rounded-xl border border-slate-200 bg-slate-100 flex flex-col items-center justify-center gap-2">
+                          <ImageIcon className="w-6 h-6 text-slate-400" />
+                          <span className="text-[11px] font-medium text-slate-400">Ambientação {n}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </div>
             )}
             {activeTab === 'video' && (
               <div className="text-center py-12 text-slate-400 text-sm">Aba "Vídeo" ainda não implementada.</div>
