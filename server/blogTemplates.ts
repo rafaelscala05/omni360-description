@@ -72,7 +72,7 @@ function layout(ctx: BlogRenderContext, head: Head, body: string): string {
 <meta property="og:url" content="${escapeHtml(canonical)}">
 ${head.ogImage ? `<meta property="og:image" content="${escapeHtml(head.ogImage)}">` : ''}
 <meta name="twitter:card" content="summary_large_image">
-<script type="application/ld+json">${JSON.stringify(head.jsonLd)}</script>
+<script type="application/ld+json">${JSON.stringify(head.jsonLd).replace(/</g, '\\u003c')}</script>
 <style>${css(s)}</style>
 </head>
 <body>
@@ -185,7 +185,7 @@ export function renderPost(ctx: BlogRenderContext, post: BlogPost): string {
       headline: post.title, description: post.seo.metaDescription || post.excerpt,
       image: post.coverImageUrl, datePublished: post.publishedAt, dateModified: post.updatedAt,
       author: post.authorName ? { '@type': 'Person', name: post.authorName } : { '@type': 'Organization', name: s.title },
-      mainEntityOfPage: ctx.canonicalBase + ctx.baseUrl + '/' + post.slug,
+      mainEntityOfPage: ctx.canonicalBase + ctx.baseUrl + '/' + encodeURIComponent(post.slug),
     },
   }, body);
 }
