@@ -1,0 +1,23 @@
+{
+  "projectId": "960f8793-8cc1-4e8b-832b-8cb0ddaedd98",
+  "shape": "package",
+  "pkg": "react-example",
+  "globalName": "Alfreds",
+  "srcDir": ".ds-sync/_srcstage",
+  "tsconfig": "tsconfig.json",
+  "cssEntry": "dist/assets/index-DPF49KoK.css",
+  "extraEntries": ["react-router-dom"],
+  "provider": {
+    "component": "MemoryRouter",
+    "props": {}
+  },
+  "guidelinesGlob": [],
+  "readmeHeader": ".design-sync/conventions.md",
+  "overrides": {
+    "AgentCard": {"cardMode": "column"},
+    "CaseCard": {"cardMode": "column"}
+  },
+  "libOverrides": {
+    "source-kit.mjs": "synth entry uses export* which drops default exports; this repo's marketing components are all default-exported, so the fork adds a named `export { default as Name }` per file"
+  }
+}
