@@ -2,7 +2,8 @@
   "apphosting": {},
   "firestore": {
     "database": "alfstorage260612",
-    "rules": "firestore.rules"
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
   },
   "storage": {
     "rules": "storage.rules"
