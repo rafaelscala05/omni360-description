@@ -70,15 +70,22 @@ export function registerBlogAdminRoutes(app: express.Application, deps: Deps): v
       const domain = normalizeDomain(String((req.body as { domain?: string }).domain ?? ''));
       const { projectId } = req.params;
       const ref = adminDb.collection('blogDomains').doc(domain);
-      const snap = await ref.get();
-      if (snap.exists) {
-        const d = snap.data() as { uid: string };
-        if (d.uid !== decoded.uid) return res.status(409).json({ error: 'Domínio já registrado por outra conta' });
-        return res.json({ domain, verificationToken: (snap.data() as { verificationToken: string }).verificationToken });
-      }
       const verificationToken = `alfred-verify=${randomUUID()}`;
-      await ref.set({ uid: decoded.uid, projectId, verified: false, verificationToken, createdAt: new Date().toISOString() });
-      res.json({ domain, verificationToken });
+      try {
+        // create() falha com ALREADY_EXISTS se o doc já existir — evita corrida
+        // TOCTOU entre a checagem de existência e a gravação (get + set não é atômico).
+        await ref.create({ uid: decoded.uid, projectId, verified: false, verificationToken, createdAt: new Date().toISOString() });
+        return res.json({ domain, verificationToken });
+      } catch (err) {
+        const isAlreadyExists = (err as { code?: number }).code === 6;
+        if (!isAlreadyExists) throw err;
+        const snap = await ref.get();
+        const d = snap.data() as { uid: string; verificationToken: string } | undefined;
+        if (d && d.uid === decoded.uid) {
+          return res.json({ domain, verificationToken: d.verificationToken });
+        }
+        return res.status(409).json({ error: 'Domínio já registrado por outra conta' });
+      }
     } catch (err) { sendError(res, err); }
   });
 
