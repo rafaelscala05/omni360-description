@@ -437,7 +437,56 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
               </div>
             )}
             {activeTab === 'conteudo' && (
-              <div className="text-center py-12 text-slate-400 text-sm">Aba "Conteúdo" ainda não implementada.</div>
+              <div className="space-y-8">
+                <header className="bg-slate-900 p-8 rounded-3xl shadow-xl flex items-center justify-between gap-8">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="p-2 bg-orange-500 rounded-xl">
+                        <Wand2 className="w-5 h-5 text-white" />
+                      </div>
+                      <h2 className="text-xl font-bold text-white tracking-tight">Escritor Criativo IA</h2>
+                    </div>
+                    <p className="text-slate-400 text-sm max-w-lg leading-relaxed">
+                      Gere descrições ricas, otimizadas para conversão e SEO com um clique.
+                    </p>
+                  </div>
+                  {!descriptionGenerated && (
+                    <button
+                      onClick={simulateDescription}
+                      disabled={descriptionLoading}
+                      className="px-8 py-4 bg-orange-600 text-white rounded-2xl font-bold hover:bg-orange-700 shadow-lg shadow-orange-900/20 text-sm transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50 whitespace-nowrap"
+                    >
+                      {descriptionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                      {descriptionLoading ? 'Gerando...' : 'Gerar Conteúdo Premium'}
+                    </button>
+                  )}
+                </header>
+
+                {descriptionGenerated && (
+                  <div className="grid grid-cols-1 gap-8">
+                    <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+                      <label className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2 mb-4">
+                        <Layout className="w-4 h-4 text-orange-600" /> Descrição Comercial (HTML)
+                      </label>
+                      <div
+                        className="border border-slate-200 rounded-2xl p-4 bg-slate-50 prose prose-sm max-w-none text-slate-700"
+                        dangerouslySetInnerHTML={{ __html: MOCK_DESCRIPTION_HTML }}
+                      />
+                    </div>
+                    <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
+                      <h3 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-4">Configurações de SEO</h3>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Meta Title</label>
+                        <input type="text" readOnly value={MOCK_SEO.title} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Meta Description</label>
+                        <textarea readOnly rows={3} value={MOCK_SEO.metaDescription} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none resize-none" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
             {activeTab === 'imagens' && (
               <div className="text-center py-12 text-slate-400 text-sm">Aba "Imagens" ainda não implementada.</div>
