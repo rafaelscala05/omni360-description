@@ -13,6 +13,7 @@ import { registerContentRoutes, startContentScheduler } from "./server/contentAg
 import { registerVideoRoutes } from "./server/videoAgent";
 import { registerWakeRoutes } from "./server/wakeAgent";
 import { registerBlogPublic } from "./server/blogPublic";
+import { registerBlogAdminRoutes } from "./server/blogAdmin";
 
 // Do NOT override: in production the App Hosting environment (apphosting.yaml /
 // Secret Manager) must take precedence over any stray .env bundled in the image.
@@ -176,6 +177,7 @@ async function startServer() {
   // Blog nativo (CMS) — serving público SSR. Precisa vir antes do Vite/static
   // para que /b/{slug} e domínios customizados não caiam no SPA.
   registerBlogPublic(app);
+  registerBlogAdminRoutes(app, { verifyFirebaseToken });
 
   // API routes FIRST (image upload — all AI generation now runs client-side via Firebase AI Logic)
 
