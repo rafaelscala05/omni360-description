@@ -107,19 +107,26 @@ const PostEditor: React.FC<Props> = ({ uid, projectId, post, existingPosts, cate
     setSaving(status);
     try {
       const html = bodyRef.current?.innerHTML ?? '';
+      const trimmedMetaTitle = metaTitle.trim();
+      const trimmedMetaDescription = metaDescription.trim();
+      const publishedAtValue =
+        status === 'published' ? (post?.publishedAt ?? new Date().toISOString()) : post?.publishedAt;
       await saveBlogPost(uid, projectId, {
         id: post?.id,
         title: title.trim(),
         slug: finalSlug,
         html,
         excerpt: excerpt.trim(),
-        coverImageUrl: coverImageUrl || undefined,
         categoryIds,
         status,
-        publishedAt: status === 'published' ? (post?.publishedAt ?? new Date().toISOString()) : post?.publishedAt,
-        seo: { metaTitle: metaTitle.trim() || undefined, metaDescription: metaDescription.trim() || undefined },
-        authorName: post?.authorName,
-        sourceArticleId: post?.sourceArticleId,
+        seo: {
+          ...(trimmedMetaTitle ? { metaTitle: trimmedMetaTitle } : {}),
+          ...(trimmedMetaDescription ? { metaDescription: trimmedMetaDescription } : {}),
+        },
+        ...(coverImageUrl ? { coverImageUrl } : {}),
+        ...(publishedAtValue ? { publishedAt: publishedAtValue } : {}),
+        ...(post?.authorName ? { authorName: post.authorName } : {}),
+        ...(post?.sourceArticleId ? { sourceArticleId: post.sourceArticleId } : {}),
         createdAt: post?.createdAt ?? new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });

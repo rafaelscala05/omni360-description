@@ -78,7 +78,12 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings }) => {
   const [error, setError] = useState<string | null>(null);
 
   const handleSelectTemplate = async (id: BlogTemplateId) => {
-    await saveBlogSettings(uid, projectId, { template: id });
+    setError(null);
+    try {
+      await saveBlogSettings(uid, projectId, { template: id });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao salvar template');
+    }
   };
 
   const handleSaveText = async () => {
@@ -109,11 +114,21 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings }) => {
   };
 
   const handleRemoveLogo = async () => {
-    await saveBlogSettings(uid, projectId, { logoUrl: '' });
+    setError(null);
+    try {
+      await saveBlogSettings(uid, projectId, { logoUrl: '' });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao remover logo');
+    }
   };
 
   const handleColorChange = async (key: 'primary' | 'background' | 'text', value: string) => {
-    await saveBlogSettings(uid, projectId, { colors: { ...settings.colors, [key]: value } });
+    setError(null);
+    try {
+      await saveBlogSettings(uid, projectId, { colors: { ...settings.colors, [key]: value } });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao salvar cor');
+    }
   };
 
   return (
