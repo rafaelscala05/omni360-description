@@ -25,6 +25,31 @@ function cacheSet(key: string, body: string, contentType: string, status = 200) 
 
 interface Tenant { uid: string; projectId: string; settings: BlogSettings; }
 
+// Resolve o host efetivo priorizando X-Forwarded-Host (proxy do cliente),
+// com fallback para Host. Usado de forma consistente na cache key, no
+// contexto de renderização e na resolução de domínio customizado, para
+// evitar colisão de cache entre tenants atrás de um mesmo proxy reverso.
+function resolvedHost(req: express.Request): string {
+  const raw = (req.headers['x-forwarded-host'] as string) || req.headers.host || '';
+  return raw.split(',')[0].trim().toLowerCase();
+}
+
+// Cache de resolução de domínio (tenant por host), TTL 60s, com limite de
+// entradas — bounds Firestore reads para hosts que não são de blog.
+const DOMAIN_CACHE_TTL_MS = 60_000;
+const domainCache = new Map<string, { tenant: Tenant | null; expires: number }>();
+
+function domainCacheGet(host: string): { tenant: Tenant | null } | undefined {
+  const hit = domainCache.get(host);
+  if (hit && hit.expires > Date.now()) return hit;
+  domainCache.delete(host);
+  return undefined;
+}
+function domainCacheSet(host: string, tenant: Tenant | null) {
+  if (domainCache.size > 500) domainCache.clear(); // proteção simples de memória
+  domainCache.set(host, { tenant, expires: Date.now() + DOMAIN_CACHE_TTL_MS });
+}
+
 function blogRef(t: { uid: string; projectId: string }) {
   return adminDb.collection('users').doc(t.uid).collection('contentProjects').doc(t.projectId);
 }
@@ -68,8 +93,8 @@ async function loadPublishedPosts(t: Tenant): Promise<BlogPost[]> {
 
 function makeCtx(t: Tenant, categories: BlogCategory[], baseUrl: string, req: express.Request): BlogRenderContext {
   const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
-  const host = (req.headers['x-forwarded-host'] as string) || req.headers.host || '';
-  return { settings: t.settings, categories, baseUrl, canonicalBase: `${proto}://${host.split(',')[0].trim()}` };
+  const host = resolvedHost(req);
+  return { settings: t.settings, categories, baseUrl, canonicalBase: `${proto}://${host}` };
 }
 
 // Router compartilhado entre /b/{slug} e domínios customizados.
@@ -81,7 +106,7 @@ async function serveBlogPath(
   req: express.Request,
   res: express.Response,
 ): Promise<void> {
-  const cacheKey = `${req.headers.host}|${baseUrl}|${path}|${req.query.page ?? ''}`;
+  const cacheKey = `${resolvedHost(req)}|${baseUrl}|${path}|${req.query.page ?? ''}`;
   const hit = cacheGet(cacheKey);
   if (hit) {
     res.status(hit.status).type(hit.contentType).setHeader('Cache-Control', 'public, max-age=60').send(hit.body);
@@ -140,7 +165,7 @@ async function serveBlogPath(
     const catSlug = decodeURIComponent(catMatch[1]);
     const category = categories.find((c) => c.slug === catSlug);
     if (!category) return send(renderNotFound(ctx, 'Categoria não encontrada.'), 'html', 404);
-    const filtered = posts.filter((p) => p.categoryIds.includes(category.id));
+    const filtered = posts.filter((p) => (p.categoryIds ?? []).includes(category.id));
     const { slice, hasMore } = paginate(filtered);
     return send(renderHome(ctx, slice, { page, hasMore, category }));
   }
@@ -182,16 +207,23 @@ export function registerBlogPublic(app: express.Application): void {
 
   app.use(async (req, res, next) => {
     if (req.method !== 'GET') return next();
-    const rawHost = (req.headers['x-forwarded-host'] as string) || req.headers.host || '';
-    const host = rawHost.split(',')[0].trim().toLowerCase();
+    const host = resolvedHost(req);
     if (!host || platformHosts.has(host)) return next();
     // Evita capturar assets/API por engano em hosts desconhecidos.
     if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/')) return next();
     try {
-      const tenant = await loadTenantByDomain(host);
+      let tenant: Tenant | null;
+      const cached = domainCacheGet(host);
+      if (cached) {
+        tenant = cached.tenant;
+      } else {
+        tenant = await loadTenantByDomain(host);
+        domainCacheSet(host, tenant);
+      }
       if (!tenant) return next();
-      const path = req.path.startsWith('/blog') ? req.path.slice('/blog'.length) || '/' : req.path;
-      const baseUrl = req.path.startsWith('/blog') ? '/blog' : '';
+      const isProxyPrefix = req.path === '/blog' || req.path.startsWith('/blog/');
+      const path = isProxyPrefix ? req.path.slice('/blog'.length) || '/' : req.path;
+      const baseUrl = isProxyPrefix ? '/blog' : '';
       await serveBlogPath(tenant, path, baseUrl, req, res);
     } catch (err) {
       console.error('blog domain error:', err);
