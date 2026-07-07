@@ -21,6 +21,8 @@ import type {
   CalendarArticle,
   ArticleStage,
 } from '../src/modules/content/types';
+import type { BlogPost, BlogSettings } from '../src/modules/content/blog/types';
+import { slugify, uniqueSlug } from '../src/modules/content/blog/slug';
 
 const TEXT_MODEL = 'gemini-2.5-flash';
 const IMAGE_MODEL = 'gemini-2.5-flash-image';
@@ -806,6 +808,78 @@ async function publishToSanity(uid: string, projectId: string, articleId: string
   return documentUrl;
 }
 
+// Fase 5 — publicação no Blog nativo (CMS da plataforma).
+// Copia o artigo final para blogPosts como published e retorna a URL pública.
+async function publishToBlog(uid: string, projectId: string, articleId: string): Promise<string> {
+  const settingsSnap = await projectRef(uid, projectId).collection('blog').doc('settings').get();
+  if (!settingsSnap.exists || !(settingsSnap.data() as BlogSettings).enabled) {
+    throw Object.assign(new Error('Blog nativo não está configurado/habilitado para este projeto'), { status: 400 });
+  }
+  const settings = settingsSnap.data() as BlogSettings;
+
+  const artRef = projectRef(uid, projectId).collection('calendar').doc(articleId);
+  const snap = await artRef.get();
+  if (!snap.exists) throw Object.assign(new Error('Artigo não encontrado'), { status: 404 });
+  const article = { id: snap.id, ...(snap.data() as Omit<CalendarArticle, 'id'>) };
+  if (!article.articleFinal) {
+    throw Object.assign(new Error('Artigo ainda não tem versão final para publicar'), { status: 400 });
+  }
+
+  const postsCol = projectRef(uid, projectId).collection('blogPosts');
+
+  // Se já publicado antes (re-publish), reaproveita o mesmo post/slug.
+  const existing = await postsCol.where('sourceArticleId', '==', articleId).limit(1).get();
+  const now = new Date().toISOString();
+
+  let slug: string;
+  let postRef;
+  if (!existing.empty) {
+    postRef = existing.docs[0].ref;
+    slug = (existing.docs[0].data() as BlogPost).slug;
+  } else {
+    const all = await postsCol.get();
+    const taken = new Set(all.docs.map((d) => (d.data() as BlogPost).slug));
+    slug = uniqueSlug(article.slug || slugify(article.titulo), taken);
+    postRef = postsCol.doc();
+  }
+
+  const excerpt = (article.metaDescription || article.articleFinal.replace(/<[^>]+>/g, ' '))
+    .replace(/\s+/g, ' ').trim().slice(0, 200);
+
+  await postRef.set({
+    title: article.titulo,
+    slug,
+    html: article.articleFinal,
+    excerpt,
+    coverImageUrl: article.imageUrl ?? '',
+    categoryIds: [],
+    status: 'published',
+    publishedAt: now,
+    seo: { metaTitle: article.titulo, metaDescription: article.metaDescription ?? '' },
+    sourceArticleId: articleId,
+    createdAt: existing.empty ? now : (existing.docs[0].data() as BlogPost).createdAt,
+    updatedAt: now,
+  }, { merge: true });
+
+  // URL pública: domínio verificado (se houver) ou /b/{slug} na plataforma.
+  const domainsSnap = await adminDb.collection('blogDomains')
+    .where('uid', '==', uid).where('projectId', '==', projectId).where('verified', '==', true).limit(1).get();
+  const base = domainsSnap.empty
+    ? `${(process.env.APP_URL || '').replace(/\/+$/, '') || 'http://localhost:3000'}/b/${settings.slug}`
+    : `https://${domainsSnap.docs[0].id}`;
+  const url = `${base}/${slug}`;
+
+  await debitCreditsAdmin(uid, CREDIT_ACTIONS.contentPublish, { productName: article.titulo });
+  await artRef.update({
+    status: 'publicado',
+    urlPublicado: url,
+    dataPublicacao: now,
+    updatedAt: now,
+  });
+
+  return url;
+}
+
 // Approved/published articles the Product agent can reuse in descriptions
 // (cross-module data share: Produto usa conteúdo gerado). Scoped to the user's
 // own projects (no global collectionGroup).
@@ -949,8 +1023,11 @@ export function registerContentRoutes(app: express.Application, deps: ContentDep
     try {
       const decoded = await verifyFirebaseToken(req);
       const project = await loadProject(decoded.uid, req.params.projectId);
+      const { destination } = (req.body ?? {}) as { destination?: 'blog' | 'wordpress' | 'sanity' };
       let url: string;
-      if (project.config.sanityProjectId) {
+      if (destination === 'blog') {
+        url = await publishToBlog(decoded.uid, req.params.projectId, req.params.articleId);
+      } else if (destination === 'sanity' || (!destination && project.config.sanityProjectId)) {
         url = await publishToSanity(decoded.uid, req.params.projectId, req.params.articleId);
       } else {
         url = await publishToWordpress(decoded.uid, req.params.projectId, req.params.articleId);
