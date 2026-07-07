@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { GraduationCap, ArrowRight, ArrowLeft, X, CheckCircle2, Image as ImageIcon, Sparkles, Loader2 } from 'lucide-react';
+import { GraduationCap, ArrowRight, ArrowLeft, X, CheckCircle2, Image as ImageIcon, Sparkles, Loader2, Play } from 'lucide-react';
 
 interface TutorialViewProps {
   onFinish: () => void;
@@ -74,6 +74,27 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
       setImagesLoading(false);
       setImagesGenerated(true);
     }, 1500);
+  };
+
+  const [videoStatus, setVideoStatus] = useState<'idle' | 'processing' | 'done'>('idle');
+  const [videoStepLabel, setVideoStepLabel] = useState('');
+  const [videoError, setVideoError] = useState(false);
+
+  const simulateVideo = () => {
+    setVideoStatus('processing');
+    const stages: [string, number][] = [
+      ['Gerando roteiro...', 800],
+      ['Renderizando cenas...', 1200],
+      ['Gerando narração...', 800],
+      ['Mixando áudio...', 600],
+      ['Finalizando vídeo...', 600],
+    ];
+    let elapsed = 0;
+    stages.forEach(([label, duration]) => {
+      elapsed += duration;
+      setTimeout(() => setVideoStepLabel(label), elapsed - duration);
+    });
+    setTimeout(() => setVideoStatus('done'), elapsed);
   };
 
   const goNext = () => setStepIndex((i) => Math.min(i + 1, STEPS.length - 1));
@@ -243,6 +264,52 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
                     <span className="text-[11px] font-medium text-slate-400">Ambientação {n}</span>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        );
+      case 'video':
+        return (
+          <div>
+            <h3 className="text-base font-bold text-slate-800 mb-1">Gerar Vídeo</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              A partir das imagens e da descrição, a IA monta um vídeo curto
+              de apresentação do produto.
+            </p>
+            {videoStatus === 'idle' && (
+              <button
+                onClick={simulateVideo}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-[#FF5B03] rounded-lg hover:bg-[#e65200] transition-colors"
+              >
+                <Sparkles className="w-4 h-4" /> Simular geração
+              </button>
+            )}
+            {videoStatus === 'processing' && (
+              <div className="p-4 border border-slate-200 rounded-xl bg-slate-50">
+                <div className="flex items-center gap-2 mb-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-violet-500" />
+                  <span className="text-xs font-medium text-slate-600">{videoStepLabel || 'Iniciando...'}</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                  <div className="h-full bg-violet-500 animate-pulse" style={{ width: '70%' }} />
+                </div>
+              </div>
+            )}
+            {videoStatus === 'done' && (
+              <div className="rounded-xl overflow-hidden border border-slate-200 bg-black">
+                {!videoError ? (
+                  <video
+                    controls
+                    className="w-full aspect-video"
+                    src="/tutorial/demo-video.mp4"
+                    onError={() => setVideoError(true)}
+                  />
+                ) : (
+                  <div className="aspect-video flex flex-col items-center justify-center gap-2 text-slate-400 bg-slate-900">
+                    <Play className="w-8 h-8" />
+                    <span className="text-xs font-medium">Vídeo de exemplo em breve</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
