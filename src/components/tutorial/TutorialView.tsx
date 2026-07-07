@@ -65,6 +65,17 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
     }, 1200);
   };
 
+  const [imagesLoading, setImagesLoading] = useState(false);
+  const [imagesGenerated, setImagesGenerated] = useState(false);
+
+  const simulateImages = () => {
+    setImagesLoading(true);
+    setTimeout(() => {
+      setImagesLoading(false);
+      setImagesGenerated(true);
+    }, 1500);
+  };
+
   const goNext = () => setStepIndex((i) => Math.min(i + 1, STEPS.length - 1));
   const goBack = () => setStepIndex((i) => Math.max(i - 1, 0));
   const restart = () => setStepIndex(0);
@@ -198,6 +209,42 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
                 </React.Fragment>
               ))}
             </div>
+          </div>
+        );
+      case 'images':
+        return (
+          <div>
+            <h3 className="text-base font-bold text-slate-800 mb-1">Gerar Imagens Ambientadas</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              A IA gera fotos de estilo de vida mostrando o produto em uso,
+              a partir da foto original.
+            </p>
+            {!imagesGenerated ? (
+              <button
+                onClick={simulateImages}
+                disabled={imagesLoading}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-[#FF5B03] rounded-lg hover:bg-[#e65200] transition-colors disabled:opacity-60"
+              >
+                {imagesLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                {imagesLoading ? 'Gerando...' : 'Simular geração'}
+              </button>
+            ) : (
+              <div className="grid grid-cols-3 gap-3">
+                {[1, 2, 3].map((n) => (
+                  <div
+                    key={n}
+                    className="aspect-square rounded-xl bg-slate-100 border border-slate-200 flex flex-col items-center justify-center gap-2"
+                  >
+                    <ImageIcon className="w-6 h-6 text-slate-400" />
+                    <span className="text-[11px] font-medium text-slate-400">Ambientação {n}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         );
       case 'done':
