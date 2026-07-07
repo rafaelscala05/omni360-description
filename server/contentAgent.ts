@@ -852,7 +852,9 @@ async function publishToBlog(uid: string, projectId: string, articleId: string):
     html: article.articleFinal,
     excerpt,
     coverImageUrl: article.imageUrl ?? '',
-    categoryIds: [],
+    // Só inicializa categoryIds em post novo; no re-publish o merge preserva
+    // as categorias atribuídas pelo usuário no editor do blog.
+    ...(existing.empty ? { categoryIds: [] } : {}),
     status: 'published',
     publishedAt: now,
     seo: { metaTitle: article.titulo, metaDescription: article.metaDescription ?? '' },
