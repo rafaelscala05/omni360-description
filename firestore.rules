@@ -102,6 +102,15 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Lookup público do blog (slug → tenant, domínio → tenant). Escritas e
+    // leituras apenas pelo servidor via Admin SDK; o cliente é negado.
+    match /blogSlugs/{slug} {
+      allow read, write: if false;
+    }
+    match /blogDomains/{domain} {
+      allow read, write: if false;
+    }
+
     // Leads do site de marketing (formulário de contato). Criação pública
     // (sem autenticação), mas ninguém — nem o próprio autor — pode ler,
     // atualizar ou apagar pelo cliente; leitura é só via console/Admin SDK.
@@ -198,6 +207,18 @@ service cloud.firestore {
         match /secrets/{secretId} {
           allow read: if false;
           allow write: if isOwner(userId);
+        }
+
+        // Blog nativo (CMS). O dono gerencia settings/posts/categorias pelo
+        // client; o serving público lê via Admin SDK (bypassa estas regras).
+        match /blog/{docId} {
+          allow read, write: if isOwner(userId);
+        }
+        match /blogPosts/{postId} {
+          allow read, write: if isOwner(userId);
+        }
+        match /blogCategories/{catId} {
+          allow read, write: if isOwner(userId);
         }
       }
     }
