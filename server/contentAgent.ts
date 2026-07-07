@@ -869,7 +869,8 @@ async function publishToBlog(uid: string, projectId: string, articleId: string):
     : `https://${domainsSnap.docs[0].id}`;
   const url = `${base}/${slug}`;
 
-  await debitCreditsAdmin(uid, CREDIT_ACTIONS.contentPublish, { productName: article.titulo });
+  // Sem débito de créditos: o artigo já foi pago na produção; content_publish
+  // aplica-se apenas às integrações externas (WordPress/Sanity).
   await artRef.update({
     status: 'publicado',
     urlPublicado: url,
