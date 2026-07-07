@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { X, Check, RefreshCw, Globe, ExternalLink, Play, Pencil } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { X, Check, RefreshCw, Globe, ExternalLink, Play, Pencil, Eye, Code } from 'lucide-react';
 import type { CalendarArticle } from './types';
 import { updateArticle, publishArticle, produceArticle } from '../../services/contentService';
+import { markdownToHtml } from './markdown';
 
 interface Props {
   uid: string;
@@ -24,6 +25,9 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
     (article.produtosVinculados ?? []).join(', '),
   );
   const [destino, setDestino] = useState<'nativo' | 'integracao'>('integracao');
+  // O artigo é produzido em Markdown; a aba Visualizar mostra o texto renderizado.
+  const [modo, setModo] = useState<'visualizar' | 'editar'>('visualizar');
+  const previewHtml = useMemo(() => markdownToHtml(edited), [edited]);
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
@@ -121,13 +125,38 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
             <div className="text-center text-slate-400 py-10 text-sm">Artigo ainda não produzido.</div>
           ) : (
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Conteúdo final (Markdown)</label>
-              <textarea
-                value={edited}
-                onChange={(e) => setEdited(e.target.value)}
-                rows={16}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-[#FF5B03] focus:border-[#FF5B03]"
-              />
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-sm font-medium text-slate-700">Conteúdo final</label>
+                <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden text-xs font-medium">
+                  <button
+                    type="button"
+                    onClick={() => setModo('visualizar')}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 ${modo === 'visualizar' ? 'bg-[#FF5B03] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    <Eye className="w-3.5 h-3.5" /> Visualizar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModo('editar')}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 border-l border-slate-200 ${modo === 'editar' ? 'bg-[#FF5B03] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    <Code className="w-3.5 h-3.5" /> Editar (Markdown)
+                  </button>
+                </div>
+              </div>
+              {modo === 'visualizar' ? (
+                <div
+                  className="article-preview border border-slate-200 rounded-lg px-5 py-4 max-h-[420px] overflow-y-auto bg-white text-[15px] leading-relaxed text-slate-800 [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:mt-5 [&_h2]:mb-2 [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:mt-4 [&_h3]:mb-1.5 [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:mb-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:mb-3 [&_li]:mb-1 [&_a]:text-[#FF5B03] [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-[#FF5B03] [&_blockquote]:pl-3 [&_blockquote]:text-slate-500 [&_strong]:font-semibold [&_img]:max-w-full [&_img]:rounded-lg"
+                  dangerouslySetInnerHTML={{ __html: previewHtml }}
+                />
+              ) : (
+                <textarea
+                  value={edited}
+                  onChange={(e) => setEdited(e.target.value)}
+                  rows={16}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-[#FF5B03] focus:border-[#FF5B03]"
+                />
+              )}
               {article.metaDescription && <p className="text-xs text-slate-400 mt-1">Meta: {article.metaDescription}</p>}
             </div>
           )}

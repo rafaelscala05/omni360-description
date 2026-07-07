@@ -35,7 +35,8 @@ const BlogCategories: React.FC<Props> = ({ uid, projectId, categories }) => {
       await saveBlogCategory(uid, projectId, {
         name: name.trim(),
         slug: slug.trim() || slugify(name),
-        description: description.trim() || undefined,
+        // Firestore rejeita valores undefined — só inclui o campo se preenchido.
+        ...(description.trim() ? { description: description.trim() } : {}),
       });
       setName('');
       setSlug('');

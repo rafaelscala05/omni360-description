@@ -5,6 +5,7 @@ import type express from 'express';
 import { adminDb } from './firebaseAdmin';
 import { renderHome, renderPost, renderNotFound, escapeHtml, type BlogRenderContext } from './blogTemplates';
 import type { BlogSettings, BlogPost, BlogCategory, BlogDomainDoc } from '../src/modules/content/blog/types';
+import { ensureHtml } from '../src/modules/content/markdown';
 
 const POSTS_PER_PAGE = 10;
 const CACHE_TTL_MS = 60_000;
@@ -88,7 +89,12 @@ async function loadPublishedPosts(t: Tenant): Promise<BlogPost[]> {
     .where('status', '==', 'published')
     .orderBy('publishedAt', 'desc')
     .get();
-  return snap.docs.map((d) => ({ ...(d.data() as Omit<BlogPost, 'id'>), id: d.id }));
+  // ensureHtml: posts publicados antes da conversão no publish guardam
+  // Markdown cru no campo html — converte na hora de servir.
+  return snap.docs.map((d) => {
+    const data = d.data() as Omit<BlogPost, 'id'>;
+    return { ...data, html: ensureHtml(data.html), id: d.id };
+  });
 }
 
 async function loadVerifiedDomain(t: Tenant): Promise<string | null> {
@@ -132,15 +138,20 @@ async function serveBlogPath(
   res: express.Response,
 ): Promise<void> {
   const cacheKey = `${resolvedHost(req)}|${baseUrl}|${path}|${req.query.page ?? ''}`;
-  const hit = cacheGet(cacheKey);
+  // ?preview=1 (aba Aparência do admin) ignora e não alimenta o cache, para
+  // o dono ver as mudanças de tema imediatamente.
+  const isPreview = req.query.preview === '1';
+  const hit = isPreview ? null : cacheGet(cacheKey);
   if (hit) {
     res.status(hit.status).type(hit.contentType).setHeader('Cache-Control', 'public, max-age=60').send(hit.body);
     return;
   }
 
   const send = (body: string, contentType = 'html', status = 200) => {
-    cacheSet(cacheKey, body, contentType, status);
-    res.status(status).type(contentType).setHeader('Cache-Control', 'public, max-age=60').send(body);
+    if (!isPreview) cacheSet(cacheKey, body, contentType, status);
+    res.status(status).type(contentType)
+      .setHeader('Cache-Control', isPreview ? 'no-store' : 'public, max-age=60')
+      .send(body);
   };
 
   const [categories, posts, verifiedDomain] = await Promise.all([loadCategories(t), loadPublishedPosts(t), loadVerifiedDomain(t)]);

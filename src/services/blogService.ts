@@ -76,7 +76,9 @@ export function listenBlogCategories(
 export async function saveBlogCategory(
   uid: string, projectId: string, cat: Omit<BlogCategory, 'id' | 'createdAt'> & { id?: string },
 ): Promise<string> {
-  const { id, ...data } = cat;
+  const { id, ...rest } = cat;
+  // Firestore rejeita valores undefined em addDoc/updateDoc — remove as chaves.
+  const data = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
   if (id) {
     await updateDoc(doc(catsCol(uid, projectId), id), data);
     return id;

@@ -25,6 +25,54 @@ export const DEFAULT_BLOG_COLORS: BlogColors = {
   text: '#0f172a',
 };
 
+// Fontes disponíveis para o blog (servidas via Google Fonts no SSR público).
+// `family` é o nome na API do Google Fonts; `stack` é o fallback CSS.
+export interface BlogFontOption {
+  family: string;
+  stack: string;
+  categoria: 'serifada' | 'sem serifa';
+}
+
+export const BLOG_FONTS: BlogFontOption[] = [
+  { family: 'Merriweather', stack: 'Georgia, serif', categoria: 'serifada' },
+  { family: 'Lora', stack: 'Georgia, serif', categoria: 'serifada' },
+  { family: 'Playfair Display', stack: 'Georgia, serif', categoria: 'serifada' },
+  { family: 'Source Serif 4', stack: 'Georgia, serif', categoria: 'serifada' },
+  { family: 'Inter', stack: 'system-ui, sans-serif', categoria: 'sem serifa' },
+  { family: 'Montserrat', stack: 'system-ui, sans-serif', categoria: 'sem serifa' },
+  { family: 'Open Sans', stack: 'system-ui, sans-serif', categoria: 'sem serifa' },
+  { family: 'Roboto', stack: 'system-ui, sans-serif', categoria: 'sem serifa' },
+];
+
+export interface BlogFonts {
+  heading: string; // family de BLOG_FONTS
+  body: string;
+}
+
+export const DEFAULT_BLOG_FONTS: BlogFonts = {
+  heading: 'Playfair Display',
+  body: 'Merriweather',
+};
+
+// Opções de layout do personalizador de aparência. Todos os campos têm
+// default no SSR, então settings antigos continuam válidos sem migração.
+export interface BlogLayout {
+  contentWidth: 'estreito' | 'normal' | 'largo';   // 680 / 1024 / 1280 px
+  headerAlign: 'esquerda' | 'centro';
+  cardStyle: 'sombra' | 'borda' | 'plano';          // cards do template grid/listas
+  cornerRadius: 'reto' | 'suave' | 'arredondado';   // 0 / 8px / 16px
+  showCategoriesNav: boolean;
+  footerText?: string; // vazio = "© ano título"
+}
+
+export const DEFAULT_BLOG_LAYOUT: BlogLayout = {
+  contentWidth: 'normal',
+  headerAlign: 'esquerda',
+  cardStyle: 'borda',
+  cornerRadius: 'suave',
+  showCategoriesNav: true,
+};
+
 export interface BlogSettings {
   enabled: boolean;
   slug: string; // identificador público único global (claim server-side em blogSlugs)
@@ -33,6 +81,8 @@ export interface BlogSettings {
   template: BlogTemplateId;
   logoUrl?: string;
   colors: BlogColors;
+  fonts?: BlogFonts;   // ausente = DEFAULT_BLOG_FONTS
+  layout?: BlogLayout; // ausente = DEFAULT_BLOG_LAYOUT
   customDomains: string[];    // espelho de blogDomains para exibição na UI
   verifiedDomains?: string[]; // subconjunto de customDomains já verificados (exibição)
   createdAt: string;

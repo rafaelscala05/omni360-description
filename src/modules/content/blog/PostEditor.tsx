@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Bold, Italic, Heading2, Heading3, List, Image as ImageIcon, RefreshCw, Check } from 'lucide-react';
 import type { BlogPost, BlogCategory } from './types';
 import { slugify, uniqueSlug } from './slug';
+import { ensureHtml } from '../markdown';
 import { saveBlogPost } from '../../../services/blogService';
 import { auth } from '../../../firebase';
 
@@ -279,11 +280,13 @@ const PostEditor: React.FC<Props> = ({ uid, projectId, post, existingPosts, cate
                 <List className="w-4 h-4" />
               </button>
             </div>
+            {/* ensureHtml: posts antigos do pipeline guardavam Markdown cru —
+                converte ao abrir para editar com formatação real. */}
             <div
               ref={bodyRef}
               contentEditable
               suppressContentEditableWarning
-              dangerouslySetInnerHTML={{ __html: post?.html ?? '' }}
+              dangerouslySetInnerHTML={{ __html: ensureHtml(post?.html ?? '') }}
               className="min-h-[240px] px-3.5 py-3 text-sm text-slate-800 focus:outline-none prose prose-sm max-w-none"
             />
           </div>

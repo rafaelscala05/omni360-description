@@ -23,6 +23,7 @@ import type {
 } from '../src/modules/content/types';
 import type { BlogPost, BlogSettings } from '../src/modules/content/blog/types';
 import { slugify, uniqueSlug } from '../src/modules/content/blog/slug';
+import { markdownToHtml } from '../src/modules/content/markdown';
 
 const TEXT_MODEL = 'gemini-2.5-flash';
 const IMAGE_MODEL = 'gemini-2.5-flash-image';
@@ -611,19 +612,8 @@ async function runArticlePipeline(
 // Fase 5 — WordPress publishing
 // ---------------------------------------------------------------------------
 
-// Minimal Markdown→HTML good enough for WP body (headings, bold, paragraphs).
-function markdownToHtml(md: string): string {
-  return md
-    .replace(/SLUG:.*$/im, '')
-    .replace(/META:.*$/im, '')
-    .replace(/^### (.*)$/gim, '<h3>$1</h3>')
-    .replace(/^## (.*)$/gim, '<h2>$1</h2>')
-    .replace(/^# (.*)$/gim, '<h1>$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .split(/\n{2,}/)
-    .map((block) => (/^<h[1-3]>/.test(block.trim()) ? block.trim() : `<p>${block.trim().replace(/\n/g, '<br>')}</p>`))
-    .join('\n');
-}
+// A conversão Markdown→HTML (WP e blog nativo) vive em
+// src/modules/content/markdown.ts (marked), compartilhada com o client.
 
 // Converts a subset of Markdown to Sanity Portable Text blocks.
 // Handles: headings (#, ##, ###), bold (**text**), paragraphs.
@@ -843,13 +833,15 @@ async function publishToBlog(uid: string, projectId: string, articleId: string):
     postRef = postsCol.doc();
   }
 
-  const excerpt = (article.metaDescription || article.articleFinal.replace(/<[^>]+>/g, ' '))
+  // O pipeline entrega o artigo em Markdown; o blog nativo armazena HTML.
+  const htmlBody = markdownToHtml(article.articleFinal);
+  const excerpt = (article.metaDescription || htmlBody.replace(/<[^>]+>/g, ' '))
     .replace(/\s+/g, ' ').trim().slice(0, 200);
 
   await postRef.set({
     title: article.titulo,
     slug,
-    html: article.articleFinal,
+    html: htmlBody,
     excerpt,
     coverImageUrl: article.imageUrl ?? '',
     // Só inicializa categoryIds em post novo; no re-publish o merge preserva
