@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'react';
-import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, FileSpreadsheet, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3, Plug } from 'lucide-react';
+import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, FileSpreadsheet, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3, Plug, GraduationCap } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import logoAlfreds from './assets/brand/logo-alfreds-produtos.png';
 import { Routes, Route, Navigate } from 'react-router-dom';
@@ -28,6 +28,7 @@ import { Category, Product, AttributeValue, getProductStatusFlags, ProductModalT
 import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate } from './services/productService';
 import { fetchCategories, generateCategoryHierarchy, flattenHierarchy, getEffectiveAttributes, addAttributeToCategory } from './services/categoryService';
 import IntegrationsView from './components/integrations/IntegrationsView';
+import TutorialView from './components/tutorial/TutorialView';
 import type { WakePushFields } from './components/integrations/WakeConnector';
 import type { WakeNormalizedProduct, WakePushProduct } from './services/wakeService';
 import { fetchAndProcessImage } from './utils/imageUtils';
@@ -160,7 +161,7 @@ export default function App() {
   useEffect(() => { productsRef.current = products; }, [products]);
   const [originalHeaders, setOriginalHeaders] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [mainView, setMainView] = useState<'products' | 'categories' | 'history' | 'integrations'>('products');
+  const [mainView, setMainView] = useState<'products' | 'categories' | 'history' | 'integrations' | 'tutorial'>('products');
   // Top-level workspace: the Product agent (this App) or the Content agency module.
   const [workspace, setWorkspace] = useState<'product' | 'content'>('product');
   const [exportModel, setExportModel] = useState<'standard' | 'tinyerp'>('standard');
@@ -2454,6 +2455,12 @@ Retorne APENAS um JSON válido no seguinte formato:
 
         <div className="p-4 mt-auto mb-2 border-t border-white/5 mx-3 flex flex-col gap-1">
           <button
+            onClick={() => { setMainView('tutorial'); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${mainView === 'tutorial' ? 'bg-[#1e293b] text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+          >
+            <GraduationCap className="w-4 h-4" /> Tutorial
+          </button>
+          <button
             onClick={() => { setMainView('integrations'); setIsSidebarOpen(false); }}
             className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${mainView === 'integrations' ? 'bg-[#1e293b] text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
           >
@@ -2557,6 +2564,8 @@ Retorne APENAS um JSON válido no seguinte formato:
             renderHistoryView()
           ) : mainView === 'integrations' ? (
             <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} />
+          ) : mainView === 'tutorial' ? (
+            <TutorialView onFinish={() => setMainView('products')} />
           ) : (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 h-full flex flex-col max-w-[1600px] mx-auto">
                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-5 gap-4 flex-shrink-0">
