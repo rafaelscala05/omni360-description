@@ -52,10 +52,12 @@ const BlogView: React.FC<Props> = ({ uid, projectId }) => {
     }
     setCreating(true);
     try {
-      await claimBlogSlug(projectId, slug);
+      // O servidor normaliza (slugifica) o valor recebido e devolve o slug
+      // canônico — é ele que deve ser persistido, não o input bruto do usuário.
+      const { slug: claimedSlug } = await claimBlogSlug(projectId, slug);
       await saveBlogSettings(uid, projectId, {
         enabled: true,
-        slug,
+        slug: claimedSlug,
         title: setupTitle.trim(),
         description: '',
         template: 'editorial',

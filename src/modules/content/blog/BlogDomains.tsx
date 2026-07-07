@@ -29,7 +29,8 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
     setError(null);
     try {
       const result = await addBlogDomain(projectId, trimmed);
-      await saveBlogSettings(uid, projectId, { customDomains: [...settings.customDomains, trimmed] });
+      // Evita duplicar o domínio (e a key do React) ao readicionar um domínio já existente.
+      await saveBlogSettings(uid, projectId, { customDomains: Array.from(new Set([...settings.customDomains, trimmed])) });
       setInstructions(result);
       setDomain('');
     } catch (e) {

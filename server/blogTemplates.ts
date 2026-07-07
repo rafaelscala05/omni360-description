@@ -7,6 +7,10 @@ export interface BlogRenderContext {
   categories: BlogCategory[];
   baseUrl: string;
   canonicalBase: string;
+  // Prefixo de caminho usado só no canonical/OG/JSON-LD (não nos links <a>
+  // internos). Quando há domínio customizado verificado, o domínio serve na
+  // raiz, então este prefixo fica vazio; default = baseUrl.
+  canonicalPathPrefix?: string;
 }
 
 export function escapeHtml(s: string): string {
@@ -145,6 +149,7 @@ export function renderHome(
 ): string {
   const { settings: s } = ctx;
   const cat = opts.category;
+  const cp = ctx.canonicalPathPrefix ?? ctx.baseUrl;
   const pathBase = cat ? `/categoria/${encodeURIComponent(cat.slug)}` : '/';
   const title = cat ? `${cat.name} — ${s.title}` : s.title;
   const body = `
@@ -157,13 +162,14 @@ export function renderHome(
   return layout(ctx, {
     title,
     description: cat?.description || s.description,
-    canonicalPath: `${ctx.baseUrl}${pathBase}`,
-    jsonLd: { '@context': 'https://schema.org', '@type': 'Blog', name: s.title, description: s.description, url: ctx.canonicalBase + ctx.baseUrl + '/' },
+    canonicalPath: `${cp}${pathBase}`,
+    jsonLd: { '@context': 'https://schema.org', '@type': 'Blog', name: s.title, description: s.description, url: ctx.canonicalBase + cp + '/' },
   }, body);
 }
 
 export function renderPost(ctx: BlogRenderContext, post: BlogPost): string {
   const { settings: s } = ctx;
+  const cp = ctx.canonicalPathPrefix ?? ctx.baseUrl;
   const cats = ctx.categories.filter((c) => post.categoryIds.includes(c.id));
   const body = `
     <article class="post-body${s.template === 'minimal' ? ' minimal' : ''}">
@@ -178,14 +184,14 @@ export function renderPost(ctx: BlogRenderContext, post: BlogPost): string {
   return layout(ctx, {
     title: post.seo.metaTitle || `${post.title} — ${s.title}`,
     description: post.seo.metaDescription || post.excerpt,
-    canonicalPath: `${ctx.baseUrl}/${encodeURIComponent(post.slug)}`,
+    canonicalPath: `${cp}/${encodeURIComponent(post.slug)}`,
     ogImage: post.coverImageUrl,
     jsonLd: {
       '@context': 'https://schema.org', '@type': 'BlogPosting',
       headline: post.title, description: post.seo.metaDescription || post.excerpt,
       image: post.coverImageUrl, datePublished: post.publishedAt, dateModified: post.updatedAt,
       author: post.authorName ? { '@type': 'Person', name: post.authorName } : { '@type': 'Organization', name: s.title },
-      mainEntityOfPage: ctx.canonicalBase + ctx.baseUrl + '/' + encodeURIComponent(post.slug),
+      mainEntityOfPage: ctx.canonicalBase + cp + '/' + encodeURIComponent(post.slug),
     },
   }, body);
 }
@@ -194,8 +200,9 @@ export function renderNotFound(ctx: BlogRenderContext | null, message: string): 
   if (!ctx) {
     return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Não encontrado</title></head><body style="font-family:sans-serif;text-align:center;padding:80px 16px"><h1>404</h1><p>${escapeHtml(message)}</p></body></html>`;
   }
+  const cp = ctx.canonicalPathPrefix ?? ctx.baseUrl;
   return layout(ctx, {
     title: `Não encontrado — ${ctx.settings.title}`, description: message,
-    canonicalPath: `${ctx.baseUrl}/`, jsonLd: { '@context': 'https://schema.org', '@type': 'WebPage', name: 'Não encontrado' },
+    canonicalPath: `${cp}/`, jsonLd: { '@context': 'https://schema.org', '@type': 'WebPage', name: 'Não encontrado' },
   }, `<h1>404</h1><p>${escapeHtml(message)}</p><p><a href="${ctx.baseUrl}/">← Voltar ao blog</a></p>`);
 }

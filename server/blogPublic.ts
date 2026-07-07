@@ -91,9 +91,34 @@ async function loadPublishedPosts(t: Tenant): Promise<BlogPost[]> {
   return snap.docs.map((d) => ({ ...(d.data() as Omit<BlogPost, 'id'>), id: d.id }));
 }
 
-function makeCtx(t: Tenant, categories: BlogCategory[], baseUrl: string, req: express.Request): BlogRenderContext {
+async function loadVerifiedDomain(t: Tenant): Promise<string | null> {
+  const snap = await adminDb.collection('blogDomains')
+    .where('uid', '==', t.uid).where('projectId', '==', t.projectId).where('verified', '==', true).limit(1).get();
+  return snap.empty ? null : snap.docs[0].id;
+}
+
+function makeCtx(
+  t: Tenant,
+  categories: BlogCategory[],
+  baseUrl: string,
+  req: express.Request,
+  verifiedDomain: string | null,
+): BlogRenderContext {
   const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
   const host = resolvedHost(req);
+  // Se existe domínio customizado verificado e o request atual não veio por
+  // ele, o canonical deve apontar para o domínio (fonte canônica), mesmo
+  // servindo pela URL /b/{slug} da plataforma. O domínio serve na raiz, então
+  // o prefixo de caminho do canonical fica vazio.
+  if (verifiedDomain && verifiedDomain !== host) {
+    return {
+      settings: t.settings,
+      categories,
+      baseUrl,
+      canonicalBase: `https://${verifiedDomain}`,
+      canonicalPathPrefix: '',
+    };
+  }
   return { settings: t.settings, categories, baseUrl, canonicalBase: `${proto}://${host}` };
 }
 
@@ -118,8 +143,8 @@ async function serveBlogPath(
     res.status(status).type(contentType).setHeader('Cache-Control', 'public, max-age=60').send(body);
   };
 
-  const [categories, posts] = await Promise.all([loadCategories(t), loadPublishedPosts(t)]);
-  const ctx = makeCtx(t, categories, baseUrl, req);
+  const [categories, posts, verifiedDomain] = await Promise.all([loadCategories(t), loadPublishedPosts(t), loadVerifiedDomain(t)]);
+  const ctx = makeCtx(t, categories, baseUrl, req, verifiedDomain);
 
   if (path === '/sitemap.xml') {
     const urls = [

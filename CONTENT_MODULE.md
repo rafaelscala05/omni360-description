@@ -137,7 +137,8 @@ Firestore, sem chamada ao Gemini.
 
 1. `firebase deploy --only firestore:rules` — publica as regras que protegem
    as coleções do blog (settings/posts/categories só editáveis pelo dono;
-   `blogSlugs`/`blogDomains` só leitura pública, escrita restrita ao backend).
+   `blogSlugs`/`blogDomains` negam leitura e escrita ao cliente — só o
+   backend, via Admin SDK, acessa essas coleções).
 2. `firebase deploy --only firestore:indexes` — publica o índice composto
    novo de `blogPosts` (`status` ASC + `publishedAt` DESC), exigido pela
    listagem de posts publicados no serving público. **Atenção**: esse comando
