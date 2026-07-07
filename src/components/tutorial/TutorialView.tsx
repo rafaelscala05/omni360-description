@@ -536,7 +536,48 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
               </div>
             )}
             {activeTab === 'video' && (
-              <div className="text-center py-12 text-slate-400 text-sm">Aba "Vídeo" ainda não implementada.</div>
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 mb-1">Gerar Vídeo</h2>
+                <p className="text-sm text-slate-500 mb-6">
+                  A partir das imagens e da descrição, a IA monta um vídeo curto de apresentação do produto.
+                </p>
+                {videoStatus === 'idle' && (
+                  <button
+                    onClick={simulateVideo}
+                    className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-[#FF5B03] rounded-lg hover:bg-[#e65200] transition-colors"
+                  >
+                    <Sparkles className="w-4 h-4" /> Gerar Vídeo com IA
+                  </button>
+                )}
+                {videoStatus === 'processing' && (
+                  <div className="p-4 border border-slate-200 rounded-xl bg-slate-50 max-w-md">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-violet-500" />
+                      <span className="text-xs font-medium text-slate-600">{videoStepLabel || 'Iniciando...'}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                      <div className="h-full bg-violet-500 animate-pulse" style={{ width: '70%' }} />
+                    </div>
+                  </div>
+                )}
+                {videoStatus === 'done' && (
+                  <div className="rounded-xl overflow-hidden border border-slate-200 bg-black max-w-xl">
+                    {!videoError ? (
+                      <video
+                        controls
+                        className="w-full aspect-video"
+                        src="/tutorial/demo-video.mp4"
+                        onError={() => setVideoError(true)}
+                      />
+                    ) : (
+                      <div className="aspect-video flex flex-col items-center justify-center gap-2 text-slate-400 bg-slate-900">
+                        <Play className="w-8 h-8" />
+                        <span className="text-xs font-medium">Vídeo de exemplo em breve</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
           </main>
         </div>
