@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { GraduationCap, ArrowRight, ArrowLeft, X, CheckCircle2 } from 'lucide-react';
+import { GraduationCap, ArrowRight, ArrowLeft, X, CheckCircle2, Image as ImageIcon, Sparkles, Loader2 } from 'lucide-react';
 
 interface TutorialViewProps {
   onFinish: () => void;
@@ -18,9 +18,32 @@ const STEPS: { id: StepId; label: string }[] = [
   { id: 'done', label: 'Concluído' },
 ];
 
+const MOCK_PRODUCT = {
+  sku: 'TENIS-AZUL-42',
+  rawName: 'TENIS ESPORTIVO MASC AZUL 42',
+};
+
+const MOCK_DESCRIPTION_HTML = `<p><strong>Tênis Esportivo Masculino Azul</strong> desenvolvido para quem busca conforto e desempenho no dia a dia. Cabedal em mesh respirável, entressola com amortecimento em EVA e solado antiderrapante.</p><ul><li>Material: mesh + sintético</li><li>Solado: borracha antiderrapante</li><li>Indicado para caminhada e uso casual</li></ul>`;
+
+const MOCK_SEO = {
+  title: 'Tênis Esportivo Masculino Azul 42 | Conforto no Dia a Dia',
+  metaDescription: 'Tênis esportivo masculino azul, tam. 42, com cabedal em mesh respirável e solado antiderrapante. Confira agora.',
+};
+
 const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
   const [stepIndex, setStepIndex] = useState(0);
   const step = STEPS[stepIndex].id;
+
+  const [descriptionLoading, setDescriptionLoading] = useState(false);
+  const [descriptionGenerated, setDescriptionGenerated] = useState(false);
+
+  const simulateDescription = () => {
+    setDescriptionLoading(true);
+    setTimeout(() => {
+      setDescriptionLoading(false);
+      setDescriptionGenerated(true);
+    }, 1200);
+  };
 
   const goNext = () => setStepIndex((i) => Math.min(i + 1, STEPS.length - 1));
   const goBack = () => setStepIndex((i) => Math.max(i - 1, 0));
@@ -40,6 +63,64 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
               de descrição, atributos, categoria, imagens ambientadas e vídeo.
               Nenhum crédito é gasto e nenhum dado real é alterado.
             </p>
+          </div>
+        );
+      case 'product':
+        return (
+          <div>
+            <h3 className="text-base font-bold text-slate-800 mb-1">Produto de exemplo</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Este é o produto fictício que vamos usar durante o tutorial.
+            </p>
+            <div className="flex items-center gap-4 p-4 border border-slate-200 rounded-xl bg-slate-50">
+              <div className="w-20 h-20 rounded-lg bg-slate-200 flex items-center justify-center shrink-0">
+                <ImageIcon className="w-8 h-8 text-slate-400" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-400 font-medium">{MOCK_PRODUCT.sku}</p>
+                <p className="text-sm font-semibold text-slate-800">{MOCK_PRODUCT.rawName}</p>
+                <p className="text-xs text-slate-400 mt-1">Sem descrição, atributos ou categoria ainda.</p>
+              </div>
+            </div>
+          </div>
+        );
+      case 'description':
+        return (
+          <div>
+            <h3 className="text-base font-bold text-slate-800 mb-1">Gerar Descrição</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              A IA transforma o nome cru do produto em uma descrição rica e
+              campos de SEO, a partir do template configurado.
+            </p>
+            {!descriptionGenerated ? (
+              <button
+                onClick={simulateDescription}
+                disabled={descriptionLoading}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-[#FF5B03] rounded-lg hover:bg-[#e65200] transition-colors disabled:opacity-60"
+              >
+                {descriptionLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                {descriptionLoading ? 'Gerando...' : 'Simular geração'}
+              </button>
+            ) : (
+              <div className="space-y-3">
+                <div className="p-4 border border-slate-200 rounded-xl bg-white">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">Descrição gerada</p>
+                  <div
+                    className="prose prose-sm max-w-none text-slate-700"
+                    dangerouslySetInnerHTML={{ __html: MOCK_DESCRIPTION_HTML }}
+                  />
+                </div>
+                <div className="p-4 border border-slate-200 rounded-xl bg-white">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">SEO</p>
+                  <p className="text-sm font-semibold text-slate-800">{MOCK_SEO.title}</p>
+                  <p className="text-xs text-slate-500 mt-1">{MOCK_SEO.metaDescription}</p>
+                </div>
+              </div>
+            )}
           </div>
         );
       case 'done':
