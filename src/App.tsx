@@ -210,6 +210,7 @@ export default function App() {
   const [credits, setCredits] = useState<number>(0);
   const [hasContentAgent, setHasContentAgent] = useState<boolean>(false);
   const [hasVideoModule, setHasVideoModule] = useState<boolean>(false);
+  const [hasBlogModule, setHasBlogModule] = useState<boolean>(false);
   const [videoReadyNotification, setVideoReadyNotification] = useState<{
     productId: string;
     productName: string;
@@ -337,6 +338,7 @@ export default function App() {
               setCredits(snap.data().credits ?? 0);
               setHasContentAgent(snap.data().modules?.contentAgent === true);
               setHasVideoModule(snap.data().modules?.video === true);
+              setHasBlogModule(snap.data().modules?.blog === true);
             }
           });
 
@@ -2309,6 +2311,7 @@ Retorne APENAS um JSON válido no seguinte formato:
         <ContentApp
           user={user}
           credits={credits}
+          hasBlogModule={hasBlogModule}
           onSwitchToProduct={() => setWorkspace('product')}
           onBuyCredits={() => setIsCreditPurchaseOpen(true)}
           onLogout={handleLogout}

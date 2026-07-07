@@ -8,12 +8,13 @@ interface Props {
   projectId: string;
   article: CalendarArticle;
   onClose: () => void;
+  blogEnabled?: boolean;
 }
 
 // Pipeline stage order: Research → Outline → Draft → Review → Image
 const STAGES = ['Pesquisa', 'Outline', 'Rascunho', 'Revisão', 'Imagem'];
 
-const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose }) => {
+const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEnabled }) => {
   const [edited, setEdited] = useState(article.articleFinal ?? article.articleDraft ?? '');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -22,6 +23,7 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose }) => {
   const [produtos, setProdutos] = useState(
     (article.produtosVinculados ?? []).join(', '),
   );
+  const [destino, setDestino] = useState<'nativo' | 'integracao'>('integracao');
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
@@ -157,12 +159,23 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose }) => {
               >
                 {busy === 'save' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Salvar e aprovar
               </button>
+              {blogEnabled && (
+                <select
+                  value={destino}
+                  onChange={(e) => setDestino(e.target.value as 'nativo' | 'integracao')}
+                  disabled={!!busy}
+                  className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg disabled:opacity-60"
+                >
+                  <option value="nativo">Blog nativo</option>
+                  <option value="integracao">WordPress/Sanity (integração)</option>
+                </select>
+              )}
               <button
-                onClick={() => run('publish', () => publishArticle(projectId, article.id))}
+                onClick={() => run('publish', () => publishArticle(projectId, article.id, blogEnabled ? (destino === 'nativo' ? 'blog' : undefined) : undefined))}
                 disabled={!!busy}
                 className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 rounded-lg"
               >
-                {busy === 'publish' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />} Publicar no WordPress
+                {busy === 'publish' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />} {blogEnabled ? 'Publicar' : 'Publicar no WordPress'}
               </button>
             </>
           )}

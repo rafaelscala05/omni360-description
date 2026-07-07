@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Layers, CalendarDays, Settings, Plus, Coins,
-  LogOut, Menu, X, ChevronDown, Boxes, RefreshCw, Plug, FileText,
+  LogOut, Menu, X, ChevronDown, Boxes, RefreshCw, Plug, FileText, Newspaper,
 } from 'lucide-react';
 import type { User } from 'firebase/auth';
 import logoAlfreds from '../../assets/brand/logo-alfreds-produtos.png';
@@ -14,18 +14,20 @@ import ArticlesProductionView from './ArticlesProductionView';
 import DashboardPanel from './DashboardPanel';
 import CompanyProfile from './CompanyProfile';
 import IntegrationsView from './IntegrationsView';
+import BlogView from './blog/BlogView';
 
 interface Props {
   user: User;
   credits: number;
+  hasBlogModule: boolean;
   onSwitchToProduct: () => void;
   onBuyCredits: () => void;
   onLogout: () => void;
 }
 
-type ContentView = 'dashboard' | 'clusters' | 'producao' | 'calendar' | 'integrations' | 'settings';
+type ContentView = 'dashboard' | 'clusters' | 'producao' | 'calendar' | 'integrations' | 'settings' | 'blog';
 
-const ContentApp: React.FC<Props> = ({ user, credits, onSwitchToProduct, onBuyCredits, onLogout }) => {
+const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToProduct, onBuyCredits, onLogout }) => {
   const uid = user.uid;
   const [projects, setProjects] = useState<ContentProject[]>([]);
   const [ready, setReady] = useState(false);
@@ -135,6 +137,7 @@ const ContentApp: React.FC<Props> = ({ user, credits, onSwitchToProduct, onBuyCr
           {navItem('clusters', 'Clusters', Layers)}
           {navItem('producao', 'Produção de Artigos', FileText)}
           {navItem('calendar', 'Calendário', CalendarDays)}
+          {hasBlogModule && navItem('blog', 'Blog', Newspaper)}
           <div className="my-2 border-t border-white/5 mx-4" />
           {navItem('integrations', 'Integrações', Plug)}
           {navItem('settings', 'Configurações', Settings)}
@@ -205,9 +208,12 @@ const ContentApp: React.FC<Props> = ({ user, credits, onSwitchToProduct, onBuyCr
               clusters={clusters}
               initialOpenId={openArticleId ?? undefined}
               onGoCluster={() => setView('clusters')}
+              blogEnabled={hasBlogModule}
             />
           ) : view === 'calendar' ? (
             <CalendarView uid={uid} projectId={selected.id} onOpenArticle={goToArticle} />
+          ) : view === 'blog' ? (
+            <BlogView uid={uid} projectId={selected.id} />
           ) : view === 'integrations' ? (
             <IntegrationsView uid={uid} project={selected} />
           ) : (

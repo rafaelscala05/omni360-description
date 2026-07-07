@@ -12,6 +12,7 @@ interface Props {
   clusters: ContentCluster[];
   initialOpenId?: string;
   onGoCluster: (clusterId: string) => void;
+  blogEnabled?: boolean;
 }
 
 const STATUS_LABEL: Record<ArticleStatus, string> = {
@@ -38,7 +39,7 @@ function formatDateTime(date: string, time?: string): string {
   return time ? `${day} · ${time}` : day;
 }
 
-const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, initialOpenId, onGoCluster }) => {
+const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, initialOpenId, onGoCluster, blogEnabled }) => {
   const [articles, setArticles] = useState<CalendarArticle[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -257,7 +258,7 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
       )}
 
       {selectedArticle && (
-        <ArticleView uid={uid} projectId={projectId} article={selectedArticle} onClose={() => setSelected(null)} />
+        <ArticleView uid={uid} projectId={projectId} article={selectedArticle} onClose={() => setSelected(null)} blogEnabled={blogEnabled} />
       )}
     </div>
   );

@@ -75,8 +75,16 @@ export const generateCalendar = (projectId: string) =>
 export const produceArticle = (projectId: string, articleId: string) =>
   postJson<{ ok: true }>(`/api/content/projects/${projectId}/articles/${articleId}/produce`);
 
-export const publishArticle = (projectId: string, articleId: string) =>
-  postJson<{ url: string }>(`/api/content/projects/${projectId}/articles/${articleId}/publish`);
+export const publishArticle = (
+  projectId: string,
+  articleId: string,
+  destination?: 'blog' | 'wordpress' | 'sanity',
+) =>
+  callJson<{ url: string }>(
+    `/api/content/projects/${projectId}/articles/${articleId}/publish`,
+    'POST',
+    destination ? { destination } : undefined,
+  );
 
 // ---------------------------------------------------------------------------
 // Firestore CRUD
