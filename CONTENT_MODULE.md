@@ -63,6 +63,97 @@ lado do Agente de Geração de Produto, compartilhando login, créditos e Firest
 - **Produto → Conteúdo**: o `ProductEditModal` lista artigos aprovados/publicados
   (`GET /api/content/articles/reusable`) e permite inseri-los na descrição.
 
+## Blog nativo (CMS)
+
+CMS de blog embutido na plataforma: cada projeto de conteúdo pode publicar um blog
+público, servido via SSR direto do Firestore (sem build estático), com templates
+prontos e domínio próprio opcional.
+
+### Habilitação
+
+- Ativado por projeto/usuário via `modules.blog = true` no documento
+  `users/{uid}` (o mesmo doc que guarda os módulos habilitados do app). Com a
+  flag ligada, a aba **Blog** aparece no workspace de Conteúdo
+  (`src/modules/content/blog/`).
+- Dentro da aba, o usuário configura slug público, título, descrição, template
+  (`editorial` | `minimal` | `grid`), cores e logo — persistidos em
+  `.../blog/settings` (ver estrutura abaixo).
+
+### Estrutura no Firestore
+
+Sob o projeto de conteúdo (`users/{uid}/contentProjects/{projectId}/`):
+
+- `blog/settings` — doc único: `{ enabled, slug, title, description, template,
+  logoUrl?, colors: { primary, background, text }, customDomains[],
+  verifiedDomains?, createdAt, updatedAt }`.
+- `blogPosts/{postId}` — `{ title, slug, html, excerpt, coverImageUrl?,
+  categoryIds[], status: 'draft'|'published', publishedAt?, seo: { metaTitle?,
+  metaDescription? }, authorName?, sourceArticleId?, createdAt, updatedAt }`.
+- `blogCategories/{catId}` — `{ name, slug, description?, createdAt }`.
+
+Duas coleções **raiz** (fora do doc do usuário) dão suporte ao serving público
+sem exigir o uid/projectId na URL:
+
+- `blogSlugs/{slug}` → `{ uid, projectId }` — resolve `/b/{slug}/...` para o
+  tenant certo.
+- `blogDomains/{dominio}` → `{ uid, projectId, verified, verificationToken,
+  createdAt }` — resolve domínio customizado (`Host`/`X-Forwarded-Host`) para o
+  tenant, só quando `verified === true`.
+
+### URLs públicas
+
+- **Padrão da plataforma**: `/b/{slug}/` (home), `/b/{slug}/{postSlug}`,
+  `/b/{slug}/categoria/{catSlug}`, `/b/{slug}/sitemap.xml`, `/b/{slug}/feed.xml`.
+  Servidas por `server/blogPublic.ts` (SSR com `server/blogTemplates.ts`),
+  lendo Firestore via Admin SDK a cada request (com cache em memória de 60s por
+  URL).
+- **Domínio customizado**: o usuário aponta um CNAME para a plataforma e cria
+  um TXT `_alfred-verify.<dominio>` com o `verificationToken` gerado; após a
+  verificação, `blogDomains/{dominio}.verified` é marcado `true` e o mesmo
+  serving passa a responder para requests com `Host: <dominio>`.
+- **Alternativa via reverse proxy**: se o cliente preferir manter o domínio
+  atrás do próprio proxy/CDN em vez de apontar DNS direto, o serving também
+  aceita o prefixo `/blog` combinado com o header `X-Forwarded-Host:
+  <dominio>` (ex.: proxy repassando `/blog/*` para a plataforma). Nesse caso as
+  URLs internas usam `/blog` como `baseUrl` (sitemap, feed, links) em vez da
+  raiz do domínio.
+- Todo HTML inclui `<link rel="canonical">`, Open Graph e JSON-LD
+  (`Blog`/`BlogPosting`) coerentes com a URL efetivamente acessada
+  (`canonicalBase` deriva de `X-Forwarded-Proto`/`X-Forwarded-Host` quando
+  presentes).
+
+### Publicação de artigos no Blog nativo
+
+No calendário editorial, publicar um artigo com destino **"Blog nativo"**
+(`POST /api/content/projects/{projectId}/articles/{articleId}/publish` com
+`{ destination: 'blog' }`) copia o `articleFinal` para `blogPosts` como
+`published` (reaproveitando o mesmo post/slug em republicações via
+`sourceArticleId`) e grava a URL pública em `urlPublicado` no artigo do
+calendário. Diferente das demais ações de IA do módulo, **esta publicação não
+debita créditos** — é apenas uma cópia de conteúdo já gerado para dentro do
+Firestore, sem chamada ao Gemini.
+
+### Deploy / operação
+
+1. `firebase deploy --only firestore:rules` — publica as regras que protegem
+   as coleções do blog (settings/posts/categories só editáveis pelo dono;
+   `blogSlugs`/`blogDomains` só leitura pública, escrita restrita ao backend).
+2. `firebase deploy --only firestore:indexes` — publica o índice composto
+   novo de `blogPosts` (`status` ASC + `publishedAt` DESC), exigido pela
+   listagem de posts publicados no serving público. **Atenção**: esse comando
+   só tem efeito se `firebase.json` tiver `firestore.indexes` apontando para
+   `firestore.indexes.json` — sem essa chave o deploy roda "com sucesso" mas
+   não lê nem aplica o arquivo de índices.
+3. Adicionar `APP_URL` ao `apphosting.yaml` — usado por
+   `server/blogPublic.ts` para montar o conjunto de hosts da própria
+   plataforma (`platformHosts`), distinguindo tráfego normal do app de
+   requests que devem cair no serving de domínio customizado.
+4. Domínio customizado: depois do CNAME/TXT verificados e `blogDomains/{dominio}
+   .verified = true`, o apontamento final de SSL é feito no **console do
+   Firebase App Hosting** (ou Cloud Run, conforme o ambiente), adicionando o
+   domínio customizado à instância — a aplicação em si só decide o roteamento
+   por `Host`/`X-Forwarded-Host`, não provisiona certificado.
+
 ## Pendências / melhorias futuras
 
 - Mover o segredo do WordPress para o Secret Manager (hoje em Firestore, com
