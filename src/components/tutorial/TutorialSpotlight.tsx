@@ -44,11 +44,11 @@ const TutorialSpotlight: React.FC<TutorialSpotlightProps> = ({ targetId, message
   const tooltipBelow = spaceBelow > 90;
 
   return (
-    <div className="fixed inset-0 z-50" aria-hidden="true">
-      <div className="fixed bg-black/60" style={{ top: 0, left: 0, right: 0, height: Math.max(holeTop, 0) }} />
-      <div className="fixed bg-black/60" style={{ top: holeBottom, left: 0, right: 0, bottom: 0 }} />
-      <div className="fixed bg-black/60" style={{ top: holeTop, left: 0, width: Math.max(holeLeft, 0), height: holeHeight }} />
-      <div className="fixed bg-black/60" style={{ top: holeTop, left: holeRight, right: 0, height: holeHeight }} />
+    <div className="fixed inset-0 z-50 pointer-events-none" aria-hidden="true">
+      <div className="fixed bg-black/60 pointer-events-auto" style={{ top: 0, left: 0, right: 0, height: Math.max(holeTop, 0) }} />
+      <div className="fixed bg-black/60 pointer-events-auto" style={{ top: holeBottom, left: 0, right: 0, bottom: 0 }} />
+      <div className="fixed bg-black/60 pointer-events-auto" style={{ top: holeTop, left: 0, width: Math.max(holeLeft, 0), height: holeHeight }} />
+      <div className="fixed bg-black/60 pointer-events-auto" style={{ top: holeTop, left: holeRight, right: 0, height: holeHeight }} />
 
       <div
         className="fixed border-2 border-[#FF5B03] rounded-lg animate-pulse pointer-events-none"
