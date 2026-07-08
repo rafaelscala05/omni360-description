@@ -14,6 +14,7 @@ import { registerVideoRoutes } from "./server/videoAgent";
 import { registerWakeRoutes } from "./server/wakeAgent";
 import { registerBlogPublic } from "./server/blogPublic";
 import { registerBlogAdminRoutes } from "./server/blogAdmin";
+import { registerMetaEventsRoutes } from "./server/metaEvents";
 
 // Do NOT override: in production the App Hosting environment (apphosting.yaml /
 // Secret Manager) must take precedence over any stray .env bundled in the image.
@@ -173,6 +174,7 @@ async function startServer() {
   registerContentRoutes(app, { verifyFirebaseToken, uploadsDir });
   registerVideoRoutes(app, { verifyFirebaseToken });
   registerWakeRoutes(app, { verifyFirebaseToken });
+  registerMetaEventsRoutes(app);
 
   // Blog nativo (CMS) — serving público SSR. Precisa vir antes do Vite/static
   // para que /b/{slug} e domínios customizados não caiam no SPA.
