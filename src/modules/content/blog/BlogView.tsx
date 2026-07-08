@@ -236,7 +236,7 @@ const BlogView: React.FC<Props> = ({ uid, projectId }) => {
       )}
 
       {tab === 'categorias' && <BlogCategories uid={uid} projectId={projectId} categories={categories} />}
-      {tab === 'aparencia' && <BlogAppearance uid={uid} projectId={projectId} settings={settings} />}
+      {tab === 'aparencia' && <BlogAppearance uid={uid} projectId={projectId} settings={settings} hasPosts={posts.length > 0} />}
       {tab === 'dominios' && <BlogDomains uid={uid} projectId={projectId} settings={settings} />}
     </div>
   );

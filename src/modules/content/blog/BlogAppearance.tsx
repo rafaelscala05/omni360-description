@@ -9,6 +9,7 @@ interface Props {
   uid: string;
   projectId: string;
   settings: BlogSettings;
+  hasPosts: boolean;
 }
 
 async function uploadImage(file: File): Promise<string> {
@@ -112,7 +113,7 @@ function OptionPills<T extends string>({ label, value, options, onChange }: {
   );
 }
 
-const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings }) => {
+const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts }) => {
   useGoogleFontsPreview();
   const [title, setTitle] = useState(settings.title);
   const [description, setDescription] = useState(settings.description);
@@ -398,6 +399,11 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings }) => {
                 Abrir em nova aba <ExternalLink className="w-3.5 h-3.5" />
               </a>
             </div>
+            {!hasPosts && (
+              <div className="px-4 py-2 text-xs text-slate-500 bg-amber-50 border-b border-amber-100">
+                Mostrando conteúdo de exemplo — some assim que você publicar o primeiro post de verdade.
+              </div>
+            )}
             <iframe
               key={previewUrl}
               src={previewUrl}

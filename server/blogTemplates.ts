@@ -12,6 +12,16 @@ export interface BlogRenderContext {
   // internos). Quando há domínio customizado verificado, o domínio serve na
   // raiz, então este prefixo fica vazio; default = baseUrl.
   canonicalPathPrefix?: string;
+  // Querystring (ex.: 'preview=1') propagada em todos os links internos
+  // quando a página está sendo servida com conteúdo fictício de preview —
+  // sem isso, clicar num post/categoria dentro do preview cairia na rota
+  // pública real (sem posts) e mostraria 404.
+  demoQuery?: string;
+}
+
+function withDemoQuery(ctx: BlogRenderContext, path: string): string {
+  if (!ctx.demoQuery) return path;
+  return path + (path.includes('?') ? '&' : '?') + ctx.demoQuery;
 }
 
 export function escapeHtml(s: string): string {
@@ -121,12 +131,12 @@ ${googleFontsLink(s)}
 </head>
 <body>
 <header class="site"><div class="inner">
-  <a href="${baseUrl}/">${s.logoUrl
+  <a href="${withDemoQuery(ctx, `${baseUrl}/`)}">${s.logoUrl
     ? `<img class="logo" src="${escapeHtml(s.logoUrl)}" alt="${escapeHtml(s.title)}">`
     : `<h1>${escapeHtml(s.title)}</h1>`}</a>
   ${s.description ? `<p>${escapeHtml(s.description)}</p>` : ''}
   ${effectiveLayout(s).showCategoriesNav && categories.length ? `<nav class="cats">${categories.map((c) =>
-    `<a href="${baseUrl}/categoria/${encodeURIComponent(c.slug)}">${escapeHtml(c.name)}</a>`).join('')}</nav>` : ''}
+    `<a href="${withDemoQuery(ctx, `${baseUrl}/categoria/${encodeURIComponent(c.slug)}`)}">${escapeHtml(c.name)}</a>`).join('')}</nav>` : ''}
 </div></header>
 <main>${body}</main>
 <footer class="site"><div class="inner">${
@@ -138,7 +148,7 @@ ${googleFontsLink(s)}
 </html>`;
 }
 
-const postUrl = (ctx: BlogRenderContext, p: BlogPost) => `${ctx.baseUrl}/${encodeURIComponent(p.slug)}`;
+const postUrl = (ctx: BlogRenderContext, p: BlogPost) => withDemoQuery(ctx, `${ctx.baseUrl}/${encodeURIComponent(p.slug)}`);
 
 function listItemMeta(ctx: BlogRenderContext, p: BlogPost): string {
   return `<div class="meta">${fmtDate(p.publishedAt)}</div>`;
@@ -200,8 +210,8 @@ export function renderHome(
     ${cat ? `<h1 style="margin-bottom:24px">${escapeHtml(cat.name)}</h1>` : ''}
     ${posts.length ? listBody(ctx, posts) : '<p>Nenhum post publicado ainda.</p>'}
     <div class="pager">
-      <span>${opts.page > 1 ? `<a href="${ctx.baseUrl}${pathBase}?page=${opts.page - 1}">← Mais recentes</a>` : ''}</span>
-      <span>${opts.hasMore ? `<a href="${ctx.baseUrl}${pathBase}?page=${opts.page + 1}">Posts anteriores →</a>` : ''}</span>
+      <span>${opts.page > 1 ? `<a href="${withDemoQuery(ctx, `${ctx.baseUrl}${pathBase}?page=${opts.page - 1}`)}">← Mais recentes</a>` : ''}</span>
+      <span>${opts.hasMore ? `<a href="${withDemoQuery(ctx, `${ctx.baseUrl}${pathBase}?page=${opts.page + 1}`)}">Posts anteriores →</a>` : ''}</span>
     </div>`;
   return layout(ctx, {
     title,
@@ -220,7 +230,7 @@ export function renderPost(ctx: BlogRenderContext, post: BlogPost): string {
       <h1 style="font-size:2.2rem;margin-bottom:8px">${escapeHtml(post.title)}</h1>
       <div class="meta" style="margin-bottom:24px">
         ${fmtDate(post.publishedAt)}${post.authorName ? ` · ${escapeHtml(post.authorName)}` : ''}
-        ${cats.map((c) => ` · <a href="${ctx.baseUrl}/categoria/${encodeURIComponent(c.slug)}">${escapeHtml(c.name)}</a>`).join('')}
+        ${cats.map((c) => ` · <a href="${withDemoQuery(ctx, `${ctx.baseUrl}/categoria/${encodeURIComponent(c.slug)}`)}">${escapeHtml(c.name)}</a>`).join('')}
       </div>
       ${post.coverImageUrl ? `<img src="${escapeHtml(post.coverImageUrl)}" alt="${escapeHtml(post.title)}" style="width:100%;margin-bottom:24px">` : ''}
       ${post.html}
@@ -248,5 +258,5 @@ export function renderNotFound(ctx: BlogRenderContext | null, message: string): 
   return layout(ctx, {
     title: `Não encontrado — ${ctx.settings.title}`, description: message,
     canonicalPath: `${cp}/`, jsonLd: { '@context': 'https://schema.org', '@type': 'WebPage', name: 'Não encontrado' },
-  }, `<h1>404</h1><p>${escapeHtml(message)}</p><p><a href="${ctx.baseUrl}/">← Voltar ao blog</a></p>`);
+  }, `<h1>404</h1><p>${escapeHtml(message)}</p><p><a href="${withDemoQuery(ctx, `${ctx.baseUrl}/`)}">← Voltar ao blog</a></p>`);
 }

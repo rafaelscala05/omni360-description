@@ -6,6 +6,7 @@ import { adminDb } from './firebaseAdmin';
 import { renderHome, renderPost, renderNotFound, escapeHtml, type BlogRenderContext } from './blogTemplates';
 import type { BlogSettings, BlogPost, BlogCategory, BlogDomainDoc } from '../src/modules/content/blog/types';
 import { ensureHtml } from '../src/modules/content/markdown';
+import { PLACEHOLDER_CATEGORIES, PLACEHOLDER_POSTS } from '../src/modules/content/blog/placeholderContent';
 
 const POSTS_PER_PAGE = 10;
 const CACHE_TTL_MS = 60_000;
@@ -109,6 +110,7 @@ function makeCtx(
   baseUrl: string,
   req: express.Request,
   verifiedDomain: string | null,
+  demoQuery?: string,
 ): BlogRenderContext {
   const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
   const host = resolvedHost(req);
@@ -123,9 +125,10 @@ function makeCtx(
       baseUrl,
       canonicalBase: `https://${verifiedDomain}`,
       canonicalPathPrefix: '',
+      demoQuery,
     };
   }
-  return { settings: t.settings, categories, baseUrl, canonicalBase: `${proto}://${host}` };
+  return { settings: t.settings, categories, baseUrl, canonicalBase: `${proto}://${host}`, demoQuery };
 }
 
 // Router compartilhado entre /b/{slug} e domínios customizados.
@@ -154,8 +157,14 @@ async function serveBlogPath(
       .send(body);
   };
 
-  const [categories, posts, verifiedDomain] = await Promise.all([loadCategories(t), loadPublishedPosts(t), loadVerifiedDomain(t)]);
-  const ctx = makeCtx(t, categories, baseUrl, req, verifiedDomain);
+  const [realCategories, realPosts, verifiedDomain] = await Promise.all([loadCategories(t), loadPublishedPosts(t), loadVerifiedDomain(t)]);
+  // Sem posts publicados, o preview (?preview=1, usado pelo iframe da aba
+  // Aparência) mostra conteúdo fictício para o usuário ver como home,
+  // categoria e artigo ficam no template escolhido — nunca em requests reais.
+  const usingPlaceholder = isPreview && realPosts.length === 0;
+  const categories = usingPlaceholder ? PLACEHOLDER_CATEGORIES : realCategories;
+  const posts = usingPlaceholder ? PLACEHOLDER_POSTS : realPosts;
+  const ctx = makeCtx(t, categories, baseUrl, req, verifiedDomain, usingPlaceholder ? 'preview=1' : undefined);
 
   if (path === '/sitemap.xml') {
     const urls = [
