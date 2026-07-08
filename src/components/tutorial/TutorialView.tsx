@@ -3,6 +3,7 @@ import {
   GraduationCap, ArrowRight, ArrowLeft, CheckCircle2, Image as ImageIcon,
   Sparkles, Loader2, Play, Eye, Tag, Layout, Video, Wand2, Save,
 } from 'lucide-react';
+import TutorialSpotlight from './TutorialSpotlight';
 
 interface TutorialViewProps {
   onFinish: () => void;
@@ -119,6 +120,35 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
     setVideoError(false);
   };
 
+  const guideTarget: { id: string; message: string } | null = (() => {
+    if (screen === 'welcome') return { id: 'welcome-start', message: 'Clique em "Começar" para iniciar a simulação.' };
+    if (screen === 'catalog') return { id: 'catalog-open', message: 'Clique aqui para abrir o produto e gerar a descrição.' };
+    if (screen === 'done') return null;
+    if (activeTab === 'conteudo') {
+      if (descriptionLoading) return null;
+      if (!descriptionGenerated) return { id: 'gerar-conteudo', message: 'Clique para gerar a descrição com IA.' };
+      return { id: 'tab-atributos', message: 'Agora clique na aba "Atributos".' };
+    }
+    if (activeTab === 'atributos') {
+      if (attributesLoading) return null;
+      if (!attributesGenerated) return { id: 'gerar-atributos', message: 'Clique para preencher os atributos com IA.' };
+      const pending = MOCK_ATTRIBUTES.find((a) => !confirmedAttrs.has(a.key));
+      if (pending) return { id: `confirm-${pending.key}`, message: `Confirme a sugestão de "${pending.label}".` };
+      return { id: 'tab-imagens', message: 'Agora clique na aba "Imagens".' };
+    }
+    if (activeTab === 'imagens') {
+      if (imagesLoading) return null;
+      if (!imagesGenerated) return { id: 'gerar-imagens', message: 'Clique para gerar as imagens ambientadas com IA.' };
+      return { id: 'tab-video', message: 'Agora clique na aba "Vídeo".' };
+    }
+    if (activeTab === 'video') {
+      if (videoStatus === 'processing') return null;
+      if (videoStatus === 'idle') return { id: 'gerar-video', message: 'Clique para gerar o vídeo com IA.' };
+      return { id: 'finish', message: 'Tudo pronto! Clique em "Concluir tutorial".' };
+    }
+    return null;
+  })();
+
   if (screen === 'welcome') {
     return (
       <div className="max-w-3xl mx-auto px-4 md:px-6 py-6">
@@ -135,11 +165,13 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
           </p>
           <button
             onClick={() => setScreen('catalog')}
+            data-tour="welcome-start"
             className="mt-6 flex items-center gap-1.5 mx-auto px-5 py-2.5 text-sm font-medium text-white bg-[#FF5B03] rounded-lg hover:bg-[#e65200] transition-colors"
           >
             Começar <ArrowRight className="w-4 h-4" />
           </button>
         </div>
+        {guideTarget && <TutorialSpotlight targetId={guideTarget.id} message={guideTarget.message} />}
       </div>
     );
   }
@@ -251,27 +283,21 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
                     >
                       <ImageIcon className="w-3.5 h-3.5" />
                     </button>
-                    <div className="relative">
-                      <button
-                        onClick={() => openModal('conteudo')}
-                        className={`rounded-md transition-all shadow-sm flex items-center justify-center w-8 h-8 ${descriptionGenerated ? 'bg-[#FF5B03]/10 text-[#FF5B03] border border-[#FF5B03]/20' : 'bg-white text-slate-400 border border-slate-200 hover:border-orange-300 hover:bg-orange-50'}`}
-                        title="Gerar Descrição"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                      </button>
-                      {!descriptionGenerated && !attributesDone && !imagesGenerated && (
-                        <div className="absolute -top-9 right-0 px-2.5 py-1.5 bg-slate-900 text-white text-[10px] font-medium rounded-lg whitespace-nowrap shadow-lg">
-                          Clique para abrir o produto
-                          <div className="absolute top-full right-3 border-4 border-transparent border-t-slate-900" />
-                        </div>
-                      )}
-                    </div>
+                    <button
+                      onClick={() => openModal('conteudo')}
+                      data-tour="catalog-open"
+                      className={`rounded-md transition-all shadow-sm flex items-center justify-center w-8 h-8 ${descriptionGenerated ? 'bg-[#FF5B03]/10 text-[#FF5B03] border border-[#FF5B03]/20' : 'bg-white text-slate-400 border border-slate-200 hover:border-orange-300 hover:bg-orange-50'}`}
+                      title="Gerar Descrição"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
+        {guideTarget && <TutorialSpotlight targetId={guideTarget.id} message={guideTarget.message} />}
       </div>
     );
   }
@@ -301,6 +327,7 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => setScreen('done')}
+              data-tour="finish"
               className="px-2.5 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded-xl transition-colors whitespace-nowrap"
             >
               Concluir tutorial
@@ -330,6 +357,7 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
+                  data-tour={`tab-${tab.id}`}
                   className={`flex items-center gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 rounded-lg md:rounded-xl text-xs md:text-sm font-bold transition-all shrink-0 ${isActive ? 'bg-orange-50 text-[#FF5B03] shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}
                 >
                   <Icon className={`w-5 h-5 ${isActive ? 'text-[#FF5B03]' : 'text-slate-400'}`} />
@@ -388,6 +416,7 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
                     <button
                       onClick={simulateAttributes}
                       disabled={attributesLoading}
+                      data-tour="gerar-atributos"
                       className="relative z-10 flex items-center gap-3 px-6 py-3.5 bg-white text-purple-700 rounded-2xl font-bold transition-all shadow-xl hover:scale-105 active:scale-95 disabled:opacity-50 whitespace-nowrap"
                     >
                       {attributesLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Wand2 className="w-5 h-5" />}
@@ -423,6 +452,7 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
                             <div className="mt-4 flex items-center justify-end pt-4 border-t border-purple-100">
                               <button
                                 onClick={() => confirmAttribute(attr.key)}
+                                data-tour={`confirm-${attr.key}`}
                                 className="flex items-center gap-1.5 text-xs font-bold text-purple-600 bg-white px-3 py-1.5 rounded-lg border border-purple-200 shadow-sm hover:bg-purple-600 hover:text-white transition-all"
                               >
                                 <CheckCircle2 className="w-3.5 h-3.5" /> Confirmar
@@ -454,6 +484,7 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
                     <button
                       onClick={simulateDescription}
                       disabled={descriptionLoading}
+                      data-tour="gerar-conteudo"
                       className="px-8 py-4 bg-orange-600 text-white rounded-2xl font-bold hover:bg-orange-700 shadow-lg shadow-orange-900/20 text-sm transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50 whitespace-nowrap"
                     >
                       {descriptionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
@@ -508,6 +539,7 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
                         <button
                           onClick={simulateImages}
                           disabled={imagesLoading}
+                          data-tour="gerar-imagens"
                           className="px-6 py-3 bg-gradient-to-r from-orange-600 to-orange-600 text-white rounded-xl text-sm font-bold transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 flex items-center gap-2 active:scale-95 disabled:opacity-50"
                         >
                           {imagesLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
@@ -544,6 +576,7 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
                 {videoStatus === 'idle' && (
                   <button
                     onClick={simulateVideo}
+                    data-tour="gerar-video"
                     className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-[#FF5B03] rounded-lg hover:bg-[#e65200] transition-colors"
                   >
                     <Sparkles className="w-4 h-4" /> Gerar Vídeo com IA
@@ -582,6 +615,7 @@ const TutorialView: React.FC<TutorialViewProps> = ({ onFinish }) => {
           </main>
         </div>
       </div>
+      {guideTarget && <TutorialSpotlight targetId={guideTarget.id} message={guideTarget.message} />}
     </div>
   );
 };
