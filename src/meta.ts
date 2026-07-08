@@ -20,10 +20,14 @@ export function metaSetUser(uid: string, email?: string | null): void {
 }
 
 export function metaInit(): void {
-  if (pixelInitialized || !PIXEL_ID || typeof window === 'undefined' || !window.fbq) return;
-  window.fbq('init', PIXEL_ID);
-  window.fbq('track', 'PageView');
-  pixelInitialized = true;
+  try {
+    if (pixelInitialized || !PIXEL_ID || typeof window === 'undefined' || !window.fbq) return;
+    window.fbq('init', PIXEL_ID);
+    window.fbq('track', 'PageView');
+    pixelInitialized = true;
+  } catch (err) {
+    console.warn('meta pixel init failed', err);
+  }
 }
 
 function readCookie(name: string): string | undefined {
@@ -45,29 +49,33 @@ export function metaTrack(
   params: Record<string, unknown> = {},
   isStandard = false,
 ): void {
-  if (typeof window === 'undefined') return;
-  metaInit();
+  try {
+    if (typeof window === 'undefined') return;
+    metaInit();
 
-  const eventId = crypto.randomUUID();
+    const eventId = crypto.randomUUID();
 
-  if (window.fbq) {
-    window.fbq(isStandard ? 'track' : 'trackCustom', eventName, params, { eventID: eventId });
+    if (window.fbq) {
+      window.fbq(isStandard ? 'track' : 'trackCustom', eventName, params, { eventID: eventId });
+    }
+
+    const payload: MetaEventPayload = {
+      event_name: eventName,
+      event_id: eventId,
+      custom_data: params,
+      user_data: currentEmail ? { email: currentEmail } : undefined,
+      fbp: readCookie('_fbp'),
+      fbc: readCookie('_fbc'),
+    };
+
+    fetch('/api/meta/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch((err) => {
+      console.warn('meta CAPI request failed', err);
+    });
+  } catch (err) {
+    console.warn('meta track failed', err);
   }
-
-  const payload: MetaEventPayload = {
-    event_name: eventName,
-    event_id: eventId,
-    custom_data: params,
-    user_data: currentEmail ? { email: currentEmail } : undefined,
-    fbp: readCookie('_fbp'),
-    fbc: readCookie('_fbc'),
-  };
-
-  fetch('/api/meta/events', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  }).catch((err) => {
-    console.warn('meta CAPI request failed', err);
-  });
 }
