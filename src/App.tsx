@@ -315,7 +315,7 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        analyticsSetUser(currentUser.uid);
+        analyticsSetUser(currentUser.uid, currentUser.email);
         // Fetch credits
         const userRef = doc(db, `users/${currentUser.uid}`);
         try {
