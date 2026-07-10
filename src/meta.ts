@@ -8,7 +8,10 @@ declare global {
   }
 }
 
-const PIXEL_ID = import.meta.env.VITE_META_PIXEL_ID;
+// ID público do Meta Pixel — não é segredo, fica visível no HTML de qualquer
+// jeito. Hardcoded para não depender da env var estar disponível no build do
+// App Hosting (VITE_* precisa existir em build-time, não só runtime).
+const PIXEL_ID = '1541685420840320';
 
 let pixelInitialized = false;
 let currentUid: string | null = null;
