@@ -8,9 +8,9 @@
 export type BlogTemplateId = 'editorial' | 'minimal' | 'grid';
 
 export const BLOG_TEMPLATES: Array<{ id: BlogTemplateId; nome: string; descricao: string }> = [
-  { id: 'editorial', nome: 'Editorial', descricao: 'Estilo revista: post em destaque + lista com imagens.' },
-  { id: 'minimal', nome: 'Minimal', descricao: 'Uma coluna tipográfica, foco em leitura.' },
-  { id: 'grid', nome: 'Grid', descricao: 'Cards em grade com imagem de capa.' },
+  { id: 'editorial', nome: 'Revista', descricao: 'Estilo magazine: post em destaque + grade de 3 colunas.' },
+  { id: 'minimal', nome: 'Minimal', descricao: 'Uma coluna serifada, foco total na leitura.' },
+  { id: 'grid', nome: 'Vitrine', descricao: 'Mosaico visual com capas grandes e cabeçalho escuro.' },
 ];
 
 export interface BlogColors {
