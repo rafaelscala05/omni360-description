@@ -3,7 +3,7 @@
 // via Admin SDK e renderiza com os templates de blogTemplates.ts.
 import type express from 'express';
 import { adminDb } from './firebaseAdmin';
-import { renderHome, renderPost, renderNotFound, escapeHtml, type BlogRenderContext } from './blogTemplates';
+import { renderHome, renderCategory, renderPost, renderNotFound, escapeHtml, type BlogRenderContext } from './blogTemplates';
 import type { BlogSettings, BlogPost, BlogCategory, BlogDomainDoc } from '../src/modules/content/blog/types';
 import { ensureHtml } from '../src/modules/content/markdown';
 import { PLACEHOLDER_CATEGORIES, PLACEHOLDER_POSTS } from '../src/modules/content/blog/placeholderContent';
@@ -212,7 +212,7 @@ async function serveBlogPath(
     if (!category) return send(renderNotFound(ctx, 'Categoria não encontrada.'), 'html', 404);
     const filtered = posts.filter((p) => (p.categoryIds ?? []).includes(category.id));
     const { slice, hasMore } = paginate(filtered);
-    return send(renderHome(ctx, slice, { page, hasMore, category }));
+    return send(renderCategory(ctx, category, slice, { page, hasMore }));
   }
 
   const postMatch = path.match(/^\/([^/]+)$/);

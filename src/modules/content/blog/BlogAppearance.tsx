@@ -48,24 +48,31 @@ function useGoogleFontsPreview() {
   }, []);
 }
 
-// Mini-previews em CSS puro para cada template — retângulos representando o layout.
+// Mini-previews em CSS puro para cada tema — refletem a estrutura de cada um.
 const TemplatePreview: React.FC<{ id: BlogTemplateId }> = ({ id }) => {
   if (id === 'editorial') {
+    // Revista: destaque no topo + grade de 3 colunas.
     return (
-      <div className="h-20 w-full bg-slate-50 rounded-lg p-2 flex gap-1.5">
-        <div className="w-1/2 bg-slate-300 rounded" />
-        <div className="w-1/2 flex flex-col gap-1.5">
-          <div className="h-1/3 bg-slate-200 rounded" />
-          <div className="h-1/3 bg-slate-200 rounded" />
-          <div className="h-1/3 bg-slate-200 rounded" />
+      <div className="h-20 w-full bg-slate-50 rounded-lg p-2 flex flex-col gap-1.5">
+        <div className="flex gap-1.5 h-1/2">
+          <div className="w-1/2 bg-slate-300 rounded" />
+          <div className="w-1/2 flex flex-col gap-1 justify-center">
+            <div className="h-1.5 bg-slate-300 rounded w-3/4" />
+            <div className="h-1 bg-slate-200 rounded" />
+            <div className="h-1 bg-slate-200 rounded w-5/6" />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-1.5 h-1/2">
+          {[0, 1, 2].map((i) => <div key={i} className="bg-slate-200 rounded" />)}
         </div>
       </div>
     );
   }
   if (id === 'minimal') {
+    // Minimal: coluna central de linhas.
     return (
       <div className="h-20 w-full bg-slate-50 rounded-lg p-2 flex justify-center">
-        <div className="w-2/3 flex flex-col gap-1.5">
+        <div className="w-2/3 flex flex-col gap-1.5 justify-center">
           <div className="h-2 bg-slate-300 rounded w-1/2 mx-auto" />
           <div className="h-1.5 bg-slate-200 rounded" />
           <div className="h-1.5 bg-slate-200 rounded" />
@@ -74,44 +81,20 @@ const TemplatePreview: React.FC<{ id: BlogTemplateId }> = ({ id }) => {
       </div>
     );
   }
+  // Vitrine: cabeçalho escuro + mosaico de blocos cheios.
   return (
-    <div className="h-20 w-full bg-slate-50 rounded-lg p-2 grid grid-cols-3 gap-1.5">
-      {[0, 1, 2, 3, 4, 5].map((i) => (
-        <div key={i} className="bg-slate-300 rounded" />
-      ))}
-    </div>
-  );
-};
-
-// Grupo de botões-pílula para opções de layout (uma escolha por grupo).
-function OptionPills<T extends string>({ label, value, options, onChange }: {
-  label: string;
-  value: T;
-  options: Array<{ value: T; label: string }>;
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div>
-      <label className="block text-xs font-semibold text-slate-500 mb-1.5">{label}</label>
-      <div className="inline-flex flex-wrap gap-1.5">
-        {options.map((o) => (
-          <button
-            key={o.value}
-            type="button"
-            onClick={() => onChange(o.value)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-              value === o.value
-                ? 'border-[#FF5B03] bg-[#FF5B03]/10 text-[#E14E00]'
-                : 'border-slate-200 text-slate-600 hover:border-slate-300 bg-white'
-            }`}
-          >
-            {o.label}
-          </button>
-        ))}
+    <div className="h-20 w-full bg-slate-50 rounded-lg overflow-hidden flex flex-col">
+      <div className="h-2.5 bg-slate-800 w-full" />
+      <div className="flex-1 p-1.5 grid grid-cols-3 gap-1.5">
+        <div className="bg-slate-400 rounded row-span-2" />
+        <div className="bg-slate-300 rounded" />
+        <div className="bg-slate-400 rounded" />
+        <div className="bg-slate-300 rounded" />
+        <div className="bg-slate-400 rounded" />
       </div>
     </div>
   );
-}
+};
 
 const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts }) => {
   useGoogleFontsPreview();
@@ -229,66 +212,26 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
           </div>
 
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
-            <h3 className="font-semibold text-slate-900 mb-4">Layout</h3>
-            <div className="space-y-4">
-              <OptionPills
-                label="Largura do conteúdo"
-                value={layout.contentWidth}
-                options={[
-                  { value: 'estreito', label: 'Estreito (680px)' },
-                  { value: 'normal', label: 'Normal (1024px)' },
-                  { value: 'largo', label: 'Largo (1280px)' },
-                ]}
-                onChange={(v) => patchLayout({ contentWidth: v })}
-              />
-              <OptionPills
-                label="Alinhamento do cabeçalho"
-                value={layout.headerAlign}
-                options={[
-                  { value: 'esquerda', label: 'À esquerda' },
-                  { value: 'centro', label: 'Centralizado' },
-                ]}
-                onChange={(v) => patchLayout({ headerAlign: v })}
-              />
-              <OptionPills
-                label="Estilo dos cards"
-                value={layout.cardStyle}
-                options={[
-                  { value: 'borda', label: 'Com borda' },
-                  { value: 'sombra', label: 'Com sombra' },
-                  { value: 'plano', label: 'Plano' },
-                ]}
-                onChange={(v) => patchLayout({ cardStyle: v })}
-              />
-              <OptionPills
-                label="Cantos"
-                value={layout.cornerRadius}
-                options={[
-                  { value: 'reto', label: 'Retos' },
-                  { value: 'suave', label: 'Suaves' },
-                  { value: 'arredondado', label: 'Arredondados' },
-                ]}
-                onChange={(v) => patchLayout({ cornerRadius: v })}
-              />
-              <div className="flex items-center justify-between pt-1">
-                <div>
-                  <p className="text-xs font-semibold text-slate-500">Menu de categorias no cabeçalho</p>
-                  <p className="text-[11px] text-slate-400">Exibe os links das categorias abaixo do título.</p>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={layout.showCategoriesNav}
-                  onClick={() => patchLayout({ showCategoriesNav: !layout.showCategoriesNav })}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    layout.showCategoriesNav ? 'bg-[#FF5B03]' : 'bg-slate-300'
-                  }`}
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    layout.showCategoriesNav ? 'translate-x-6' : 'translate-x-1'
-                  }`} />
-                </button>
+            <h3 className="font-semibold text-slate-900 mb-1">Navegação</h3>
+            <p className="text-xs text-slate-500 mb-4">A estrutura e o visual das páginas vêm do template escolhido.</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-slate-500">Menu de categorias no cabeçalho</p>
+                <p className="text-[11px] text-slate-400">Exibe os links das categorias no topo do blog.</p>
               </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={layout.showCategoriesNav}
+                onClick={() => patchLayout({ showCategoriesNav: !layout.showCategoriesNav })}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  layout.showCategoriesNav ? 'bg-[#FF5B03]' : 'bg-slate-300'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  layout.showCategoriesNav ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
             </div>
           </div>
 
