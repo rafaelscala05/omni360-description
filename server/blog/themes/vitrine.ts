@@ -3,14 +3,14 @@
 import type { BlogPost } from '../../../src/modules/content/blog/types';
 import {
   escapeHtml, fmtDate, readingTime, homeUrl, postUrl, categoryUrl,
-  pagerHtml, effectiveLayout, type BlogRenderContext,
+  pagerHtml, effectiveLayout, cssUrl, type BlogRenderContext,
 } from '../shell';
 import type { BlogTheme, ListOpts } from './types';
 
 // Cor de capa determinística p/ posts sem coverImageUrl (evita card vazio).
 const FALLBACKS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#0ea5e9', '#8b5cf6'];
 function coverBg(p: BlogPost, i: number): string {
-  return p.coverImageUrl ? `background-image:url('${escapeHtml(p.coverImageUrl)}')` : `background-color:${FALLBACKS[i % FALLBACKS.length]}`;
+  return p.coverImageUrl ? `background-image:url('${cssUrl(p.coverImageUrl)}')` : `background-color:${FALLBACKS[i % FALLBACKS.length]}`;
 }
 
 function header(ctx: BlogRenderContext): string {
@@ -100,7 +100,7 @@ export const vitrine: BlogTheme = {
 
   renderArticle(ctx, post) {
     const cat = ctx.categories.find((c) => (post.categoryIds ?? []).includes(c.id));
-    const heroStyle = post.coverImageUrl ? `background-image:url('${escapeHtml(post.coverImageUrl)}')` : `background-color:#0f172a`;
+    const heroStyle = post.coverImageUrl ? `background-image:url('${cssUrl(post.coverImageUrl)}')` : `background-color:#0f172a`;
     const hero = `<div class="vt-article-hero" style="${heroStyle}">
       <div class="vt-hero-overlay"></div>
       <div class="vt-hero-inner">

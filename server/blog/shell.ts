@@ -37,6 +37,15 @@ export function withDemoQuery(ctx: BlogRenderContext, path: string): string {
   return path + (path.includes('?') ? '&' : '?') + ctx.demoQuery;
 }
 
+// Sanitiza uma URL para interpolar com segurança dentro de url('...') num
+// atributo style inline: remove aspas, parênteses, barra invertida e espaços/
+// quebras — os únicos caracteres que permitiriam sair do url() e injetar CSS.
+// (escapeHtml NÃO basta aqui: o parser HTML decodifica &#39; de volta para '
+// dentro do atributo antes de o CSS ser interpretado.)
+export function cssUrl(u: string): string {
+  return u.replace(/["'()\\\s]/g, '');
+}
+
 export function effectiveFonts(s: BlogSettings): BlogFonts {
   return { ...DEFAULT_BLOG_FONTS, ...(s.fonts ?? {}) };
 }

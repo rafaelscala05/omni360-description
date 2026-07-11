@@ -2,7 +2,7 @@
 // o <head>/SEO (aqui) + o corpo do tema (server/blog/themes/*) via renderDocument.
 import type { BlogSettings, BlogPost, BlogCategory, BlogTemplateId } from '../src/modules/content/blog/types';
 import {
-  renderDocument, escapeHtml, googleFontsLink, homeUrl, withDemoQuery,
+  renderDocument, escapeHtml, googleFontsLink, homeUrl,
   type BlogRenderContext,
 } from './blog/shell';
 import { THEMES } from './blog/themes';
@@ -84,5 +84,3 @@ export function renderNotFound(ctx: BlogRenderContext | null, message: string): 
   }, { css: t.css(ctx), body });
 }
 
-// Reexport para consumidores que ainda importam daqui (compat).
-export { withDemoQuery };
