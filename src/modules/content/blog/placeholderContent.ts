@@ -147,4 +147,26 @@ export const PLACEHOLDER_POSTS: BlogPost[] = [
       <p>Um blog como este ajuda a capturar buscas que ainda não têm intenção clara de compra.</p>
     `,
   },
+  {
+    id: 'placeholder-post-6',
+    title: 'Como revisamos cada texto antes de publicar',
+    slug: 'como-revisamos-cada-texto-antes-de-publicar',
+    excerpt: 'Todo post passa por três leituras: clareza, precisão e tom. Veja o checklist que a equipe usa para manter a qualidade do blog.',
+    coverImageUrl: placeholderImage('Bastidores', '#7c3aed'),
+    categoryIds: ['placeholder-cat-bastidores'],
+    status: 'published',
+    publishedAt: daysAgo(9),
+    authorName: 'Equipe Alfred',
+    seo: { metaTitle: 'Como revisamos cada texto antes de publicar', metaDescription: 'O checklist de revisão em três etapas que mantém a qualidade do blog.' },
+    createdAt: daysAgo(12),
+    updatedAt: daysAgo(9),
+    html: `
+      <p>Publicar rápido não pode custar a confiança do leitor. Por isso, todo texto passa por três leituras antes de ir ao ar.</p>
+      <h2>1. Clareza</h2>
+      <p>A primeira leitura corta jargão e frases longas. Se um parágrafo precisa ser relido para fazer sentido, ele volta para a edição.</p>
+      <h2>2. Precisão</h2>
+      <p>Conferimos números, nomes e links. Cada afirmação forte precisa de uma fonte ou de um exemplo concreto.</p>
+      <h2>3. Tom</h2>
+      <p>Por fim, ajustamos o tom para soar como a marca: direto, útil e sem promessas exageradas.</p>`,
+  },
 ];
