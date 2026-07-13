@@ -15,6 +15,13 @@ const CLIENT_ID = process.env.TINY_CLIENT_ID ?? '';
 const CLIENT_SECRET = process.env.TINY_CLIENT_SECRET ?? '';
 const REDIRECT_URI = process.env.TINY_REDIRECT_URI ?? '';
 
+// Minimum spacing between product-detail calls during import. Tiny's rate limit
+// is per-account/minute (60 req/min on the base plan ≈ 1/s), so the default
+// keeps us under it; accounts on higher plans can lower TINY_PACE_MS for speed.
+const PACE_MS = Math.max(0, Number(process.env.TINY_PACE_MS ?? 1000));
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 const SECRET_REF = (uid: string) =>
   adminDb.collection('users').doc(uid).collection('integration_secrets').doc('tiny');
 const STATUS_REF = (uid: string) =>
@@ -108,10 +115,17 @@ async function tinyFetch<T = any>(
     return tinyFetch<T>(uid, method, path, body, attempt, true);
   }
 
-  if ((res.status === 429 || res.status >= 500) && attempt < 3) {
+  // Tiny's rate limit is per-account and per-minute, so a 429 can require waiting
+  // out a full window. Retry more times and, absent Retry-After, back off from 5s
+  // up to 60s (the reset horizon) instead of the ~3s a 5xx retry uses.
+  const maxAttempts = res.status === 429 ? 6 : 3;
+  if ((res.status === 429 || res.status >= 500) && attempt < maxAttempts) {
     const retryAfter = Number(res.headers.get('retry-after'));
-    const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2 ** attempt * 700;
-    await new Promise((r) => setTimeout(r, wait));
+    let wait: number;
+    if (Number.isFinite(retryAfter) && retryAfter > 0) wait = retryAfter * 1000;
+    else if (res.status === 429) wait = Math.min(60000, 5000 * 2 ** attempt);
+    else wait = 2 ** attempt * 700;
+    await sleep(wait);
     return tinyFetch<T>(uid, method, path, body, attempt + 1, didRefresh);
   }
 
@@ -418,9 +432,12 @@ export function registerTinyRoutes(app: express.Express, { verifyFirebaseToken }
       const total = Number(page?.paginacao?.total ?? 0);
 
       const produtos: TinyNormalizedProduct[] = [];
-      for (const item of itens) {
+      for (let i = 0; i < itens.length; i++) {
+        const item = itens[i];
         const detail = await tinyFetch<any>(uid, 'GET', `/produtos/${item.id}`).catch(() => item);
         produtos.push(normalizeProduct(detail));
+        // Pace detail calls to stay under Tiny's per-minute rate limit.
+        if (PACE_MS && i < itens.length - 1) await sleep(PACE_MS);
       }
       return res.json({
         offset, limit, total,
