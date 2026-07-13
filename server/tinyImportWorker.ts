@@ -82,7 +82,9 @@ async function upsertProduct(uid: string, t: TinyNormalizedProduct): Promise<voi
 
   await ref.set(stripUndefined(data), { merge: true });
   await ref.collection('tiny_versions').add({
-    source: 'tiny-bg-import', raw: stripUndefined(t.raw as any) ?? null, importedAt: iso(),
+    source: 'tiny-bg-import',
+    raw: t.raw && typeof t.raw === 'object' ? stripUndefined(t.raw as any) : null,
+    importedAt: iso(),
   }).catch(() => { /* backup is best-effort */ });
 }
 
@@ -109,7 +111,10 @@ async function processSlice(uid: string, job: Job): Promise<{ total: number; imp
   }
 
   const newOffset = job.offset + itens.length;
-  return { total, imported: itens.length, newOffset, done: itens.length === 0 || newOffset >= total };
+  // Trust page fullness for the end-of-catalog signal (paginacao.total may be
+  // absent/0). A short or empty page means we've reached the end.
+  const done = itens.length < PAGE_LIMIT || (total > 0 && newOffset >= total);
+  return { total, imported: itens.length, newOffset, done };
 }
 
 // --- Lease + tick ----------------------------------------------------------

@@ -1,11 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, RefreshCw, Upload, CloudUpload, X, Loader2, AlertCircle, ShieldCheck, Info } from 'lucide-react';
 import {
-  tinyStatus, tinyConnect, tinyDisconnect,
+  tinyStatus, tinyConnect, tinyDisconnect, tinyPush,
   tinyImportStart, tinyImportStatus, tinyImportCancel, tinyImportSetAutosync,
   type TinyStatus, type TinyImportJob, type TinyPushProduct, type TinyPushResult,
 } from '../../services/tinyService';
-import { tinyPush } from '../../services/tinyService';
 
 export type TinyPushFields = TinyPushProduct['campos'];
 
@@ -34,6 +33,9 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload }) => {
   const [job, setJob] = useState<TinyImportJob | null>(null);
   const [starting, setStarting] = useState(false);
   const prevJobStatus = useRef<string | undefined>(undefined);
+  // Keep the latest onImported so the polling effect never calls a stale closure.
+  const onImportedRef = useRef(onImported);
+  onImportedRef.current = onImported;
 
   const [pushing, setPushing] = useState(false);
   const [campos, setCampos] = useState<TinyPushFields>({ descricao: true, seo: true, fiscal: true, imagens: true });
@@ -56,8 +58,9 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload }) => {
 
   const connected = status?.validated;
 
-  // Poll the background job while connected; only hits the server when a job is
-  // active, so an idle tab stays quiet. Reloads products when a run completes.
+  // Poll the background job while connected. Polls on a steady cadence (not only
+  // when active) so a server-initiated auto-sync is reflected too; reloads
+  // products when a run transitions to done.
   useEffect(() => {
     if (!connected) return;
     let cancelled = false;
@@ -67,12 +70,15 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload }) => {
       const prev = prevJobStatus.current;
       prevJobStatus.current = j.status;
       setJob(j);
-      if ((prev === 'running' || prev === 'queued') && j.status === 'done') onImported();
+      if ((prev === 'running' || prev === 'queued') && j.status === 'done') onImportedRef.current();
     };
     poll();
+    // Faster while a job is active, slower when idle, so an open tab stays cheap.
+    let sinceIdlePoll = 0;
     const id = setInterval(() => {
-      if (JOB_ACTIVE(prevJobStatus.current)) poll();
-    }, 4000);
+      if (JOB_ACTIVE(prevJobStatus.current)) { poll(); sinceIdlePoll = 0; }
+      else if (++sinceIdlePoll >= 4) { poll(); sinceIdlePoll = 0; } // ~every 20s when idle
+    }, 5000);
     return () => { cancelled = true; clearInterval(id); };
   }, [connected]);
 
