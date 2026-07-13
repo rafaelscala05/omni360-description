@@ -149,6 +149,10 @@ export interface Product {
   _wakeInformacaoId?: number;   // informacaoId do bloco de descrição na Wake
   _wakeVersionId?: string;      // id da última versão salva em wake_versions
 
+  // Tiny ERP integration
+  _tinyProductId?: string;      // id do produto no Tiny — chave de merge
+  _tinyVersionId?: string;      // id da última versão salva em tiny_versions
+
   // Modulo 1 / 3
   categoryId?: string; // FK to actual Category
   categoryPath?: string[]; // cache of path
