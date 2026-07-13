@@ -46,14 +46,15 @@ export interface TinyPushProduct {
   largura?: number;
   altura?: number;
   comprimento?: number;
-  campos: { descricao: boolean; seo: boolean; fiscal: boolean };
+  imagens?: string[];
+  campos: { descricao: boolean; seo: boolean; fiscal: boolean; imagens: boolean };
 }
 
 export interface TinyPushResult {
   tinyId: string;
   sku?: string;
   ok: boolean;
-  steps: Record<'descricao' | 'seo' | 'fiscal', string>;
+  steps: Record<'descricao' | 'seo' | 'fiscal' | 'imagens', string>;
 }
 
 async function authHeaders(): Promise<Record<string, string>> {

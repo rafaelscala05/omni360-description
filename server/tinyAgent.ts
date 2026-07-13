@@ -125,6 +125,9 @@ async function tinyFetch<T = any>(
     if (Number.isFinite(retryAfter) && retryAfter > 0) wait = retryAfter * 1000;
     else if (res.status === 429) wait = Math.min(60000, 5000 * 2 ** attempt);
     else wait = 2 ** attempt * 700;
+    if (res.status === 429) {
+      console.warn(`[tiny] 429 em ${method} ${path} — aguardando ${wait}ms (tentativa ${attempt + 1}/${maxAttempts}, retry-after=${res.headers.get('retry-after') ?? 'n/a'})`);
+    }
     await sleep(wait);
     return tinyFetch<T>(uid, method, path, body, attempt + 1, didRefresh);
   }
@@ -213,15 +216,16 @@ export interface TinyPushProduct {
   largura?: number;
   altura?: number;
   comprimento?: number;
-  // Images are import-only: the Tiny v3 API cannot write product images.
-  campos: { descricao: boolean; seo: boolean; fiscal: boolean };
+  // Public image URLs to attach as product anexos.
+  imagens?: string[];
+  campos: { descricao: boolean; seo: boolean; fiscal: boolean; imagens: boolean };
 }
 
 export interface TinyPushResult {
   tinyId: string;
   sku?: string;
   ok: boolean;
-  steps: Record<'descricao' | 'seo' | 'fiscal', string>;
+  steps: Record<'descricao' | 'seo' | 'fiscal' | 'imagens', string>;
 }
 
 // Builds a valid AtualizarProdutoRequestModel body from the current product,
@@ -290,6 +294,19 @@ function buildProductPutBody(current: any, prod: TinyPushProduct): Record<string
     if (prod.largura != null) body.dimensoes.largura = prod.largura;
     if (prod.altura != null) body.dimensoes.altura = prod.altura;
     if (prod.comprimento != null) body.dimensoes.comprimento = prod.comprimento;
+  }
+  if (prod.campos.imagens && prod.imagens?.length) {
+    // anexos is documented on product creation; PUT appears to accept it too.
+    // Merge with the current anexos (dedup by url) so existing photos aren't lost.
+    const current_anexos: any[] = Array.isArray(current?.anexos) ? current.anexos : [];
+    const byUrl = new Map<string, { url: string; externo: boolean }>();
+    for (const a of current_anexos) {
+      if (a?.url) byUrl.set(a.url, { url: a.url, externo: a.externo ?? true });
+    }
+    for (const url of prod.imagens) {
+      if (url && !byUrl.has(url)) byUrl.set(url, { url, externo: true });
+    }
+    body.anexos = Array.from(byUrl.values());
   }
 
   // Drop empty nested objects and undefined keys so we never send nulls the API rejects.
@@ -427,6 +444,7 @@ export function registerTinyRoutes(app: express.Express, { verifyFirebaseToken }
       const limit = Math.min(Number(req.body?.limit ?? 50), 100);
       const offset = Math.max(Number(req.body?.offset ?? 0), 0);
 
+      const startedAt = Date.now();
       const page = await tinyFetch<any>(uid, 'GET', `/produtos?situacao=A&limit=${limit}&offset=${offset}`);
       const itens: any[] = Array.isArray(page?.itens) ? page.itens : [];
       const total = Number(page?.paginacao?.total ?? 0);
@@ -439,6 +457,8 @@ export function registerTinyRoutes(app: express.Express, { verifyFirebaseToken }
         // Pace detail calls to stay under Tiny's per-minute rate limit.
         if (PACE_MS && i < itens.length - 1) await sleep(PACE_MS);
       }
+      const elapsedMs = Date.now() - startedAt;
+      console.log(`[tiny] import offset=${offset} itens=${itens.length} em ${(elapsedMs / 1000).toFixed(1)}s (~${itens.length ? (elapsedMs / itens.length / 1000).toFixed(1) : 0}s/produto, pace=${PACE_MS}ms)`);
       return res.json({
         offset, limit, total,
         count: produtos.length,
@@ -451,8 +471,8 @@ export function registerTinyRoutes(app: express.Express, { verifyFirebaseToken }
   });
 
   // Push enriched fields back to Tiny via an atomic PUT /produtos/{id}. Per-product
-  // error handling: one failure does not abort the batch. Images are not pushed
-  // (unsupported by the Tiny v3 write API).
+  // error handling: one failure does not abort the batch. Images are sent as
+  // product anexos (URL), merged with the existing ones.
   app.post('/api/tiny/push', async (req, res) => {
     try {
       const { uid } = await verifyFirebaseToken(req);
@@ -460,10 +480,10 @@ export function registerTinyRoutes(app: express.Express, { verifyFirebaseToken }
       const resultados: TinyPushResult[] = [];
 
       for (const prod of produtos) {
-        const steps: TinyPushResult['steps'] = { descricao: 'skip', seo: 'skip', fiscal: 'skip' };
+        const steps: TinyPushResult['steps'] = { descricao: 'skip', seo: 'skip', fiscal: 'skip', imagens: 'skip' };
         if (!prod.tinyId) {
           resultados.push({ tinyId: prod.tinyId, sku: prod.sku, ok: false, steps: {
-            descricao: 'Sem ID Tiny', seo: 'Sem ID Tiny', fiscal: 'Sem ID Tiny',
+            descricao: 'Sem ID Tiny', seo: 'Sem ID Tiny', fiscal: 'Sem ID Tiny', imagens: 'Sem ID Tiny',
           } });
           continue;
         }
@@ -474,13 +494,15 @@ export function registerTinyRoutes(app: express.Express, { verifyFirebaseToken }
           if (prod.campos.descricao) steps.descricao = prod.descricaoHtml ? 'ok' : 'sem descrição';
           if (prod.campos.seo) steps.seo = (prod.seoTitle || prod.seoDescription || prod.seoKeywords) ? 'ok' : 'sem SEO';
           if (prod.campos.fiscal) steps.fiscal = 'ok';
+          if (prod.campos.imagens) steps.imagens = prod.imagens?.length ? 'ok' : 'sem imagens';
         } catch (e: any) {
           const msg = e?.message ?? 'erro';
           if (prod.campos.descricao) steps.descricao = msg;
           if (prod.campos.seo) steps.seo = msg;
           if (prod.campos.fiscal) steps.fiscal = msg;
+          if (prod.campos.imagens) steps.imagens = msg;
         }
-        const ok = (['descricao', 'seo', 'fiscal'] as const)
+        const ok = (['descricao', 'seo', 'fiscal', 'imagens'] as const)
           .every((k) => steps[k] === 'ok' || steps[k] === 'skip' || steps[k].startsWith('sem '));
         resultados.push({ tinyId: prod.tinyId, sku: prod.sku, ok, steps });
       }

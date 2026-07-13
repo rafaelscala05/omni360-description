@@ -18,6 +18,7 @@ const FIELD_LABELS: { key: keyof TinyPushFields; label: string }[] = [
   { key: 'descricao', label: 'Descrição complementar' },
   { key: 'seo', label: 'SEO (título/descrição/keywords)' },
   { key: 'fiscal', label: 'Fiscais (NCM, GTIN, peso, dimensões)' },
+  { key: 'imagens', label: 'Imagens (anexos por URL)' },
 ];
 
 const TinyConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
@@ -30,7 +31,7 @@ const TinyConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
   const [importProgress, setImportProgress] = useState<{ page: number; total: number } | null>(null);
 
   const [pushing, setPushing] = useState(false);
-  const [campos, setCampos] = useState<TinyPushFields>({ descricao: true, seo: true, fiscal: true });
+  const [campos, setCampos] = useState<TinyPushFields>({ descricao: true, seo: true, fiscal: true, imagens: true });
   const [pushResults, setPushResults] = useState<TinyPushResult[] | null>(null);
 
   const refreshStatus = async (): Promise<TinyStatus> => {
@@ -220,8 +221,8 @@ const TinyConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
             </div>
             <p className="text-xs text-slate-400 inline-flex items-start gap-1.5">
               <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-              As imagens são importadas do Tiny, mas a API v3 não permite enviá-las de volta —
-              por isso o envio de imagens não está disponível.
+              Imagens são enviadas como anexos por URL (mescladas com as já existentes no produto).
+              As URLs precisam ser públicas para o Tiny conseguir baixá-las.
             </p>
             <button
               onClick={handlePush}
@@ -241,7 +242,7 @@ const TinyConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
                       : <AlertCircle className="w-3.5 h-3.5 text-red-500 mt-0.5 shrink-0" />}
                     <span className="font-medium text-slate-700">{r.sku || r.tinyId}</span>
                     <span className="text-slate-500">
-                      {(['descricao', 'seo', 'fiscal'] as const)
+                      {(['descricao', 'seo', 'fiscal', 'imagens'] as const)
                         .filter((k) => r.steps[k] !== 'skip')
                         .map((k) => `${k}: ${r.steps[k]}`)
                         .join(' · ') || 'nada a enviar'}

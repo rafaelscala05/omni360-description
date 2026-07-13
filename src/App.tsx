@@ -1620,6 +1620,16 @@ export default function App() {
       const n = typeof v === 'number' ? v : Number(String(v).replace(',', '.'));
       return Number.isFinite(n) ? n : undefined;
     };
+    // Public image URLs to send as anexos: prefer the generated ambient images,
+    // then any imported "URL imagem N" fields. Only http(s) URLs (Tiny downloads them).
+    const collectImages = (p: Product): string[] => {
+      const urls: string[] = [...(p._ambientImages ?? [])];
+      for (let i = 1; i <= 6; i++) {
+        const u = (p as any)[`URL imagem ${i}`];
+        if (typeof u === 'string' && u) urls.push(u);
+      }
+      return Array.from(new Set(urls.filter((u) => /^https?:\/\//i.test(u))));
+    };
 
     return selected.map((p) => ({
       tinyId: p._tinyProductId!,
@@ -1635,6 +1645,7 @@ export default function App() {
       largura: toNum(p['Largura embalagem']),
       altura: toNum(p['Altura Embalagem']),
       comprimento: toNum(p['Comprimento embalagem']),
+      imagens: campos.imagens ? collectImages(p) : undefined,
       campos,
     }));
   };
