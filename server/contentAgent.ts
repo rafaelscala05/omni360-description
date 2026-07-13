@@ -6,14 +6,16 @@
 // GEMINI_API_KEY; persistence + credit debit use the Admin SDK.
 
 import type express from 'express';
-import fs from 'fs';
-import path from 'path';
 import net from 'net';
+import crypto from 'crypto';
 import { lookup } from 'dns/promises';
 import * as cheerio from 'cheerio';
 import { GoogleGenAI } from '@google/genai';
-import { adminDb } from './firebaseAdmin';
+import { adminDb, adminStorage } from './firebaseAdmin';
 import { CREDIT_ACTIONS, resolveCreditCost, type CreditAction } from '../src/credits';
+import firebaseAppletConfig from '../firebase-applet-config.json';
+
+const STORAGE_BUCKET = firebaseAppletConfig.storageBucket;
 import type {
   ContentProject,
   ContentCluster,
@@ -134,11 +136,23 @@ async function generateImageBase64(prompt: string): Promise<string> {
   throw new Error('O modelo não retornou uma imagem.');
 }
 
-// Persists a base64 image to ./uploads and returns an absolute URL.
-function saveImage(base64: string, uploadsDir: string, baseUrl: string): string {
-  const filename = `content_${Date.now()}.png`;
-  fs.writeFileSync(path.join(uploadsDir, filename), base64, 'base64');
-  return `${baseUrl.replace(/\/+$/, '')}/uploads/${filename}`;
+// Persists a base64 image to Firebase Storage and returns a permanent download
+// URL. App Hosting instances have an ephemeral, per-instance filesystem, so
+// writing to local disk (the previous approach) lost images on every deploy,
+// restart, or scale-out — mirrors the pattern already used for videos in
+// videoAgent.ts.
+async function saveImage(base64: string, uid: string, articleId: string): Promise<string> {
+  const bucket = adminStorage.bucket(STORAGE_BUCKET);
+  const storagePath = `content-images/${uid}/${articleId}/${Date.now()}.png`;
+  const downloadToken = crypto.randomUUID();
+  await bucket.file(storagePath).save(Buffer.from(base64, 'base64'), {
+    contentType: 'image/png',
+    metadata: {
+      cacheControl: 'public, max-age=31536000',
+      metadata: { firebaseStorageDownloadTokens: downloadToken },
+    },
+  });
+  return `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -509,8 +523,6 @@ async function runArticlePipeline(
   uid: string,
   projectId: string,
   articleId: string,
-  uploadsDir: string,
-  baseUrl: string,
 ): Promise<void> {
   const project = await loadProject(uid, projectId);
   const sys = systemFor(project);
@@ -587,7 +599,7 @@ async function runArticlePipeline(
         `Marca: ${project.config.nomeEmpresa}. Formato 16:9, alta resolução.`,
       ].join(' ');
       const base64 = await generateImageBase64(imgPrompt);
-      imageUrl = saveImage(base64, uploadsDir, baseUrl);
+      imageUrl = await saveImage(base64, uid, articleId);
       await debitCreditsAdmin(uid, CREDIT_ACTIONS.contentImage, { productName: article.titulo });
     } catch (e) {
       console.error('content image generation failed:', e);
@@ -895,7 +907,7 @@ async function getReusableArticles(uid: string): Promise<Array<{ id: string; tit
 // Cron tick — autonomous production of due articles (Fase 4 trigger)
 // ---------------------------------------------------------------------------
 
-async function runCronTick(uploadsDir: string, baseUrl: string): Promise<{ produced: number; errors: number }> {
+async function runCronTick(): Promise<{ produced: number; errors: number }> {
   const today = toIsoDate(new Date());
   // collectionGroup across all users; path: users/{uid}/contentProjects/{pid}/calendar/{aid}
   const due = await adminDb
@@ -913,7 +925,7 @@ async function runCronTick(uploadsDir: string, baseUrl: string): Promise<{ produ
     const uid = segments[1];
     const projectId = segments[3];
     try {
-      await runArticlePipeline(uid, projectId, doc.id, uploadsDir, baseUrl);
+      await runArticlePipeline(uid, projectId, doc.id);
       produced++;
     } catch (e) {
       console.error(`cron: failed to produce ${doc.ref.path}:`, e);
@@ -929,14 +941,6 @@ async function runCronTick(uploadsDir: string, baseUrl: string): Promise<{ produ
 
 interface ContentDeps {
   verifyFirebaseToken: (req: express.Request) => Promise<{ uid: string; email?: string; name?: string }>;
-  uploadsDir: string;
-}
-
-function baseUrlFrom(req: express.Request): string {
-  const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol;
-  return process.env.APP_URL && process.env.APP_URL !== 'MY_APP_URL'
-    ? process.env.APP_URL
-    : `${proto}://${req.headers.host}`;
 }
 
 function sendError(res: express.Response, err: unknown) {
@@ -950,7 +954,7 @@ function sendError(res: express.Response, err: unknown) {
 }
 
 export function registerContentRoutes(app: express.Application, deps: ContentDeps): void {
-  const { verifyFirebaseToken, uploadsDir } = deps;
+  const { verifyFirebaseToken } = deps;
 
   app.post('/api/content/projects/:id/generate-clusters', async (req, res) => {
     try {
@@ -1007,7 +1011,7 @@ export function registerContentRoutes(app: express.Application, deps: ContentDep
   app.post('/api/content/projects/:projectId/articles/:articleId/produce', async (req, res) => {
     try {
       const decoded = await verifyFirebaseToken(req);
-      await runArticlePipeline(decoded.uid, req.params.projectId, req.params.articleId, uploadsDir, baseUrlFrom(req));
+      await runArticlePipeline(decoded.uid, req.params.projectId, req.params.articleId);
       res.json({ ok: true });
     } catch (err) {
       sendError(res, err);
@@ -1041,7 +1045,7 @@ export function registerContentRoutes(app: express.Application, deps: ContentDep
       return res.status(401).json({ error: 'Não autorizado' });
     }
     try {
-      const result = await runCronTick(uploadsDir, baseUrlFrom(req));
+      const result = await runCronTick();
       res.json(result);
     } catch (err) {
       sendError(res, err);
@@ -1053,15 +1057,10 @@ export function registerContentRoutes(app: express.Application, deps: ContentDep
 // Fires once on startup (to catch any overdue articles) then every hour.
 // In production, also accepts external calls via POST /api/content/cron/tick
 // (e.g. from Google Cloud Scheduler) for more precise scheduling.
-export function startContentScheduler(uploadsDir: string): void {
+export function startContentScheduler(): void {
   if (!process.env.CONTENT_CRON_SECRET) return;
-  const baseUrl =
-    process.env.APP_URL && process.env.APP_URL !== 'MY_APP_URL'
-      ? process.env.APP_URL
-      : `http://localhost:${process.env.PORT || '3000'}`;
   const ONE_HOUR = 60 * 60 * 1000;
-  const tick = () =>
-    runCronTick(uploadsDir, baseUrl).catch((e) => console.error('content scheduler tick failed:', e));
+  const tick = () => runCronTick().catch((e) => console.error('content scheduler tick failed:', e));
   tick();
   setInterval(tick, ONE_HOUR);
   console.log('Content scheduler started (immediate tick + hourly).');

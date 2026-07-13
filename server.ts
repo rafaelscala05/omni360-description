@@ -1,14 +1,17 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
-import fs from "fs";
 import path from "path";
 import net from "net";
+import crypto from "crypto";
 import { lookup } from "dns/promises";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 // Admin SDK init lives in a shared leaf module so server/contentAgent.ts can also
 // use adminDb/adminAuth without re-triggering this server's bootstrap.
-import { adminDb, adminAuth, FieldValue } from "./server/firebaseAdmin";
+import { adminDb, adminAuth, adminStorage, FieldValue } from "./server/firebaseAdmin";
+import firebaseAppletConfig from "./firebase-applet-config.json";
+
+const STORAGE_BUCKET = firebaseAppletConfig.storageBucket;
 import { registerContentRoutes, startContentScheduler } from "./server/contentAgent";
 import { registerVideoRoutes } from "./server/videoAgent";
 import { registerWakeRoutes } from "./server/wakeAgent";
@@ -162,17 +165,8 @@ async function startServer() {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-  // Ensure uploads directory exists
-  const uploadsDir = path.join(process.cwd(), 'uploads');
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-  }
-
-  // Serve uploads directory directly
-  app.use('/uploads', express.static(uploadsDir));
-
   // Agência de Criação de Conteúdo (Alfred) — server-side AI pipeline + scheduler.
-  registerContentRoutes(app, { verifyFirebaseToken, uploadsDir });
+  registerContentRoutes(app, { verifyFirebaseToken });
   registerVideoRoutes(app, { verifyFirebaseToken });
   registerWakeRoutes(app, { verifyFirebaseToken });
   registerTinyRoutes(app, { verifyFirebaseToken });
@@ -187,8 +181,9 @@ async function startServer() {
 
   app.post("/api/upload", async (req, res) => {
     try {
+      let uid: string;
       try {
-        await verifyFirebaseToken(req);
+        uid = (await verifyFirebaseToken(req)).uid;
       } catch {
         return res.status(401).json({ error: "Não autorizado" });
       }
@@ -197,16 +192,17 @@ async function startServer() {
 
       let data = '';
       let extension = 'png';
+      let contentType = 'image/png';
 
       if (imageBase64) {
         const matches = imageBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
         data = imageBase64;
-        
+
         if (matches && matches.length === 3) {
           data = matches[2];
-          const mime = matches[1];
-          if (mime === 'image/jpeg') extension = 'jpg';
-          else if (mime === 'image/webp') extension = 'webp';
+          contentType = matches[1];
+          if (contentType === 'image/jpeg') extension = 'jpg';
+          else if (contentType === 'image/webp') extension = 'webp';
         }
       } else if (imageUrl) {
         try {
@@ -215,8 +211,8 @@ async function startServer() {
           if (!response.ok) throw new Error("Failed to fetch image");
           const arrayBuffer = await response.arrayBuffer();
           data = Buffer.from(arrayBuffer).toString('base64');
-          
-          const contentType = response.headers.get('content-type');
+
+          contentType = response.headers.get('content-type') || 'image/png';
           if (contentType === 'image/jpeg') extension = 'jpg';
           else if (contentType === 'image/webp') extension = 'webp';
           else if (contentType === 'image/gif') extension = 'gif';
@@ -228,17 +224,23 @@ async function startServer() {
         return res.status(400).json({ error: "No image provided" });
       }
 
+      // Uploaded to Firebase Storage (not local disk): App Hosting instances have
+      // an ephemeral, per-instance filesystem, so files written to ./uploads were
+      // lost on every deploy, restart, or scale-out.
       const safeFilename = filename ? filename.replace(/[^a-z0-9]/gi, '_').toLowerCase() : `img_${Date.now()}`;
       const finalFilename = `${safeFilename}_${Date.now()}.${extension}`;
-      const filePath = path.join(uploadsDir, finalFilename);
+      const storagePath = `manual-uploads/${uid}/${finalFilename}`;
+      const downloadToken = crypto.randomUUID();
+      const bucket = adminStorage.bucket(STORAGE_BUCKET);
+      await bucket.file(storagePath).save(Buffer.from(data, 'base64'), {
+        contentType,
+        metadata: {
+          cacheControl: 'public, max-age=31536000',
+          metadata: { firebaseStorageDownloadTokens: downloadToken },
+        },
+      });
+      const url = `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
 
-      fs.writeFileSync(filePath, data, 'base64');
-
-      // Return the URL (absolute URL based on request host)
-      const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-      const host = req.headers.host;
-      const url = `${protocol}://${host}/uploads/${finalFilename}`;
-      
       res.json({ url });
     } catch (error) {
       console.error("Upload error:", error);
@@ -489,7 +491,7 @@ async function startServer() {
   }
 
   // Dev-only autonomous content scheduler (production uses Cloud Scheduler).
-  startContentScheduler(uploadsDir);
+  startContentScheduler();
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
