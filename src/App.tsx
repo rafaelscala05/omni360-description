@@ -32,7 +32,7 @@ import TutorialView from './components/tutorial/TutorialView';
 import type { WakePushFields } from './components/integrations/WakeConnector';
 import type { WakeNormalizedProduct, WakePushProduct } from './services/wakeService';
 import type { TinyPushFields } from './components/integrations/TinyConnector';
-import type { TinyNormalizedProduct, TinyPushProduct } from './services/tinyService';
+import type { TinyPushProduct } from './services/tinyService';
 import { fetchAndProcessImage } from './utils/imageUtils';
 import { generateGrounded, parseJsonResponse } from './services/aiService';
 import { CREDIT_ACTIONS, resolveCreditCost, type CreditAction } from './credits';
@@ -1544,72 +1544,9 @@ export default function App() {
     return out;
   };
 
-  // --- Tiny ERP integration (mirrors the Wake handlers above) ---------------
-
-  const handleTinyImport = async (incoming: TinyNormalizedProduct[]) => {
-    if (!user) { alert('Faça login para importar produtos do Tiny.'); return; }
-    const uid = user.uid;
-    const next = [...productsRef.current];
-    const backups: { id: string; raw: unknown }[] = [];
-
-    for (const t of incoming) {
-      const mapped: Partial<Product> = stripUndefined({
-        'Código (SKU)': t.sku || undefined,
-        'Descrição': t.nome || undefined,
-        'Descrição complementar': t.descricaoHtml || undefined,
-        'Título SEO': t.seoTitle || undefined,
-        'Descrição SEO': t.seoDescription || undefined,
-        'Palavras chave SEO': t.seoKeywords || undefined,
-        'Categoria': t.categorias[0] || undefined,
-        'Preço': t.precoPor,
-        'Preço promocional': t.precoDe,
-        'GTIN/EAN': t.gtin || undefined,
-        'NCM (Classificação fiscal)': t.ncm || undefined,
-        'Peso líquido (Kg)': t.pesoLiquido,
-        'Peso bruto (Kg)': t.pesoBruto,
-        'Largura embalagem': t.largura,
-        'Altura Embalagem': t.altura,
-        'Comprimento embalagem': t.comprimento,
-        _tinyProductId: t.tinyId,
-      });
-      t.imagens.slice(0, 6).forEach((url, i) => { (mapped as any)[`URL imagem ${i + 1}`] = url; });
-
-      const idx = next.findIndex((p) => p._tinyProductId === t.tinyId);
-      if (idx >= 0) {
-        next[idx] = { ...next[idx], ...mapped, _isDirty: true };
-        backups.push({ id: next[idx]._id, raw: t.raw });
-      } else {
-        const newId = `tiny_${t.tinyId}_${Date.now()}`;
-        next.push({
-          _id: newId,
-          _statusDescricao: t.descricaoHtml ? 'Descrição original' : 'Sem descrição',
-          _statusSEO: t.seoTitle ? 'Gerado por IA' : 'Sem SEO',
-          _isDirty: true,
-          _selectedImage: t.imagens[0] || '',
-          ...mapped,
-        } as Product);
-        backups.push({ id: newId, raw: t.raw });
-      }
-    }
-
-    productsRef.current = next;
-    setProducts(next);
-    setHasUnsavedChanges(true);
-
-    // Backup/versioning snapshots (append-only history).
-    for (const b of backups) {
-      try {
-        const versionRef = doc(collection(db, `users/${uid}/products/${b.id}/tiny_versions`));
-        await setDoc(versionRef, {
-          source: 'tiny-import',
-          raw: stripUndefined(b.raw),
-          importedAt: new Date().toISOString(),
-        });
-      } catch (e) {
-        console.warn('Falha ao salvar backup da versão Tiny:', e);
-      }
-    }
-  };
+  // --- Tiny ERP integration -------------------------------------------------
+  // Import runs server-side (server/tinyImportWorker.ts) and writes products
+  // straight to Firestore; the UI reloads via loadFromCloud when a run finishes.
 
   // Builds the push payload from selected products that originated from Tiny.
   const buildTinyPushPayload = async (campos: TinyPushFields): Promise<TinyPushProduct[]> => {
@@ -2671,7 +2608,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           ) : mainView === 'history' ? (
             renderHistoryView()
           ) : mainView === 'integrations' ? (
-            <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} onTinyImport={handleTinyImport} getTinyPushPayload={buildTinyPushPayload} />
+            <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} onTinyImported={() => loadFromCloud(true)} getTinyPushPayload={buildTinyPushPayload} />
           ) : mainView === 'tutorial' ? (
             <TutorialView onFinish={() => setMainView('products')} />
           ) : (

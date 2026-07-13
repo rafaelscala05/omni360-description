@@ -3,16 +3,16 @@ import { Plug, Store, Database } from 'lucide-react';
 import WakeConnector, { type WakePushFields } from './WakeConnector';
 import TinyConnector, { type TinyPushFields } from './TinyConnector';
 import type { WakeNormalizedProduct, WakePushProduct } from '../../services/wakeService';
-import type { TinyNormalizedProduct, TinyPushProduct } from '../../services/tinyService';
+import type { TinyPushProduct } from '../../services/tinyService';
 
 interface Props {
   onImport: (produtos: WakeNormalizedProduct[]) => Promise<void>;
   getPushPayload: (campos: WakePushFields) => Promise<WakePushProduct[]>;
-  onTinyImport: (produtos: TinyNormalizedProduct[]) => Promise<void>;
+  onTinyImported: () => void;
   getTinyPushPayload: (campos: TinyPushFields) => Promise<TinyPushProduct[]>;
 }
 
-const IntegrationsView: React.FC<Props> = ({ onImport, getPushPayload, onTinyImport, getTinyPushPayload }) => {
+const IntegrationsView: React.FC<Props> = ({ onImport, getPushPayload, onTinyImported, getTinyPushPayload }) => {
   return (
     <div className="max-w-3xl mx-auto px-4 md:px-6 py-6 space-y-6">
       <div className="flex items-center gap-3">
@@ -53,7 +53,7 @@ const IntegrationsView: React.FC<Props> = ({ onImport, getPushPayload, onTinyImp
           </div>
         </header>
         <div className="px-5 py-5">
-          <TinyConnector onImport={onTinyImport} getPushPayload={getTinyPushPayload} />
+          <TinyConnector onImported={onTinyImported} getPushPayload={getTinyPushPayload} />
         </div>
       </section>
     </div>

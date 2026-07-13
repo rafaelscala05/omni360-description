@@ -109,14 +109,37 @@ export async function tinyDisconnect(): Promise<void> {
   await fetch('/api/tiny/disconnect', { method: 'DELETE', headers: await authHeaders() });
 }
 
-export async function tinyImport(
-  offset = 0,
-  limit = 50,
-): Promise<{ offset: number; limit: number; total: number; count: number; hasMore: boolean; produtos: TinyNormalizedProduct[] }> {
-  const resp = await fetch('/api/tiny/import', {
-    method: 'POST', headers: await authHeaders(), body: JSON.stringify({ offset, limit }),
+export interface TinyImportJob {
+  status: 'idle' | 'queued' | 'running' | 'done' | 'error' | 'canceled';
+  mode: 'full' | 'update';
+  offset: number;
+  total: number;
+  imported: number;
+  lastSyncAt: string | null;
+  error?: string | null;
+  autoSync: { enabled: boolean; everyHours: number };
+}
+
+export async function tinyImportStart(mode: 'full' | 'update' = 'full'): Promise<{ job: TinyImportJob }> {
+  const resp = await fetch('/api/tiny/import/start', {
+    method: 'POST', headers: await authHeaders(), body: JSON.stringify({ mode }),
   });
   return handle(resp);
+}
+
+export async function tinyImportStatus(): Promise<{ job: TinyImportJob }> {
+  const resp = await fetch('/api/tiny/import/status', { headers: await authHeaders() });
+  return handle(resp);
+}
+
+export async function tinyImportCancel(): Promise<void> {
+  await fetch('/api/tiny/import/cancel', { method: 'POST', headers: await authHeaders() });
+}
+
+export async function tinyImportSetAutosync(enabled: boolean, everyHours: number): Promise<void> {
+  await fetch('/api/tiny/import/autosync', {
+    method: 'POST', headers: await authHeaders(), body: JSON.stringify({ enabled, everyHours }),
+  });
 }
 
 export async function tinyPush(produtos: TinyPushProduct[]): Promise<{ resultados: TinyPushResult[] }> {

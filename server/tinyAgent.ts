@@ -18,9 +18,9 @@ const REDIRECT_URI = process.env.TINY_REDIRECT_URI ?? '';
 // Minimum spacing between product-detail calls during import. Tiny's rate limit
 // is per-account/minute (60 req/min on the base plan ≈ 1/s), so the default
 // keeps us under it; accounts on higher plans can lower TINY_PACE_MS for speed.
-const PACE_MS = Math.max(0, Number(process.env.TINY_PACE_MS ?? 1000));
+export const PACE_MS = Math.max(0, Number(process.env.TINY_PACE_MS ?? 1000));
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const SECRET_REF = (uid: string) =>
   adminDb.collection('users').doc(uid).collection('integration_secrets').doc('tiny');
@@ -67,7 +67,7 @@ async function persistSecret(uid: string, secret: TinySecret): Promise<void> {
 // Returns a valid access token for the user, refreshing it if it is expired or
 // about to expire. Marks the integration disconnected and throws (401) when the
 // refresh fails so the caller surfaces a "reconnect" state.
-async function getValidAccessToken(uid: string, forceRefresh = false): Promise<string> {
+export async function getValidAccessToken(uid: string, forceRefresh = false): Promise<string> {
   const snap = await SECRET_REF(uid).get();
   if (!snap.exists) throw Object.assign(new Error('Tiny não conectado.'), { status: 401 });
   const secret = snap.data() as TinySecret;
@@ -92,7 +92,7 @@ async function getValidAccessToken(uid: string, forceRefresh = false): Promise<s
 // Tiny API client with exponential backoff on 429/5xx and one automatic token
 // refresh on 401. Rate limits are per-account and low, so import/push loops call
 // this sequentially.
-async function tinyFetch<T = any>(
+export async function tinyFetch<T = any>(
   uid: string,
   method: string,
   path: string,
@@ -169,7 +169,7 @@ export interface TinyNormalizedProduct {
   raw: unknown;
 }
 
-function normalizeProduct(p: any): TinyNormalizedProduct {
+export function normalizeProduct(p: any): TinyNormalizedProduct {
   const dim = p?.dimensoes ?? {};
   const seo = p?.seo ?? {};
   const keywords = Array.isArray(seo?.keywords) ? seo.keywords.filter(Boolean).join(', ') : undefined;

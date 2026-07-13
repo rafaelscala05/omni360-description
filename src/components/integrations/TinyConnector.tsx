@@ -1,15 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Check, RefreshCw, Upload, CloudUpload, X, Loader2, AlertCircle, ShieldCheck, Info } from 'lucide-react';
 import {
-  tinyStatus, tinyConnect, tinyImport, tinyPush, tinyDisconnect,
-  type TinyStatus, type TinyNormalizedProduct, type TinyPushProduct, type TinyPushResult,
+  tinyStatus, tinyConnect, tinyDisconnect,
+  tinyImportStart, tinyImportStatus, tinyImportCancel, tinyImportSetAutosync,
+  type TinyStatus, type TinyImportJob, type TinyPushProduct, type TinyPushResult,
 } from '../../services/tinyService';
+import { tinyPush } from '../../services/tinyService';
 
 export type TinyPushFields = TinyPushProduct['campos'];
 
 interface Props {
-  // Persists an imported batch into the app (merge by tinyId + backup).
-  onImport: (produtos: TinyNormalizedProduct[]) => Promise<void>;
+  // Called when a background import finishes, so the app can reload products.
+  onImported: () => void;
   // Builds the push payload from the currently selected products and chosen fields.
   getPushPayload: (campos: TinyPushFields) => Promise<TinyPushProduct[]>;
 }
@@ -21,14 +23,17 @@ const FIELD_LABELS: { key: keyof TinyPushFields; label: string }[] = [
   { key: 'imagens', label: 'Imagens (anexos por URL)' },
 ];
 
-const TinyConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
+const JOB_ACTIVE = (s?: string) => s === 'running' || s === 'queued';
+
+const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload }) => {
   const [status, setStatus] = useState<TinyStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [importing, setImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState<{ page: number; total: number } | null>(null);
+  const [job, setJob] = useState<TinyImportJob | null>(null);
+  const [starting, setStarting] = useState(false);
+  const prevJobStatus = useRef<string | undefined>(undefined);
 
   const [pushing, setPushing] = useState(false);
   const [campos, setCampos] = useState<TinyPushFields>({ descricao: true, seo: true, fiscal: true, imagens: true });
@@ -49,12 +54,33 @@ const TinyConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
 
   useEffect(() => { refreshStatus(); }, []);
 
+  const connected = status?.validated;
+
+  // Poll the background job while connected; only hits the server when a job is
+  // active, so an idle tab stays quiet. Reloads products when a run completes.
+  useEffect(() => {
+    if (!connected) return;
+    let cancelled = false;
+    const poll = async () => {
+      const j = await tinyImportStatus().then((r) => r.job).catch(() => null);
+      if (cancelled || !j) return;
+      const prev = prevJobStatus.current;
+      prevJobStatus.current = j.status;
+      setJob(j);
+      if ((prev === 'running' || prev === 'queued') && j.status === 'done') onImported();
+    };
+    poll();
+    const id = setInterval(() => {
+      if (JOB_ACTIVE(prevJobStatus.current)) poll();
+    }, 4000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [connected]);
+
   const handleConnect = async () => {
     setConnecting(true);
     setError(null);
     try {
       await tinyConnect();
-      // The popup posts back on success; re-check the server-side status either way.
       const s = await refreshStatus();
       if (!s.validated) setError('Conexão não concluída. Tente novamente.');
     } catch (e) {
@@ -70,31 +96,30 @@ const TinyConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
     await refreshStatus();
   };
 
-  const handleImport = async () => {
-    setImporting(true);
+  const handleStart = async (mode: 'full' | 'update') => {
+    setStarting(true);
     setError(null);
-    setImportProgress({ page: 0, total: 0 });
     try {
-      let offset = 0;
-      const limit = 50;
-      let total = 0;
-      let page = 0;
-      // Pull pages until the API reports no more records. Each batch is persisted
-      // immediately (merge + backup).
-      while (true) {
-        const res = await tinyImport(offset, limit);
-        total += res.count;
-        page += 1;
-        setImportProgress({ page, total });
-        if (res.produtos.length) await onImport(res.produtos);
-        if (!res.hasMore || res.count === 0) break;
-        offset += res.count;
-      }
+      const { job: j } = await tinyImportStart(mode);
+      prevJobStatus.current = j.status;
+      setJob(j);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Falha na importação.');
+      setError(e instanceof Error ? e.message : 'Falha ao iniciar importação.');
     } finally {
-      setImporting(false);
+      setStarting(false);
     }
+  };
+
+  const handleCancel = async () => {
+    await tinyImportCancel();
+    const { job: j } = await tinyImportStatus();
+    prevJobStatus.current = j.status;
+    setJob(j);
+  };
+
+  const handleToggleAutosync = async (enabled: boolean, everyHours: number) => {
+    await tinyImportSetAutosync(enabled, everyHours);
+    setJob((prev) => (prev ? { ...prev, autoSync: { enabled, everyHours } } : prev));
   };
 
   const handlePush = async () => {
@@ -124,7 +149,9 @@ const TinyConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
     );
   }
 
-  const connected = status?.validated;
+  const active = JOB_ACTIVE(job?.status);
+  const pct = job && job.total > 0 ? Math.min(100, Math.round((job.imported / job.total) * 100)) : 0;
+  const autoSync = job?.autoSync ?? { enabled: false, everyHours: 24 };
 
   return (
     <div className="space-y-5">
@@ -169,33 +196,88 @@ const TinyConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
             </button>
           </div>
 
-          {/* Import */}
+          {/* Import (background) */}
           <div className="border border-slate-200 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h4 className="text-sm font-semibold text-slate-800">Importar produtos</h4>
-                <p className="text-xs text-slate-500">
-                  Puxa os produtos do Tiny com descrição, SEO, dados fiscais, dimensões e imagens.
-                  Mescla por ID Tiny e guarda um backup antes do enriquecimento.
-                </p>
-              </div>
-              <button
-                onClick={handleImport}
-                disabled={importing}
-                className="inline-flex items-center gap-2 bg-slate-800 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-slate-900 disabled:opacity-50 transition-colors shrink-0"
-              >
-                {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                Importar produtos
-              </button>
-            </div>
-            {importProgress && (
-              <p className="text-xs text-slate-500 inline-flex items-center gap-1.5">
-                <RefreshCw className={`w-3.5 h-3.5 ${importing ? 'animate-spin' : ''}`} />
-                {importing
-                  ? `Importando página ${importProgress.page}… ${importProgress.total} produtos`
-                  : `Importação concluída: ${importProgress.total} produtos`}
+            <div>
+              <h4 className="text-sm font-semibold text-slate-800">Importar produtos (em background)</h4>
+              <p className="text-xs text-slate-500">
+                A importação roda no servidor — você pode <strong>fechar a aba</strong> que ela continua.
+                Mescla por ID Tiny; campos já enriquecidos (descrição/SEO) são preservados.
               </p>
+            </div>
+
+            {active ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-slate-600">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    {job?.status === 'queued' ? 'Na fila…' : job?.mode === 'update' ? 'Sincronizando atualizações…' : 'Importando…'}
+                    {' '}{job?.imported ?? 0}{job && job.total > 0 ? `/${job.total}` : ''} produtos
+                  </span>
+                  <button onClick={handleCancel} className="text-slate-500 hover:text-red-600 inline-flex items-center gap-1">
+                    <X className="w-3.5 h-3.5" /> Cancelar
+                  </button>
+                </div>
+                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-[#FF5B03] transition-all" style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => handleStart('full')}
+                    disabled={starting}
+                    className="inline-flex items-center gap-2 bg-slate-800 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-slate-900 disabled:opacity-50 transition-colors"
+                  >
+                    {starting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                    Importar tudo
+                  </button>
+                  <button
+                    onClick={() => handleStart('update')}
+                    disabled={starting}
+                    className="inline-flex items-center gap-2 border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                  >
+                    <RefreshCw className="w-4 h-4" /> Sincronizar atualizações
+                  </button>
+                </div>
+                {job && job.status === 'done' && (
+                  <p className="text-xs text-emerald-600 inline-flex items-center gap-1.5">
+                    <Check className="w-3.5 h-3.5" /> Última importação: {job.imported} produtos
+                    {job.lastSyncAt && ` · ${new Date(job.lastSyncAt).toLocaleString('pt-BR')}`}
+                  </p>
+                )}
+                {job && job.status === 'error' && (
+                  <p className="text-xs text-red-600 inline-flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5" /> {job.error ?? 'Falha na importação.'}
+                  </p>
+                )}
+                {job && job.status === 'canceled' && (
+                  <p className="text-xs text-slate-500">Importação cancelada em {job.imported} produtos.</p>
+                )}
+              </div>
             )}
+
+            <label className="flex items-center gap-2 text-xs text-slate-600 pt-1 border-t border-slate-100 mt-1">
+              <input
+                type="checkbox"
+                checked={autoSync.enabled}
+                onChange={(e) => handleToggleAutosync(e.target.checked, autoSync.everyHours)}
+                className="rounded border-slate-300 text-[#FF5B03] focus:ring-[#FF5B03]"
+              />
+              Sincronizar automaticamente a cada
+              <select
+                value={autoSync.everyHours}
+                onChange={(e) => handleToggleAutosync(autoSync.enabled, Number(e.target.value))}
+                className="border border-slate-200 rounded px-1.5 py-0.5 text-xs"
+              >
+                <option value={6}>6h</option>
+                <option value={12}>12h</option>
+                <option value={24}>24h</option>
+                <option value={48}>48h</option>
+              </select>
+              (puxa só o que mudou no Tiny)
+            </label>
           </div>
 
           {/* Push */}

@@ -16,6 +16,7 @@ import { registerContentRoutes, startContentScheduler } from "./server/contentAg
 import { registerVideoRoutes } from "./server/videoAgent";
 import { registerWakeRoutes } from "./server/wakeAgent";
 import { registerTinyRoutes } from "./server/tinyAgent";
+import { registerTinyImportRoutes, startTinyScheduler } from "./server/tinyImportWorker";
 import { registerBlogPublic } from "./server/blogPublic";
 import { registerBlogAdminRoutes } from "./server/blogAdmin";
 import { registerMetaEventsRoutes } from "./server/metaEvents";
@@ -170,6 +171,7 @@ async function startServer() {
   registerVideoRoutes(app, { verifyFirebaseToken });
   registerWakeRoutes(app, { verifyFirebaseToken });
   registerTinyRoutes(app, { verifyFirebaseToken });
+  registerTinyImportRoutes(app, { verifyFirebaseToken });
   registerMetaEventsRoutes(app);
 
   // Blog nativo (CMS) — serving público SSR. Precisa vir antes do Vite/static
@@ -492,6 +494,10 @@ async function startServer() {
 
   // Dev-only autonomous content scheduler (production uses Cloud Scheduler).
   startContentScheduler();
+
+  // Tiny background import/sync worker (production also backed by Cloud Scheduler
+  // hitting /api/tiny/cron/tick).
+  startTinyScheduler();
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
