@@ -12,6 +12,7 @@ import { adminDb, adminAuth, FieldValue } from "./server/firebaseAdmin";
 import { registerContentRoutes, startContentScheduler } from "./server/contentAgent";
 import { registerVideoRoutes } from "./server/videoAgent";
 import { registerWakeRoutes } from "./server/wakeAgent";
+import { registerTinyRoutes } from "./server/tinyAgent";
 import { registerBlogPublic } from "./server/blogPublic";
 import { registerBlogAdminRoutes } from "./server/blogAdmin";
 import { registerMetaEventsRoutes } from "./server/metaEvents";
@@ -174,6 +175,7 @@ async function startServer() {
   registerContentRoutes(app, { verifyFirebaseToken, uploadsDir });
   registerVideoRoutes(app, { verifyFirebaseToken });
   registerWakeRoutes(app, { verifyFirebaseToken });
+  registerTinyRoutes(app, { verifyFirebaseToken });
   registerMetaEventsRoutes(app);
 
   // Blog nativo (CMS) — serving público SSR. Precisa vir antes do Vite/static
