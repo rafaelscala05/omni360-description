@@ -26,3 +26,12 @@ env:
     secret: gemini-api-key
   - variable: CONTENT_CRON_SECRET
     secret: content-cron-secret
+
+  # Tiny ERP (Olist) — API v3, OAuth2. O client_secret NÃO fica aqui; o campo
+  # `secret:` referencia o nome do secret no Secret Manager (tiny-client-secret).
+  - variable: TINY_CLIENT_ID
+    value: "tiny-api-5e4a4723ff9b577c8967b4cd2179f2deb20bad26-1783971027"
+  - variable: TINY_REDIRECT_URI
+    value: "https://alfreds--project-95918f0d-50bb-4f66-a0d.us-east4.hosted.app/api/tiny/oauth/callback"
+  - variable: TINY_CLIENT_SECRET
+    secret: tiny-client-secret
