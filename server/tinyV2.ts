@@ -176,7 +176,20 @@ export async function getV2Product(uid: string, id: string): Promise<TinyNormali
 // echo the current name; images merge with the existing external images.
 export async function updateV2Product(uid: string, id: string, prod: TinyPushProduct): Promise<void> {
   const current = (await tinyV2Call(uid, 'produto.obter.php', { id }))?.produto ?? {};
-  const produto: Record<string, any> = { sequencia: 1, id, nome: current?.nome };
+  // produto.alterar is NOT a partial update: it validates the product as a whole,
+  // so echo the required fields (unidade/preco/origem/situacao/tipo) from the
+  // current product, then override only the groups being sent.
+  const produto: Record<string, any> = {
+    sequencia: 1,
+    id,
+    codigo: current?.codigo,
+    nome: current?.nome,
+    unidade: current?.unidade,
+    preco: current?.preco,
+    origem: current?.origem,
+    situacao: current?.situacao,
+    tipo: current?.tipo,
+  };
 
   if (prod.campos.descricao && prod.descricaoHtml) produto.descricao_complementar = prod.descricaoHtml;
 
@@ -202,6 +215,8 @@ export async function updateV2Product(uid: string, id: string, prod: TinyPushPro
     const merged = Array.from(new Set([...collectV2Images(current), ...prod.imagens]));
     produto.imagens_externas = merged.map((url) => ({ url }));
   }
+
+  Object.keys(produto).forEach((k) => { if (produto[k] === undefined || produto[k] === null) delete produto[k]; });
 
   const payload = JSON.stringify({ produtos: [{ produto }] });
   console.log(`[tiny-v2] produto.alterar id=${id} payload=${payload.slice(0, 1500)}`);
