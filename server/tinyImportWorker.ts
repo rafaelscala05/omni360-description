@@ -14,8 +14,8 @@ const JOB_COL = 'tiny_import_jobs';
 const JOB_REF = (uid: string) => adminDb.collection(JOB_COL).doc(uid);
 const PRODUCTS = (uid: string) => adminDb.collection('users').doc(uid).collection('products');
 
-const PAGE_LIMIT = 50;
 const LEASE_MS = 120_000;      // how long a claimed slice is reserved to one instance
+const MAX_PRODUCTS_PER_JOB = 200_000; // safety cap against a non-terminating list/queue
 const TICK_MS = 20_000;        // scheduler cadence
 const BUDGET_MS = 90_000;      // max wall-time one claim keeps processing before releasing
 const AUTOSYNC_SWEEP_MS = 60 * 60 * 1000; // check due auto-syncs hourly
@@ -146,7 +146,12 @@ async function processJob(uid: string): Promise<void> {
       const { total, imported, newOffset, done } = await processSlice(uid, job, version);
       const nextImported = (job.imported ?? 0) + imported;
 
-      if (done) {
+      // Safety valve: stop if the list/queue never terminates (e.g. a drained
+      // queue that keeps returning records), so a job can't loop forever.
+      const capped = newOffset >= MAX_PRODUCTS_PER_JOB;
+      if (capped) console.warn(`[tiny] job ${uid} atingiu o limite de ${MAX_PRODUCTS_PER_JOB} produtos; encerrando.`);
+
+      if (done || capped) {
         await JOB_REF(uid).update({
           status: 'done', offset: newOffset, total, imported: nextImported,
           finishedAt: iso(), lastSyncAt: iso(), lease: null, updatedAt: iso(), error: null,

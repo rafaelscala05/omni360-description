@@ -63,7 +63,10 @@ export async function tinyV2CallRaw(token: string, endpoint: string, params: Rec
   }
 
   if (retorno?.status && retorno.status !== 'OK') {
-    const status = /token|inv|autoriz/i.test(String(errMsg)) ? 401 : 400;
+    // "No records" (codigo_erro 20) is not a failure — it's an empty result.
+    const noRecords = String(retorno?.codigo_erro) === '20' || /n[ãa]o.*(retornou|encontrad)|nenhum registro|no records/i.test(String(errMsg));
+    if (noRecords) return { ...retorno, produtos: [] };
+    const status = /token|inv[áa]lid|autoriz|acesso negado/i.test(String(errMsg)) ? 401 : 400;
     throw Object.assign(new Error(errMsg || `Tiny v2 respondeu status ${retorno.status}`), { status });
   }
   return retorno;
