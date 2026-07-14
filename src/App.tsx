@@ -32,7 +32,7 @@ import TutorialView from './components/tutorial/TutorialView';
 import type { WakePushFields } from './components/integrations/WakeConnector';
 import type { WakeNormalizedProduct, WakePushProduct } from './services/wakeService';
 import type { TinyPushFields } from './components/integrations/TinyConnector';
-import type { TinyPushProduct } from './services/tinyService';
+import type { TinyPushProduct, TinyPushResult } from './services/tinyService';
 import { fetchAndProcessImage } from './utils/imageUtils';
 import { generateGrounded, parseJsonResponse } from './services/aiService';
 import { CREDIT_ACTIONS, resolveCreditCost, type CreditAction } from './credits';
@@ -1548,55 +1548,128 @@ export default function App() {
   // Import runs server-side (server/tinyImportWorker.ts) and writes products
   // straight to Firestore; the UI reloads via loadFromCloud when a run finishes.
 
-  // Products that will be sent to Tiny (same selection rule as buildTinyPushPayload),
-  // for the connector's "N produtos" preview. Kept reactive to products + selection.
-  const tinyPushCandidates = useMemo(() => {
-    const fromTiny = products.filter((p) => p._tinyProductId);
-    const selected = selectedIds.size > 0 ? fromTiny.filter((p) => selectedIds.has(p._id)) : fromTiny;
-    return selected.map((p) => ({
-      id: p._tinyProductId!,
-      sku: p['Código (SKU)'] || '',
-      nome: p['Descrição'] || p['Título SEO'] || '',
-    }));
-  }, [products, selectedIds]);
+  // --- Tiny push: send only the field groups that changed since the last send ---
 
-  // Builds the push payload from selected products that originated from Tiny.
-  const buildTinyPushPayload = async (campos: TinyPushFields): Promise<TinyPushProduct[]> => {
-    const fromTiny = productsRef.current.filter((p) => p._tinyProductId);
-    const selected = selectedIds.size > 0 ? fromTiny.filter((p) => selectedIds.has(p._id)) : fromTiny;
-    const toNum = (v: unknown): number | undefined => {
-      if (v === undefined || v === null || v === '') return undefined;
-      const n = typeof v === 'number' ? v : Number(String(v).replace(',', '.'));
-      return Number.isFinite(n) ? n : undefined;
-    };
-    // Public image URLs to send as anexos: prefer the generated ambient images,
-    // then any imported "URL imagem N" fields. Only http(s) URLs (Tiny downloads them).
-    const collectImages = (p: Product): string[] => {
-      const urls: string[] = [...(p._ambientImages ?? [])];
-      for (let i = 1; i <= 6; i++) {
-        const u = (p as any)[`URL imagem ${i}`];
-        if (typeof u === 'string' && u) urls.push(u);
+  const tinyToNum = (v: unknown): number | undefined => {
+    if (v === undefined || v === null || v === '') return undefined;
+    const n = typeof v === 'number' ? v : Number(String(v).replace(',', '.'));
+    return Number.isFinite(n) ? n : undefined;
+  };
+  // Public image URLs to send as anexos: generated ambient images + imported
+  // "URL imagem N" fields. Only http(s) URLs (Tiny downloads them).
+  const collectTinyImages = (p: Product): string[] => {
+    const urls: string[] = [...(p._ambientImages ?? [])];
+    for (let i = 1; i <= 6; i++) {
+      const u = (p as any)[`URL imagem ${i}`];
+      if (typeof u === 'string' && u) urls.push(u);
+    }
+    return Array.from(new Set(urls.filter((u) => /^https?:\/\//i.test(u))));
+  };
+  const djb2 = (s: string): string => {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36);
+  };
+  // Per-group signature + whether the group actually has content to send.
+  const tinyGroup = {
+    descricao: (p: Product) => ({ has: !!p['Descrição complementar'], sig: djb2(String(p['Descrição complementar'] ?? '')) }),
+    seo: (p: Product) => {
+      const parts = [p['Título SEO'], p['Descrição SEO'], p['Palavras chave SEO']];
+      return { has: parts.some((x) => !!x), sig: djb2(parts.map((x) => String(x ?? '')).join('')) };
+    },
+    fiscal: (p: Product) => {
+      const parts = [p['NCM (Classificação fiscal)'], p['GTIN/EAN'], p['Peso líquido (Kg)'], p['Peso bruto (Kg)'], p['Largura embalagem'], p['Altura Embalagem'], p['Comprimento embalagem']];
+      return { has: parts.some((x) => x !== undefined && x !== null && x !== ''), sig: djb2(parts.map((x) => String(x ?? '')).join('')) };
+    },
+    imagens: (p: Product) => { const imgs = collectTinyImages(p); return { has: imgs.length > 0, sig: djb2(imgs.join('')) }; },
+  } as const;
+  type TinyGroupKey = keyof typeof tinyGroup;
+  // A group is "to send" when selected, has content, and its signature differs
+  // from the one recorded on the last successful send.
+  const changedTinyGroups = (p: Product, campos: TinyPushFields): Record<TinyGroupKey, boolean> => {
+    const out = { descricao: false, seo: false, fiscal: false, imagens: false };
+    (['descricao', 'seo', 'fiscal', 'imagens'] as const).forEach((g) => {
+      if (!campos[g]) return;
+      const { has, sig } = tinyGroup[g](p);
+      out[g] = has && sig !== p._tinyPushed?.[g];
+    });
+    return out;
+  };
+  const tinySelectedProducts = (source: Product[]): Product[] => {
+    const fromTiny = source.filter((p) => p._tinyProductId);
+    return selectedIds.size > 0 ? fromTiny.filter((p) => selectedIds.has(p._id)) : fromTiny;
+  };
+
+  // Products (with the changed groups) that will actually be sent for a given
+  // field selection — powers the connector's "N produtos" preview + count.
+  const getTinyPushCandidates = (campos: TinyPushFields) => {
+    const out: { id: string; sku: string; nome: string; changed: Record<TinyGroupKey, boolean> }[] = [];
+    for (const p of tinySelectedProducts(products)) {
+      const ch = changedTinyGroups(p, campos);
+      if (ch.descricao || ch.seo || ch.fiscal || ch.imagens) {
+        out.push({ id: p._tinyProductId!, sku: p['Código (SKU)'] || '', nome: p['Descrição'] || p['Título SEO'] || '', changed: ch });
       }
-      return Array.from(new Set(urls.filter((u) => /^https?:\/\//i.test(u))));
-    };
+    }
+    return out;
+  };
 
-    return selected.map((p) => ({
-      tinyId: p._tinyProductId!,
-      sku: p['Código (SKU)'],
-      descricaoHtml: p['Descrição complementar'],
-      seoTitle: p['Título SEO'],
-      seoDescription: p['Descrição SEO'],
-      seoKeywords: p['Palavras chave SEO'],
-      ncm: p['NCM (Classificação fiscal)'],
-      gtin: p['GTIN/EAN'],
-      pesoLiquido: toNum(p['Peso líquido (Kg)']),
-      pesoBruto: toNum(p['Peso bruto (Kg)']),
-      largura: toNum(p['Largura embalagem']),
-      altura: toNum(p['Altura Embalagem']),
-      comprimento: toNum(p['Comprimento embalagem']),
-      imagens: campos.imagens ? collectImages(p) : undefined,
-      campos,
-    }));
+  // Builds the push payload — only changed+selected groups, per product.
+  const buildTinyPushPayload = async (campos: TinyPushFields): Promise<TinyPushProduct[]> => {
+    const out: TinyPushProduct[] = [];
+    for (const p of tinySelectedProducts(productsRef.current)) {
+      const ch = changedTinyGroups(p, campos);
+      if (!(ch.descricao || ch.seo || ch.fiscal || ch.imagens)) continue;
+      out.push({
+        tinyId: p._tinyProductId!,
+        sku: p['Código (SKU)'],
+        descricaoHtml: p['Descrição complementar'],
+        seoTitle: p['Título SEO'],
+        seoDescription: p['Descrição SEO'],
+        seoKeywords: p['Palavras chave SEO'],
+        ncm: p['NCM (Classificação fiscal)'],
+        gtin: p['GTIN/EAN'],
+        pesoLiquido: tinyToNum(p['Peso líquido (Kg)']),
+        pesoBruto: tinyToNum(p['Peso bruto (Kg)']),
+        largura: tinyToNum(p['Largura embalagem']),
+        altura: tinyToNum(p['Altura Embalagem']),
+        comprimento: tinyToNum(p['Comprimento embalagem']),
+        imagens: ch.imagens ? collectTinyImages(p) : undefined,
+        campos: ch, // only the changed+selected groups for this product
+      });
+    }
+    return out;
+  };
+
+  // After a send, record the signature of each group that was sent successfully,
+  // so it won't be resent until it changes again. Persisted to Firestore.
+  const handleTinyPushed = async (results: TinyPushResult[]) => {
+    if (!user) return;
+    const byId = new Map(results.map((r) => [r.tinyId, r]));
+    const touched: Product[] = [];
+    const next = productsRef.current.map((p) => {
+      const r = p._tinyProductId ? byId.get(p._tinyProductId) : undefined;
+      if (!r) return p;
+      const pushed = { ...(p._tinyPushed ?? {}) };
+      let upd = false;
+      (['descricao', 'seo', 'fiscal', 'imagens'] as const).forEach((g) => {
+        if (r.steps[g] === 'ok') { pushed[g] = tinyGroup[g](p).sig; upd = true; }
+      });
+      if (!upd) return p;
+      const np = { ...p, _tinyPushed: pushed };
+      touched.push(np);
+      return np;
+    });
+    if (!touched.length) return;
+    productsRef.current = next;
+    setProducts(next);
+    // Persist just the _tinyPushed field for the affected products.
+    let batch = writeBatch(db);
+    let n = 0;
+    for (const p of touched) {
+      batch.set(doc(db, `users/${user.uid}/products/${p._id}`), { _tinyPushed: p._tinyPushed }, { merge: true });
+      if (++n >= 400) { await batch.commit(); batch = writeBatch(db); n = 0; }
+    }
+    if (n > 0) await batch.commit().catch((e) => console.warn('Falha ao salvar _tinyPushed:', e));
   };
 
   const handleSaveImages = (productId: string, selectedImage: string, ambientImages: string[], tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number }) => {
@@ -2620,7 +2693,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           ) : mainView === 'history' ? (
             renderHistoryView()
           ) : mainView === 'integrations' ? (
-            <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} onTinyImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getTinyPushPayload={buildTinyPushPayload} tinyPushCandidates={tinyPushCandidates} />
+            <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} onTinyImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getTinyPushPayload={buildTinyPushPayload} getTinyPushCandidates={getTinyPushCandidates} onTinyPushed={handleTinyPushed} />
           ) : mainView === 'tutorial' ? (
             <TutorialView onFinish={() => setMainView('products')} />
           ) : (
