@@ -1548,6 +1548,18 @@ export default function App() {
   // Import runs server-side (server/tinyImportWorker.ts) and writes products
   // straight to Firestore; the UI reloads via loadFromCloud when a run finishes.
 
+  // Products that will be sent to Tiny (same selection rule as buildTinyPushPayload),
+  // for the connector's "N produtos" preview. Kept reactive to products + selection.
+  const tinyPushCandidates = useMemo(() => {
+    const fromTiny = products.filter((p) => p._tinyProductId);
+    const selected = selectedIds.size > 0 ? fromTiny.filter((p) => selectedIds.has(p._id)) : fromTiny;
+    return selected.map((p) => ({
+      id: p._tinyProductId!,
+      sku: p['Código (SKU)'] || '',
+      nome: p['Descrição'] || p['Título SEO'] || '',
+    }));
+  }, [products, selectedIds]);
+
   // Builds the push payload from selected products that originated from Tiny.
   const buildTinyPushPayload = async (campos: TinyPushFields): Promise<TinyPushProduct[]> => {
     const fromTiny = productsRef.current.filter((p) => p._tinyProductId);
@@ -2608,7 +2620,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           ) : mainView === 'history' ? (
             renderHistoryView()
           ) : mainView === 'integrations' ? (
-            <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} onTinyImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getTinyPushPayload={buildTinyPushPayload} />
+            <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} onTinyImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getTinyPushPayload={buildTinyPushPayload} tinyPushCandidates={tinyPushCandidates} />
           ) : mainView === 'tutorial' ? (
             <TutorialView onFinish={() => setMainView('products')} />
           ) : (

@@ -10,9 +10,10 @@ interface Props {
   getPushPayload: (campos: WakePushFields) => Promise<WakePushProduct[]>;
   onTinyImported: () => void;
   getTinyPushPayload: (campos: TinyPushFields) => Promise<TinyPushProduct[]>;
+  tinyPushCandidates: { id: string; sku: string; nome: string }[];
 }
 
-const IntegrationsView: React.FC<Props> = ({ onImport, getPushPayload, onTinyImported, getTinyPushPayload }) => {
+const IntegrationsView: React.FC<Props> = ({ onImport, getPushPayload, onTinyImported, getTinyPushPayload, tinyPushCandidates }) => {
   return (
     <div className="max-w-3xl mx-auto px-4 md:px-6 py-6 space-y-6">
       <div className="flex items-center gap-3">
@@ -53,7 +54,7 @@ const IntegrationsView: React.FC<Props> = ({ onImport, getPushPayload, onTinyImp
           </div>
         </header>
         <div className="px-5 py-5">
-          <TinyConnector onImported={onTinyImported} getPushPayload={getTinyPushPayload} />
+          <TinyConnector onImported={onTinyImported} getPushPayload={getTinyPushPayload} pushCandidates={tinyPushCandidates} />
         </div>
       </section>
     </div>

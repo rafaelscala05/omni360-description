@@ -13,6 +13,8 @@ interface Props {
   onImported: () => void;
   // Builds the push payload from the currently selected products and chosen fields.
   getPushPayload: (campos: TinyPushFields) => Promise<TinyPushProduct[]>;
+  // Products that will be sent (for the count button + preview popup).
+  pushCandidates: { id: string; sku: string; nome: string }[];
 }
 
 const FIELD_LABELS: { key: keyof TinyPushFields; label: string }[] = [
@@ -24,7 +26,7 @@ const FIELD_LABELS: { key: keyof TinyPushFields; label: string }[] = [
 
 const JOB_ACTIVE = (s?: string) => s === 'running' || s === 'queued';
 
-const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload }) => {
+const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, pushCandidates }) => {
   const [status, setStatus] = useState<TinyStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [connecting, setConnecting] = useState(false);
@@ -44,6 +46,7 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload }) => {
   const [pushing, setPushing] = useState(false);
   const [campos, setCampos] = useState<TinyPushFields>({ descricao: true, seo: true, fiscal: true, imagens: true });
   const [pushResults, setPushResults] = useState<TinyPushResult[] | null>(null);
+  const [showCandidates, setShowCandidates] = useState(false);
 
   const refreshStatus = async (): Promise<TinyStatus> => {
     let next: TinyStatus;
@@ -385,14 +388,25 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload }) => {
               Imagens são enviadas como anexos por URL (mescladas com as já existentes no produto).
               As URLs precisam ser públicas para o Tiny conseguir baixá-las.
             </p>
-            <button
-              onClick={handlePush}
-              disabled={pushing}
-              className="inline-flex items-center gap-2 bg-[#FF5B03] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#003a9e] disabled:opacity-50 transition-colors"
-            >
-              {pushing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudUpload className="w-4 h-4" />}
-              Enviar selecionados para Tiny
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={handlePush}
+                disabled={pushing || pushCandidates.length === 0}
+                className="inline-flex items-center gap-2 bg-[#FF5B03] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#003a9e] disabled:opacity-50 transition-colors"
+              >
+                {pushing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudUpload className="w-4 h-4" />}
+                Enviar selecionados para Tiny
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCandidates(true)}
+                disabled={pushCandidates.length === 0}
+                title="Ver os produtos que serão enviados"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 border border-slate-300 px-3 py-2 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
+              >
+                {pushCandidates.length} {pushCandidates.length === 1 ? 'produto' : 'produtos'}
+              </button>
+            </div>
 
             {pushResults && (
               <div className="mt-2 border-t border-slate-100 pt-3 space-y-1.5 max-h-64 overflow-auto">
@@ -412,6 +426,43 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload }) => {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Preview of the products that will be sent to Tiny */}
+      {showCandidates && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setShowCandidates(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-800">
+                Produtos que serão enviados ({pushCandidates.length})
+              </h3>
+              <button onClick={() => setShowCandidates(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-5 h-5" />
+              </button>
+            </header>
+            <div className="overflow-auto divide-y divide-slate-100">
+              {pushCandidates.length === 0 ? (
+                <p className="text-sm text-slate-500 px-5 py-6 text-center">Nenhum produto selecionado.</p>
+              ) : (
+                pushCandidates.map((p) => (
+                  <div key={p.id} className="flex items-center gap-3 px-5 py-2.5 text-sm">
+                    <span className="font-mono text-xs text-slate-500 shrink-0">{p.sku || p.id}</span>
+                    <span className="text-slate-700 truncate">{p.nome || <span className="text-slate-400 italic">sem nome</span>}</span>
+                  </div>
+                ))
+              )}
+            </div>
+            <footer className="px-5 py-3 border-t border-slate-100 text-xs text-slate-500">
+              Sem seleção na lista de produtos, todos os produtos vindos do Tiny são enviados.
+            </footer>
           </div>
         </div>
       )}
