@@ -7,7 +7,8 @@
 // plus POST /api/tiny/cron/tick (secret-gated) for Cloud Scheduler in production.
 import type express from 'express';
 import { adminDb } from './firebaseAdmin';
-import { tinyFetch, normalizeProduct, PACE_MS, sleep, type TinyNormalizedProduct } from './tinyAgent';
+import { PACE_MS, sleep, type TinyNormalizedProduct } from './tinyAgent';
+import { tinyListPage, tinyGetProduct, getActiveVersion, type TinyVersion } from './tinyProvider';
 
 const JOB_COL = 'tiny_import_jobs';
 const JOB_REF = (uid: string) => adminDb.collection(JOB_COL).doc(uid);
@@ -88,33 +89,23 @@ async function upsertProduct(uid: string, t: TinyNormalizedProduct): Promise<voi
   }).catch(() => { /* backup is best-effort */ });
 }
 
-// Formats an ISO timestamp as the yyyy-MM-dd the Tiny list filter expects.
-const toTinyDate = (isoStr: string) => isoStr.slice(0, 10);
 
-// Processes one page of products. Returns pagination progress for the job.
-async function processSlice(uid: string, job: Job): Promise<{ total: number; imported: number; newOffset: number; done: boolean }> {
-  const params = new URLSearchParams({
-    situacao: 'A',
-    limit: String(PAGE_LIMIT),
-    offset: String(job.offset),
-  });
-  if (job.mode === 'update' && job.lastSyncAt) params.set('dataAlteracao', toTinyDate(job.lastSyncAt));
+// Processes one page of products via the version-aware provider (v2 or v3).
+async function processSlice(uid: string, job: Job, version: TinyVersion): Promise<{ total: number; imported: number; newOffset: number; done: boolean }> {
+  const { items, total, done } = await tinyListPage(
+    uid,
+    { offset: job.offset, mode: job.mode, sinceISO: job.lastSyncAt },
+    version,
+  );
 
-  const page = await tinyFetch<any>(uid, 'GET', `/produtos?${params.toString()}`);
-  const itens: any[] = Array.isArray(page?.itens) ? page.itens : [];
-  const total = Number(page?.paginacao?.total ?? job.total ?? 0);
-
-  for (let i = 0; i < itens.length; i++) {
-    const detail = await tinyFetch<any>(uid, 'GET', `/produtos/${itens[i].id}`).catch(() => itens[i]);
-    await upsertProduct(uid, normalizeProduct(detail));
-    if (PACE_MS && i < itens.length - 1) await sleep(PACE_MS);
+  for (let i = 0; i < items.length; i++) {
+    const detail = await tinyGetProduct(uid, items[i].id, version).catch(() => null);
+    if (detail) await upsertProduct(uid, detail);
+    if (PACE_MS && i < items.length - 1) await sleep(PACE_MS);
   }
 
-  const newOffset = job.offset + itens.length;
-  // Trust page fullness for the end-of-catalog signal (paginacao.total may be
-  // absent/0). A short or empty page means we've reached the end.
-  const done = itens.length < PAGE_LIMIT || (total > 0 && newOffset >= total);
-  return { total, imported: itens.length, newOffset, done };
+  const newOffset = job.offset + items.length;
+  return { total: total || job.total || 0, imported: items.length, newOffset, done };
 }
 
 // --- Lease + tick ----------------------------------------------------------
@@ -142,11 +133,17 @@ async function processJob(uid: string): Promise<void> {
   const claimed = await claimJob(uid);
   if (!claimed) return;
 
+  const version = await getActiveVersion(uid);
+  if (!version) {
+    await JOB_REF(uid).update({ status: 'error', error: 'Tiny não conectado.', lease: null, updatedAt: iso() }).catch(() => {});
+    return;
+  }
+
   let job = claimed;
   const start = Date.now();
   try {
     while (true) {
-      const { total, imported, newOffset, done } = await processSlice(uid, job);
+      const { total, imported, newOffset, done } = await processSlice(uid, job, version);
       const nextImported = (job.imported ?? 0) + imported;
 
       if (done) {

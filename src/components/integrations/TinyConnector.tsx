@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, RefreshCw, Upload, CloudUpload, X, Loader2, AlertCircle, ShieldCheck, Info } from 'lucide-react';
+import { Check, RefreshCw, Upload, CloudUpload, X, Loader2, AlertCircle, ShieldCheck, Info, KeyRound } from 'lucide-react';
 import {
-  tinyStatus, tinyConnect, tinyDisconnect, tinyPush,
+  tinyStatus, tinyConnect, tinyV2Validate, tinyDisconnect, tinyPush,
   tinyImportStart, tinyImportStatus, tinyImportCancel, tinyImportSetAutosync,
   type TinyStatus, type TinyImportJob, type TinyPushProduct, type TinyPushResult,
 } from '../../services/tinyService';
@@ -29,6 +29,10 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload }) => {
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Which API version the user is setting up while disconnected.
+  const [version, setVersion] = useState<'v2' | 'v3'>('v3');
+  const [v2Token, setV2Token] = useState('');
+  const [validating, setValidating] = useState(false);
 
   const [job, setJob] = useState<TinyImportJob | null>(null);
   const [starting, setStarting] = useState(false);
@@ -93,6 +97,22 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload }) => {
       setError(e instanceof Error ? e.message : 'Falha ao conectar ao Tiny.');
     } finally {
       setConnecting(false);
+    }
+  };
+
+  const handleV2Connect = async () => {
+    if (!v2Token.trim()) return;
+    setValidating(true);
+    setError(null);
+    try {
+      const res = await tinyV2Validate(v2Token.trim());
+      if (!res.valid) throw new Error(res.message);
+      setV2Token('');
+      await refreshStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Falha ao validar o token.');
+    } finally {
+      setValidating(false);
     }
   };
 
@@ -170,24 +190,77 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload }) => {
 
       {!connected ? (
         <div className="space-y-3">
-          <p className="text-sm text-slate-500">
-            Conecte sua conta Tiny ERP. Você será levado à tela de autorização do Tiny e, ao
-            aprovar, os tokens de acesso ficam guardados com segurança no servidor — nunca no navegador.
-          </p>
-          <button
-            onClick={handleConnect}
-            disabled={connecting}
-            className="inline-flex items-center gap-2 bg-[#FF5B03] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#003a9e] disabled:opacity-50 transition-colors"
-          >
-            {connecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-            Conectar conta Tiny
-          </button>
+          {/* Version selector */}
+          <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-sm">
+            {(['v3', 'v2'] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => { setVersion(v); setError(null); }}
+                className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
+                  version === v ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {v === 'v3' ? 'v3 — OAuth' : 'v2 — Token'}
+              </button>
+            ))}
+          </div>
+
+          {version === 'v3' ? (
+            <>
+              <p className="text-sm text-slate-500">
+                API v3 (OAuth): você será levado à tela de autorização do Tiny e, ao aprovar, os tokens
+                ficam guardados com segurança no servidor — nunca no navegador.
+              </p>
+              <button
+                onClick={handleConnect}
+                disabled={connecting}
+                className="inline-flex items-center gap-2 bg-[#FF5B03] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#003a9e] disabled:opacity-50 transition-colors"
+              >
+                {connecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                Conectar conta Tiny
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-slate-500">
+                API v2 (token de integração): gere o token em Tiny → Configurações → Tokens da API e cole
+                abaixo. Validamos e guardamos o token com segurança no servidor — nunca no navegador.
+              </p>
+              <label className="block text-xs font-semibold text-slate-600">Token de integração (v2)</label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="password"
+                    value={v2Token}
+                    onChange={(e) => setV2Token(e.target.value)}
+                    placeholder="Cole seu token aqui"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03] focus:border-[#FF5B03]"
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleV2Connect(); }}
+                  />
+                </div>
+                <button
+                  onClick={handleV2Connect}
+                  disabled={validating || !v2Token.trim()}
+                  className="inline-flex items-center gap-2 bg-[#FF5B03] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#003a9e] disabled:opacity-50 transition-colors"
+                >
+                  {validating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                  Conectar e validar
+                </button>
+              </div>
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-5">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="inline-flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1">
               <Check className="w-4 h-4" /> Conectada e validada
+              {status?.version && (
+                <span className="text-emerald-800 font-semibold uppercase text-[10px] bg-emerald-100 rounded px-1.5 py-0.5">
+                  {status.version}
+                </span>
+              )}
               {status?.lastValidatedAt && (
                 <span className="text-emerald-600/70 text-xs">
                   · {new Date(status.lastValidatedAt).toLocaleString('pt-BR')}

@@ -17,6 +17,7 @@ import { registerVideoRoutes } from "./server/videoAgent";
 import { registerWakeRoutes } from "./server/wakeAgent";
 import { registerTinyRoutes } from "./server/tinyAgent";
 import { registerTinyImportRoutes, startTinyScheduler } from "./server/tinyImportWorker";
+import { registerTinyProviderRoutes } from "./server/tinyProvider";
 import { registerBlogPublic } from "./server/blogPublic";
 import { registerBlogAdminRoutes } from "./server/blogAdmin";
 import { registerMetaEventsRoutes } from "./server/metaEvents";
@@ -171,6 +172,7 @@ async function startServer() {
   registerVideoRoutes(app, { verifyFirebaseToken });
   registerWakeRoutes(app, { verifyFirebaseToken });
   registerTinyRoutes(app, { verifyFirebaseToken });
+  registerTinyProviderRoutes(app, { verifyFirebaseToken });
   registerTinyImportRoutes(app, { verifyFirebaseToken });
   registerMetaEventsRoutes(app);
 

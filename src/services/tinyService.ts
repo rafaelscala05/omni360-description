@@ -7,6 +7,7 @@ import { auth } from '../firebase';
 export interface TinyStatus {
   connected: boolean;
   validated: boolean;
+  version?: 'v2' | 'v3' | null;
   lastValidatedAt: string | null;
 }
 
@@ -72,6 +73,14 @@ async function handle<T>(resp: Response): Promise<T> {
 
 export async function tinyStatus(): Promise<TinyStatus> {
   const resp = await fetch('/api/tiny/status', { headers: await authHeaders() });
+  return handle(resp);
+}
+
+// v2 connect: validate and persist a static integration token server-side.
+export async function tinyV2Validate(token: string): Promise<{ valid: boolean; message: string }> {
+  const resp = await fetch('/api/tiny/v2/validate', {
+    method: 'POST', headers: await authHeaders(), body: JSON.stringify({ token }),
+  });
   return handle(resp);
 }
 

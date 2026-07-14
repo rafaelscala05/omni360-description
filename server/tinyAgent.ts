@@ -22,9 +22,9 @@ export const PACE_MS = Math.max(0, Number(process.env.TINY_PACE_MS ?? 1000));
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const SECRET_REF = (uid: string) =>
+export const SECRET_REF = (uid: string) =>
   adminDb.collection('users').doc(uid).collection('integration_secrets').doc('tiny');
-const STATUS_REF = (uid: string) =>
+export const STATUS_REF = (uid: string) =>
   adminDb.collection('users').doc(uid).collection('settings').doc('tiny');
 const STATE_REF = (state: string) => adminDb.collection('oauth_states').doc(state);
 
@@ -61,7 +61,8 @@ async function exchangeToken(params: Record<string, string>): Promise<TinySecret
 }
 
 async function persistSecret(uid: string, secret: TinySecret): Promise<void> {
-  await SECRET_REF(uid).set({ ...secret, updatedAt: FieldValue.serverTimestamp() });
+  // version tags which API the stored credentials belong to (one active at a time).
+  await SECRET_REF(uid).set({ ...secret, version: 'v3', updatedAt: FieldValue.serverTimestamp() });
 }
 
 // Returns a valid access token for the user, refreshing it if it is expired or
@@ -231,7 +232,7 @@ export interface TinyPushResult {
 // Builds a valid AtualizarProdutoRequestModel body from the current product,
 // echoing the fields the API expects and overriding only the selected ones. Tiny
 // PUT semantics are treated as a full update, so existing values are preserved.
-function buildProductPutBody(current: any, prod: TinyPushProduct): Record<string, unknown> {
+export function buildProductPutBody(current: any, prod: TinyPushProduct): Record<string, unknown> {
   const dim = current?.dimensoes ?? {};
   const seo = current?.seo ?? {};
   const precos = current?.precos ?? {};
@@ -399,6 +400,7 @@ export function registerTinyRoutes(app: express.Express, { verifyFirebaseToken }
       await STATUS_REF(uid).set({
         connected: true,
         validated: true,
+        apiVersion: 'v3',
         connectedAt: FieldValue.serverTimestamp(),
         lastValidatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
@@ -415,9 +417,13 @@ export function registerTinyRoutes(app: express.Express, { verifyFirebaseToken }
       const [statusSnap, secretSnap] = await Promise.all([STATUS_REF(uid).get(), SECRET_REF(uid).get()]);
       const hasToken = secretSnap.exists;
       const d = statusSnap.data() ?? {};
+      const sec = secretSnap.data() ?? {};
+      // Infer the version for legacy secrets that predate the version field.
+      const version = sec.version ?? d.apiVersion ?? (sec.accessToken ? 'v3' : sec.token ? 'v2' : null);
       return res.json({
         connected: hasToken,
         validated: hasToken && d.validated === true,
+        version,
         lastValidatedAt: d.lastValidatedAt?.toDate?.()?.toISOString?.() ?? null,
       });
     } catch (e: any) {
@@ -436,79 +442,4 @@ export function registerTinyRoutes(app: express.Express, { verifyFirebaseToken }
     }
   });
 
-  // Paginated product import (offset-based). Lists a page, then fetches each
-  // product's full detail for description/SEO/fiscal/images.
-  app.post('/api/tiny/import', async (req, res) => {
-    try {
-      const { uid } = await verifyFirebaseToken(req);
-      const limit = Math.min(Number(req.body?.limit ?? 50), 100);
-      const offset = Math.max(Number(req.body?.offset ?? 0), 0);
-
-      const startedAt = Date.now();
-      const page = await tinyFetch<any>(uid, 'GET', `/produtos?situacao=A&limit=${limit}&offset=${offset}`);
-      const itens: any[] = Array.isArray(page?.itens) ? page.itens : [];
-      const total = Number(page?.paginacao?.total ?? 0);
-
-      const produtos: TinyNormalizedProduct[] = [];
-      for (let i = 0; i < itens.length; i++) {
-        const item = itens[i];
-        const detail = await tinyFetch<any>(uid, 'GET', `/produtos/${item.id}`).catch(() => item);
-        produtos.push(normalizeProduct(detail));
-        // Pace detail calls to stay under Tiny's per-minute rate limit.
-        if (PACE_MS && i < itens.length - 1) await sleep(PACE_MS);
-      }
-      const elapsedMs = Date.now() - startedAt;
-      console.log(`[tiny] import offset=${offset} itens=${itens.length} em ${(elapsedMs / 1000).toFixed(1)}s (~${itens.length ? (elapsedMs / itens.length / 1000).toFixed(1) : 0}s/produto, pace=${PACE_MS}ms)`);
-      return res.json({
-        offset, limit, total,
-        count: produtos.length,
-        hasMore: offset + itens.length < total,
-        produtos,
-      });
-    } catch (e: any) {
-      return res.status(e?.status === 401 ? 401 : 500).json({ message: e?.message ?? 'Falha na importação.' });
-    }
-  });
-
-  // Push enriched fields back to Tiny via an atomic PUT /produtos/{id}. Per-product
-  // error handling: one failure does not abort the batch. Images are sent as
-  // product anexos (URL), merged with the existing ones.
-  app.post('/api/tiny/push', async (req, res) => {
-    try {
-      const { uid } = await verifyFirebaseToken(req);
-      const produtos: TinyPushProduct[] = Array.isArray(req.body?.produtos) ? req.body.produtos : [];
-      const resultados: TinyPushResult[] = [];
-
-      for (const prod of produtos) {
-        const steps: TinyPushResult['steps'] = { descricao: 'skip', seo: 'skip', fiscal: 'skip', imagens: 'skip' };
-        if (!prod.tinyId) {
-          resultados.push({ tinyId: prod.tinyId, sku: prod.sku, ok: false, steps: {
-            descricao: 'Sem ID Tiny', seo: 'Sem ID Tiny', fiscal: 'Sem ID Tiny', imagens: 'Sem ID Tiny',
-          } });
-          continue;
-        }
-        try {
-          const current = await tinyFetch<any>(uid, 'GET', `/produtos/${prod.tinyId}`);
-          const body = buildProductPutBody(current, prod);
-          await tinyFetch(uid, 'PUT', `/produtos/${prod.tinyId}`, body);
-          if (prod.campos.descricao) steps.descricao = prod.descricaoHtml ? 'ok' : 'sem descrição';
-          if (prod.campos.seo) steps.seo = (prod.seoTitle || prod.seoDescription || prod.seoKeywords) ? 'ok' : 'sem SEO';
-          if (prod.campos.fiscal) steps.fiscal = 'ok';
-          if (prod.campos.imagens) steps.imagens = prod.imagens?.length ? 'ok' : 'sem imagens';
-        } catch (e: any) {
-          const msg = e?.message ?? 'erro';
-          if (prod.campos.descricao) steps.descricao = msg;
-          if (prod.campos.seo) steps.seo = msg;
-          if (prod.campos.fiscal) steps.fiscal = msg;
-          if (prod.campos.imagens) steps.imagens = msg;
-        }
-        const ok = (['descricao', 'seo', 'fiscal', 'imagens'] as const)
-          .every((k) => steps[k] === 'ok' || steps[k] === 'skip' || steps[k].startsWith('sem '));
-        resultados.push({ tinyId: prod.tinyId, sku: prod.sku, ok, steps });
-      }
-      return res.json({ resultados });
-    } catch (e: any) {
-      return res.status(e?.status === 401 ? 401 : 500).json({ message: e?.message ?? 'Falha no envio.' });
-    }
-  });
 }
