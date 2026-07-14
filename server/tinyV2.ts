@@ -212,8 +212,12 @@ export async function updateV2Product(uid: string, id: string, prod: TinyPushPro
   }
 
   if (prod.campos.imagens && prod.imagens?.length) {
-    const merged = Array.from(new Set([...collectV2Images(current), ...prod.imagens]));
-    produto.imagens_externas = merged.map((url) => ({ url }));
+    // Send ONLY images the product doesn't already have. Re-sending Tiny's own
+    // hosted images (e.g. s3 tiny-anexos URLs, imported earlier) as "external"
+    // makes produto.alterar fail with an internal error (cod 35).
+    const currentUrls = new Set(collectV2Images(current));
+    const novas = prod.imagens.filter((u) => !currentUrls.has(u));
+    if (novas.length) produto.imagens_externas = novas.map((url) => ({ url }));
   }
 
   Object.keys(produto).forEach((k) => { if (produto[k] === undefined || produto[k] === null) delete produto[k]; });
