@@ -66,8 +66,26 @@ export async function tinyV2CallRaw(token: string, endpoint: string, params: Rec
     // "No records" (codigo_erro 20) is not a failure — it's an empty result.
     const noRecords = String(retorno?.codigo_erro) === '20' || /n[ãa]o.*(retornou|encontrad)|nenhum registro|no records/i.test(String(errMsg));
     if (noRecords) return { ...retorno, produtos: [] };
+    // Log the full response so a generic Tiny message ("erro inesperado") can be
+    // correlated with the request in the server logs.
+    console.error(`[tiny-v2] ${endpoint} status=${retorno.status} codigo_erro=${retorno.codigo_erro} retorno=${JSON.stringify(retorno).slice(0, 1500)}`);
     const status = /token|inv[áa]lid|autoriz|acesso negado/i.test(String(errMsg)) ? 401 : 400;
-    throw Object.assign(new Error(errMsg || `Tiny v2 respondeu status ${retorno.status}`), { status });
+    const detail = errMsg ? `[cod ${retorno.codigo_erro ?? '?'}] ${errMsg}` : `Tiny v2 status ${retorno.status} (cod ${retorno.codigo_erro ?? '?'})`;
+    throw Object.assign(new Error(detail), { status });
+  }
+  // Per-record errors (produto.alterar/incluir) can come back with top status OK.
+  const registros: any[] = Array.isArray(retorno?.registros) ? retorno.registros : [];
+  const regErros: string[] = [];
+  for (const r of registros) {
+    const reg = r?.registro ?? r;
+    if (reg?.status && reg.status !== 'OK') {
+      const es = Array.isArray(reg?.erros) ? reg.erros.map((e: any) => e?.erro ?? e).join('; ') : (reg?.erros?.erro ?? `status ${reg.status}`);
+      regErros.push(es);
+    }
+  }
+  if (regErros.length) {
+    console.error(`[tiny-v2] ${endpoint} erros por registro: ${JSON.stringify(retorno).slice(0, 1500)}`);
+    throw Object.assign(new Error(`[registro] ${regErros.join(' | ')}`), { status: 400 });
   }
   return retorno;
 }
@@ -186,5 +204,6 @@ export async function updateV2Product(uid: string, id: string, prod: TinyPushPro
   }
 
   const payload = JSON.stringify({ produtos: [{ produto }] });
+  console.log(`[tiny-v2] produto.alterar id=${id} payload=${payload.slice(0, 1500)}`);
   await tinyV2Call(uid, 'produto.alterar.php', { produto: payload });
 }
