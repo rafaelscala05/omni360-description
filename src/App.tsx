@@ -1586,12 +1586,26 @@ export default function App() {
   type TinyGroupKey = keyof typeof tinyGroup;
   // A group is "to send" when selected, has content, and its signature differs
   // from the one recorded on the last successful send.
+  // Whether each group was generated/modified in the app — the SAME signal the
+  // Catálogo uses (getProductStatusFlags), so imported/original data doesn't count.
+  const tinyGenerated = (p: Product): Record<TinyGroupKey, boolean> => {
+    const f = getProductStatusFlags(p);
+    return {
+      descricao: f.descricaoGerada,          // _statusDescricao === 'Gerado por IA'
+      seo: p._statusSEO === 'Gerado por IA',
+      fiscal: f.enriquecido,                 // !!_enrichmentLog
+      imagens: f.imagensGeradas,             // possui imagens ambientadas
+    };
+  };
+  // A group is "to send" when selected, was generated/modified in the app (catalog
+  // signal), and its content differs from what was last sent successfully.
   const changedTinyGroups = (p: Product, campos: TinyPushFields): Record<TinyGroupKey, boolean> => {
+    const gen = tinyGenerated(p);
     const out = { descricao: false, seo: false, fiscal: false, imagens: false };
     (['descricao', 'seo', 'fiscal', 'imagens'] as const).forEach((g) => {
-      if (!campos[g]) return;
-      const { has, sig } = tinyGroup[g](p);
-      out[g] = has && sig !== p._tinyPushed?.[g];
+      if (!campos[g] || !gen[g]) return;
+      const { sig } = tinyGroup[g](p);
+      out[g] = sig !== p._tinyPushed?.[g];
     });
     return out;
   };
