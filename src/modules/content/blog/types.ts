@@ -73,6 +73,102 @@ export const DEFAULT_BLOG_LAYOUT: BlogLayout = {
   showCategoriesNav: true,
 };
 
+// ----------------------------------------------------------------------------
+// Aparência modular (mix-and-match). Cinco eixos independentes, 3 variantes cada.
+// `BlogSettings.appearance` é opcional: ausente = deriva do preset do `template`
+// legado (PRESETS) → DEFAULT_BLOG_APPEARANCE. Assim blogs antigos não migram.
+// ----------------------------------------------------------------------------
+
+export type BlogHeaderVariant = 'logo-esquerda' | 'logo-centro' | 'logo-topo';
+export type BlogFooterVariant = 'simples' | 'colunas' | 'centralizado';
+export type BlogCategoryVariant = 'grade' | 'lista' | 'destaque-grade';
+export type BlogCardVariant = 'com-borda' | 'plano' | 'sombra';
+export type BlogArticleVariant = 'centrado' | 'capa-larga' | 'lateral-meta';
+
+export interface BlogAppearance {
+  header: BlogHeaderVariant;
+  footer: BlogFooterVariant;
+  footerShowCategories: boolean;   // inclui submenu de categorias no rodapé
+  category: BlogCategoryVariant;
+  card: BlogCardVariant;
+  cardShowAuthor: boolean;
+  cardShowExcerpt: boolean;
+  cardShowMeta: boolean;           // data + tempo de leitura
+  cardShowCategory: boolean;       // chip da categoria
+  article: BlogArticleVariant;
+}
+
+export const DEFAULT_BLOG_APPEARANCE: BlogAppearance = {
+  header: 'logo-esquerda',
+  footer: 'simples',
+  footerShowCategories: true,
+  category: 'destaque-grade',
+  card: 'com-borda',
+  cardShowAuthor: false,
+  cardShowExcerpt: true,
+  cardShowMeta: true,
+  cardShowCategory: true,
+  article: 'centrado',
+};
+
+// Presets "Estilos rápidos": reproduzem os 3 temas monolíticos antigos como
+// pontos de partida. São também o fallback de blogs sem `appearance` (via
+// `template`), garantindo continuidade visual sem migração de dados.
+export const BLOG_APPEARANCE_PRESETS: Record<BlogTemplateId, BlogAppearance> = {
+  editorial: {
+    header: 'logo-esquerda', footer: 'simples', footerShowCategories: true,
+    category: 'destaque-grade', card: 'com-borda',
+    cardShowAuthor: false, cardShowExcerpt: true, cardShowMeta: true, cardShowCategory: true,
+    article: 'centrado',
+  },
+  minimal: {
+    header: 'logo-topo', footer: 'centralizado', footerShowCategories: false,
+    category: 'lista', card: 'plano',
+    cardShowAuthor: true, cardShowExcerpt: true, cardShowMeta: true, cardShowCategory: false,
+    article: 'centrado',
+  },
+  grid: {
+    header: 'logo-esquerda', footer: 'colunas', footerShowCategories: true,
+    category: 'grade', card: 'sombra',
+    cardShowAuthor: false, cardShowExcerpt: false, cardShowMeta: true, cardShowCategory: true,
+    article: 'capa-larga',
+  },
+};
+
+// Rótulos para a UI da aba Aparência (nome + descrição curta por variante).
+export const BLOG_APPEARANCE_OPTIONS = {
+  header: [
+    { id: 'logo-esquerda', nome: 'Logo à esquerda', descricao: 'Logo à esquerda, menu à direita.' },
+    { id: 'logo-centro', nome: 'Logo ao centro', descricao: 'Logo centralizado com menu logo abaixo.' },
+    { id: 'logo-topo', nome: 'Logo em destaque', descricao: 'Logo grande no topo, tagline e menu centralizados.' },
+  ],
+  footer: [
+    { id: 'simples', nome: 'Simples', descricao: 'Uma linha com o texto do rodapé.' },
+    { id: 'colunas', nome: 'Em colunas', descricao: 'Marca à esquerda e submenu de categorias à direita.' },
+    { id: 'centralizado', nome: 'Centralizado', descricao: 'Texto e links centralizados.' },
+  ],
+  category: [
+    { id: 'grade', nome: 'Grade', descricao: 'Mosaico de cards em 3 colunas.' },
+    { id: 'lista', nome: 'Lista', descricao: 'Uma coluna, cards na horizontal.' },
+    { id: 'destaque-grade', nome: 'Destaque + grade', descricao: 'Primeiro post em destaque + grade.' },
+  ],
+  card: [
+    { id: 'com-borda', nome: 'Com borda', descricao: 'Card delimitado por borda fina.' },
+    { id: 'plano', nome: 'Plano', descricao: 'Sem card, só o conteúdo.' },
+    { id: 'sombra', nome: 'Com sombra', descricao: 'Card elevado com sombra suave.' },
+  ],
+  article: [
+    { id: 'centrado', nome: 'Centrado', descricao: 'Coluna única centralizada, capa no topo.' },
+    { id: 'capa-larga', nome: 'Capa larga', descricao: 'Capa full-bleed com título sobreposto.' },
+    { id: 'lateral-meta', nome: 'Meta lateral', descricao: 'Metadados numa coluna lateral fixa.' },
+  ],
+} as const;
+
+export function effectiveAppearance(s: Pick<BlogSettings, 'appearance' | 'template'>): BlogAppearance {
+  const base = BLOG_APPEARANCE_PRESETS[s.template] ?? DEFAULT_BLOG_APPEARANCE;
+  return { ...base, ...(s.appearance ?? {}) };
+}
+
 export interface BlogSettings {
   enabled: boolean;
   slug: string; // identificador público único global (claim server-side em blogSlugs)
@@ -83,6 +179,7 @@ export interface BlogSettings {
   colors: BlogColors;
   fonts?: BlogFonts;   // ausente = DEFAULT_BLOG_FONTS
   layout?: BlogLayout; // ausente = DEFAULT_BLOG_LAYOUT
+  appearance?: BlogAppearance; // ausente = preset do template (effectiveAppearance)
   customDomains: string[];    // espelho de blogDomains para exibição na UI
   verifiedDomains?: string[]; // subconjunto de customDomains já verificados (exibição)
   createdAt: string;

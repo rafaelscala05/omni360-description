@@ -1,8 +1,8 @@
 // Shell compartilhado dos temas do blog nativo. Utilitários puros + casca do
 // documento (SEO/OG/JSON-LD/fontes/vars de cor). Cada tema fornece seu próprio
 // css + body; renderDocument os envolve num HTML completo.
-import type { BlogSettings, BlogPost, BlogCategory, BlogFonts, BlogLayout } from '../../src/modules/content/blog/types';
-import { BLOG_FONTS, DEFAULT_BLOG_FONTS, DEFAULT_BLOG_LAYOUT } from '../../src/modules/content/blog/types';
+import type { BlogSettings, BlogPost, BlogCategory, BlogFonts, BlogLayout, BlogAppearance } from '../../src/modules/content/blog/types';
+import { BLOG_FONTS, DEFAULT_BLOG_FONTS, DEFAULT_BLOG_LAYOUT, effectiveAppearance as computeAppearance } from '../../src/modules/content/blog/types';
 
 export interface BlogRenderContext {
   settings: BlogSettings;
@@ -52,6 +52,14 @@ export function effectiveFonts(s: BlogSettings): BlogFonts {
 export function effectiveLayout(s: BlogSettings): BlogLayout {
   return { ...DEFAULT_BLOG_LAYOUT, ...(s.layout ?? {}) };
 }
+export function effectiveAppearance(s: BlogSettings): BlogAppearance {
+  return computeAppearance(s);
+}
+// Categorias de um post, na ordem em que aparecem em ctx.categories.
+export function postCategories(ctx: BlogRenderContext, p: BlogPost): BlogCategory[] {
+  const ids = p.categoryIds ?? [];
+  return ctx.categories.filter((c) => ids.includes(c.id));
+}
 export const fontStack = (family: string): string =>
   `'${family}', ${BLOG_FONTS.find((f) => f.family === family)?.stack ?? 'Georgia, serif'}`;
 
@@ -84,7 +92,10 @@ export function pagerHtml(ctx: BlogRenderContext, basePath: string, opts: { page
 function baseVars(s: BlogSettings): string {
   const c = s.colors;
   const f = effectiveFonts(s);
-  return `:root{--primary:${c.primary};--bg:${c.background};--text:${c.text};--heading-font:${fontStack(f.heading)};--body-font:${fontStack(f.body)};}
+  const l = effectiveLayout(s);
+  const width = l.contentWidth === 'estreito' ? '680px' : l.contentWidth === 'largo' ? '1280px' : 1024 + 'px';
+  const radius = l.cornerRadius === 'reto' ? '0px' : l.cornerRadius === 'arredondado' ? '16px' : '8px';
+  return `:root{--primary:${c.primary};--bg:${c.background};--text:${c.text};--heading-font:${fontStack(f.heading)};--body-font:${fontStack(f.body)};--content-width:${width};--radius:${radius};}
   *{box-sizing:border-box;margin:0;padding:0;}
   body{background:var(--bg);color:var(--text);font-family:var(--body-font);line-height:1.7;-webkit-font-smoothing:antialiased;}
   h1,h2,h3,h4{font-family:var(--heading-font);line-height:1.2;}

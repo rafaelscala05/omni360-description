@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Check, RefreshCw, Image as ImageIcon, X, ExternalLink } from 'lucide-react';
-import type { BlogSettings, BlogTemplateId, BlogLayout, BlogFonts } from './types';
-import { BLOG_TEMPLATES, BLOG_FONTS, DEFAULT_BLOG_FONTS, DEFAULT_BLOG_LAYOUT } from './types';
+import type { BlogSettings, BlogLayout, BlogFonts, BlogAppearance as BlogAppearanceModel } from './types';
+import {
+  BLOG_TEMPLATES, BLOG_FONTS, DEFAULT_BLOG_FONTS, DEFAULT_BLOG_LAYOUT,
+  BLOG_APPEARANCE_OPTIONS, BLOG_APPEARANCE_PRESETS, effectiveAppearance,
+} from './types';
 import { saveBlogSettings } from '../../../services/blogService';
 import { auth } from '../../../firebase';
 
@@ -48,53 +51,71 @@ function useGoogleFontsPreview() {
   }, []);
 }
 
-// Mini-previews em CSS puro para cada tema — refletem a estrutura de cada um.
-const TemplatePreview: React.FC<{ id: BlogTemplateId }> = ({ id }) => {
-  if (id === 'editorial') {
-    // Revista: destaque no topo + grade de 3 colunas.
-    return (
-      <div className="h-20 w-full bg-slate-50 rounded-lg p-2 flex flex-col gap-1.5">
-        <div className="flex gap-1.5 h-1/2">
-          <div className="w-1/2 bg-slate-300 rounded" />
-          <div className="w-1/2 flex flex-col gap-1 justify-center">
-            <div className="h-1.5 bg-slate-300 rounded w-3/4" />
-            <div className="h-1 bg-slate-200 rounded" />
-            <div className="h-1 bg-slate-200 rounded w-5/6" />
-          </div>
-        </div>
-        <div className="grid grid-cols-3 gap-1.5 h-1/2">
-          {[0, 1, 2].map((i) => <div key={i} className="bg-slate-200 rounded" />)}
-        </div>
-      </div>
-    );
-  }
-  if (id === 'minimal') {
-    // Minimal: coluna central de linhas.
-    return (
-      <div className="h-20 w-full bg-slate-50 rounded-lg p-2 flex justify-center">
-        <div className="w-2/3 flex flex-col gap-1.5 justify-center">
-          <div className="h-2 bg-slate-300 rounded w-1/2 mx-auto" />
-          <div className="h-1.5 bg-slate-200 rounded" />
-          <div className="h-1.5 bg-slate-200 rounded" />
-          <div className="h-1.5 bg-slate-200 rounded w-2/3 mx-auto" />
-        </div>
-      </div>
-    );
-  }
-  // Vitrine: cabeçalho escuro + mosaico de blocos cheios.
-  return (
-    <div className="h-20 w-full bg-slate-50 rounded-lg overflow-hidden flex flex-col">
-      <div className="h-2.5 bg-slate-800 w-full" />
-      <div className="flex-1 p-1.5 grid grid-cols-3 gap-1.5">
-        <div className="bg-slate-400 rounded row-span-2" />
-        <div className="bg-slate-300 rounded" />
-        <div className="bg-slate-400 rounded" />
-        <div className="bg-slate-300 rounded" />
-        <div className="bg-slate-400 rounded" />
-      </div>
-    </div>
-  );
+// Mini-previews esquemáticos em CSS puro por (eixo, variante). Refletem a
+// estrutura de cada opção sem renderizar o blog inteiro.
+const bar = (w: string, dark = false) => (
+  <div className={`h-1 rounded ${dark ? 'bg-slate-400' : 'bg-slate-200'}`} style={{ width: w }} />
+);
+
+const AXIS_PREVIEW: Record<string, Record<string, React.ReactNode>> = {
+  header: {
+    'logo-esquerda': (
+      <div className="flex items-center justify-between px-1"><div className="h-2 w-6 bg-slate-400 rounded-sm" /><div className="flex gap-1">{bar('10px')}{bar('10px')}{bar('10px')}</div></div>
+    ),
+    'logo-centro': (
+      <div className="flex flex-col items-center gap-1"><div className="h-2 w-8 bg-slate-400 rounded-sm" /><div className="flex gap-1">{bar('9px')}{bar('9px')}{bar('9px')}</div></div>
+    ),
+    'logo-topo': (
+      <div className="flex flex-col items-center gap-1"><div className="h-2.5 w-10 bg-slate-500 rounded-sm" />{bar('26px')}<div className="flex gap-1">{bar('8px')}{bar('8px')}</div></div>
+    ),
+  },
+  footer: {
+    simples: (<div className="flex items-center justify-between px-1">{bar('22px', true)}<div className="flex gap-1">{bar('8px')}{bar('8px')}</div></div>),
+    colunas: (<div className="flex items-start justify-between px-1"><div className="flex flex-col gap-1">{bar('16px', true)}{bar('20px')}</div><div className="flex flex-col gap-1 items-end">{bar('10px')}{bar('10px')}{bar('10px')}</div></div>),
+    centralizado: (<div className="flex flex-col items-center gap-1"><div className="flex gap-1">{bar('8px')}{bar('8px')}{bar('8px')}</div>{bar('24px', true)}</div>),
+  },
+  category: {
+    grade: (<div className="grid grid-cols-3 gap-1">{[0, 1, 2, 3, 4, 5].map((i) => <div key={i} className="h-4 bg-slate-200 rounded" />)}</div>),
+    lista: (<div className="flex flex-col gap-1">{[0, 1, 2].map((i) => <div key={i} className="flex gap-1 items-center"><div className="h-3 w-4 bg-slate-300 rounded shrink-0" /><div className="flex-1 flex flex-col gap-0.5">{bar('100%')}{bar('60%')}</div></div>)}</div>),
+    'destaque-grade': (<div className="flex flex-col gap-1"><div className="h-5 bg-slate-300 rounded" /><div className="grid grid-cols-3 gap-1">{[0, 1, 2].map((i) => <div key={i} className="h-3 bg-slate-200 rounded" />)}</div></div>),
+  },
+  card: {
+    'com-borda': (<div className="border border-slate-300 rounded p-1 flex flex-col gap-1"><div className="h-3 bg-slate-200 rounded" />{bar('80%', true)}{bar('60%')}</div>),
+    plano: (<div className="flex flex-col gap-1"><div className="h-3 bg-slate-200 rounded" />{bar('80%', true)}{bar('60%')}</div>),
+    sombra: (<div className="rounded p-1 flex flex-col gap-1 bg-white shadow-md"><div className="h-3 bg-slate-200 rounded" />{bar('80%', true)}{bar('60%')}</div>),
+  },
+  article: {
+    centrado: (<div className="flex flex-col items-center gap-1"><div className="h-3 w-full bg-slate-200 rounded" />{bar('50%', true)}{bar('80%')}{bar('70%')}</div>),
+    'capa-larga': (<div className="flex flex-col gap-1"><div className="h-5 bg-slate-500 rounded" />{bar('80%')}{bar('70%')}</div>),
+    'lateral-meta': (<div className="flex gap-1.5"><div className="flex flex-col gap-0.5 w-1/3">{bar('100%', true)}{bar('70%')}</div><div className="flex-1 flex flex-col gap-0.5">{bar('100%')}{bar('90%')}{bar('80%')}</div></div>),
+  },
 };
+
+const AxisPreview: React.FC<{ axis: string; variant: string }> = ({ axis, variant }) => (
+  <div className="h-14 w-full bg-slate-50 rounded-lg p-2 flex flex-col justify-center overflow-hidden">
+    {AXIS_PREVIEW[axis]?.[variant]}
+  </div>
+);
+
+const ToggleRow: React.FC<{
+  label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void;
+}> = ({ label, hint, checked, onChange }) => (
+  <div className="flex items-center justify-between gap-3 py-1.5">
+    <div>
+      <p className="text-xs font-medium text-slate-700">{label}</p>
+      {hint && <p className="text-[11px] text-slate-400">{hint}</p>}
+    </div>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${checked ? 'bg-[#FF5B03]' : 'bg-slate-300'}`}
+    >
+      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-5' : 'translate-x-1'}`} />
+    </button>
+  </div>
+);
 
 const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts }) => {
   useGoogleFontsPreview();
@@ -110,6 +131,7 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
 
   const fonts: BlogFonts = { ...DEFAULT_BLOG_FONTS, ...(settings.fonts ?? {}) };
   const layout: BlogLayout = { ...DEFAULT_BLOG_LAYOUT, ...(settings.layout ?? {}) };
+  const appearance: BlogAppearanceModel = effectiveAppearance(settings);
 
   // Helper central: salva um patch e reporta erro no banner.
   const patch = async (p: Partial<BlogSettings>, msg: string) => {
@@ -123,6 +145,14 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
 
   const patchLayout = (p: Partial<BlogLayout>) =>
     patch({ layout: { ...layout, ...p } }, 'Erro ao salvar layout');
+
+  const patchAppearance = (p: Partial<BlogAppearanceModel>) =>
+    patch({ appearance: { ...appearance, ...p } }, 'Erro ao salvar aparência');
+
+  // Aplica um preset (Estilos rápidos): grava a aparência inteira + o template
+  // legado correspondente (mantém coerência caso appearance seja limpo no futuro).
+  const applyPreset = (id: keyof typeof BLOG_APPEARANCE_PRESETS) =>
+    patch({ template: id, appearance: { ...BLOG_APPEARANCE_PRESETS[id] } }, 'Erro ao aplicar estilo');
 
   const handleSaveText = async () => {
     setSavingText(true);
@@ -162,23 +192,73 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,44%)] gap-5 items-start">
         <div className="space-y-5">
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
-            <h3 className="font-semibold text-slate-900 mb-4">Template</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <h3 className="font-semibold text-slate-900 mb-1">Estilos rápidos</h3>
+            <p className="text-xs text-slate-500 mb-4">Pontos de partida que preenchem todas as opções de uma vez. Ajuste cada seção abaixo depois.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {BLOG_TEMPLATES.map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => patch({ template: t.id }, 'Erro ao salvar template')}
+                  onClick={() => applyPreset(t.id)}
                   className={`text-left p-3 rounded-xl border-2 transition-colors ${
                     settings.template === t.id ? 'border-[#FF5B03] bg-[#FF5B03]/5' : 'border-slate-200 hover:border-slate-300'
                   }`}
                 >
-                  <TemplatePreview id={t.id} />
-                  <p className="text-sm font-semibold text-slate-900 mt-3">{t.nome}</p>
+                  <p className="text-sm font-semibold text-slate-900">{t.nome}</p>
                   <p className="text-xs text-slate-500 mt-0.5">{t.descricao}</p>
                 </button>
               ))}
             </div>
           </div>
+
+          {/* Cinco eixos independentes de aparência. */}
+          {([
+            ['Cabeçalho', 'header'],
+            ['Rodapé', 'footer'],
+            ['Página de categoria', 'category'],
+            ['Estilo do card', 'card'],
+            ['Página de artigo', 'article'],
+          ] as const).map(([label, axis]) => (
+            <div key={axis} className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
+              <h3 className="font-semibold text-slate-900 mb-4">{label}</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {BLOG_APPEARANCE_OPTIONS[axis].map((opt) => {
+                  const active = appearance[axis] === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      onClick={() => patchAppearance({ [axis]: opt.id } as Partial<BlogAppearanceModel>)}
+                      className={`text-left p-3 rounded-xl border-2 transition-colors ${
+                        active ? 'border-[#FF5B03] bg-[#FF5B03]/5' : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <AxisPreview axis={axis} variant={opt.id} />
+                      <p className="text-sm font-semibold text-slate-900 mt-2.5">{opt.nome}</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">{opt.descricao}</p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Toggles específicos do eixo. */}
+              {axis === 'footer' && (
+                <ToggleRow
+                  label="Incluir categorias no rodapé"
+                  hint="Mostra o submenu de categorias no rodapé."
+                  checked={appearance.footerShowCategories}
+                  onChange={(v) => patchAppearance({ footerShowCategories: v })}
+                />
+              )}
+              {axis === 'card' && (
+                <div className="mt-4 pt-4 border-t border-slate-100 space-y-1">
+                  <p className="text-xs font-semibold text-slate-500 mb-2">Itens exibidos no card</p>
+                  <ToggleRow label="Categoria (chip)" checked={appearance.cardShowCategory} onChange={(v) => patchAppearance({ cardShowCategory: v })} />
+                  <ToggleRow label="Mini descrição (resumo)" checked={appearance.cardShowExcerpt} onChange={(v) => patchAppearance({ cardShowExcerpt: v })} />
+                  <ToggleRow label="Data e tempo de leitura" checked={appearance.cardShowMeta} onChange={(v) => patchAppearance({ cardShowMeta: v })} />
+                  <ToggleRow label="Autor" checked={appearance.cardShowAuthor} onChange={(v) => patchAppearance({ cardShowAuthor: v })} />
+                </div>
+              )}
+            </div>
+          ))}
 
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
             <h3 className="font-semibold text-slate-900 mb-1">Tipografia</h3>

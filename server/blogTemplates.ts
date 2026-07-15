@@ -1,17 +1,18 @@
 // Dispatcher SSR do blog nativo. Escolhe o tema por settings.template e compõe
 // o <head>/SEO (aqui) + o corpo do tema (server/blog/themes/*) via renderDocument.
-import type { BlogSettings, BlogPost, BlogCategory, BlogTemplateId } from '../src/modules/content/blog/types';
+import type { BlogSettings, BlogPost, BlogCategory } from '../src/modules/content/blog/types';
 import {
   renderDocument, escapeHtml, googleFontsLink, homeUrl,
   type BlogRenderContext,
 } from './blog/shell';
-import { THEMES } from './blog/themes';
+import { blogTheme } from './blog/themes';
 
 export type { BlogRenderContext } from './blog/shell';
 export { escapeHtml, googleFontsLink } from './blog/shell';
 
-function theme(id: BlogTemplateId) {
-  return THEMES[id] ?? THEMES.editorial;
+// Tema único compositor; a variação vem de settings.appearance (5 eixos).
+function theme(_id?: BlogSettings['template']) {
+  return blogTheme;
 }
 function cpBase(ctx: BlogRenderContext): string {
   return ctx.canonicalPathPrefix ?? ctx.baseUrl;

@@ -1,11 +1,7 @@
-import type { BlogTemplateId } from '../../../src/modules/content/blog/types';
 import type { BlogTheme } from './types';
-import { revista } from './revista';
-import { minimal } from './minimal';
-import { vitrine } from './vitrine';
+import { composite } from './composite';
 
-export const THEMES: Record<BlogTemplateId, BlogTheme> = {
-  editorial: revista,
-  minimal,
-  grid: vitrine,
-};
+// Tema único e compositor: a variação visual agora vem de BlogAppearance
+// (5 eixos independentes), não mais de temas fixos. O `template` legado só
+// sobrevive como preset inicial de BlogAppearance (ver effectiveAppearance).
+export const blogTheme: BlogTheme = composite;

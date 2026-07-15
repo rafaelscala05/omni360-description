@@ -6,6 +6,8 @@ import {
   listenBlogSettings, saveBlogSettings, listenBlogPosts, deleteBlogPost, listenBlogCategories,
   claimBlogSlug,
 } from '../../../services/blogService';
+import { listenClusters, listenCalendar } from '../../../services/contentService';
+import type { ContentCluster, CalendarArticle } from '../types';
 import PostEditor from './PostEditor';
 import BlogCategories from './BlogCategories';
 import BlogAppearance from './BlogAppearance';
@@ -29,6 +31,8 @@ const BlogView: React.FC<Props> = ({ uid, projectId }) => {
   const [settings, setSettings] = useState<BlogSettings | null | undefined>(undefined);
   const [posts, setPosts] = useState<BlogPost[]>([]);
   const [categories, setCategories] = useState<BlogCategory[]>([]);
+  const [clusters, setClusters] = useState<ContentCluster[]>([]);
+  const [articles, setArticles] = useState<CalendarArticle[]>([]);
   const [tab, setTab] = useState<BlogTab>('posts');
   const [editingPost, setEditingPost] = useState<BlogPost | 'new' | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -42,6 +46,8 @@ const BlogView: React.FC<Props> = ({ uid, projectId }) => {
   useEffect(() => listenBlogSettings(uid, projectId, setSettings), [uid, projectId]);
   useEffect(() => listenBlogPosts(uid, projectId, setPosts), [uid, projectId]);
   useEffect(() => listenBlogCategories(uid, projectId, setCategories), [uid, projectId]);
+  useEffect(() => listenClusters(uid, projectId, setClusters), [uid, projectId]);
+  useEffect(() => listenCalendar(uid, projectId, setArticles), [uid, projectId]);
 
   const handleCreateBlog = async () => {
     setSetupError(null);
@@ -235,7 +241,16 @@ const BlogView: React.FC<Props> = ({ uid, projectId }) => {
         </div>
       )}
 
-      {tab === 'categorias' && <BlogCategories uid={uid} projectId={projectId} categories={categories} />}
+      {tab === 'categorias' && (
+        <BlogCategories
+          uid={uid}
+          projectId={projectId}
+          categories={categories}
+          posts={posts}
+          clusters={clusters}
+          articles={articles}
+        />
+      )}
       {tab === 'aparencia' && <BlogAppearance uid={uid} projectId={projectId} settings={settings} hasPosts={posts.length > 0} />}
       {tab === 'dominios' && <BlogDomains uid={uid} projectId={projectId} settings={settings} />}
     </div>
