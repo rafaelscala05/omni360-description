@@ -201,6 +201,11 @@ service cloud.firestore {
           // pipeline writes happen server-side.
           allow read, write: if isOwner(userId);
         }
+        match /seoAudits/{auditId} {
+          // Fully server-managed (SE Ranking trigger/refresh via Admin SDK);
+          // the client only listens for status/results.
+          allow read, write: if isOwner(userId);
+        }
         // Sensitive credentials (e.g. WordPress Application Password). The client
         // may write/update them but must NEVER read them back; only the server
         // (Admin SDK) reads this subcollection.

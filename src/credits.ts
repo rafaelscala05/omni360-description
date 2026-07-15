@@ -27,6 +27,9 @@ export const CREDIT_ACTIONS = {
   contentImage: { key: 'content_image', label: 'Geração de Imagem de Capa' },
   contentPublish: { key: 'content_publish', label: 'Publicação no WordPress' },
   videoGeneration: { key: 'video_generation', label: 'Geração de Vídeo de Produto' },
+  // Auditoria de SEO (SE Ranking)
+  seoAudit: { key: 'seo_audit', label: 'Auditoria de SEO (SE Ranking)' },
+  seoKeywordResearch: { key: 'seo_keyword_research', label: 'Pesquisa de Volume de Palavras-chave' },
 } as const satisfies Record<string, CreditAction>;
 
 // Fallback costs, used when the `config/credits` document has not loaded yet or
@@ -47,6 +50,10 @@ export const DEFAULT_CREDIT_COSTS: Record<string, number> = {
   content_image: 1,
   content_publish: 1,
   video_generation: 5,
+  // Crawl técnico desativado por ora (CRAWL_ENABLED em server/seoAgent.ts) — só
+  // Domain Analysis roda hoje (overview/history/keywords/gap + expansão do catálogo).
+  seo_audit: 3,
+  seo_keyword_research: 1,
 };
 
 export const DEFAULT_COST = 1;

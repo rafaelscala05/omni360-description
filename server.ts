@@ -13,6 +13,7 @@ import firebaseAppletConfig from "./firebase-applet-config.json";
 
 const STORAGE_BUCKET = firebaseAppletConfig.storageBucket;
 import { registerContentRoutes, startContentScheduler } from "./server/contentAgent";
+import { registerSeoRoutes } from "./server/seoAgent";
 import { registerVideoRoutes } from "./server/videoAgent";
 import { registerWakeRoutes } from "./server/wakeAgent";
 import { registerTinyRoutes } from "./server/tinyAgent";
@@ -169,6 +170,7 @@ async function startServer() {
 
   // Agência de Criação de Conteúdo (Alfred) — server-side AI pipeline + scheduler.
   registerContentRoutes(app, { verifyFirebaseToken });
+  registerSeoRoutes(app, { verifyFirebaseToken });
   registerVideoRoutes(app, { verifyFirebaseToken });
   registerWakeRoutes(app, { verifyFirebaseToken });
   registerTinyRoutes(app, { verifyFirebaseToken });

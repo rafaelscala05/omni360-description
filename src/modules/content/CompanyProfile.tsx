@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pencil, ArrowRight } from 'lucide-react';
-import type { ContentProject } from './types';
+import type { ContentProject, SeoAudit } from './types';
 import ProfileSummary from './ProfileSummary';
 import OnboardingWizard from './OnboardingWizard';
+import { listenLatestSeoAudit } from '../../services/contentService';
 
 interface Props {
   uid: string;
@@ -14,6 +15,9 @@ interface Props {
 // to edit (reopens the wizard) or advance to cluster creation.
 const CompanyProfile: React.FC<Props> = ({ uid, project, onGoClusters }) => {
   const [editing, setEditing] = useState(false);
+  const [audit, setAudit] = useState<SeoAudit | null | undefined>(undefined);
+
+  useEffect(() => listenLatestSeoAudit(uid, project.id, setAudit), [uid, project.id]);
 
   if (editing) {
     return (
@@ -43,13 +47,27 @@ const CompanyProfile: React.FC<Props> = ({ uid, project, onGoClusters }) => {
 
       <ProfileSummary config={project.config} />
 
-      <div className="flex justify-end mt-6">
+      {/* A Análise de Domínio roda dentro do cadastro (etapa "Análise de
+          Domínio" do wizard, reaberto em "Editar") — aqui só o gate. */}
+      <div className="flex flex-col items-end gap-1.5 mt-6">
         <button
           onClick={onGoClusters}
-          className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] rounded-xl shadow-sm transition-colors"
+          disabled={audit?.domainStatus !== 'finished'}
+          className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-40 disabled:cursor-not-allowed rounded-xl shadow-sm transition-colors"
         >
           Avançar para Clusters <ArrowRight className="w-4 h-4" />
         </button>
+        {audit?.domainStatus !== 'finished' && (
+          <p className="text-[11px] text-slate-400">
+            {audit === undefined
+              ? 'Carregando status da análise…'
+              : audit === null
+                ? <>Nenhuma Análise de Domínio rodada ainda. Clique em "Editar" para rodá-la (etapa "Análise de Domínio").</>
+                : audit.domainStatus === 'processing'
+                  ? 'A Análise de Domínio ainda está em andamento…'
+                  : 'A Análise de Domínio falhou. Clique em "Editar" para tentar novamente.'}
+          </p>
+        )}
       </div>
     </div>
   );

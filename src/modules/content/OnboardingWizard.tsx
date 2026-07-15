@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, ChevronRight, ChevronLeft, Check, RefreshCw, Globe, Wand2, Plus, Pencil } from 'lucide-react';
-import type { ContentProject, ContentProjectConfig } from './types';
-import { createProject, updateProjectConfig, scanWebsite } from '../../services/contentService';
+import type { ContentProject, ContentProjectConfig, SeoAudit } from './types';
+import { createProject, updateProjectConfig, scanWebsite, listenLatestSeoAudit } from '../../services/contentService';
 import TagInput from './TagInput';
 import ProfileSummary, { asList } from './ProfileSummary';
+import SeoAuditCard from './SeoAuditCard';
 
 interface Props {
   uid: string;
@@ -29,7 +30,7 @@ const FREQUENCIAS = [
 const ESTILOS_IMAGEM = ['Realista', 'Ilustracao', '3D', 'Cartoon'] as const;
 type EstiloImagem = typeof ESTILOS_IMAGEM[number];
 
-const STEPS = ['Identidade', 'Audiência & tom', 'Estratégia', 'Resumo'];
+const STEPS = ['Identidade', 'Audiência & tom', 'Estratégia', 'Análise de Domínio', 'Resumo'];
 
 // Fase 1 — onboarding redesenhado: importação por IA, campos de tag, seleção de
 // tom e frequência, e um resumo final antes de seguir para os clusters.
@@ -38,10 +39,22 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState(1);
   const [saving, setSaving] = useState(false);
+  const [savingStep, setSavingStep] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Site scan
-  const [siteUrl, setSiteUrl] = useState('');
+  // O projeto é criado/salvo assim que o usuário sai da etapa "Estratégia" (não
+  // só no final), para já termos um id e disparar a Auditoria SEO dentro do
+  // próprio wizard — em vez de uma seção separada depois.
+  const [projectId, setProjectId] = useState<string | null>(existing?.id ?? null);
+  const [audit, setAudit] = useState<SeoAudit | null | undefined>(undefined);
+  useEffect(() => {
+    if (!projectId) return;
+    return listenLatestSeoAudit(uid, projectId, setAudit);
+  }, [uid, projectId]);
+
+  // Site scan — também persistido em config.siteUrl (reaproveitado depois pela
+  // Auditoria de SEO).
+  const [siteUrl, setSiteUrl] = useState(c?.siteUrl ?? '');
   const [scanning, setScanning] = useState(false);
   const [scanDone, setScanDone] = useState(false);
 
@@ -75,6 +88,7 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
     sanityProjectId: c?.sanityProjectId ?? '',
     sanityDataset: c?.sanityDataset ?? 'production',
     estiloImagem,
+    siteUrl: siteUrl.trim(),
   });
 
   const handleScan = async () => {
@@ -102,13 +116,44 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
   const go = (next: number) => { setDir(next > step ? 1 : -1); setStep(next); };
   const canAdvance = step === 0 ? !!(nomeEmpresa.trim() && produtoServico.trim()) : true;
 
+  // Cria o projeto na primeira vez que é necessário (saindo de "Estratégia"),
+  // ou apenas atualiza se ele já existir (edição, ou etapas seguintes do wizard).
+  const ensureProjectSaved = async (): Promise<string> => {
+    const config = buildConfig();
+    if (projectId) {
+      await updateProjectConfig(uid, projectId, config);
+      return projectId;
+    }
+    const id = await createProject(uid, config);
+    setProjectId(id);
+    return id;
+  };
+
+  const handleNext = async () => {
+    // Ao sair de "Estratégia" (índice 2), garante que o projeto existe antes de
+    // entrar na etapa de Auditoria SEO — ela precisa de um projectId.
+    if (step === 2) {
+      setSavingStep(true);
+      setError(null);
+      try {
+        await ensureProjectSaved();
+        go(step + 1);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Erro ao salvar');
+      } finally {
+        setSavingStep(false);
+      }
+      return;
+    }
+    go(step + 1);
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     try {
-      const config = buildConfig();
-      const projectId = existing ? (await updateProjectConfig(uid, existing.id, config), existing.id) : await createProject(uid, config);
-      onSaved(projectId);
+      const id = await ensureProjectSaved();
+      onSaved(id);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao salvar');
     } finally {
@@ -292,6 +337,30 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
             {step === 3 && (
               <div className="space-y-4">
                 <div className="flex items-center gap-2 text-slate-900">
+                  <Sparkles className="w-5 h-5 text-[#FF5B03]" />
+                  <h3 className="font-display text-lg font-bold">Análise de Domínio</h3>
+                </div>
+                <p className="text-sm text-slate-500">
+                  Já disparamos a análise das palavras-chave do domínio — assim os Clusters nascem com dados reais.
+                </p>
+                {projectId ? (
+                  <SeoAuditCard
+                    project={{ id: projectId, config: buildConfig(), status: 'ativo', ownerId: uid, createdAt: '', updatedAt: '' }}
+                    audit={audit}
+                    autoTrigger
+                  />
+                ) : (
+                  <p className="text-sm text-slate-400">Salvando o cadastro…</p>
+                )}
+                <p className="text-xs text-slate-400">
+                  Pode avançar mesmo enquanto a análise ainda roda — os Clusters são liberados assim que ela terminar.
+                </p>
+              </div>
+            )}
+
+            {step === 4 && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-slate-900">
                   <Check className="w-5 h-5 text-emerald-500" />
                   <h3 className="font-display text-lg font-bold">Tudo pronto. Confira o resumo</h3>
                 </div>
@@ -314,11 +383,12 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
           </button>
           {step < STEPS.length - 1 ? (
             <button
-              disabled={!canAdvance}
-              onClick={() => go(step + 1)}
+              disabled={!canAdvance || savingStep}
+              onClick={handleNext}
               className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-40 rounded-xl shadow-sm transition-colors"
             >
-              Próximo <ChevronRight className="w-4 h-4" />
+              {savingStep ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ChevronRight className="w-4 h-4" />}
+              Próximo
             </button>
           ) : (
             <div className="flex items-center gap-2">

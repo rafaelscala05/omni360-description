@@ -13,6 +13,7 @@ import {
   onSnapshot,
   query,
   orderBy,
+  limit as fsLimit,
   serverTimestamp,
 } from 'firebase/firestore';
 import { auth, db } from '../firebase';
@@ -21,6 +22,7 @@ import type {
   ContentProjectConfig,
   ContentCluster,
   CalendarArticle,
+  SeoAudit,
 } from '../modules/content/types';
 
 // ---------------------------------------------------------------------------
@@ -71,6 +73,19 @@ export const generateClusters = (projectId: string) =>
 
 export const generateCalendar = (projectId: string) =>
   postJson<{ calendar: CalendarArticle[] }>(`/api/content/projects/${projectId}/generate-calendar`);
+
+// Triggers a full SE Ranking site audit for the project's configured siteUrl.
+export const triggerSeoAudit = (projectId: string) =>
+  postJson<{ audit: SeoAudit }>(`/api/content/projects/${projectId}/seo-audit`);
+
+// Polls SE Ranking for the crawl's current status; no-op (and free) once finished/failed.
+export const refreshSeoAudit = (projectId: string, auditId: string) =>
+  postJson<{ audit: SeoAudit }>(`/api/content/projects/${projectId}/seo-audit/${auditId}/refresh`);
+
+// Stops waiting on a slow/stuck crawl — marks it canceled locally (free, no SE
+// Ranking-side cancellation). Domain Analysis is unaffected, it resolves independently.
+export const cancelSeoAudit = (projectId: string, auditId: string) =>
+  postJson<{ audit: SeoAudit }>(`/api/content/projects/${projectId}/seo-audit/${auditId}/cancel`);
 
 export const produceArticle = (projectId: string, articleId: string) =>
   postJson<{ ok: true }>(`/api/content/projects/${projectId}/articles/${articleId}/produce`);
@@ -196,6 +211,22 @@ export function listenClusters(uid: string, projectId: string, cb: (clusters: Co
   return onSnapshot(collection(db, `users/${uid}/contentProjects/${projectId}/clusters`), (snap) => {
     cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ContentCluster, 'id'>) })));
   });
+}
+
+export function listenLatestSeoAudit(uid: string, projectId: string, cb: (audit: SeoAudit | null) => void): () => void {
+  const q = query(
+    collection(db, `users/${uid}/contentProjects/${projectId}/seoAudits`),
+    orderBy('createdAt', 'desc'),
+    fsLimit(1),
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      const doc0 = snap.docs[0];
+      cb(doc0 ? ({ id: doc0.id, ...(doc0.data() as Omit<SeoAudit, 'id'>) }) : null);
+    },
+    (err) => console.error('listenLatestSeoAudit falhou (regras do Firestore desatualizadas?):', err),
+  );
 }
 
 export function listenCalendar(uid: string, projectId: string, cb: (articles: CalendarArticle[]) => void): () => void {

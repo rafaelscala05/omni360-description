@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Check, RefreshCw, Layers, Eye, Pencil, Trash2, X, FileText } from 'lucide-react';
+import { Sparkles, Check, RefreshCw, Layers, Eye, Pencil, Trash2, X, FileText, TrendingUp } from 'lucide-react';
 import type { ContentCluster, CalendarArticle } from './types';
 import {
   listenClusters, listenCalendar, generateClusters, approveCluster, updateClusterName, excludeCluster,
@@ -46,6 +46,7 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
   const activeIds = useMemo(() => new Set(active.map((c) => c.id)), [active]);
   const orphanArticles = useMemo(() => articles.filter((a) => !activeIds.has(a.clusterId)), [articles, activeIds]);
   const countFor = (clusterId: string) => articles.filter((a) => a.clusterId === clusterId).length;
+  const reachOf = (kws: ContentCluster['palavrasChave']) => kws.reduce((sum, k) => sum + (k.volume || 0), 0);
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -170,7 +171,14 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
 
                         {/* Footer: count + actions */}
                         <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                          <span className="inline-flex items-center gap-1 text-[11px] text-slate-400"><FileText className="w-3.5 h-3.5" /> {countFor(cluster.id)} artigos</span>
+                          <div className="flex items-center gap-2.5">
+                            <span className="inline-flex items-center gap-1 text-[11px] text-slate-400"><FileText className="w-3.5 h-3.5" /> {countFor(cluster.id)} artigos</span>
+                            {reachOf(kws) > 0 && (
+                              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 font-medium" title="Alcance potencial (soma dos volumes de busca)">
+                                <TrendingUp className="w-3.5 h-3.5" /> {reachOf(kws).toLocaleString('pt-BR')}/mês
+                              </span>
+                            )}
+                          </div>
                           <div className="flex items-center gap-0.5">
                             <button
                               onClick={() => approveCluster(uid, projectId, cluster.id, !cluster.aprovado)}

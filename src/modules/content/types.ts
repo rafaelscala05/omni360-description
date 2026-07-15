@@ -27,6 +27,9 @@ export interface ContentProjectConfig {
   sanityProjectId: string;
   sanityDataset: string;
   estiloImagem?: 'Realista' | 'Ilustracao' | '3D' | 'Cartoon';
+  // URL do site do cliente, capturada no passo "Analisar site com IA" do
+  // onboarding. Reaproveitada para disparar a Auditoria de SEO (SE Ranking).
+  siteUrl?: string;
 }
 
 export type ContentProjectStatus = 'onboarding' | 'ativo' | 'pausado';
@@ -50,6 +53,94 @@ export interface WordpressSecret {
 // Firestore rules forbid client reads; only the Admin SDK (server) reads it.
 export interface SanitySecret {
   apiToken: string;
+}
+
+// ----------------------------------------------------------------------------
+// Auditoria de SEO (SE Ranking Data API) — insumo para a geração de Clusters
+// ----------------------------------------------------------------------------
+
+export type AuditStageStatus = 'processing' | 'finished' | 'failed' | 'canceled';
+
+export interface SeoAuditIssue {
+  code: string;
+  title: string;
+  severity: 'error' | 'warning' | 'notice';
+  count: number;
+}
+
+// SE Ranking's position-distribution buckets from domain/overview/db.
+export interface DomainPositionBuckets {
+  top1_5?: number;
+  top6_10?: number;
+  top11_20?: number;
+  top21_50?: number;
+  top51_100?: number;
+}
+
+export interface DomainOverviewStats {
+  keywordsCount?: number;
+  trafficEstimate?: number;
+  priceEstimate?: number; // valor estimado do tráfego orgânico em anúncios equivalentes
+  positions?: DomainPositionBuckets;
+}
+
+export interface DomainHistoryPoint {
+  year?: number;
+  month?: number;
+  keywordsCount?: number;
+  trafficEstimate?: number;
+}
+
+// Registro completo por palavra-chave, como retornado pelo SE Ranking (domain/keywords
+// e domain/keywords/comparison) — mostrado por completo na UI. keywordPool usa a
+// forma simplificada (ClusterKeyword) para a geração de Clusters.
+export interface DomainKeywordDetail {
+  termo: string;
+  posicao?: number;
+  volume?: number;
+  trafego?: number;
+  cpc?: number;
+  dificuldade?: number;
+  intencao: SearchIntent;
+}
+
+// Crawl (technical site audit) and Domain Analysis run as two INDEPENDENT
+// stages: the crawl is slow/async (needs polling, can be canceled), Domain
+// Analysis is a handful of fast calls resolved synchronously when the audit is
+// triggered. Neither stage's completion depends on the other. Cluster
+// generation only needs domainStatus === 'finished' (keywordPool); the crawl
+// fields are supplementary technical context for the prompt.
+export interface SeoAudit {
+  id: string;
+  domain: string;
+
+  // Crawl (site-audit) — polled via /seo-audit/:id/refresh, cancelable.
+  // Desativado por ora no servidor (CRAWL_ENABLED em seoAgent.ts) — por isso
+  // opcional: um audit disparado enquanto desativado nunca preenche estes campos.
+  seRankingAuditId?: number;
+  crawlStatus?: AuditStageStatus;
+  crawlErrorMessage?: string;
+  healthScore?: number;      // score_percent (0-100) do relatório do SE Ranking
+  pagesCrawled?: number;
+  totalErrors?: number;
+  totalWarnings?: number;
+  totalNotices?: number;
+  totalPassed?: number;
+  topIssues?: SeoAuditIssue[];
+
+  // Domain Analysis (SE Ranking domain/*) — resolvido no próprio trigger.
+  domainStatus: AuditStageStatus;
+  domainErrorMessage?: string;
+  domainOverview?: DomainOverviewStats;
+  domainHistory?: DomainHistoryPoint[];
+  domainTrend?: string;
+  competitorDomain?: string; // extraído de "Referências/concorrentes", se algum parecer um domínio válido
+  domainKeywords?: DomainKeywordDetail[];     // o que o domínio já rankeia (detalhado, completo)
+  domainGapKeywords?: DomainKeywordDetail[];  // lacuna vs. concorrente (detalhado, completo)
+  keywordPool?: ClusterKeyword[]; // base real (domínio + lacunas + expansão do catálogo) usada na geração de Clusters
+
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ----------------------------------------------------------------------------

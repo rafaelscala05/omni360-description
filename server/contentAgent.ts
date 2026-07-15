@@ -26,6 +26,9 @@ import type {
 import type { BlogPost, BlogSettings } from '../src/modules/content/blog/types';
 import { slugify, uniqueSlug } from '../src/modules/content/blog/slug';
 import { markdownToHtml } from '../src/modules/content/markdown';
+import * as seRanking from './seRankingClient';
+import { getLatestFinishedAudit, auditSummaryText } from './seoAgent';
+import { loadStoreContext, extractSeedKeywords, discoverKeywordPool } from './keywordDiscovery';
 
 const TEXT_MODEL = 'gemini-2.5-flash';
 const IMAGE_MODEL = 'gemini-2.5-flash-image';
@@ -217,28 +220,6 @@ async function loadProject(uid: string, projectId: string): Promise<ContentProje
   return { id: snap.id, ...(snap.data() as Omit<ContentProject, 'id'>) };
 }
 
-// Pulls a compact summary of the user's product catalog + categories so the AI
-// can ground content in what the store actually sells (cross-module data share).
-async function loadStoreContext(uid: string): Promise<string> {
-  const userRef = adminDb.collection('users').doc(uid);
-  const [prodSnap, catSnap] = await Promise.all([
-    userRef.collection('products').limit(40).get(),
-    userRef.collection('categories').limit(60).get(),
-  ]);
-  const products = prodSnap.docs
-    .map((d) => {
-      const p = d.data() as Record<string, unknown>;
-      return (p['Nome'] || p['Descrição'] || p['Título SEO'] || '') as string;
-    })
-    .filter(Boolean)
-    .slice(0, 40);
-  const categories = catSnap.docs.map((d) => (d.data() as { name?: string }).name).filter(Boolean);
-  const parts: string[] = [];
-  if (products.length) parts.push(`Produtos do catálogo: ${products.join('; ')}`);
-  if (categories.length) parts.push(`Categorias: ${categories.join('; ')}`);
-  return parts.join('\n');
-}
-
 // publicoAlvo migrated from string → string[]; tolerate both shapes.
 function asList(v: unknown): string[] {
   if (Array.isArray(v)) return v.filter(Boolean) as string[];
@@ -381,15 +362,43 @@ function normalizeIntent(v: unknown): ClusterKeyword['intencao'] {
   return (SEARCH_INTENTS as readonly string[]).includes(s) ? (s as ClusterKeyword['intencao']) : 'informacional';
 }
 
+// Below this many real candidates, the Domain Analysis pool (what the site
+// already ranks for) is too thin to build 4-6 clusters on its own — usually a
+// brand-new domain with little/no organic footprint yet.
+const MIN_DOMAIN_POOL_SIZE = 5;
+
 async function generateClusters(uid: string, project: ContentProject): Promise<ContentCluster[]> {
-  const storeContext = await loadStoreContext(uid);
+  const store = await loadStoreContext(uid);
+  const audit = await getLatestFinishedAudit(uid, project.id);
+  const auditSummary = audit ? auditSummaryText(audit) : null;
+
+  // Primary source: real keywords from the Domain Analysis run during the
+  // "Setup do Cliente" auditing step (what the domain ranks for + gaps vs. a
+  // named competitor). Only fall back to expanding product/category names via
+  // SE Ranking's related/similar/longtail when that pool is too thin.
+  let pool = audit?.keywordPool ?? [];
+  if (pool.length < MIN_DOMAIN_POOL_SIZE) {
+    const seeds = extractSeedKeywords(project, store);
+    pool = seRanking.mergeKeywordCandidates([pool, await discoverKeywordPool(seeds)]);
+  }
+
+  const poolByTerm = new Map(pool.map((k) => [k.termo.trim().toLowerCase(), k]));
+  const poolText = pool
+    .map((k) => `${k.termo} — ${k.volume ?? '?'} buscas/mês — intenção: ${k.intencao}`)
+    .join('\n');
+
   const prompt = [
-    'Pesquise o segmento da empresa e gere de 4 a 6 clusters temáticos estratégicos de conteúdo.',
-    storeContext ? `Contexto da loja:\n${storeContext}` : '',
+    'Você recebeu uma lista real de palavras-chave (com volume de busca mensal e intenção) pesquisada para o segmento da empresa.',
+    'Agrupe essas palavras-chave em 4 a 6 clusters temáticos estratégicos de conteúdo.',
+    store.text ? `Contexto da loja:\n${store.text}` : '',
+    auditSummary ? `Auditoria de SEO do site:\n${auditSummary}` : '',
+    poolText ? `Palavras-chave pesquisadas (termo — volume/mês — intenção):\n${poolText}` : '',
     'Para cada cluster, forneça:',
     '- "nome": o TEMA PRINCIPAL do cluster (curto).',
     '- "estrategia": uma descrição do tema abordado e por que importa (2 a 3 frases).',
-    '- "palavrasChave": de 5 a 10 das PRINCIPAIS palavras-chave para atrair tráfego, cada uma classificada por intenção de pesquisa.',
+    '- "palavrasChave": de 5 a 10 palavras-chave ESCOLHIDAS PRIORITARIAMENTE DA LISTA ACIMA (copie o "termo" exatamente como aparece, para preservar o volume real), cada uma com sua "intencao".',
+    'Só proponha um termo fora da lista se for estritamente necessário para cobrir um tema relevante do negócio que a lista não cobriu.',
+    'Não repita a mesma palavra-chave em mais de um cluster.',
     'A "intencao" deve ser uma de: "informacional", "comercial", "transacional", "navegacional".',
     'NÃO gere ideias de artigos.',
     'Responda ESTRITAMENTE em JSON no formato:',
@@ -400,8 +409,29 @@ async function generateClusters(uid: string, project: ContentProject): Promise<C
 
   const text = await generateGrounded(prompt, { systemInstruction: systemFor(project), temperature: 0.7 });
   const raw = parseJson<Array<{ nome: string; estrategia: string; palavrasChave: Array<{ termo: string; intencao: string }> }>>(text);
-  const now = new Date().toISOString();
 
+  // Resolve each keyword's real volume/intention: prefer the discovered pool
+  // (real data); anything the AI proposed outside the pool is an "orphan" and
+  // gets a single batched backfill call before persisting.
+  const allRaw = raw.flatMap((c) => (Array.isArray(c.palavrasChave) ? c.palavrasChave.filter((k) => k?.termo) : []));
+  const orphanTerms = Array.from(
+    new Set(
+      allRaw
+        .map((k) => k.termo.trim())
+        .filter((termo) => termo && !poolByTerm.has(termo.toLowerCase())),
+    ),
+  );
+  const orphanVolumes = orphanTerms.length ? await seRanking.getKeywordsMetrics(orphanTerms) : {};
+
+  const resolveKeyword = (k: { termo: string; intencao: string }): ClusterKeyword => {
+    const termo = k.termo.trim();
+    const pooled = poolByTerm.get(termo.toLowerCase());
+    if (pooled) return { termo: pooled.termo, intencao: pooled.intencao, ...(pooled.volume != null ? { volume: pooled.volume } : {}) };
+    const volume = orphanVolumes[termo];
+    return { termo, intencao: normalizeIntent(k.intencao), ...(volume != null ? { volume } : {}) };
+  };
+
+  const now = new Date().toISOString();
   const batch = adminDb.batch();
   const col = projectRef(uid, project.id).collection('clusters');
   const created: ContentCluster[] = raw.map((c) => {
@@ -410,9 +440,7 @@ async function generateClusters(uid: string, project: ContentProject): Promise<C
       id: ref.id,
       nome: c.nome ?? 'Tema',
       estrategia: c.estrategia ?? '',
-      palavrasChave: Array.isArray(c.palavrasChave)
-        ? c.palavrasChave.filter((k) => k?.termo).map((k) => ({ termo: k.termo, intencao: normalizeIntent(k.intencao) }))
-        : [],
+      palavrasChave: Array.isArray(c.palavrasChave) ? c.palavrasChave.filter((k) => k?.termo).map(resolveKeyword) : [],
       aprovado: false,
       excluido: false,
       createdAt: now,
@@ -961,6 +989,11 @@ export function registerContentRoutes(app: express.Application, deps: ContentDep
       const decoded = await verifyFirebaseToken(req);
       const project = await loadProject(decoded.uid, req.params.id);
       await debitCreditsAdmin(decoded.uid, CREDIT_ACTIONS.contentClusters, {
+        productName: project.config.nomeEmpresa,
+        userName: decoded.name ?? decoded.email,
+      });
+      // A geração agora também pesquisa palavras-chave reais via SE Ranking.
+      await debitCreditsAdmin(decoded.uid, CREDIT_ACTIONS.seoKeywordResearch, {
         productName: project.config.nomeEmpresa,
         userName: decoded.name ?? decoded.email,
       });

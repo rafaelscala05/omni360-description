@@ -56,6 +56,7 @@ const ClusterDetailView: React.FC<Props> = ({ uid, projectId, cluster, articles,
 
   const kws = cluster.palavrasChave ?? [];
   const availableClusters = allClusters.filter((c) => c.id !== cluster.id && !c.excluido);
+  const totalReach = kws.reduce((sum, k) => sum + (k.volume || 0), 0);
 
   const confirmMove = async () => {
     if (!movingArticleId || !movingTargetClusterId) return;
@@ -129,7 +130,17 @@ const ClusterDetailView: React.FC<Props> = ({ uid, projectId, cluster, articles,
 
       <div className="flex items-start justify-between gap-3 mb-1">
         <h1 className="font-display text-2xl font-bold text-slate-900">{cluster.nome}</h1>
-        {cluster.aprovado && <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 shrink-0">Aprovado</span>}
+        <div className="flex items-center gap-2 shrink-0">
+          {totalReach > 0 && (
+            <span
+              className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
+              title="Alcance potencial (soma dos volumes de busca)"
+            >
+              <TrendingUp className="w-3.5 h-3.5" /> {totalReach.toLocaleString('pt-BR')} buscas/mês
+            </span>
+          )}
+          {cluster.aprovado && <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">Aprovado</span>}
+        </div>
       </div>
       <p className="text-sm text-slate-500 mb-6">{cluster.estrategia}</p>
 
