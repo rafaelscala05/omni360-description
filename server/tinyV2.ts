@@ -107,7 +107,7 @@ export async function validateV2Token(token: string): Promise<boolean> {
 function collectV2Images(p: any): string[] {
   const urls: string[] = [];
   const push = (u: any) => { if (typeof u === 'string' && /^https?:\/\//i.test(u)) urls.push(u); };
-  if (Array.isArray(p?.imagens_externas)) p.imagens_externas.forEach((im: any) => push(im?.url ?? im?.imagem_externa ?? im));
+  if (Array.isArray(p?.imagens_externas)) p.imagens_externas.forEach((im: any) => push(im?.imagem_externa?.url ?? im?.url ?? im?.imagem_externa ?? im));
   if (Array.isArray(p?.anexos)) p.anexos.forEach((a: any) => push(a?.anexo ?? a?.url ?? a));
   return Array.from(new Set(urls));
 }
@@ -217,7 +217,9 @@ export async function updateV2Product(uid: string, id: string, prod: TinyPushPro
     // makes produto.alterar fail with an internal error (cod 35).
     const currentUrls = new Set(collectV2Images(current));
     const novas = prod.imagens.filter((u) => !currentUrls.has(u));
-    if (novas.length) produto.imagens_externas = novas.map((url) => ({ url }));
+    // Tiny's structure is imagens_externas[].imagem_externa.url — each URL must be
+    // wrapped in an `imagem_externa` object, or produto.alterar fails with cod 35.
+    if (novas.length) produto.imagens_externas = novas.map((url) => ({ imagem_externa: { url } }));
   }
 
   Object.keys(produto).forEach((k) => { if (produto[k] === undefined || produto[k] === null) delete produto[k]; });
