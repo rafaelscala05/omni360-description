@@ -5,9 +5,8 @@
 // two files.
 
 import { adminDb } from './firebaseAdmin';
-import type { ContentProject } from '../src/modules/content/types';
+import type { ContentProject, ClusterKeyword } from '../src/modules/content/types';
 import * as seRanking from './seRankingClient';
-import type { KeywordCandidate } from './seRankingClient';
 
 export interface StoreContext {
   text: string;            // compact summary for the Gemini prompt
@@ -78,12 +77,13 @@ async function mapWithConcurrency<T>(items: T[], limit: number, fn: (item: T) =>
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
-// Expands each seed into real, volume-tagged candidates via SE Ranking
-// (related = topic expansion, longtail = subtopics, similar = variants).
-// Long-tail results have no volume/intent, so they're backfilled in bulk.
-export async function discoverKeywordPool(seeds: string[]): Promise<KeywordCandidate[]> {
-  const withVolume: KeywordCandidate[] = [];
-  const needsVolume: string[] = [];
+// Expands each seed into real candidates via SE Ranking (related = topic
+// expansion, longtail = subtopics, similar = variants), keeping every field
+// the API returns (volume/cpc/dificuldade/competicao). Long-tail results only
+// give the term string, so they're backfilled (full metrics) in one bulk call.
+export async function discoverKeywordPool(seeds: string[]): Promise<ClusterKeyword[]> {
+  const withMetrics: ClusterKeyword[] = [];
+  const needsMetrics: string[] = [];
 
   await mapWithConcurrency(seeds, 2, async (seed) => {
     try {
@@ -92,23 +92,24 @@ export async function discoverKeywordPool(seeds: string[]): Promise<KeywordCandi
         seRanking.getSimilarKeywords(seed),
         seRanking.getLongTailKeywords(seed),
       ]);
-      withVolume.push(...related, ...similar);
-      needsVolume.push(...longtail);
+      withMetrics.push(...related, ...similar);
+      needsMetrics.push(...longtail);
     } catch (e) {
       console.error(`SE Ranking: falha ao expandir a seed "${seed}":`, e);
     }
   });
 
-  if (needsVolume.length) {
+  if (needsMetrics.length) {
     try {
-      const metrics = await seRanking.getKeywordsMetrics(needsVolume);
-      for (const termo of needsVolume) {
-        withVolume.push({ termo, volume: metrics[termo], intencao: 'informacional' });
+      const metrics = await seRanking.getKeywordsMetrics(needsMetrics);
+      for (const termo of needsMetrics) {
+        const found = metrics[termo];
+        withMetrics.push(found ? { ...found, origem: 'longtail' } : { termo, intencao: 'informacional', origem: 'longtail' });
       }
     } catch (e) {
-      console.error('SE Ranking: falha ao buscar volume das long-tails:', e);
+      console.error('SE Ranking: falha ao buscar métricas das long-tails:', e);
     }
   }
 
-  return seRanking.mergeKeywordCandidates([withVolume]);
+  return seRanking.mergeKeywordCandidates([withMetrics]);
 }

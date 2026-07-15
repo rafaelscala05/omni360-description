@@ -27,7 +27,7 @@ import type { BlogPost, BlogSettings } from '../src/modules/content/blog/types';
 import { slugify, uniqueSlug } from '../src/modules/content/blog/slug';
 import { markdownToHtml } from '../src/modules/content/markdown';
 import * as seRanking from './seRankingClient';
-import { getLatestFinishedAudit, auditSummaryText } from './seoAgent';
+import { getLatestFinishedAudit, auditSummaryText, omitUndefined } from './seoAgent';
 import { loadStoreContext, extractSeedKeywords, discoverKeywordPool } from './keywordDiscovery';
 
 const TEXT_MODEL = 'gemini-2.5-flash';
@@ -421,14 +421,17 @@ async function generateClusters(uid: string, project: ContentProject): Promise<C
         .filter((termo) => termo && !poolByTerm.has(termo.toLowerCase())),
     ),
   );
-  const orphanVolumes = orphanTerms.length ? await seRanking.getKeywordsMetrics(orphanTerms) : {};
+  const orphanMetrics = orphanTerms.length ? await seRanking.getKeywordsMetrics(orphanTerms) : {};
 
+  // Preserva TODOS os campos reais da SE Ranking (volume, cpc, dificuldade,
+  // competição, posição, tráfego, origem) — só o termo/intenção é reescrito
+  // quando não há dado real algum para o termo (proposta livre da IA).
   const resolveKeyword = (k: { termo: string; intencao: string }): ClusterKeyword => {
     const termo = k.termo.trim();
     const pooled = poolByTerm.get(termo.toLowerCase());
-    if (pooled) return { termo: pooled.termo, intencao: pooled.intencao, ...(pooled.volume != null ? { volume: pooled.volume } : {}) };
-    const volume = orphanVolumes[termo];
-    return { termo, intencao: normalizeIntent(k.intencao), ...(volume != null ? { volume } : {}) };
+    if (pooled) return pooled;
+    const metrics = orphanMetrics[termo];
+    return metrics ?? { termo, intencao: normalizeIntent(k.intencao) };
   };
 
   const now = new Date().toISOString();
@@ -446,7 +449,7 @@ async function generateClusters(uid: string, project: ContentProject): Promise<C
       createdAt: now,
     };
     const { id, ...data } = cluster;
-    batch.set(ref, data);
+    batch.set(ref, omitUndefined(data));
     return cluster;
   });
   await batch.commit();

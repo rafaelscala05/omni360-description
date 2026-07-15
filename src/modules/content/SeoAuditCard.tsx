@@ -3,7 +3,7 @@ import {
   ShieldCheck, RefreshCw, AlertTriangle, Search, Globe, TrendingUp, Swords, XCircle, Ban,
   ChevronDown, ChevronUp, DollarSign, BarChart3,
 } from 'lucide-react';
-import type { ContentProject, SeoAudit, SeoAuditIssue, DomainKeywordDetail } from './types';
+import type { ContentProject, SeoAudit, SeoAuditIssue, ClusterKeyword } from './types';
 import { triggerSeoAudit, refreshSeoAudit, cancelSeoAudit } from '../../services/contentService';
 import { INTENT_META } from './ClusterDetailView';
 
@@ -37,8 +37,9 @@ const n = (v: number | undefined) => (v == null ? '—' : v.toLocaleString('pt-B
 const dec = (v: number | undefined) => (v == null ? '—' : v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
 // Full data table for a list of ranked/gap keywords — scrollable so a domain
-// with 100+ keywords doesn't blow up the page.
-const KeywordTable: React.FC<{ items: DomainKeywordDetail[] }> = ({ items }) => (
+// with 100+ keywords doesn't blow up the page. Every column here is a real
+// field returned by the SE Ranking API.
+const KeywordTable: React.FC<{ items: ClusterKeyword[] }> = ({ items }) => (
   <div className="max-h-72 overflow-y-auto rounded-lg border border-slate-200">
     <table className="w-full text-[11px]">
       <thead className="bg-slate-100 sticky top-0 z-10">
@@ -49,6 +50,7 @@ const KeywordTable: React.FC<{ items: DomainKeywordDetail[] }> = ({ items }) => 
           <th className="px-2 py-1.5 font-semibold text-right">Tráfego</th>
           <th className="px-2 py-1.5 font-semibold text-right">CPC</th>
           <th className="px-2 py-1.5 font-semibold text-right">Dificuldade</th>
+          <th className="px-2 py-1.5 font-semibold text-right">Competição</th>
           <th className="px-2 py-1.5 font-semibold">Intenção</th>
         </tr>
       </thead>
@@ -61,6 +63,7 @@ const KeywordTable: React.FC<{ items: DomainKeywordDetail[] }> = ({ items }) => 
             <td className="px-2 py-1.5 text-right text-slate-500">{n(k.trafego)}</td>
             <td className="px-2 py-1.5 text-right text-slate-500">{dec(k.cpc)}</td>
             <td className="px-2 py-1.5 text-right text-slate-500">{k.dificuldade ?? '—'}</td>
+            <td className="px-2 py-1.5 text-right text-slate-500">{k.competicao != null ? k.competicao.toFixed(2) : '—'}</td>
             <td className="px-2 py-1.5">
               <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${INTENT_META[k.intencao].chip}`}>
                 {INTENT_META[k.intencao].label}

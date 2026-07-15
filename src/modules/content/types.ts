@@ -91,19 +91,6 @@ export interface DomainHistoryPoint {
   trafficEstimate?: number;
 }
 
-// Registro completo por palavra-chave, como retornado pelo SE Ranking (domain/keywords
-// e domain/keywords/comparison) — mostrado por completo na UI. keywordPool usa a
-// forma simplificada (ClusterKeyword) para a geração de Clusters.
-export interface DomainKeywordDetail {
-  termo: string;
-  posicao?: number;
-  volume?: number;
-  trafego?: number;
-  cpc?: number;
-  dificuldade?: number;
-  intencao: SearchIntent;
-}
-
 // Crawl (technical site audit) and Domain Analysis run as two INDEPENDENT
 // stages: the crawl is slow/async (needs polling, can be canceled), Domain
 // Analysis is a handful of fast calls resolved synchronously when the audit is
@@ -135,8 +122,8 @@ export interface SeoAudit {
   domainHistory?: DomainHistoryPoint[];
   domainTrend?: string;
   competitorDomain?: string; // extraído de "Referências/concorrentes", se algum parecer um domínio válido
-  domainKeywords?: DomainKeywordDetail[];     // o que o domínio já rankeia (detalhado, completo)
-  domainGapKeywords?: DomainKeywordDetail[];  // lacuna vs. concorrente (detalhado, completo)
+  domainKeywords?: ClusterKeyword[];     // o que o domínio já rankeia (detalhado, completo)
+  domainGapKeywords?: ClusterKeyword[];  // lacuna vs. concorrente (detalhado, completo)
   keywordPool?: ClusterKeyword[]; // base real (domínio + lacunas + expansão do catálogo) usada na geração de Clusters
 
   createdAt: string;
@@ -147,14 +134,27 @@ export interface SeoAudit {
 // Clusters (Fase 2)
 // ----------------------------------------------------------------------------
 
-// Search intent classification for cluster keywords. `volume` is reserved for a
-// future Search Insights integration (kept optional/undefined until then).
+// Search intent classification for cluster keywords.
 export type SearchIntent = 'informacional' | 'comercial' | 'transacional' | 'navegacional';
 
+// De onde veio cada palavra-chave (SE Ranking Data API, ou sugestão livre da
+// IA/usuário) — mostrado na UI para dar contexto sobre a origem do dado.
+export type KeywordOrigin = 'dominio' | 'lacuna' | 'relacionada' | 'similar' | 'longtail' | 'ia';
+
+// Todos os campos além de termo/intencao são dados reais retornados pela SE
+// Ranking Data API (quando disponíveis) — volume, cpc, dificuldade e
+// competição vêm de qualquer endpoint de keyword research; posição e tráfego
+// só quando o termo vem de domain/keywords (o domínio já rankeia por ele).
 export interface ClusterKeyword {
   termo: string;
   intencao: SearchIntent;
-  volume?: number;
+  volume?: number;         // volume de busca mensal
+  cpc?: number;             // custo por clique médio
+  dificuldade?: number;     // keyword difficulty, 0-100
+  competicao?: number;      // competição em anúncios, 0-1
+  posicao?: number;         // posição atual do domínio para esse termo, se já rankeado
+  trafego?: number;         // tráfego orgânico estimado que esse termo já traz ao domínio
+  origem?: KeywordOrigin;
 }
 
 export interface ContentCluster {

@@ -6,7 +6,7 @@
 // Auth: `Authorization: Token <SE_RANKING_API_KEY>` header.
 // Region: this app is pt-BR only, so `source` defaults to 'br' everywhere.
 
-import type { SearchIntent, DomainOverviewStats, DomainHistoryPoint, DomainKeywordDetail } from '../src/modules/content/types';
+import type { SearchIntent, DomainOverviewStats, DomainHistoryPoint, ClusterKeyword } from '../src/modules/content/types';
 
 const BASE_URL = 'https://api.seranking.com/v1';
 const DEFAULT_SOURCE = 'br';
@@ -171,16 +171,32 @@ function primaryIntent(intents: string[] | undefined): SearchIntent {
   return 'informacional';
 }
 
-export interface KeywordCandidate {
-  termo: string;
-  volume?: number;
-  intencao: SearchIntent;
-}
-
+// Every keyword-bearing SE Ranking response (related/similar/export/domain/*)
+// shares this shape at its core — capture it all, not just volume, so the UI
+// can show the full API payload per keyword.
 interface RawKeywordItem {
   keyword: string;
   volume?: number;
+  cpc?: number;
+  difficulty?: number;
+  competition?: number;
+  position?: number; // só presente em domain/keywords e domain/keywords/comparison
+  traffic?: number;  // idem
   intents?: string[];
+}
+
+function toClusterKeyword(k: RawKeywordItem, origem?: ClusterKeyword['origem']): ClusterKeyword {
+  return {
+    termo: k.keyword,
+    intencao: primaryIntent(k.intents),
+    volume: k.volume,
+    cpc: k.cpc,
+    dificuldade: k.difficulty,
+    competicao: k.competition,
+    posicao: k.position,
+    trafego: k.traffic,
+    origem,
+  };
 }
 
 interface KeywordListResponse {
@@ -193,7 +209,7 @@ export interface KeywordDiscoveryOptions {
   limit?: number;
 }
 
-export async function getRelatedKeywords(keyword: string, opts: KeywordDiscoveryOptions = {}): Promise<KeywordCandidate[]> {
+export async function getRelatedKeywords(keyword: string, opts: KeywordDiscoveryOptions = {}): Promise<ClusterKeyword[]> {
   const resp = await seRankingFetch<KeywordListResponse>('GET', '/keywords/related', {
     query: {
       source: opts.source ?? DEFAULT_SOURCE,
@@ -203,10 +219,10 @@ export async function getRelatedKeywords(keyword: string, opts: KeywordDiscovery
       sort_order: 'desc',
     },
   });
-  return (resp.keywords ?? []).map((k) => ({ termo: k.keyword, volume: k.volume, intencao: primaryIntent(k.intents) }));
+  return (resp.keywords ?? []).map((k) => toClusterKeyword(k, 'relacionada'));
 }
 
-export async function getSimilarKeywords(keyword: string, opts: KeywordDiscoveryOptions = {}): Promise<KeywordCandidate[]> {
+export async function getSimilarKeywords(keyword: string, opts: KeywordDiscoveryOptions = {}): Promise<ClusterKeyword[]> {
   const resp = await seRankingFetch<KeywordListResponse>('GET', '/keywords/similar', {
     query: {
       source: opts.source ?? DEFAULT_SOURCE,
@@ -216,11 +232,11 @@ export async function getSimilarKeywords(keyword: string, opts: KeywordDiscovery
       sort_order: 'desc',
     },
   });
-  return (resp.keywords ?? []).map((k) => ({ termo: k.keyword, volume: k.volume, intencao: primaryIntent(k.intents) }));
+  return (resp.keywords ?? []).map((k) => toClusterKeyword(k, 'similar'));
 }
 
-// Long-tail endpoint only returns keyword strings (no volume/intent) — callers
-// must backfill volume via getKeywordsMetrics for anything kept from this list.
+// Long-tail endpoint only returns keyword strings (no metrics) — callers must
+// backfill via getKeywordsMetrics for anything kept from this list.
 export async function getLongTailKeywords(keyword: string, opts: KeywordDiscoveryOptions = {}): Promise<string[]> {
   const resp = await seRankingFetch<{ total: number; keywords: string[] }>('GET', '/keywords/longtail', {
     query: {
@@ -232,25 +248,25 @@ export async function getLongTailKeywords(keyword: string, opts: KeywordDiscover
   return resp.keywords ?? [];
 }
 
-// Bulk metrics for up to 5000 known terms — returns only volume (that's the
-// only field this app currently uses), keyed by the exact term string.
-export async function getKeywordsMetrics(keywords: string[], source = DEFAULT_SOURCE): Promise<Record<string, number>> {
+// Bulk metrics for up to 5000 known terms — full data (volume/cpc/difficulty/
+// competition), keyed by the exact term string.
+export async function getKeywordsMetrics(keywords: string[], source = DEFAULT_SOURCE): Promise<Record<string, ClusterKeyword>> {
   if (!keywords.length) return {};
   const resp = await seRankingFetch<RawKeywordItem[]>('POST', '/keywords/export', {
     query: { source },
     body: { keywords },
   });
-  const out: Record<string, number> = {};
+  const out: Record<string, ClusterKeyword> = {};
   for (const item of resp ?? []) {
-    if (typeof item.volume === 'number') out[item.keyword] = item.volume;
+    out[item.keyword] = toClusterKeyword(item);
   }
   return out;
 }
 
 // Deduplicates candidates by normalized term across one or more lists, keeping
 // the entry with the highest known volume, sorted by volume desc and capped.
-export function mergeKeywordCandidates(lists: KeywordCandidate[][], cap = 150): KeywordCandidate[] {
-  const byTerm = new Map<string, KeywordCandidate>();
+export function mergeKeywordCandidates(lists: ClusterKeyword[][], cap = 150): ClusterKeyword[] {
+  const byTerm = new Map<string, ClusterKeyword>();
   for (const list of lists) {
     for (const k of list) {
       const key = k.termo.trim().toLowerCase();
@@ -329,49 +345,21 @@ export function summarizeDomainTrend(history: DomainHistoryPoint[]): string | nu
   return `Volume de palavras-chave rankeadas ${trend} nos últimos ${history.length} meses (${fk} → ${lk}).`;
 }
 
-interface RawDomainKeywordItem {
-  keyword: string;
-  position?: number;
-  volume?: number;
-  traffic?: number;
-  cpc?: number;
-  difficulty?: number;
-  intents?: string[];
-}
-
-function normalizeDomainKeywordList(resp: { keywords?: RawDomainKeywordItem[] } | RawDomainKeywordItem[]): RawDomainKeywordItem[] {
+function normalizeDomainKeywordList(resp: { keywords?: RawKeywordItem[] } | RawKeywordItem[]): RawKeywordItem[] {
   return Array.isArray(resp) ? resp : (resp.keywords ?? []);
-}
-
-// Use toKeywordCandidates() to get the slimmer shape (termo/volume/intencao)
-// the cluster generator needs from the full DomainKeywordDetail records.
-function toDetail(k: RawDomainKeywordItem): DomainKeywordDetail {
-  return {
-    termo: k.keyword,
-    posicao: k.position,
-    volume: k.volume,
-    trafego: k.traffic,
-    cpc: k.cpc,
-    dificuldade: k.difficulty,
-    intencao: primaryIntent(k.intents),
-  };
-}
-
-export function toKeywordCandidates(details: DomainKeywordDetail[]): KeywordCandidate[] {
-  return details.map((d) => ({ termo: d.termo, volume: d.volume, intencao: d.intencao }));
 }
 
 // Real keywords this domain currently ranks for in organic search — the
 // primary source for the cluster keyword pool (grounded in actual visibility,
 // not a guess). Sorted by volume, capped.
-export async function getDomainKeywords(domain: string, source = DEFAULT_SOURCE, limit = 100): Promise<DomainKeywordDetail[]> {
-  const resp = await seRankingFetch<{ keywords?: RawDomainKeywordItem[] } | RawDomainKeywordItem[]>('GET', '/domain/keywords', {
+export async function getDomainKeywords(domain: string, source = DEFAULT_SOURCE, limit = 100): Promise<ClusterKeyword[]> {
+  const resp = await seRankingFetch<{ keywords?: RawKeywordItem[] } | RawKeywordItem[]>('GET', '/domain/keywords', {
     query: { source, domain, type: 'organic' },
   });
   return normalizeDomainKeywordList(resp)
     .sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0))
     .slice(0, limit)
-    .map(toDetail);
+    .map((k) => toClusterKeyword(k, 'dominio'));
 }
 
 // Keywords a competitor domain ranks for that this domain does not (diff=1) —
@@ -381,8 +369,8 @@ export async function getDomainKeywordGaps(
   competitorDomain: string,
   source = DEFAULT_SOURCE,
   limit = 50,
-): Promise<DomainKeywordDetail[]> {
-  const resp = await seRankingFetch<{ keywords?: RawDomainKeywordItem[] } | RawDomainKeywordItem[]>(
+): Promise<ClusterKeyword[]> {
+  const resp = await seRankingFetch<{ keywords?: RawKeywordItem[] } | RawKeywordItem[]>(
     'GET',
     '/domain/keywords/comparison',
     { query: { source, domain, compare: competitorDomain, diff: '1', type: 'organic' } },
@@ -390,5 +378,5 @@ export async function getDomainKeywordGaps(
   return normalizeDomainKeywordList(resp)
     .sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0))
     .slice(0, limit)
-    .map(toDetail);
+    .map((k) => toClusterKeyword(k, 'lacuna'));
 }

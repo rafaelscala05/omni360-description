@@ -77,8 +77,11 @@ function auditsCol(uid: string, projectId: string) {
 // depth — several SE Ranking responses (e.g. a domain with no overview data
 // yet, or a keyword missing cpc/difficulty) legitimately produce them nested
 // inside domainOverview/domainHistory/domainKeywords/keywordPool, so every
-// object written here is deep-sanitized first.
-function omitUndefined<T>(value: T): T {
+// object written here is deep-sanitized first. Exported: contentAgent.ts
+// persists ClusterKeyword objects with the same SE Ranking-shaped optional
+// fields (cpc/dificuldade/competicao/posicao/trafego/origem) and needs the
+// same sanitization before writing clusters.
+export function omitUndefined<T>(value: T): T {
   if (Array.isArray(value)) return value.map((v) => omitUndefined(v)) as unknown as T;
   if (value !== null && typeof value === 'object' && !(value instanceof Date)) {
     const out: Record<string, unknown> = {};
@@ -165,11 +168,7 @@ async function runDomainAnalysis(
       competitorDomain,
       domainKeywords,
       domainGapKeywords: gapKeywords,
-      keywordPool: seRanking.mergeKeywordCandidates([
-        seRanking.toKeywordCandidates(domainKeywords),
-        seRanking.toKeywordCandidates(gapKeywords),
-        possibleKeywords,
-      ], 200),
+      keywordPool: seRanking.mergeKeywordCandidates([domainKeywords, gapKeywords, possibleKeywords], 200),
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

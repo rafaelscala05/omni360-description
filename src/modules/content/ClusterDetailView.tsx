@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowLeft, ExternalLink, FileText, MoveRight, RefreshCw, TrendingUp, Pencil, Trash2, Plus, Check, X } from 'lucide-react';
-import type { ContentCluster, CalendarArticle, SearchIntent, ArticleStatus, ClusterKeyword } from './types';
+import type { ContentCluster, CalendarArticle, SearchIntent, ArticleStatus, ClusterKeyword, KeywordOrigin } from './types';
 import { moveArticle, updateClusterKeywords } from '../../services/contentService';
 
 export const INTENT_META: Record<SearchIntent, { label: string; chip: string; dot: string }> = {
@@ -9,6 +9,23 @@ export const INTENT_META: Record<SearchIntent, { label: string; chip: string; do
   transacional:  { label: 'Transacional',  chip: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
   navegacional:  { label: 'Navegacional',  chip: 'bg-violet-50 text-violet-700 border-violet-200', dot: 'bg-violet-500' },
 };
+
+// Origem do dado (SE Ranking Data API) — dá contexto sobre por que a
+// palavra-chave foi sugerida (já rankeada, lacuna vs. concorrente, expansão...).
+const ORIGIN_META: Record<KeywordOrigin, { label: string; chip: string }> = {
+  dominio:     { label: 'Já rankeado',        chip: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
+  lacuna:      { label: 'Lacuna vs. concorrente', chip: 'bg-blue-50 text-blue-600 border-blue-200' },
+  relacionada: { label: 'Relacionada',        chip: 'bg-slate-50 text-slate-500 border-slate-200' },
+  similar:     { label: 'Similar',            chip: 'bg-slate-50 text-slate-500 border-slate-200' },
+  longtail:    { label: 'Long-tail',          chip: 'bg-slate-50 text-slate-500 border-slate-200' },
+  ia:          { label: 'Sugestão IA',        chip: 'bg-slate-50 text-slate-500 border-slate-200' },
+};
+
+function difficultyColor(d: number): string {
+  if (d < 30) return 'text-emerald-600';
+  if (d < 60) return 'text-amber-600';
+  return 'text-red-600';
+}
 
 const STATUS_STYLE: Record<ArticleStatus, string> = {
   agendado:    'bg-slate-100 text-slate-600',
@@ -213,15 +230,42 @@ const ClusterDetailView: React.FC<Props> = ({ uid, projectId, cluster, articles,
                         </button>
                       </div>
                     ) : (
-                      // ── Read mode chip ────────────────────────────────────
-                      <div key={i} className="flex items-center gap-2 group">
-                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700">
-                          {k.termo}
-                          <span className="text-[10px] text-slate-400 ml-1">
-                            {k.volume != null ? `${k.volume.toLocaleString('pt-BR')}/mês` : '—'}
-                          </span>
-                        </span>
-                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      // ── Read mode: termo + volume, com todos os dados extras
+                      // que a SE Ranking retornou nessa palavra-chave abaixo. ──
+                      <div key={i} className="flex items-start gap-2 group">
+                        <div className="flex-1 min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-medium text-slate-700">{k.termo}</span>
+                            <span className="text-[10px] text-slate-400 shrink-0">
+                              {k.volume != null ? `${k.volume.toLocaleString('pt-BR')}/mês` : '—'}
+                            </span>
+                          </div>
+                          {(k.posicao != null || k.trafego != null || k.cpc != null || k.dificuldade != null || k.competicao != null || k.origem) && (
+                            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 mt-1">
+                              {k.posicao != null && (
+                                <span className="text-[10px] font-medium text-emerald-600">Posição #{k.posicao}</span>
+                              )}
+                              {k.trafego != null && (
+                                <span className="text-[10px] text-slate-400">{k.trafego.toLocaleString('pt-BR')} tráfego/mês</span>
+                              )}
+                              {k.cpc != null && (
+                                <span className="text-[10px] text-slate-400">CPC {k.cpc.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              )}
+                              {k.dificuldade != null && (
+                                <span className={`text-[10px] font-medium ${difficultyColor(k.dificuldade)}`}>Dificuldade {k.dificuldade}</span>
+                              )}
+                              {k.competicao != null && (
+                                <span className="text-[10px] text-slate-400">Concorrência {Math.round(k.competicao * 100)}%</span>
+                              )}
+                              {k.origem && (
+                                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${ORIGIN_META[k.origem].chip}`}>
+                                  {ORIGIN_META[k.origem].label}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 pt-1.5">
                           <button
                             onClick={() => startEdit(k, i)}
                             title="Editar"
