@@ -126,8 +126,13 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
   const [savedText, setSavedText] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // O iframe de preview recarrega a cada alteração salva (updatedAt muda).
-  const previewUrl = `/b/${settings.slug}/?preview=1&_v=${encodeURIComponent(settings.updatedAt)}`;
+  // Nonce incrementado só APÓS o save confirmar no servidor. O onSnapshot do
+  // Firestore dispara otimisticamente (escrita local, antes do commit), então
+  // recarregar o iframe por settings.updatedAt fazia o SSR ler dados ainda não
+  // commitados e o preview ficava um passo atrasado. Recarregamos por este
+  // nonce, garantindo que o servidor já tem a versão nova.
+  const [previewNonce, setPreviewNonce] = useState(0);
+  const previewUrl = `/b/${settings.slug}/?preview=1&_v=${previewNonce}`;
 
   const fonts: BlogFonts = { ...DEFAULT_BLOG_FONTS, ...(settings.fonts ?? {}) };
   const layout: BlogLayout = { ...DEFAULT_BLOG_LAYOUT, ...(settings.layout ?? {}) };
@@ -138,6 +143,7 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
     setError(null);
     try {
       await saveBlogSettings(uid, projectId, p);
+      setPreviewNonce((n) => n + 1); // recarrega o preview só após o commit
     } catch (e) {
       setError(e instanceof Error ? e.message : msg);
     }
@@ -164,6 +170,7 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
         description: description.trim(),
         layout: { ...layout, footerText: footerText.trim() },
       });
+      setPreviewNonce((n) => n + 1);
       setSavedText(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao salvar');
@@ -178,6 +185,7 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
     try {
       const url = await uploadImage(file);
       await saveBlogSettings(uid, projectId, { logoUrl: url });
+      setPreviewNonce((n) => n + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao enviar logo');
     } finally {

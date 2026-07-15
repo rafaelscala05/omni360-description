@@ -6,15 +6,11 @@ import { effectiveAppearance, type BlogRenderContext } from '../shell';
 import type { BlogTheme, ListOpts } from './types';
 import { renderHeader, headerCss } from '../parts/header';
 import { renderFooter, footerCss } from '../parts/footer';
-import { renderCard, cardCss } from '../parts/card';
+import { cardCss } from '../parts/card';
 import {
   renderListing, renderCategoryHead, renderCategoryEmpty, categoryCss,
 } from '../parts/category';
 import { renderArticle, articleCss } from '../parts/article';
-
-// renderCard é reexportado só para manter a árvore de imports coesa (usado
-// indiretamente via category.ts); evita "unused" e documenta a dependência.
-void renderCard;
 
 const baseCss = `
   .bc-inner{max-width:var(--content-width);margin:0 auto;padding:0 24px;}
