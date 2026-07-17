@@ -125,34 +125,30 @@ function runFfmpeg(args: string[]): Promise<void> {
   });
 }
 
-// Concatenates the silent shots into one continuous clip. Re-encodes (instead
-// of stream copy) because the shots are generated independently and may differ
-// slightly in timebase/SAR, which would break a `-c copy` concat. Output is
-// muted — the narration + music are mixed in afterwards.
-async function concatVideos(segmentPaths: string[], workDir: string, outPath: string): Promise<void> {
+// Concatenates the silent shots and mixes narration + looped background music
+// in a SINGLE ffmpeg pass (one re-encode instead of two). Re-encodes video
+// because shots are generated independently and may differ in timebase/SAR.
+// Output length is bounded by the video (-shortest).
+async function assembleFinalVideo(
+  segmentPaths: string[],
+  narrationPath: string,
+  musicPath: string,
+  workDir: string,
+  outPath: string,
+): Promise<void> {
   const listPath = path.join(workDir, 'concat.txt');
   const list = segmentPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n');
   await fs.writeFile(listPath, list, 'utf8');
   await runFfmpeg([
-    '-y', '-f', 'concat', '-safe', '0', '-i', listPath,
-    '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p',
-    '-an', outPath,
-  ]);
-}
-
-// Mixes the muted video with a continuous TTS voice-over and a looped, low
-// background-music bed. Output length is bounded by the video (-shortest),
-// music loops forever (-stream_loop -1) and narration is padded with silence.
-async function mixAudio(videoPath: string, narrationPath: string, musicPath: string, outPath: string): Promise<void> {
-  await runFfmpeg([
     '-y',
-    '-i', videoPath,
+    '-f', 'concat', '-safe', '0', '-i', listPath,
     '-stream_loop', '-1', '-i', musicPath,
     '-i', narrationPath,
     '-filter_complex',
     '[1:a]volume=0.14[mus];[2:a]volume=1.6[nar];[mus][nar]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mix]',
     '-map', '0:v', '-map', '[mix]',
-    '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '192k',
     '-shortest',
     outPath,
   ]);
@@ -461,17 +457,11 @@ async function runVideoJob(
     await fs.writeFile(narrationPath, narrationBuffer);
     console.log(`[video] ${segmentPaths.length} shots + narration ready jobId=${jobId} chars=${narrationText.length}`);
 
-    // Concatenate the muted shots into one continuous clip.
-    await jobRef.update({ step: 'concat', updatedAt: now() });
-    const combinedPath = path.join(workDir, 'combined.mp4');
-    await concatVideos(segmentPaths, workDir, combinedPath);
-    console.log(`[video] concatenated ${segmentPaths.length} shots jobId=${jobId}`);
-
-    // Mix voice-over + background music over the muted video.
-    await jobRef.update({ step: 'mixing', updatedAt: now() });
+    // Single-pass post-production: concat + narration + music in one encode.
+    await jobRef.update({ step: 'post', updatedAt: now() });
     const finalPath = path.join(workDir, 'final.mp4');
-    await mixAudio(combinedPath, narrationPath, MUSIC_PATH, finalPath);
-    console.log(`[video] audio mixed jobId=${jobId}`);
+    await assembleFinalVideo(segmentPaths, narrationPath, MUSIC_PATH, workDir, finalPath);
+    console.log(`[video] post-production done jobId=${jobId}`);
 
     await jobRef.update({ step: 'uploading', updatedAt: now() });
 
