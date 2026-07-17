@@ -43,7 +43,7 @@ const SHOT_FIELDS: Array<{
     narracaoHint: 'Reforça atributos/benefícios reais do produto',
   },
   {
-    key: 'fim', title: 'Fim — Fechamento (24–30s)', badge: 'Fim',
+    key: 'fim', title: 'Fim — Fechamento (24–32s)', badge: 'Fim',
     acaoHint: 'Plano de fechamento do produto / embalagem',
     narracaoHint: 'Chamada para ação curta (ex.: "Garanta o seu agora")',
   },
@@ -340,7 +340,7 @@ export default function VideoGenerationTab({
             Roteiro gerado pela IA
           </h2>
           <p className="text-sm text-slate-500 mb-6 leading-relaxed">
-            Revise e edite o roteiro antes de gerar o vídeo vertical (9:16) de ~30 segundos,
+            Revise e edite o roteiro antes de gerar o vídeo vertical (9:16) de ~32 segundos,
             com estrutura <strong>Início → Meio → Fim</strong>. A narração é uma locução em off
             (voz por cima) com música de fundo — não há ninguém falando na tela.
           </p>

@@ -30,15 +30,15 @@ const MUSIC_PATH = path.join(process.cwd(), 'server', 'assets', 'background-musi
 const TTS_VOICE = 'pt-BR-Neural2-B';
 const TTS_LANGUAGE = 'pt-BR';
 
-// Veo 3.1 generates at most 8s per call. To reach ~30s we generate four shots
-// and concatenate them with ffmpeg. The shots follow an e-commerce 3-act
-// structure: Início (hook) → Meio (uso + benefícios) → Fim (CTA). Each shot's
-// last frame seeds the next shot so the footage stays visually continuous.
+// In reference_to_video mode the Veo 3.1 API only accepts 8s clips, so all four
+// shots are 8s (total ~32s). The shots follow an e-commerce 3-act structure:
+// Início (hook) → Meio (uso + benefícios) → Fim (CTA). Every shot is anchored to
+// the same product reference image, so there is no frame-to-frame seeding.
 const SHOTS = [
   { key: 'inicio', seconds: 8, ato: 'INÍCIO — Hook (chama atenção e apresenta o produto)' },
   { key: 'meioDemonstracao', seconds: 8, ato: 'MEIO — Demonstração do produto em uso/funcionamento' },
   { key: 'meioBeneficios', seconds: 8, ato: 'MEIO — Close-ups destacando atributos e benefícios' },
-  { key: 'fim', seconds: 6, ato: 'FIM — Fechamento e chamada para ação' },
+  { key: 'fim', seconds: 8, ato: 'FIM — Fechamento e chamada para ação' },
 ] as const;
 
 interface VideoScriptShot {
@@ -248,7 +248,7 @@ async function generateScript(
 
   const prompt = `Você é um diretor de vídeos de e-commerce especialista em conteúdo para PÁGINAS DE PRODUTO em marketplaces (Mercado Livre, Amazon, Shopee) e lojas virtuais.
 
-Crie um roteiro de VÍDEO COMERCIAL E EXPLICATIVO, VERTICAL (9:16), com cerca de 30 segundos, estruturado em INÍCIO, MEIO e FIM, seguindo as melhores práticas de vídeo para e-commerce.
+Crie um roteiro de VÍDEO COMERCIAL E EXPLICATIVO, VERTICAL (9:16), com cerca de 32 segundos, estruturado em INÍCIO, MEIO e FIM, seguindo as melhores práticas de vídeo para e-commerce.
 
 Analise CUIDADOSAMENTE a imagem fornecida antes de escrever.
 
@@ -268,9 +268,9 @@ ${formatAttributes(attributes)}
   1) INÍCIO (~8s): gancho que prende a atenção nos 3 primeiros segundos + apresentação do produto.
   2) MEIO/uso (~8s): produto em uso real, funcionamento, manipulação rica.
   3) MEIO/benefícios (~8s): close-ups destacando 2–3 atributos/benefícios.
-  4) FIM (~6s): fechamento com chamada para ação (ex.: "Garanta o seu agora").
+  4) FIM (~8s): fechamento com chamada para ação (ex.: "Garanta o seu agora").
 - Sem texto na tela. Sem efeitos artificiais. Realista, luz natural ou de estúdio.
-- NARRAÇÃO CURTA: cada "narracao" deve ter no máximo ~16 palavras (o total será lido em ~30s).
+- NARRAÇÃO CURTA: cada "narracao" deve ter no máximo ~16 palavras (o total será lido em ~32s).
 
 **CAMPOS (responda em pt-BR):**
 - cena: ambientação/visual geral, coerente em todos os shots, baseada na imagem (máx. 120 caracteres).

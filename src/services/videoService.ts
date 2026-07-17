@@ -6,7 +6,7 @@ export interface VideoScriptShot {
   narracao: string; // texto da locução em off (voz por cima) deste trecho
 }
 
-// Vídeo vertical (9:16) de ~30s, dividido em 4 shots encadeados (8+8+8+6s)
+// Vídeo vertical (9:16) de ~32s, dividido em 4 shots de 8s cada (8+8+8+8s)
 // formando a estrutura Início → Meio → Fim, conforme boas práticas de
 // vídeo para e-commerce. O áudio é montado depois (TTS + música), portanto
 // o vídeo é gerado MUDO e SEM lip sync.
@@ -16,7 +16,7 @@ export interface VideoScript {
   inicio: VideoScriptShot;           // 0–8s  — Hook: chama atenção e apresenta o produto
   meioDemonstracao: VideoScriptShot; // 8–16s — Meio: produto em uso / funcionamento
   meioBeneficios: VideoScriptShot;   // 16–24s — Meio: close-ups de 2–3 atributos/benefícios
-  fim: VideoScriptShot;              // 24–30s — Fim: fechamento + chamada para ação
+  fim: VideoScriptShot;              // 24–32s — Fim: fechamento + chamada para ação
 }
 
 export type VideoJobStatus = 'queued' | 'processing' | 'done' | 'error';
