@@ -264,7 +264,7 @@ ${formatAttributes(attributes)}
 - Cite naturalmente de 2 a 3 ATRIBUTOS REAIS (da lista acima ou visíveis na imagem). Nunca invente características.
 - As mãos devem MANIPULAR o produto de forma rica e realista: pegar, girar para mostrar ângulos/detalhes, abrir/fechar, acionar botões/zíperes/tampas, demonstrar o uso real, apontar partes específicas. Evite gestos passivos.
 - A NARRAÇÃO é uma locução em OFF (voice-over): ninguém aparece falando para a câmera, não há diálogo, não há lip sync. Há música de fundo.
-- Estrutura de 4 shots encadeados (continuidade visual entre eles):
+- Estrutura de 4 shots INDEPENDENTES unidos por CORTES SECOS (padrão de shorts/TikTok): cada shot deve abrir já com o produto em quadro e funcionar sozinho, sem depender visualmente do shot anterior. A "cena" compartilhada garante a coerência de ambientação entre eles:
   1) INÍCIO (~8s): gancho que prende a atenção nos 3 primeiros segundos + apresentação do produto.
   2) MEIO/uso (~8s): produto em uso real, funcionamento, manipulação rica.
   3) MEIO/benefícios (~8s): close-ups destacando 2–3 atributos/benefícios.
