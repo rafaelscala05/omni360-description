@@ -41,6 +41,16 @@ const CHANGED_TAGS: { key: keyof TinyPushFields; label: string }[] = [
 
 const JOB_ACTIVE = (s?: string) => s === 'running' || s === 'queued';
 
+// v3 (OAuth) is disabled in the UI for now — só oferecemos v2 (token) +
+// webhook. O código do fluxo OAuth (server/tinyAgent.ts e o formulário abaixo)
+// continua intacto; flip pra true pra reativar a conexão v3 na tela.
+const V3_UI_ENABLED = false;
+
+// v2 agora só opera via Webhook — o toggle Polling/Webhook foi tirado da tela
+// (v2 sempre roda em modo webhook). O worker de polling continua no backend
+// (compartilhado com a v3); flip pra true pra reoferecer o toggle na v2.
+const V2_POLLING_UI_ENABLED = false;
+
 const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCandidates, onPushed }) => {
   const [status, setStatus] = useState<TinyStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
@@ -83,6 +93,15 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCan
   const connected = status?.validated;
 
   useEffect(() => { setCnpjInput(status?.cnpj ?? ''); }, [status?.cnpj]);
+
+  // Sem o toggle Polling/Webhook na tela, v2 precisa sempre operar em modo
+  // webhook — migra automaticamente contas v2 antigas (ou recém-conectadas)
+  // que ainda estejam (ou fiquem) em 'polling'/sem syncMode definido.
+  useEffect(() => {
+    if (!V2_POLLING_UI_ENABLED && status?.version === 'v2' && status?.syncMode !== 'webhook') {
+      tinyWebhookConfig({ syncMode: 'webhook' }).then(() => refreshStatus()).catch(() => {});
+    }
+  }, [status?.version, status?.syncMode]);
 
   const handleSyncModeChange = async (mode: 'polling' | 'webhook') => {
     setSavingWebhook(true);
@@ -260,22 +279,24 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCan
 
       {!connected ? (
         <div className="space-y-3">
-          {/* Version selector */}
-          <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-sm">
-            {(['v3', 'v2'] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => { setVersion(v); setError(null); }}
-                className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
-                  version === v ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                {v === 'v3' ? 'v3 — OAuth' : 'v2 — Token'}
-              </button>
-            ))}
-          </div>
+          {/* Version selector — v3 (OAuth) desativado na UI, ver V3_UI_ENABLED acima */}
+          {V3_UI_ENABLED && (
+            <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-sm">
+              {(['v3', 'v2'] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => { setVersion(v); setError(null); }}
+                  className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
+                    version === v ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {v === 'v3' ? 'v3 — OAuth' : 'v2 — Token'}
+                </button>
+              ))}
+            </div>
+          )}
 
-          {version === 'v3' ? (
+          {V3_UI_ENABLED && version === 'v3' ? (
             <>
               <p className="text-sm text-slate-500">
                 API v3 (OAuth): você será levado à tela de autorização do Tiny e, ao aprovar, os tokens
@@ -345,7 +366,8 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCan
             </button>
           </div>
 
-          {status?.version === 'v2' && (
+          {/* Toggle Polling/Webhook desativado — v2 sempre roda em Webhook, ver V2_POLLING_UI_ENABLED acima */}
+          {V2_POLLING_UI_ENABLED && status?.version === 'v2' && (
             <div className="space-y-2">
               <label className="block text-xs font-semibold text-slate-600">Modo de sincronização</label>
               <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-sm">
@@ -365,7 +387,7 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCan
             </div>
           )}
 
-          {status?.version === 'v2' && status?.syncMode === 'webhook' && (
+          {status?.version === 'v2' && (V2_POLLING_UI_ENABLED ? status?.syncMode === 'webhook' : true) && (
             <div className="border border-slate-200 rounded-xl p-4 space-y-3">
               <div>
                 <h4 className="text-sm font-semibold text-slate-800">Recebimento via Webhook</h4>
@@ -422,8 +444,8 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCan
             </div>
           )}
 
-          {/* Import (background) — só faz sentido em modo polling */}
-          {!(status?.version === 'v2' && status?.syncMode === 'webhook') && (
+          {/* Import (background) — v3 continua com polling; v2 agora só usa Webhook */}
+          {(V2_POLLING_UI_ENABLED ? !(status?.version === 'v2' && status?.syncMode === 'webhook') : status?.version !== 'v2') && (
           <div className="border border-slate-200 rounded-xl p-4 space-y-3">
             <div>
               <h4 className="text-sm font-semibold text-slate-800">Importar produtos (em background)</h4>
