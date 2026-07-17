@@ -22,6 +22,15 @@ export const PACE_MS = Math.max(0, Number(process.env.TINY_PACE_MS ?? 1000));
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Resolves the public base URL (proto://host) behind the reverse proxy — req.protocol/
+// req.get('host') alone reflect the internal hop, not what the client actually used.
+// Mirrors server/blogPublic.ts's resolvedHost/proto handling.
+export function publicBaseUrl(req: express.Request): string {
+  const proto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() || req.protocol || 'https';
+  const host = (req.headers['x-forwarded-host'] as string)?.split(',')[0]?.trim() || req.get('host') || '';
+  return `${proto}://${host}`;
+}
+
 export const SECRET_REF = (uid: string) =>
   adminDb.collection('users').doc(uid).collection('integration_secrets').doc('tiny');
 export const STATUS_REF = (uid: string) =>
@@ -167,6 +176,26 @@ export interface TinyNormalizedProduct {
   precoDe?: number;
   categorias: string[];
   imagens: string[];
+  // Campos extras — só preenchidos pelo normalizador do webhook (server/tinyWebhook.ts);
+  // v2/v3 (polling) deixam undefined, sem regressão no upsert.
+  estoque?: number;
+  estoqueMinimo?: number;
+  estoqueMaximo?: number;
+  localizacao?: string;
+  marca?: string;
+  garantia?: string;
+  sobEncomenda?: string;
+  cest?: string;
+  diasPreparacao?: number;
+  obs?: string;
+  unidadePorCaixa?: string;
+  codigoFornecedor?: string;
+  unidade?: string;
+  linkVideo?: string;
+  slug?: string;
+  // Só preenchidos em produtos-filho (variações) vindos do webhook.
+  codigoPai?: string;
+  variacaoGrade?: string;
   raw: unknown;
 }
 
@@ -420,11 +449,21 @@ export function registerTinyRoutes(app: express.Express, { verifyFirebaseToken }
       const sec = secretSnap.data() ?? {};
       // Infer the version for legacy secrets that predate the version field.
       const version = sec.version ?? d.apiVersion ?? (sec.accessToken ? 'v3' : sec.token ? 'v2' : null);
+      const webhookExtra = version === 'v2' ? {
+        syncMode: d.syncMode === 'webhook' ? 'webhook' : 'polling',
+        cnpj: d.cnpj ?? '',
+        webhookUrl: d.webhookSecret ? `${publicBaseUrl(req)}/api/tiny/webhook/${uid}/${d.webhookSecret}` : null,
+        webhookStats: {
+          lastReceivedAt: d.webhookStats?.lastReceivedAt ?? null,
+          totalReceived: d.webhookStats?.totalReceived ?? 0,
+        },
+      } : {};
       return res.json({
         connected: hasToken,
         validated: hasToken && d.validated === true,
         version,
         lastValidatedAt: d.lastValidatedAt?.toDate?.()?.toISOString?.() ?? null,
+        ...webhookExtra,
       });
     } catch (e: any) {
       return res.status(401).json({ connected: false, validated: false, message: e?.message });

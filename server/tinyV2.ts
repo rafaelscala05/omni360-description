@@ -6,7 +6,7 @@ import { SECRET_REF, sleep, type TinyNormalizedProduct, type TinyPushProduct } f
 const V2_BASE = 'https://api.tiny.com.br/api2';
 const PAGE_SIZE = 100; // v2 lists 100 records per page
 
-const num = (v: unknown): number | undefined => {
+export const num = (v: unknown): number | undefined => {
   if (v === undefined || v === null || v === '') return undefined;
   const n = typeof v === 'number' ? v : Number(String(v).replace(',', '.'));
   return Number.isFinite(n) ? n : undefined;

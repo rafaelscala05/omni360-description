@@ -9,6 +9,10 @@ export interface TinyStatus {
   validated: boolean;
   version?: 'v2' | 'v3' | null;
   lastValidatedAt: string | null;
+  syncMode?: 'polling' | 'webhook';
+  cnpj?: string;
+  webhookUrl?: string | null;
+  webhookStats?: { lastReceivedAt: string | null; totalReceived: number };
 }
 
 export interface TinyNormalizedProduct {
@@ -154,6 +158,21 @@ export async function tinyImportSetAutosync(enabled: boolean, everyHours: number
 export async function tinyPush(produtos: TinyPushProduct[]): Promise<{ resultados: TinyPushResult[] }> {
   const resp = await fetch('/api/tiny/push', {
     method: 'POST', headers: await authHeaders(), body: JSON.stringify({ produtos }),
+  });
+  return handle(resp);
+}
+
+export interface TinyWebhookConfig {
+  webhookUrl: string;
+  cnpj: string;
+  syncMode: 'polling' | 'webhook';
+}
+
+export async function tinyWebhookConfig(params: {
+  cnpj?: string; syncMode?: 'polling' | 'webhook'; regenerateSecret?: boolean;
+}): Promise<TinyWebhookConfig> {
+  const resp = await fetch('/api/tiny/webhook/config', {
+    method: 'POST', headers: await authHeaders(), body: JSON.stringify(params),
   });
   return handle(resp);
 }

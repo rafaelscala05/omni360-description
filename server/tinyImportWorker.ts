@@ -45,7 +45,8 @@ function stripUndefined<T extends Record<string, any>>(obj: T): T {
 
 // Writes one normalized product to Firestore. "Source" fields always update;
 // enriched fields (description/SEO) only fill when empty, preserving local work.
-async function upsertProduct(uid: string, t: TinyNormalizedProduct): Promise<void> {
+// Returns the Firestore doc id — the webhook handler uses it as idMapeamento.
+export async function upsertProduct(uid: string, t: TinyNormalizedProduct, source = 'tiny-bg-import'): Promise<string> {
   const existingSnap = await PRODUCTS(uid).where('_tinyProductId', '==', t.tinyId).limit(1).get();
   const existing = existingSnap.docs[0];
   const ref = existing ? existing.ref : PRODUCTS(uid).doc(`tiny_${t.tinyId}`);
@@ -65,6 +66,21 @@ async function upsertProduct(uid: string, t: TinyNormalizedProduct): Promise<voi
     'Largura embalagem': t.largura,
     'Altura Embalagem': t.altura,
     'Comprimento embalagem': t.comprimento,
+    'Estoque': t.estoque,
+    'Estoque mínimo': t.estoqueMinimo,
+    'Estoque máximo': t.estoqueMaximo,
+    'Localização': t.localizacao || undefined,
+    'Marca': t.marca || undefined,
+    'Garantia': t.garantia || undefined,
+    'Sob encomenda': t.sobEncomenda || undefined,
+    'CEST': t.cest || undefined,
+    'Dias para preparação': t.diasPreparacao,
+    'Observações': t.obs || undefined,
+    'Unidade por caixa': t.unidadePorCaixa || undefined,
+    'Cód do fornecedor': t.codigoFornecedor || undefined,
+    'Unidade': t.unidade || undefined,
+    'Código do pai': t.codigoPai || undefined,
+    'Variações': t.variacaoGrade || undefined,
     _tinyProductId: t.tinyId,
     ownerId: uid,
     createdAt: cur.createdAt || iso(),
@@ -80,13 +96,17 @@ async function upsertProduct(uid: string, t: TinyNormalizedProduct): Promise<voi
   fillIfEmpty('Título SEO', t.seoTitle);
   fillIfEmpty('Descrição SEO', t.seoDescription);
   fillIfEmpty('Palavras chave SEO', t.seoKeywords);
+  fillIfEmpty('Link do vídeo', t.linkVideo);
+  fillIfEmpty('Slug', t.slug);
 
   await ref.set(stripUndefined(data), { merge: true });
   await ref.collection('tiny_versions').add({
-    source: 'tiny-bg-import',
+    source,
     raw: t.raw && typeof t.raw === 'object' ? stripUndefined(t.raw as any) : null,
     importedAt: iso(),
   }).catch(() => { /* backup is best-effort */ });
+
+  return ref.id;
 }
 
 
