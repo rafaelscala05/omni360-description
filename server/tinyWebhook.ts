@@ -140,37 +140,53 @@ export function registerTinyWebhookRoutes(app: express.Express, { verifyFirebase
   // global express.json() already consumed the body.
   app.post('/api/tiny/webhook/:uid/:secret', express.json({ type: () => true }), async (req, res) => {
     const { uid, secret } = req.params;
+    console.log(`[tiny-webhook] recebido uid=${uid} content-type=${req.headers['content-type'] ?? '(ausente)'} bodyKeys=${req.body && typeof req.body === 'object' ? Object.keys(req.body).join(',') : typeof req.body}`);
     try {
       const statusSnap = await STATUS_REF(uid).get();
       const settings = statusSnap.data() ?? {};
       if (settings.syncMode !== 'webhook' || !settings.webhookSecret || settings.webhookSecret !== secret) {
-        console.warn(`[tiny-webhook] rejeitado uid=${uid}: secret inválido ou syncMode != webhook`);
+        console.warn(`[tiny-webhook] rejeitado uid=${uid}: secret inválido ou syncMode != webhook (syncMode=${settings.syncMode ?? '(nenhum)'})`);
         return res.status(403).json({ message: 'Webhook não habilitado ou secret inválido.' });
       }
 
       const cnpjRecebido = digitsOnly(String(req.body?.cnpj ?? ''));
       const cnpjEsperado = digitsOnly(String(settings.cnpj ?? ''));
       if (!cnpjEsperado || cnpjRecebido !== cnpjEsperado) {
-        console.warn(`[tiny-webhook] rejeitado uid=${uid}: cnpj não confere`);
+        console.warn(`[tiny-webhook] rejeitado uid=${uid}: cnpj não confere (recebido len=${cnpjRecebido.length}, esperado len=${cnpjEsperado.length})`);
         return res.status(403).json({ message: 'CNPJ não confere.' });
       }
 
       const dados = req.body?.dados;
       if (!dados || typeof dados !== 'object') {
+        console.warn(`[tiny-webhook] payload inválido uid=${uid}: campo dados ausente. body=${JSON.stringify(req.body).slice(0, 500)}`);
         return res.status(400).json({ message: 'Payload inválido: campo dados ausente.' });
       }
 
       const { parent, variacoes } = normalizeWebhookPayload(dados);
       const items = [parent, ...variacoes];
+      // Tiny assigns its own idMapeamento per product/variação in the request
+      // (dados.idMapeamento, dados.variacoes[].idMapeamento) and expects the
+      // exact same value echoed back — it's how Tiny recognizes the mapping,
+      // not something we're free to generate. Returning a different id (e.g.
+      // our own Firestore doc id) makes Tiny show "Produto não mapeado pelo
+      // integrador" even though we saved the product successfully.
+      const idsMapeamento = [
+        String(dados?.idMapeamento ?? '') || parent.tinyId,
+        ...(Array.isArray(dados?.variacoes)
+          ? dados.variacoes.map((v: any, i: number) => String(v?.idMapeamento ?? '') || variacoes[i]?.tinyId || '')
+          : []),
+      ];
       const resultados: Array<{ idMapeamento: string; skuMapeamento: string; error?: string }> = [];
 
-      for (const item of items) {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const idMapeamento = idsMapeamento[i] || item.tinyId;
         try {
-          const docId = await upsertProduct(uid, item, 'tiny-webhook');
-          resultados.push({ idMapeamento: docId, skuMapeamento: item.sku || '' });
+          await upsertProduct(uid, item, 'tiny-webhook');
+          resultados.push({ idMapeamento, skuMapeamento: item.sku || '' });
         } catch (e: any) {
           console.error(`[tiny-webhook] falha ao salvar tinyId=${item.tinyId} uid=${uid}: ${e?.message}`);
-          resultados.push({ idMapeamento: item.tinyId, skuMapeamento: item.sku || '', error: e?.message ?? 'Falha ao salvar produto.' });
+          resultados.push({ idMapeamento, skuMapeamento: item.sku || '', error: e?.message ?? 'Falha ao salvar produto.' });
         }
       }
 
@@ -181,10 +197,12 @@ export function registerTinyWebhookRoutes(app: express.Express, { verifyFirebase
         },
       }, { merge: true });
 
-      console.log(`[tiny-webhook] uid=${uid} recebeu ${items.length} item(ns) (produto ${parent.tinyId})`);
+      const houveErro = resultados.some((r) => r.error);
+      console.log(`[tiny-webhook] uid=${uid} recebeu ${items.length} item(ns) (produto ${parent.tinyId})${houveErro ? ' — COM ERRO EM ITEM(NS)' : ''}`);
+      console.log(`[tiny-webhook] respondendo uid=${uid} status=200 body=${JSON.stringify(resultados)}`);
       return res.status(200).json(resultados);
     } catch (e: any) {
-      console.error(`[tiny-webhook] erro inesperado uid=${uid}: ${e?.message}`);
+      console.error(`[tiny-webhook] erro inesperado uid=${uid}: ${e?.message}\n${e?.stack ?? ''}`);
       return res.status(500).json({ message: 'Erro ao processar webhook.' });
     }
   });
