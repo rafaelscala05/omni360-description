@@ -49,6 +49,23 @@ const SHOT_FIELDS: Array<{
   },
 ];
 
+// Monta 1 imagem de referência por shot, na ordem canônica dos SHOT_FIELDS,
+// escolhendo a cena ambientada mais coerente com fallback gracioso.
+function buildShotImageUrls(product: Product): string[] {
+  const ambient = product._ambientImages ?? [];
+  const original = product._selectedImage ?? '';
+  const available = [original, ...ambient].filter(Boolean);
+  const firstAvailable = available[0] ?? '';
+  const pick = (preferred?: string) => preferred || original || firstAvailable;
+  // inicio, meioDemonstracao, meioBeneficios, fim
+  return [
+    pick(ambient[0]), // Hook → Produto Ambientado
+    pick(ambient[1]), // Demonstração → Produto em Uso
+    pick(ambient[2]), // Benefícios → Escala e Tamanho
+    pick(ambient[0]), // CTA → Produto Ambientado
+  ];
+}
+
 const cn = (...classes: (string | boolean | undefined)[]) => classes.filter(Boolean).join(' ');
 
 export default function VideoGenerationTab({
@@ -59,16 +76,7 @@ export default function VideoGenerationTab({
   const hasImages = (product._ambientImages?.length ?? 0) > 0;
   const prereqsMet = hasDescription && hasSeoTitle && hasImages;
 
-  const allImages = [
-    ...(product._selectedImage ? [{ url: product._selectedImage, label: 'Imagem Original' }] : []),
-    ...(product._ambientImages ?? []).map((url, i) => ({
-      url,
-      label: ['Produto Ambientado', 'Produto em Uso', 'Escala e Tamanho'][i] ?? `Ambientação ${i + 1}`,
-    })),
-  ];
-
   const [stage, setStage] = useState<Stage>('prereqs');
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [script, setScript] = useState<VideoScript | null>(null);
   const [scriptLoading, setScriptLoading] = useState(false);
   const [scriptError, setScriptError] = useState<string | null>(null);
@@ -114,7 +122,8 @@ export default function VideoGenerationTab({
   }
 
   async function handleGenerateScript() {
-    if (!selectedImage) return;
+    const primaryImage = product._selectedImage ?? product._ambientImages?.[0] ?? null;
+    if (!primaryImage) return;
     setScriptLoading(true);
     setScriptError(null);
     try {
@@ -122,7 +131,7 @@ export default function VideoGenerationTab({
       const result = await generateVideoScript(token, {
         description: product['Descrição complementar'] ?? product['Descrição'] ?? '',
         brand: product['Marca'] ?? '',
-        imageUrl: selectedImage,
+        imageUrl: primaryImage,
         productName: product['Título SEO'] ?? product['Descrição'] ?? '',
         category: product['Categoria'] ?? (product.categoryPath?.join(' > ') ?? ''),
         attributes: collectAttributes(),
@@ -137,7 +146,7 @@ export default function VideoGenerationTab({
   }
 
   async function handleStartJob() {
-    if (!script || !selectedImage) return;
+    if (!script) return;
     setJobLoading(true);
     setJobError(null);
     try {
@@ -146,7 +155,7 @@ export default function VideoGenerationTab({
         productId: product._id,
         productName: product['Descrição'] ?? product._id,
         script,
-        imageUrl: selectedImage,
+        shotImageUrls: buildShotImageUrls(product),
       });
       setJobId(id);
       onVideoJobStarted?.(product._id, id);
@@ -265,45 +274,38 @@ export default function VideoGenerationTab({
         </section>
       )}
 
-      {/* Stage 2: Image selection */}
+      {/* Stage 2: Video images mapping (read-only) */}
       {stage === 'select-image' && (
         <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <h2 className="text-lg font-bold text-slate-900 mb-2 flex items-center gap-2">
             <ImageIcon className="w-5 h-5 text-violet-600" />
-            Escolha a imagem base do vídeo
+            Imagens do vídeo
           </h2>
-          <p className="text-sm text-slate-500 mb-6">
-            Esta imagem será o ponto de partida do vídeo. Ela será automaticamente recortada no formato vertical (9:16)
-            para corresponder ao vídeo gerado. Imagens ambientadas tendem a produzir vídeos mais naturais.
+          <p className="text-sm text-slate-500 mb-4">
+            Cada trecho do vídeo usa a cena mais coerente como referência. As imagens são
+            recortadas no formato vertical (9:16). A narração de cada trecho aparece como
+            legenda na tela.
           </p>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-            {allImages.map(({ url, label }) => (
-              <button
-                key={url}
-                type="button"
-                onClick={() => setSelectedImage(url)}
-                className={cn(
-                  'relative aspect-square rounded-xl overflow-hidden border-2 transition-all group text-left',
-                  selectedImage === url
-                    ? 'border-violet-500 ring-2 ring-violet-300 scale-[1.02]'
-                    : 'border-slate-200 hover:border-violet-300',
-                )}
-              >
-                <img src={url} alt={label} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                <div className={cn(
-                  'absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent py-2 px-2 transition-opacity',
-                  selectedImage === url ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
-                )}>
-                  <span className="text-white text-xs font-bold leading-tight block">{label}</span>
-                </div>
-                {selectedImage === url && (
-                  <div className="absolute top-2 right-2 w-5 h-5 bg-violet-600 rounded-full flex items-center justify-center shadow">
-                    <CheckCircle2 className="w-3 h-3 text-white" />
+            {SHOT_FIELDS.map(({ key, title, badge }, i) => {
+              const url = buildShotImageUrls(product)[i];
+              return (
+                <div key={key} className="rounded-xl border border-slate-200 overflow-hidden">
+                  <div className="relative aspect-square bg-slate-100">
+                    {url
+                      ? <img src={url} alt={title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      : <div className="w-full h-full flex items-center justify-center text-slate-300"><ImageIcon className="w-6 h-6" /></div>}
+                    <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-violet-600 text-white text-[11px] font-bold">
+                      {badge}
+                    </span>
                   </div>
-                )}
-              </button>
-            ))}
+                  <div className="px-2 py-2">
+                    <p className="text-[11px] font-bold text-slate-700 leading-tight">{title}</p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           <div className="flex gap-3 flex-wrap">
@@ -317,7 +319,7 @@ export default function VideoGenerationTab({
             <button
               type="button"
               onClick={handleGenerateScript}
-              disabled={!selectedImage || scriptLoading}
+              disabled={scriptLoading}
               className="px-6 py-2.5 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl text-sm font-bold transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
             >
               {scriptLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
@@ -438,7 +440,7 @@ export default function VideoGenerationTab({
                   src={job.videoUrl}
                   controls
                   className="w-full max-h-[480px] object-contain"
-                  poster={selectedImage ?? undefined}
+                  poster={(product._selectedImage ?? product._ambientImages?.[0]) ?? undefined}
                 />
               </div>
               <div className="flex gap-3 flex-wrap">
@@ -459,7 +461,6 @@ export default function VideoGenerationTab({
                     setJob(null);
                     setJobId(null);
                     setScript(null);
-                    setSelectedImage(null);
                     setJobLoading(false);
                   }}
                   className="px-5 py-2.5 border border-violet-200 text-violet-700 rounded-xl text-sm font-bold hover:bg-violet-50 transition-all flex items-center gap-2"

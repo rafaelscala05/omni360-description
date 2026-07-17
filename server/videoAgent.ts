@@ -379,8 +379,7 @@ async function runVideoJob(
   jobId: string,
   productId: string,
   script: VideoScript,
-  imageBase64: string,
-  mimeType: string,
+  shotImages: Array<{ base64: string; mimeType: string }>,
   creditCost: number,
   meta: { productName?: string; userName?: string } = {},
 ): Promise<void> {
@@ -392,24 +391,20 @@ async function runVideoJob(
   try {
     await jobRef.update({ status: 'processing', shotsDone: 0, totalShots: SHOTS.length, step: 'shot', updatedAt: now() });
 
-    // The product photo goes WHOLE (no crop) as an ASSET reference image on
-    // every shot, anchoring all four segments to the real product.
-    const inputBuffer = Buffer.from(imageBase64, 'base64');
-    const referenceImage = await resizeForReference(inputBuffer);
-    console.log(`[video] reference image prepared (max ${REFERENCE_MAX_DIM}px) jobId=${jobId}`);
-
     const ai = getVeoClient();
     const styleLine = 'Formato: vertical 9:16, comercial e explicativo para página de produto, luz natural ou de estúdio, câmera fluida, realista, alta qualidade.';
     const rulesLine = 'As mãos devem MANIPULAR o produto de forma rica (girar, abrir, acionar, demonstrar o uso). Nenhuma pessoa falando para a câmera. Sem texto na tela. Sem efeitos artificiais.';
     const fidelityLine = 'FIDELIDADE OBRIGATÓRIA: o produto no vídeo deve ser IDÊNTICO à imagem de referência — mesmas cores, proporções, logotipos, materiais e acabamento. Nunca redesenhe, recolora ou altere o produto.';
     const negativePrompt = 'produto diferente da referência, cores alteradas, logotipo modificado, proporções distorcidas, texto na tela, legendas, marca d\'água, pessoa falando para a câmera, lip sync, distorções, baixa qualidade';
 
-    // All four shots run in PARALLEL — each is anchored to the same product
-    // reference image, so there is no frame-chaining dependency between them.
+    // All four shots run in PARALLEL — each uses its own reference image,
+    // mapped to the most cohesive scene for that shot's role in the narrative.
     // Transitions between shots are hard cuts (the shorts/TikTok standard).
     const generateShot = async (i: number): Promise<string> => {
       const shot = SHOTS[i];
       const shotScript = script[shot.key];
+      const src = shotImages[i];
+      const referenceImage = await resizeForReference(Buffer.from(src.base64, 'base64'));
       const prompt = [
         `Cena: ${script.cena}`,
         `Ato (${shot.ato}, ~${shot.seconds}s): ${shotScript.acao}`,
@@ -545,14 +540,14 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
   app.post('/api/video/start-job', async (req, res) => {
     try {
       const decoded = await verifyFirebaseToken(req);
-      const { productId, productName, script, imageUrl } = req.body as {
+      const { productId, productName, script, shotImageUrls } = req.body as {
         productId: string;
         productName: string;
         script: VideoScript;
-        imageUrl: string;
+        shotImageUrls: string[];
       };
-      if (!productId || !script || !imageUrl) {
-        return res.status(400).json({ error: 'productId, script e imageUrl são obrigatórios' });
+      if (!productId || !script || !Array.isArray(shotImageUrls) || shotImageUrls.length !== SHOTS.length) {
+        return res.status(400).json({ error: `productId, script e shotImageUrls (${SHOTS.length} imagens) são obrigatórios` });
       }
 
       const creditMeta = { productName, userName: decoded.name ?? decoded.email ?? '' };
@@ -575,7 +570,14 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
         updatedAt: now(),
       });
 
-      const { base64, mimeType } = await fetchImageAsBase64(imageUrl);
+      // Fetch each shot's reference image, deduplicating repeated URLs so the
+      // same scene driving two shots is only downloaded once.
+      const uniqueUrls = Array.from(new Set(shotImageUrls));
+      const fetched = new Map<string, { base64: string; mimeType: string }>();
+      await Promise.all(uniqueUrls.map(async (url) => {
+        fetched.set(url, await fetchImageAsBase64(url));
+      }));
+      const shotImages = shotImageUrls.map((url) => fetched.get(url)!);
 
       // Send the jobId immediately in the first chunk so the client can
       // start listening on Firestore without waiting for the full job.
@@ -586,7 +588,7 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
       res.write(JSON.stringify({ jobId }));
 
       try {
-        await runVideoJob(decoded.uid, jobId, productId, script, base64, mimeType, creditCost, creditMeta);
+        await runVideoJob(decoded.uid, jobId, productId, script, shotImages, creditCost, creditMeta);
       } finally {
         res.end();
       }

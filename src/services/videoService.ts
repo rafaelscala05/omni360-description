@@ -72,7 +72,7 @@ export async function startVideoJob(
     productId: string;
     productName: string;
     script: VideoScript;
-    imageUrl: string;
+    shotImageUrls: string[];
   },
 ): Promise<string> {
   const res = await fetch('/api/video/start-job', {
@@ -87,9 +87,6 @@ export async function startVideoJob(
     const body = await res.json().catch(() => ({}));
     throw new Error((body as any).error ?? `Erro ${res.status}`);
   }
-  // The server keeps the HTTP connection open for the duration of the job so
-  // Cloud Run doesn't kill the instance. We only need the first chunk, which
-  // contains the complete jobId JSON. The connection closes when job finishes.
   const reader = res.body!.getReader();
   const { value } = await reader.read();
   const data = JSON.parse(new TextDecoder().decode(value ?? new Uint8Array()));
