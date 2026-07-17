@@ -1,6 +1,7 @@
 import type express from 'express';
 import { GoogleGenAI, VideoGenerationReferenceType } from '@google/genai';
 import sharp from 'sharp';
+import opentype from 'opentype.js';
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
@@ -144,36 +145,39 @@ function wrapCaption(text: string, maxCharsPerLine = 24): string {
   return lines.join('\n');
 }
 
-function escapeXml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-let fontDataUriCache: string | null = null;
-async function fontDataUri(): Promise<string> {
-  if (!fontDataUriCache) {
-    const b = await fs.readFile(FONT_PATH);
-    fontDataUriCache = `data:font/ttf;base64,${b.toString('base64')}`;
+let parsedFont: opentype.Font | null = null;
+async function loadFont(): Promise<opentype.Font> {
+  if (!parsedFont) {
+    const buf = await fs.readFile(FONT_PATH);
+    parsedFont = opentype.parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
   }
-  return fontDataUriCache;
+  return parsedFont;
 }
 
-// Renderiza a legenda (ou CTA) como PNG transparente 720x1280 com a fonte Anton
-// embutida. 'caption' = terço inferior, branco com contorno preto; 'cta' = faixa
-// âmbar centralizada com texto branco.
+// Renderiza a legenda (ou CTA) como PNG transparente 720x1280, com o texto
+// vetorizado (glyphs -> <path>) via opentype.js. 'caption' = terço inferior,
+// branco com contorno preto; 'cta' = faixa âmbar centralizada com texto branco.
+// Vetorizar evita depender de fonte de sistema/@font-face no librsvg (Linux/Cloud Run).
 async function renderCaptionPng(text: string, kind: 'caption' | 'cta', outPath: string): Promise<void> {
-  const font = await fontDataUri();
-  const lines = wrapCaption(text).split('\n').map(escapeXml);
+  const font = await loadFont();
+  const lines = wrapCaption(text).split('\n');
+
+  // Converte uma linha de texto num <path> centralizado horizontalmente na baseline dada.
+  const lineToPath = (ln: string, fontSize: number, baselineY: number): string => {
+    const w = font.getAdvanceWidth(ln, fontSize);
+    const x = (CANVAS_W - w) / 2;
+    return font.getPath(ln, x, baselineY, fontSize).toPathData(2);
+  };
+
   let inner: string;
   if (kind === 'caption') {
     const fontSize = 48;
     const lineH = fontSize * 1.2;
     const blockH = lines.length * lineH;
-    const startY = Math.round(CANVAS_H * 0.72 - blockH / 2 + fontSize);
-    const texts = lines
-      .map((ln, i) => `<text x="${CANVAS_W / 2}" y="${startY + i * lineH}" text-anchor="middle" class="cap">${ln}</text>`)
+    const firstBaseline = Math.round(CANVAS_H * 0.72 - blockH / 2 + fontSize);
+    inner = lines
+      .map((ln, i) => `<path d="${lineToPath(ln, fontSize, firstBaseline + i * lineH)}" fill="#fff" stroke="#000" stroke-width="6" paint-order="stroke" stroke-linejoin="round"/>`)
       .join('');
-    inner = `<style>@font-face{font-family:'A';src:url('${font}');}` +
-      `.cap{font-family:'A';font-size:${fontSize}px;fill:#fff;stroke:#000;stroke-width:6px;paint-order:stroke;stroke-linejoin:round;}</style>${texts}`;
   } else {
     const fontSize = 64;
     const lineH = fontSize * 1.15;
@@ -183,13 +187,13 @@ async function renderCaptionPng(text: string, kind: 'caption' | 'cta', outPath: 
     const boxY = Math.round(CANVAS_H / 2 - boxH / 2);
     const boxX = 40;
     const boxW = CANVAS_W - 80;
-    const startY = boxY + boxPadY + fontSize;
-    const texts = lines
-      .map((ln, i) => `<text x="${CANVAS_W / 2}" y="${startY + i * lineH}" text-anchor="middle" class="cta">${ln}</text>`)
+    const firstBaseline = boxY + boxPadY + fontSize;
+    const paths = lines
+      .map((ln, i) => `<path d="${lineToPath(ln, fontSize, firstBaseline + i * lineH)}" fill="#fff"/>`)
       .join('');
-    inner = `<style>@font-face{font-family:'A';src:url('${font}');}.cta{font-family:'A';font-size:${fontSize}px;fill:#fff;}</style>` +
-      `<rect x="${boxX}" y="${boxY}" width="${boxW}" height="${boxH}" rx="20" fill="#F59E0B" fill-opacity="0.92"/>${texts}`;
+    inner = `<rect x="${boxX}" y="${boxY}" width="${boxW}" height="${boxH}" rx="20" fill="#F59E0B" fill-opacity="0.92"/>${paths}`;
   }
+
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS_W}" height="${CANVAS_H}">${inner}</svg>`;
   const png = await sharp(Buffer.from(svg)).png().toBuffer();
   await fs.writeFile(outPath, png);
@@ -675,24 +679,38 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
         .doc();
       const jobId = jobRef.id;
 
-      await jobRef.set({
-        jobId,
-        productId,
-        status: 'queued',
-        videoUrl: null,
-        error: null,
-        createdAt: now(),
-        updatedAt: now(),
-      });
+      let shotImages: Array<{ base64: string; mimeType: string }>;
+      try {
+        await jobRef.set({
+          jobId,
+          productId,
+          status: 'queued',
+          videoUrl: null,
+          error: null,
+          createdAt: now(),
+          updatedAt: now(),
+        });
 
-      // Fetch each shot's reference image, deduplicating repeated URLs so the
-      // same scene driving two shots is only downloaded once.
-      const uniqueUrls = Array.from(new Set(shotImageUrls));
-      const fetched = new Map<string, { base64: string; mimeType: string }>();
-      await Promise.all(uniqueUrls.map(async (url) => {
-        fetched.set(url, await fetchImageAsBase64(url));
-      }));
-      const shotImages = shotImageUrls.map((url) => fetched.get(url)!);
+        // Fetch each shot's reference image, deduplicating repeated URLs so the
+        // same scene driving two shots is only downloaded once.
+        const uniqueUrls = Array.from(new Set(shotImageUrls));
+        const fetched = new Map<string, { base64: string; mimeType: string }>();
+        await Promise.all(uniqueUrls.map(async (url) => {
+          fetched.set(url, await fetchImageAsBase64(url));
+        }));
+        shotImages = shotImageUrls.map((url) => fetched.get(url)!);
+      } catch (prepErr) {
+        // Refund + mark the job errored so credits aren't lost and it isn't orphaned in 'queued'.
+        if (creditCost > 0) {
+          await refundCreditsAdmin(decoded.uid, creditCost, creditMeta).catch(() => {});
+        }
+        await jobRef.update({
+          status: 'error',
+          error: prepErr instanceof Error ? prepErr.message : String(prepErr),
+          updatedAt: now(),
+        }).catch(() => {});
+        throw prepErr;
+      }
 
       // Send the jobId immediately in the first chunk so the client can
       // start listening on Firestore without waiting for the full job.
