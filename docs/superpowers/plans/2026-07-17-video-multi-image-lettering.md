@@ -371,52 +371,102 @@ git commit -m "chore(video): empacota fonte Anton (OFL) para lettering"
 
 ---
 
-### Task 3: Lettering no `assembleFinalVideo`
+### Task 3: Lettering no `assembleFinalVideo` (PNG via sharp + overlay)
 
 **Files:**
-- Modify: `server/videoAgent.ts` (constantes de fonte; `wrapCaption`; `assembleFinalVideo`; chamada em `runVideoJob`)
+- Modify: `server/videoAgent.ts` (constantes de fonte/canvas; `wrapCaption`; `escapeXml`; `renderCaptionPng`; `assembleFinalVideo`; chamada em `runVideoJob`)
+
+**IMPORTANTE — por que NÃO usar drawtext:** o binário do `ffmpeg-static` deste projeto **não tem o filtro `drawtext`** (`No such filter: 'drawtext'`), apesar do buildconf citar libfreetype. Comprovado empiricamente. Portanto o lettering renderiza cada legenda como **PNG transparente via `sharp`** (SVG com a fonte Anton embutida em base64 — comprovadamente funciona) e sobrepõe com o filtro **`overlay`** (presente no binário), temporizado por `enable`. O pipeline sharp→overlay foi validado ponta a ponta com o binário vendorizado.
 
 **Interfaces:**
-- Consumes: `server/assets/fonts/Anton-Regular.ttf` (Task 2); `SHOTS` (duração 8s por shot); `runFfmpeg(args): Promise<void>`; `script` em `runVideoJob`.
-- Produces: `wrapCaption(text: string, maxCharsPerLine?: number): string`; nova assinatura `assembleFinalVideo(segmentPaths, narrationPath, musicPath, workDir, outPath, captions: string[])`.
+- Consumes: `server/assets/fonts/Anton-Regular.ttf` (Task 2); `SHOTS` (8s por shot); `runFfmpeg(args)`; `sharp` (já importado); `script` em `runVideoJob`.
+- Produces: `wrapCaption(text, maxCharsPerLine?)`, `escapeXml(s)`, `renderCaptionPng(text, kind, outPath)`, e nova assinatura `assembleFinalVideo(segmentPaths, narrationPath, musicPath, workDir, outPath, captions: string[])`.
 
-- [ ] **Step 1: Constantes de fonte**
+- [ ] **Step 1: Constantes de fonte e canvas**
 
 Perto de `MUSIC_PATH` em `server/videoAgent.ts`, adicionar:
 
 ```ts
 const FONT_PATH = path.join(process.cwd(), 'server', 'assets', 'fonts', 'Anton-Regular.ttf');
+// Canvas fixo das legendas; o vídeo base é normalizado para este tamanho antes do overlay.
+const CANVAS_W = 720;
+const CANVAS_H = 1280;
 ```
 
-- [ ] **Step 2: Helper `wrapCaption`**
+- [ ] **Step 2: Helpers `wrapCaption`, `escapeXml`, `renderCaptionPng`**
 
-Adicionar (perto dos outros helpers de ffmpeg):
+Adicionar (perto dos outros helpers de ffmpeg). O TTF é lido uma vez e embutido no SVG como data URI:
 
 ```ts
-// Quebra uma legenda em linhas curtas (para caber no quadro 9:16) inserindo \n.
-// Greedy por palavras; não corta palavras no meio.
+// Quebra uma legenda em linhas curtas (para caber no quadro 9:16).
 function wrapCaption(text: string, maxCharsPerLine = 24): string {
   const words = text.trim().split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let current = '';
   for (const word of words) {
-    if (!current) {
-      current = word;
-    } else if ((current + ' ' + word).length <= maxCharsPerLine) {
-      current += ' ' + word;
-    } else {
-      lines.push(current);
-      current = word;
-    }
+    if (!current) current = word;
+    else if ((current + ' ' + word).length <= maxCharsPerLine) current += ' ' + word;
+    else { lines.push(current); current = word; }
   }
   if (current) lines.push(current);
   return lines.join('\n');
 }
+
+function escapeXml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+let fontDataUriCache: string | null = null;
+async function fontDataUri(): Promise<string> {
+  if (!fontDataUriCache) {
+    const b = await fs.readFile(FONT_PATH);
+    fontDataUriCache = `data:font/ttf;base64,${b.toString('base64')}`;
+  }
+  return fontDataUriCache;
+}
+
+// Renderiza a legenda (ou CTA) como PNG transparente 720x1280 com a fonte Anton
+// embutida. 'caption' = terço inferior, branco com contorno preto; 'cta' = faixa
+// âmbar centralizada com texto branco.
+async function renderCaptionPng(text: string, kind: 'caption' | 'cta', outPath: string): Promise<void> {
+  const font = await fontDataUri();
+  const lines = wrapCaption(text).split('\n').map(escapeXml);
+  let inner: string;
+  if (kind === 'caption') {
+    const fontSize = 48;
+    const lineH = fontSize * 1.2;
+    const blockH = lines.length * lineH;
+    const startY = Math.round(CANVAS_H * 0.72 - blockH / 2 + fontSize);
+    const texts = lines
+      .map((ln, i) => `<text x="${CANVAS_W / 2}" y="${startY + i * lineH}" text-anchor="middle" class="cap">${ln}</text>`)
+      .join('');
+    inner = `<style>@font-face{font-family:'A';src:url('${font}');}` +
+      `.cap{font-family:'A';font-size:${fontSize}px;fill:#fff;stroke:#000;stroke-width:6px;paint-order:stroke;stroke-linejoin:round;}</style>${texts}`;
+  } else {
+    const fontSize = 64;
+    const lineH = fontSize * 1.15;
+    const blockH = lines.length * lineH;
+    const boxPadY = 28;
+    const boxH = Math.round(blockH + boxPadY * 2);
+    const boxY = Math.round(CANVAS_H / 2 - boxH / 2);
+    const boxX = 40;
+    const boxW = CANVAS_W - 80;
+    const startY = boxY + boxPadY + fontSize;
+    const texts = lines
+      .map((ln, i) => `<text x="${CANVAS_W / 2}" y="${startY + i * lineH}" text-anchor="middle" class="cta">${ln}</text>`)
+      .join('');
+    inner = `<style>@font-face{font-family:'A';src:url('${font}');}.cta{font-family:'A';font-size:${fontSize}px;fill:#fff;}</style>` +
+      `<rect x="${boxX}" y="${boxY}" width="${boxW}" height="${boxH}" rx="20" fill="#F59E0B" fill-opacity="0.92"/>${texts}`;
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS_W}" height="${CANVAS_H}">${inner}</svg>`;
+  const png = await sharp(Buffer.from(svg)).png().toBuffer();
+  await fs.writeFile(outPath, png);
+}
 ```
 
-- [ ] **Step 3: `assembleFinalVideo` monta a cadeia `drawtext`**
+- [ ] **Step 3: `assembleFinalVideo` renderiza PNGs e monta a cadeia `overlay`**
 
-Substituir a função `assembleFinalVideo` inteira por esta versão, que aceita `captions` e adiciona o vídeo filtrado. A janela de cada shot é `[i*8, i*8+8]`; o último shot (índice `captions.length - 1`) é o CTA em destaque. As legendas vão em `textfile=` (arquivos `cap{i}.txt` no `workDir`), evitando escape:
+Substituir a função `assembleFinalVideo` inteira por esta versão. Inputs: `0`=concat de vídeo, `1..N`=PNGs, depois música e narração. O vídeo base é normalizado para 720×1280 e cada legenda entra por um `overlay` temporizado:
 
 ```ts
 async function assembleFinalVideo(
@@ -434,45 +484,44 @@ async function assembleFinalVideo(
   const SHOT_SECONDS = 8;
   const lastIndex = captions.length - 1;
 
-  // Caminhos vão para dentro do filtergraph; escapa `:` e `\` (mkdtemp não gera
-  // caminhos com vírgula). Vírgulas DENTRO do filtro (ex.: between(t,a,b)) são
-  // escapadas com `\,` porque a vírgula separa filtros no filter_complex.
-  const esc = (p: string) => p.replace(/\\/g, '\\\\').replace(/:/g, '\\:');
-  const fontArg = esc(FONT_PATH);
-
-  // Escreve cada legenda quebrada em um arquivo e monta um drawtext por shot,
-  // temporizado à janela do shot. O último shot é o CTA (maior + caixa âmbar).
-  const drawParts: string[] = [];
+  // Renderiza cada legenda não vazia como PNG (ordem = ordem de input no ffmpeg).
+  const overlays: Array<{ file: string; start: number; end: number }> = [];
   for (let i = 0; i < captions.length; i++) {
-    const text = wrapCaption(captions[i] ?? '');
+    const text = (captions[i] ?? '').trim();
     if (!text) continue;
-    const capPath = path.join(workDir, `cap${i}.txt`);
-    await fs.writeFile(capPath, text, 'utf8');
-    const textArg = esc(capPath);
-    const start = i * SHOT_SECONDS;
-    const end = start + SHOT_SECONDS;
-    const enable = `enable=between(t\\,${start}\\,${end})`;
-    if (i === lastIndex) {
-      drawParts.push(
-        `drawtext=fontfile=${fontArg}:textfile=${textArg}:fontsize=64:fontcolor=white:box=1:boxcolor=0xF59E0B@0.85:boxborderw=24:line_spacing=8:x=(w-tw)/2:y=(h-th)/2:${enable}`,
-      );
-    } else {
-      drawParts.push(
-        `drawtext=fontfile=${fontArg}:textfile=${textArg}:fontsize=48:fontcolor=white:borderw=6:bordercolor=black@0.9:line_spacing=6:x=(w-tw)/2:y=h*0.72:${enable}`,
-      );
-    }
+    const pngPath = path.join(workDir, `cap${i}.png`);
+    await renderCaptionPng(text, i === lastIndex ? 'cta' : 'caption', pngPath);
+    overlays.push({ file: pngPath, start: i * SHOT_SECONDS, end: i * SHOT_SECONDS + SHOT_SECONDS });
   }
 
-  const videoChain = drawParts.length > 0 ? `[0:v]${drawParts.join(',')}[v]` : `[0:v]copy[v]`;
-  const filterComplex = `${videoChain};[1:a]volume=0.14[mus];[2:a]volume=1.6[nar];[mus][nar]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mix]`;
+  const inputs: string[] = ['-f', 'concat', '-safe', '0', '-i', listPath];
+  for (const o of overlays) inputs.push('-i', o.file);
+  const musicIdx = 1 + overlays.length;
+  const narrationIdx = musicIdx + 1;
+  inputs.push('-stream_loop', '-1', '-i', musicPath);
+  inputs.push('-i', narrationPath);
+
+  // Vídeo: normaliza base p/ 720x1280, depois encadeia os overlays temporizados.
+  const parts: string[] = [
+    `[0:v]scale=${CANVAS_W}:${CANVAS_H}:force_original_aspect_ratio=decrease,pad=${CANVAS_W}:${CANVAS_H}:(ow-iw)/2:(oh-ih)/2,setsar=1[base]`,
+  ];
+  let vlabel = '[base]';
+  overlays.forEach((o, k) => {
+    const outLabel = k === overlays.length - 1 ? '[v]' : `[v${k}]`;
+    parts.push(`${vlabel}[${k + 1}:v]overlay=0:0:enable='between(t\\,${o.start}\\,${o.end})'${outLabel}`);
+    vlabel = outLabel;
+  });
+  const videoOut = overlays.length > 0 ? '[v]' : '[base]';
+
+  parts.push(`[${musicIdx}:a]volume=0.14[mus]`);
+  parts.push(`[${narrationIdx}:a]volume=1.6[nar]`);
+  parts.push(`[mus][nar]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mix]`);
 
   await runFfmpeg([
     '-y',
-    '-f', 'concat', '-safe', '0', '-i', listPath,
-    '-stream_loop', '-1', '-i', musicPath,
-    '-i', narrationPath,
-    '-filter_complex', filterComplex,
-    '-map', '[v]', '-map', '[mix]',
+    ...inputs,
+    '-filter_complex', parts.join(';'),
+    '-map', videoOut, '-map', '[mix]',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '192k',
     '-shortest',
@@ -481,18 +530,11 @@ async function assembleFinalVideo(
 }
 ```
 
-Notas: `fontfile` e `textfile` evitam o inferno de escape do `text=` inline. O `\\,` no JS vira `\,` no argumento real, escapando as vírgulas do `between(...)` para o parser do filtergraph. O `filter_complex` é passado como um único argv (sem shell), então não há reinterpretação de aspas pelo shell.
+Notas: `enable='between(t\\,a\\,b)'` — no JS `\\,` vira `\,` no argumento real, escapando a vírgula p/ o parser do filtergraph (as aspas simples envolvendo o `between` foram validadas com o binário). `filter_complex` é um único argv (sem shell). O `scale+pad` garante que os PNGs de 720×1280 casem com o vídeo base independentemente da resolução que o Veo devolver.
 
 - [ ] **Step 4: `runVideoJob` passa `captions`**
 
-Na chamada de `assembleFinalVideo` dentro de `runVideoJob`, passar as narrações na ordem dos shots:
-
-```ts
-    const captions = SHOTS.map((s) => script[s.key].narracao);
-    await assembleFinalVideo(segmentPaths, narrationPath, MUSIC_PATH, finalPath, captions);
-```
-
-Atenção à ORDEM dos parâmetros: a assinatura é `(segmentPaths, narrationPath, musicPath, workDir, outPath, captions)`. A chamada atual é `assembleFinalVideo(segmentPaths, narrationPath, MUSIC_PATH, workDir, finalPath)`. Adicionar `captions` como 6º argumento, mantendo `workDir` como 4º:
+Na chamada de `assembleFinalVideo` dentro de `runVideoJob`, adicionar `captions` como 6º argumento (ordem: `segmentPaths, narrationPath, MUSIC_PATH, workDir, finalPath, captions`):
 
 ```ts
     const captions = SHOTS.map((s) => script[s.key].narracao);
@@ -504,65 +546,62 @@ Atenção à ORDEM dos parâmetros: a assinatura é `(segmentPaths, narrationPat
 Run: `npm run lint`
 Expected: apenas os 5 erros baseline; nenhum novo.
 
-- [ ] **Step 6: Verificação de sintaxe do ffmpeg (sem Veo)**
+- [ ] **Step 6: Verificação real do pipeline (sharp + overlay, sem Veo)**
 
-Prova que a cadeia `drawtext` (textfile + `enable between` + caixa do CTA) é válida, usando clipes de cor sólida no lugar dos shots do Veo. Como `assembleFinalVideo`/`wrapCaption` não são exportadas, adicione `export` a ambas **temporariamente**, rode o teste, e **reverta antes do commit**.
+Prova que `renderCaptionPng` gera PNG com texto e que a cadeia `overlay`+`enable` roda no binário vendorizado, usando clipes de cor no lugar dos shots. Como as funções não são exportadas, adicione `export` a `renderCaptionPng` e `assembleFinalVideo` **temporariamente**, rode, e **reverta antes do commit**.
 
-1. Adicionar `export` a `wrapCaption` e `assembleFinalVideo`.
-2. Criar `/tmp/letter-test.ts`:
+1. Adicionar `export` a `renderCaptionPng` e `assembleFinalVideo`.
+2. Criar `/tmp/letter-test.cjs`:
 
-```ts
-import { spawn } from 'node:child_process';
-import { promises as fs } from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import ffmpegPath from 'ffmpeg-static';
-import { assembleFinalVideo } from '/Users/rafaelscala/omni360-description/server/videoAgent.ts';
+```js
+const path = require('path');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const { spawn } = require('node:child_process');
+const ffmpeg = require(path.join(process.cwd(), 'node_modules', 'ffmpeg-static'));
 
-function run(args: string[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const p = spawn(ffmpegPath as string, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-    let err = ''; p.stderr.on('data', (d) => (err += d));
-    p.on('close', (c) => (c === 0 ? resolve() : reject(new Error(err.slice(-600)))));
+function run(args) {
+  return new Promise((res, rej) => {
+    const p = spawn(ffmpeg, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    let e = ''; p.stderr.on('data', (d) => (e += d));
+    p.on('close', (c) => (c === 0 ? res() : rej(new Error(e.slice(-600)))));
   });
 }
 
 (async () => {
+  const mod = await import(path.join(process.cwd(), 'server', 'videoAgent.ts'));
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lt-'));
-  const segs: string[] = [];
+  const segs = [];
   for (let i = 0; i < 4; i++) {
-    const seg = path.join(dir, `seg${i}.mp4`);
-    await run(['-y', '-f', 'lavfi', '-i', 'color=c=navy:s=720x1280:d=8', '-pix_fmt', 'yuv420p', seg]);
-    segs.push(seg);
+    const s = path.join(dir, `seg${i}.mp4`);
+    await run(['-y', '-f', 'lavfi', '-i', 'color=c=teal:s=720x1280:d=8', '-pix_fmt', 'yuv420p', s]);
+    segs.push(s);
   }
   const nar = path.join(dir, 'nar.mp3');
   const mus = path.join(dir, 'mus.mp3');
   await run(['-y', '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo', '-t', '32', nar]);
   await run(['-y', '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo', '-t', '5', mus]);
-
   const out = path.join(dir, 'final.mp4');
-  await assembleFinalVideo(segs, nar, mus, dir, out, [
+  await mod.assembleFinalVideo(segs, nar, mus, dir, out, [
     'Legenda do hook aqui', 'Produto em uso real',
-    'Ótimo em qualquer espaço', 'Garanta o seu agora',
+    'Otimo em qualquer espaco', 'Garanta o seu agora',
   ]);
   const st = await fs.stat(out);
-  console.log('OK final.mp4 bytes=', st.size, st.size > 100000 ? 'PASS' : 'FALHOU (muito pequeno)');
+  console.log('final.mp4 bytes=', st.size, st.size > 50000 ? 'PASS' : 'FALHOU');
 })().catch((e) => { console.error('FALHOU:', e.message); process.exit(1); });
 ```
 
-3. Rodar: `npx tsx /tmp/letter-test.ts`
-   Expected: imprime `OK final.mp4 bytes= <n> PASS` (n > 100000), sem erro do ffmpeg.
-4. Reverter os `export` de `wrapCaption`/`assembleFinalVideo`; `rm /tmp/letter-test.ts`.
-5. `npm run lint` de novo para confirmar que a reversão não deixou nada quebrado (só os 5 erros baseline).
+3. Rodar: `npx tsx /tmp/letter-test.cjs`
+   Expected: imprime `final.mp4 bytes= <n> PASS` (n > 50000), sem erro do ffmpeg. (Se der `No such filter`, algo do filtergraph está errado — corrigir antes de prosseguir.)
+4. Reverter os `export`; `rm /tmp/letter-test.cjs`.
+5. `npm run lint` de novo (só os 5 erros baseline).
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add server/videoAgent.ts
-git commit -m "feat(video): legendas por shot + CTA em destaque no passe de ffmpeg"
+git commit -m "feat(video): legendas por shot via PNG (sharp) + overlay; CTA em destaque"
 ```
-
----
 
 ### Task 4: Validação manual de ponta a ponta
 

@@ -52,19 +52,24 @@ Regra de fallback: se a imagem preferida do shot não existir, usar `_selectedIm
 
 ### `server/videoAgent.ts` — lettering
 
-- Novo asset: `server/assets/fonts/Anton-Regular.ttf` (fonte OFL, peso display pesado; renderiza "negrito" por natureza, sem depender de fontes do sistema no Cloud Run/Linux). Constante `FONT_PATH`.
-- Novo helper `wrapCaption(text: string, maxCharsPerLine = 24): string` — quebra a narração em linhas curtas inserindo `\n`, para caber no 9:16.
-- `assembleFinalVideo` ganha um parâmetro `captions: string[]` (a `narracao` de cada shot, na ordem dos segmentos) e passa a montar uma cadeia `drawtext` no vídeo dentro do `-filter_complex`:
-  - Para cada shot `i` (janela de tempo `[i*8, i*8+8]`s no vídeo concatenado):
-    - Escreve a legenda quebrada em `cap{i}.txt` no `workDir` e referencia via `textfile=` (evita escape de `:'%\`).
-    - Legendas dos shots 0–2: fonte Anton, `fontsize≈48`, `fontcolor=white`, `borderw=6:bordercolor=black@0.9`, posição terço inferior (`x=(w-tw)/2:y=h*0.72`), `enable='between(t,ini,fim)'`.
-    - Shot final (CTA): destaque — `fontsize≈64`, `fontcolor=white`, `box=1:boxcolor=0xF59E0B@0.85:boxborderw=24` (âmbar vibrante), centralizado (`y=(h-th)/2`), `enable='between(t,ini,fim)'`.
-  - A cadeia encadeia os `drawtext` em `[0:v]…[v]`; o áudio segue com o `amix` existente em `[mix]`. Mapear `-map '[v]' -map '[mix]'`. Demais flags de encode inalteradas.
-- `runVideoJob` passa `captions = SHOTS.map((s) => script[s.key].narracao)` para `assembleFinalVideo`.
+**Restrição de dependência (descoberta em implementação):** o binário do `ffmpeg-static` **não inclui o filtro `drawtext`** (`No such filter: 'drawtext'`), apesar de o buildconf citar libfreetype. Verificado empiricamente. Portanto o lettering **não** usa `drawtext`. Em vez disso, cada legenda é **renderizada como PNG transparente pelo `sharp`** (SVG com a fonte Anton embutida em base64 — comprovadamente funcional, sharp 0.35.2) e sobreposta no vídeo pelo filtro **`overlay`** (presente no binário) com janelas `enable`. O filtro `overlay` foi validado ponta a ponta com o binário vendorizado.
+
+- Novo asset: `server/assets/fonts/Anton-Regular.ttf` (fonte OFL, peso display pesado). Constante `FONT_PATH`; o TTF é lido e embutido no SVG como `data:font/ttf;base64,...`.
+- Novo helper `wrapCaption(text, maxCharsPerLine = 24): string` — quebra a narração em linhas curtas.
+- Novo helper `renderCaptionPng(text, kind: 'caption' | 'cta', outPath): Promise<void>` — monta um SVG 720×1280 transparente e o rasteriza com `sharp(...).png()`:
+  - `caption`: Anton ~48px, preenchimento branco com contorno preto (`stroke` + `paint-order:stroke`), linhas centralizadas no terço inferior (~72% da altura).
+  - `cta`: faixa arredondada âmbar (`#F59E0B`) centralizada verticalmente, texto branco Anton ~64px por cima.
+  - Escapa entidades XML (`& < > "`) do texto.
+- `assembleFinalVideo` ganha `captions: string[]` (a `narracao` de cada shot). Para cada shot `i` com legenda não vazia, renderiza `cap{i}.png` e o adiciona como input do ffmpeg. O `-filter_complex` monta:
+  - normaliza o vídeo base para 720×1280 (`scale=...:force_original_aspect_ratio=decrease,pad=720:1280:...,setsar=1`) para casar com o tamanho dos PNGs;
+  - encadeia um `overlay=0:0:enable='between(t,i*8,i*8+8)'` por legenda;
+  - áudio segue com o `amix` existente. Mapeia `[v]` (vídeo com overlays) e `[mix]`.
+  - Ordem de inputs: `0`=concat de vídeo, `1..N`=PNGs das legendas, depois música e narração; os índices de áudio no filtro são calculados a partir de `N`.
+- `runVideoJob` passa `captions = SHOTS.map((s) => script[s.key].narracao)`.
 
 ### Fonte — obtenção (passo do plano, não runtime)
 
-Baixar no build/dev uma vez e commitar o binário:
+Baixar uma vez e commitar o binário:
 `curl -sL -o server/assets/fonts/Anton-Regular.ttf "https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf"`
 (OFL 1.1 — redistribuível; ~167 KB.)
 
