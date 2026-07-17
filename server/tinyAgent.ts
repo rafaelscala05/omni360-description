@@ -167,6 +167,26 @@ export interface TinyNormalizedProduct {
   precoDe?: number;
   categorias: string[];
   imagens: string[];
+  // Campos extras — só preenchidos pelo normalizador do webhook (server/tinyWebhook.ts);
+  // v2/v3 (polling) deixam undefined, sem regressão no upsert.
+  estoque?: number;
+  estoqueMinimo?: number;
+  estoqueMaximo?: number;
+  localizacao?: string;
+  marca?: string;
+  garantia?: string;
+  sobEncomenda?: string;
+  cest?: string;
+  diasPreparacao?: number;
+  obs?: string;
+  unidadePorCaixa?: string;
+  codigoFornecedor?: string;
+  unidade?: string;
+  linkVideo?: string;
+  slug?: string;
+  // Só preenchidos em produtos-filho (variações) vindos do webhook.
+  codigoPai?: string;
+  variacaoGrade?: string;
   raw: unknown;
 }
 
