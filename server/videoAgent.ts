@@ -30,6 +30,11 @@ const MUSIC_PATH = path.join(process.cwd(), 'server', 'assets', 'background-musi
 const TTS_VOICE = 'pt-BR-Neural2-B';
 const TTS_LANGUAGE = 'pt-BR';
 
+const FONT_PATH = path.join(process.cwd(), 'server', 'assets', 'fonts', 'Anton-Regular.ttf');
+// Canvas fixo das legendas; o vídeo base é normalizado para este tamanho antes do overlay.
+const CANVAS_W = 720;
+const CANVAS_H = 1280;
+
 // In reference_to_video mode the Veo 3.1 API only accepts 8s clips, so all four
 // shots are 8s (total ~32s). The shots follow an e-commerce 3-act structure:
 // Início (hook) → Meio (uso + benefícios) → Fim (CTA). Every shot is anchored to
@@ -125,28 +130,137 @@ function runFfmpeg(args: string[]): Promise<void> {
   });
 }
 
-// Concatenates the silent shots and mixes narration + looped background music
-// in a SINGLE ffmpeg pass (one re-encode instead of two). Re-encodes video
-// because shots are generated independently and may differ in timebase/SAR.
-// Output length is bounded by the video (-shortest).
+// Quebra uma legenda em linhas curtas (para caber no quadro 9:16).
+function wrapCaption(text: string, maxCharsPerLine = 24): string {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if (!current) current = word;
+    else if ((current + ' ' + word).length <= maxCharsPerLine) current += ' ' + word;
+    else { lines.push(current); current = word; }
+  }
+  if (current) lines.push(current);
+  return lines.join('\n');
+}
+
+function escapeXml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+let fontDataUriCache: string | null = null;
+async function fontDataUri(): Promise<string> {
+  if (!fontDataUriCache) {
+    const b = await fs.readFile(FONT_PATH);
+    fontDataUriCache = `data:font/ttf;base64,${b.toString('base64')}`;
+  }
+  return fontDataUriCache;
+}
+
+// Renderiza a legenda (ou CTA) como PNG transparente 720x1280 com a fonte Anton
+// embutida. 'caption' = terço inferior, branco com contorno preto; 'cta' = faixa
+// âmbar centralizada com texto branco.
+async function renderCaptionPng(text: string, kind: 'caption' | 'cta', outPath: string): Promise<void> {
+  const font = await fontDataUri();
+  const lines = wrapCaption(text).split('\n').map(escapeXml);
+  let inner: string;
+  if (kind === 'caption') {
+    const fontSize = 48;
+    const lineH = fontSize * 1.2;
+    const blockH = lines.length * lineH;
+    const startY = Math.round(CANVAS_H * 0.72 - blockH / 2 + fontSize);
+    const texts = lines
+      .map((ln, i) => `<text x="${CANVAS_W / 2}" y="${startY + i * lineH}" text-anchor="middle" class="cap">${ln}</text>`)
+      .join('');
+    inner = `<style>@font-face{font-family:'A';src:url('${font}');}` +
+      `.cap{font-family:'A';font-size:${fontSize}px;fill:#fff;stroke:#000;stroke-width:6px;paint-order:stroke;stroke-linejoin:round;}</style>${texts}`;
+  } else {
+    const fontSize = 64;
+    const lineH = fontSize * 1.15;
+    const blockH = lines.length * lineH;
+    const boxPadY = 28;
+    const boxH = Math.round(blockH + boxPadY * 2);
+    const boxY = Math.round(CANVAS_H / 2 - boxH / 2);
+    const boxX = 40;
+    const boxW = CANVAS_W - 80;
+    const startY = boxY + boxPadY + fontSize;
+    const texts = lines
+      .map((ln, i) => `<text x="${CANVAS_W / 2}" y="${startY + i * lineH}" text-anchor="middle" class="cta">${ln}</text>`)
+      .join('');
+    inner = `<style>@font-face{font-family:'A';src:url('${font}');}.cta{font-family:'A';font-size:${fontSize}px;fill:#fff;}</style>` +
+      `<rect x="${boxX}" y="${boxY}" width="${boxW}" height="${boxH}" rx="20" fill="#F59E0B" fill-opacity="0.92"/>${texts}`;
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS_W}" height="${CANVAS_H}">${inner}</svg>`;
+  const png = await sharp(Buffer.from(svg)).png().toBuffer();
+  await fs.writeFile(outPath, png);
+}
+
+// Concatenates the silent shots, renders per-shot caption PNGs (sharp) and
+// overlays them timed to each 8s shot, then mixes narration + looped
+// background music in a SINGLE ffmpeg pass. Re-encodes video because shots
+// are generated independently and may differ in timebase/SAR. Output length
+// is bounded by the video (-shortest).
 async function assembleFinalVideo(
   segmentPaths: string[],
   narrationPath: string,
   musicPath: string,
   workDir: string,
   outPath: string,
+  captions: string[],
 ): Promise<void> {
   const listPath = path.join(workDir, 'concat.txt');
   const list = segmentPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n');
   await fs.writeFile(listPath, list, 'utf8');
+
+  const SHOT_SECONDS = 8;
+  const lastIndex = captions.length - 1;
+
+  // Renderiza cada legenda não vazia como PNG (ordem = ordem de input no ffmpeg).
+  const overlays: Array<{ file: string; start: number; end: number }> = [];
+  for (let i = 0; i < captions.length; i++) {
+    const text = (captions[i] ?? '').trim();
+    if (!text) continue;
+    const pngPath = path.join(workDir, `cap${i}.png`);
+    await renderCaptionPng(text, i === lastIndex ? 'cta' : 'caption', pngPath);
+    overlays.push({ file: pngPath, start: i * SHOT_SECONDS, end: i * SHOT_SECONDS + SHOT_SECONDS });
+  }
+
+  const inputs: string[] = ['-f', 'concat', '-safe', '0', '-i', listPath];
+  for (const o of overlays) inputs.push('-i', o.file);
+  const musicIdx = 1 + overlays.length;
+  const narrationIdx = musicIdx + 1;
+  // -stream_loop -1 alone is unbounded: combined with the overlay chain above,
+  // the infinite music stream overruns the filtergraph's internal frame queue
+  // and ffmpeg aborts mid-filter with "No space left on device" (an ENOSPC
+  // from the framesync FIFO, not an actual disk issue — reproduced and
+  // confirmed empirically with this vendorized binary). Bounding the looped
+  // input's read duration to the total video length (+ margin) keeps it
+  // finite and lets -shortest do the final trim as before.
+  const totalSeconds = segmentPaths.length * SHOT_SECONDS + 5;
+  inputs.push('-stream_loop', '-1', '-t', String(totalSeconds), '-i', musicPath);
+  inputs.push('-i', narrationPath);
+
+  // Vídeo: normaliza base p/ 720x1280, depois encadeia os overlays temporizados.
+  const parts: string[] = [
+    `[0:v]scale=${CANVAS_W}:${CANVAS_H}:force_original_aspect_ratio=decrease,pad=${CANVAS_W}:${CANVAS_H}:(ow-iw)/2:(oh-ih)/2,setsar=1[base]`,
+  ];
+  let vlabel = '[base]';
+  overlays.forEach((o, k) => {
+    const outLabel = k === overlays.length - 1 ? '[v]' : `[v${k}]`;
+    parts.push(`${vlabel}[${k + 1}:v]overlay=0:0:enable='between(t\\,${o.start}\\,${o.end})'${outLabel}`);
+    vlabel = outLabel;
+  });
+  const videoOut = overlays.length > 0 ? '[v]' : '[base]';
+
+  parts.push(`[${musicIdx}:a]volume=0.14[mus]`);
+  parts.push(`[${narrationIdx}:a]volume=1.6[nar]`);
+  parts.push(`[mus][nar]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mix]`);
+
   await runFfmpeg([
     '-y',
-    '-f', 'concat', '-safe', '0', '-i', listPath,
-    '-stream_loop', '-1', '-i', musicPath,
-    '-i', narrationPath,
-    '-filter_complex',
-    '[1:a]volume=0.14[mus];[2:a]volume=1.6[nar];[mus][nar]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mix]',
-    '-map', '0:v', '-map', '[mix]',
+    ...inputs,
+    '-filter_complex', parts.join(';'),
+    '-map', videoOut, '-map', '[mix]',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '192k',
     '-shortest',
@@ -455,7 +569,8 @@ async function runVideoJob(
     // Single-pass post-production: concat + narration + music in one encode.
     await jobRef.update({ step: 'post', updatedAt: now() });
     const finalPath = path.join(workDir, 'final.mp4');
-    await assembleFinalVideo(segmentPaths, narrationPath, MUSIC_PATH, workDir, finalPath);
+    const captions = SHOTS.map((s) => script[s.key].narracao);
+    await assembleFinalVideo(segmentPaths, narrationPath, MUSIC_PATH, workDir, finalPath, captions);
     console.log(`[video] post-production done jobId=${jobId}`);
 
     await jobRef.update({ step: 'uploading', updatedAt: now() });
