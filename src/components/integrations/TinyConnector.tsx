@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, RefreshCw, Upload, CloudUpload, X, Loader2, AlertCircle, ShieldCheck, Info, KeyRound } from 'lucide-react';
+import { Check, RefreshCw, Upload, CloudUpload, X, Loader2, AlertCircle, ShieldCheck, Info, KeyRound, Copy } from 'lucide-react';
 import {
   tinyStatus, tinyConnect, tinyV2Validate, tinyDisconnect, tinyPush,
-  tinyImportStart, tinyImportStatus, tinyImportCancel, tinyImportSetAutosync,
+  tinyImportStart, tinyImportStatus, tinyImportCancel, tinyImportSetAutosync, tinyWebhookConfig,
   type TinyStatus, type TinyImportJob, type TinyPushProduct, type TinyPushResult,
 } from '../../services/tinyService';
 
@@ -58,6 +58,8 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCan
   const onImportedRef = useRef(onImported);
   onImportedRef.current = onImported;
 
+  const [cnpjInput, setCnpjInput] = useState('');
+  const [savingWebhook, setSavingWebhook] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [campos, setCampos] = useState<TinyPushFields>({ descricao: true, seo: true, fiscal: true, imagens: true });
   const [pushResults, setPushResults] = useState<TinyPushResult[] | null>(null);
@@ -79,6 +81,53 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCan
   useEffect(() => { refreshStatus(); }, []);
 
   const connected = status?.validated;
+
+  useEffect(() => { setCnpjInput(status?.cnpj ?? ''); }, [status?.cnpj]);
+
+  const handleSyncModeChange = async (mode: 'polling' | 'webhook') => {
+    setSavingWebhook(true);
+    setError(null);
+    try {
+      await tinyWebhookConfig({ syncMode: mode });
+      await refreshStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Falha ao mudar o modo de sincronização.');
+    } finally {
+      setSavingWebhook(false);
+    }
+  };
+
+  const handleSaveCnpj = async () => {
+    if (cnpjInput === (status?.cnpj ?? '')) return;
+    setSavingWebhook(true);
+    setError(null);
+    try {
+      await tinyWebhookConfig({ cnpj: cnpjInput });
+      await refreshStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Falha ao salvar o CNPJ.');
+    } finally {
+      setSavingWebhook(false);
+    }
+  };
+
+  const handleRegenerateWebhookSecret = async () => {
+    if (!window.confirm('Regerar a URL do webhook? A URL atual, se já configurada no painel do Tiny, vai parar de funcionar.')) return;
+    setSavingWebhook(true);
+    setError(null);
+    try {
+      await tinyWebhookConfig({ regenerateSecret: true });
+      await refreshStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Falha ao regerar a URL do webhook.');
+    } finally {
+      setSavingWebhook(false);
+    }
+  };
+
+  const handleCopyWebhookUrl = () => {
+    if (status?.webhookUrl) navigator.clipboard.writeText(status.webhookUrl).catch(() => {});
+  };
 
   // Poll the background job while connected. Polls on a steady cadence (not only
   // when active) so a server-initiated auto-sync is reflected too; reloads
@@ -296,7 +345,85 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCan
             </button>
           </div>
 
-          {/* Import (background) */}
+          {status?.version === 'v2' && (
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold text-slate-600">Modo de sincronização</label>
+              <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-sm">
+                {(['polling', 'webhook'] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => handleSyncModeChange(m)}
+                    disabled={savingWebhook}
+                    className={`px-3 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50 ${
+                      (status?.syncMode ?? 'polling') === m ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    {m === 'polling' ? 'Polling' : 'Webhook'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {status?.version === 'v2' && status?.syncMode === 'webhook' && (
+            <div className="border border-slate-200 rounded-xl p-4 space-y-3">
+              <div>
+                <h4 className="text-sm font-semibold text-slate-800">Recebimento via Webhook</h4>
+                <p className="text-xs text-slate-500">
+                  Configure essa URL em Tiny → Configurações → aba E-commerce → Integrações → aba Webhook.
+                  Produtos enviados por lá (inclusive variações) são cadastrados aqui automaticamente.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">CNPJ da conta Tiny</label>
+                <input
+                  type="text"
+                  value={cnpjInput}
+                  onChange={(e) => setCnpjInput(e.target.value)}
+                  onBlur={handleSaveCnpj}
+                  placeholder="Apenas números"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03] focus:border-[#FF5B03]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">URL do webhook</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={status?.webhookUrl ?? ''}
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono text-slate-600"
+                  />
+                  <button
+                    onClick={handleCopyWebhookUrl}
+                    disabled={!status?.webhookUrl}
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 border border-slate-300 px-3 py-2 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                  >
+                    <Copy className="w-4 h-4" /> Copiar
+                  </button>
+                  <button
+                    onClick={handleRegenerateWebhookSecret}
+                    disabled={savingWebhook}
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 border border-slate-300 px-3 py-2 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                  >
+                    <RefreshCw className="w-4 h-4" /> Regerar
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-500 inline-flex items-start gap-1.5">
+                <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                {status?.webhookStats && status.webhookStats.totalReceived > 0
+                  ? `Último recebido: ${status.webhookStats.lastReceivedAt ? new Date(status.webhookStats.lastReceivedAt).toLocaleString('pt-BR') : '—'} · Total recebido: ${status.webhookStats.totalReceived}`
+                  : 'Nenhum produto recebido ainda.'}
+              </p>
+            </div>
+          )}
+
+          {/* Import (background) — só faz sentido em modo polling */}
+          {!(status?.version === 'v2' && status?.syncMode === 'webhook') && (
           <div className="border border-slate-200 rounded-xl p-4 space-y-3">
             <div>
               <h4 className="text-sm font-semibold text-slate-800">Importar produtos (em background)</h4>
@@ -379,6 +506,7 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCan
               (puxa só o que mudou no Tiny)
             </label>
           </div>
+          )}
 
           {/* Push */}
           <div className="border border-slate-200 rounded-xl p-4 space-y-3">
