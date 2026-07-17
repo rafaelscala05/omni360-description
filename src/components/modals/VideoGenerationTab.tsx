@@ -506,18 +506,14 @@ export default function VideoGenerationTab({
 // ────────────────────────────────────────────────────────────────────────────
 
 const STEP_PROGRESS: Record<VideoJobStep, number> = {
-  shot: 0,        // dynamic — computed from currentShot
-  concat: 82,
-  tts: 88,
-  mixing: 94,
-  uploading: 97,
+  shot: 0,        // dynamic — computed from shotsDone
+  post: 88,
+  uploading: 96,
 };
 
 const STEP_LABELS: Record<VideoJobStep, string> = {
   shot: '',       // overridden below
-  concat: 'Montando o vídeo...',
-  tts: 'Gerando narração...',
-  mixing: 'Mixando áudio e música...',
+  post: 'Montando vídeo, narração e música...',
   uploading: 'Enviando vídeo...',
 };
 
@@ -527,12 +523,12 @@ function computeVideoProgress(job: VideoJob | null): { pct: number; label: strin
 
   const step = job.step;
   const total = job.totalShots ?? 4;
-  const current = job.currentShot ?? 0;
+  const done = job.shotsDone ?? 0;
 
   if (!step || step === 'shot') {
-    // Each shot spans ~20% of the bar (range 5-80%)
-    const pct = Math.min(5 + Math.round((current / total) * 75), 79);
-    const label = `Trecho ${current + 1} de ${total} — aguarde 1 a 3 min`;
+    // Shots run in parallel; the bar tracks how many finished (range 5-85%)
+    const pct = Math.min(5 + Math.round((done / total) * 80), 85);
+    const label = `${done} de ${total} trechos prontos — aguarde 2 a 5 min`;
     return { pct, label };
   }
 
@@ -542,7 +538,7 @@ function computeVideoProgress(job: VideoJob | null): { pct: number; label: strin
 function VideoProgressDisplay({ job }: { job: VideoJob | null }) {
   const { pct, label } = computeVideoProgress(job);
   const total = job?.totalShots ?? 4;
-  const current = job?.currentShot ?? 0;
+  const done = job?.shotsDone ?? 0;
   const isShot = !job?.step || job?.step === 'shot';
 
   return (
@@ -572,7 +568,7 @@ function VideoProgressDisplay({ job }: { job: VideoJob | null }) {
           </div>
         </div>
 
-        {/* Shot dots — only while generating shots */}
+        {/* Shot dots — shots run in parallel, unfinished ones pulse */}
         {isShot && job?.status === 'processing' && (
           <div className="flex justify-center gap-2 pt-1">
             {Array.from({ length: total }).map((_, i) => (
@@ -580,7 +576,7 @@ function VideoProgressDisplay({ job }: { job: VideoJob | null }) {
                 key={i}
                 className={cn(
                   'w-2.5 h-2.5 rounded-full transition-all',
-                  i < current ? 'bg-violet-500' : i === current ? 'bg-violet-400 animate-pulse' : 'bg-slate-200',
+                  i < done ? 'bg-violet-500' : 'bg-violet-300 animate-pulse',
                 )}
               />
             ))}
@@ -588,7 +584,7 @@ function VideoProgressDisplay({ job }: { job: VideoJob | null }) {
         )}
 
         <p className="text-xs text-slate-400 leading-relaxed">
-          O Veo 3.1 gera 4 trechos sequencialmente e monta narração + música. Esse processo pode levar de 10 a 20 minutos.
+          O Veo 3.1 gera os 4 trechos em paralelo e monta narração + música. Esse processo geralmente leva de 2 a 5 minutos.
           Você pode fechar essa janela — o vídeo ficará disponível aqui quando pronto.
         </p>
       </div>

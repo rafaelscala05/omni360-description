@@ -20,7 +20,7 @@ export interface VideoScript {
 }
 
 export type VideoJobStatus = 'queued' | 'processing' | 'done' | 'error';
-export type VideoJobStep = 'shot' | 'concat' | 'tts' | 'mixing' | 'uploading';
+export type VideoJobStep = 'shot' | 'post' | 'uploading';
 
 export interface VideoJob {
   jobId: string;
@@ -30,8 +30,8 @@ export interface VideoJob {
   error?: string;
   createdAt: string;
   updatedAt: string;
-  /** Index of the shot currently being generated (0-based), written by the server */
-  currentShot?: number;
+  /** Number of shots already generated (shots run in parallel), written by the server */
+  shotsDone?: number;
   /** Total number of shots (always 4) */
   totalShots?: number;
   /** Current pipeline step */

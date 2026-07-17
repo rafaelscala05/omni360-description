@@ -2542,23 +2542,19 @@ Retorne APENAS um JSON válido no seguinte formato:
         {activeVideoJob && (() => {
           const step = activeVideoJob.step;
           const total = activeVideoJob.totalShots ?? 4;
-          const current = activeVideoJob.currentShot ?? 0;
+          const done = activeVideoJob.shotsDone ?? 0;
           const isShot = !step || step === 'shot';
           let pct = 2;
           let stepLabel = 'Aguardando na fila...';
           if (activeVideoJob.status === 'done') {
             pct = 100; stepLabel = 'Concluído!';
-          } else if (step === 'concat') {
-            pct = 82; stepLabel = 'Montando vídeo...';
-          } else if (step === 'tts') {
-            pct = 88; stepLabel = 'Gerando narração...';
-          } else if (step === 'mixing') {
-            pct = 94; stepLabel = 'Mixando áudio...';
+          } else if (step === 'post') {
+            pct = 88; stepLabel = 'Montando vídeo, narração e música...';
           } else if (step === 'uploading') {
-            pct = 97; stepLabel = 'Enviando vídeo...';
+            pct = 96; stepLabel = 'Enviando vídeo...';
           } else if (activeVideoJob.status === 'processing') {
-            pct = Math.min(5 + Math.round((current / total) * 75), 79);
-            stepLabel = `Trecho ${current + 1} de ${total} (~2 min)`;
+            pct = Math.min(5 + Math.round((done / total) * 80), 85);
+            stepLabel = `${done} de ${total} trechos prontos (~2 a 5 min)`;
           }
           const productName = products.find(p => p._id === activeVideoJob.productId)?.['Descrição'] ?? 'Produto';
           return (
@@ -2584,7 +2580,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                     {Array.from({ length: total }).map((_, i) => (
                       <div
                         key={i}
-                        className={`flex-1 h-1 rounded-full transition-all ${i < current ? 'bg-violet-500' : i === current ? 'bg-violet-400 animate-pulse' : 'bg-slate-600'}`}
+                        className={`flex-1 h-1 rounded-full transition-all ${i < done ? 'bg-violet-500' : 'bg-violet-400 animate-pulse'}`}
                       />
                     ))}
                   </div>
