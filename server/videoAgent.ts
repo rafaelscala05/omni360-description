@@ -1,5 +1,5 @@
 import type express from 'express';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, VideoGenerationReferenceType } from '@google/genai';
 import sharp from 'sharp';
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
@@ -18,10 +18,10 @@ const VEO_MODEL = 'veo-3.1-fast-generate-001';
 const TEXT_MODEL = 'gemini-2.5-flash';
 
 // Output video is always 9:16 (vertical/portrait) for marketplace product pages.
-// The product image is pre-cropped to the same 9:16 ratio to match.
+// The product photo is passed WHOLE (no crop) as a Veo reference image; the
+// aspect ratio of the output is controlled by VIDEO_ASPECT_RATIO alone.
 const VIDEO_ASPECT_RATIO = '9:16';
-const INPUT_IMAGE_W = 720;
-const INPUT_IMAGE_H = 1280; // 9:16 portrait crop
+const REFERENCE_MAX_DIM = 1024;
 
 // Background music + TTS voice for the final mix. The audio is added AFTER the
 // video is generated (segments are generated MUTE), so there is never any lip
@@ -92,18 +92,19 @@ async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeTy
   return { base64, mimeType };
 }
 
-// Crops the image to 9:16 portrait (centered) so it matches the vertical output video.
-async function cropToPortrait(inputBuffer: Buffer): Promise<{ base64: string; mimeType: string }> {
-  const portrait = await sharp(inputBuffer)
+// Downscales the product photo keeping its original aspect ratio — nothing is
+// cropped — so the whole product stays visible in the Veo reference image.
+async function resizeForReference(inputBuffer: Buffer): Promise<{ base64: string; mimeType: string }> {
+  const resized = await sharp(inputBuffer)
     .resize({
-      width: INPUT_IMAGE_W,
-      height: INPUT_IMAGE_H,
-      fit: 'cover',
-      position: 'centre',
+      width: REFERENCE_MAX_DIM,
+      height: REFERENCE_MAX_DIM,
+      fit: 'inside',
+      withoutEnlargement: true,
     })
     .jpeg({ quality: 90 })
     .toBuffer();
-  return { base64: portrait.toString('base64'), mimeType: 'image/jpeg' };
+  return { base64: resized.toString('base64'), mimeType: 'image/jpeg' };
 }
 
 // ---------------------------------------------------------------------------
@@ -122,14 +123,6 @@ function runFfmpeg(args: string[]): Promise<void> {
       else reject(new Error(`ffmpeg saiu com código ${code}: ${stderr.slice(-800)}`));
     });
   });
-}
-
-// Grabs the last frame of a clip as a JPEG — used to seed the next shot so the
-// generated footage stays visually continuous across segments.
-async function extractLastFrame(videoPath: string, outJpgPath: string): Promise<{ base64: string; mimeType: string }> {
-  await runFfmpeg(['-y', '-sseof', '-0.2', '-i', videoPath, '-update', '1', '-frames:v', '1', '-q:v', '2', outJpgPath]);
-  const buf = await fs.readFile(outJpgPath);
-  return { base64: buf.toString('base64'), mimeType: 'image/jpeg' };
 }
 
 // Concatenates the silent shots into one continuous clip. Re-encodes (instead
@@ -401,25 +394,24 @@ async function runVideoJob(
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), `video-${jobId}-`));
 
   try {
-    await jobRef.update({ status: 'processing', currentShot: 0, totalShots: SHOTS.length, step: 'shot', updatedAt: now() });
+    await jobRef.update({ status: 'processing', shotsDone: 0, totalShots: SHOTS.length, step: 'shot', updatedAt: now() });
 
-    // Pre-process the product image to a 9:16 portrait to seed the first shot.
+    // The product photo goes WHOLE (no crop) as an ASSET reference image on
+    // every shot, anchoring all four segments to the real product.
     const inputBuffer = Buffer.from(imageBase64, 'base64');
-    const portrait = await cropToPortrait(inputBuffer);
-    console.log(`[video] image cropped to ${INPUT_IMAGE_W}x${INPUT_IMAGE_H} portrait jobId=${jobId}`);
+    const referenceImage = await resizeForReference(inputBuffer);
+    console.log(`[video] reference image prepared (max ${REFERENCE_MAX_DIM}px) jobId=${jobId}`);
 
     const ai = getVeoClient();
     const styleLine = 'Formato: vertical 9:16, comercial e explicativo para página de produto, luz natural ou de estúdio, câmera fluida, realista, alta qualidade.';
     const rulesLine = 'As mãos devem MANIPULAR o produto de forma rica (girar, abrir, acionar, demonstrar o uso). Nenhuma pessoa falando para a câmera. Sem texto na tela. Sem efeitos artificiais.';
-    const negativePrompt = 'texto na tela, legendas, marca d\'água, logotipos, pessoa falando para a câmera, lip sync, distorções, baixa qualidade';
+    const fidelityLine = 'FIDELIDADE OBRIGATÓRIA: o produto no vídeo deve ser IDÊNTICO à imagem de referência — mesmas cores, proporções, logotipos, materiais e acabamento. Nunca redesenhe, recolora ou altere o produto.';
+    const negativePrompt = 'produto diferente da referência, cores alteradas, logotipo modificado, proporções distorcidas, texto na tela, legendas, marca d\'água, pessoa falando para a câmera, lip sync, distorções, baixa qualidade';
 
-    // Generate the four shots sequentially, seeding each from the previous
-    // shot's last frame. Shots are generated MUTE (generateAudio:false) so the
-    // narration we add later is a clean voice-over with zero lip sync.
-    let seedImage = { base64: portrait.base64, mimeType: portrait.mimeType };
-    const segmentPaths: string[] = [];
-
-    for (let i = 0; i < SHOTS.length; i++) {
+    // All four shots run in PARALLEL — each is anchored to the same product
+    // reference image, so there is no frame-chaining dependency between them.
+    // Transitions between shots are hard cuts (the shorts/TikTok standard).
+    const generateShot = async (i: number): Promise<string> => {
       const shot = SHOTS[i];
       const shotScript = script[shot.key];
       const prompt = [
@@ -427,16 +419,13 @@ async function runVideoJob(
         `Ato (${shot.ato}, ~${shot.seconds}s): ${shotScript.acao}`,
         styleLine,
         rulesLine,
+        fidelityLine,
       ].join('\n');
-
-      // Write progress before starting each shot so the client can show "Shot X de 4"
-      await jobRef.update({ currentShot: i, step: 'shot', updatedAt: now() });
 
       console.log(`[video] shot ${i + 1}/${SHOTS.length} (${shot.key}) generate jobId=${jobId}`);
       const videoBytes = await runVeoOperation(ai, jobId, `shot#${i + 1}`, {
         model: VEO_MODEL,
         prompt,
-        image: { imageBytes: seedImage.base64, mimeType: seedImage.mimeType },
         config: {
           numberOfVideos: 1,
           durationSeconds: shot.seconds,
@@ -444,35 +433,39 @@ async function runVideoJob(
           personGeneration: 'allow_adult',
           generateAudio: false,
           negativePrompt,
+          referenceImages: [
+            {
+              image: { imageBytes: referenceImage.base64, mimeType: referenceImage.mimeType },
+              referenceType: VideoGenerationReferenceType.ASSET,
+            },
+          ],
         },
       });
 
       const segPath = path.join(workDir, `seg${i}.mp4`);
       await fs.writeFile(segPath, Buffer.from(videoBytes, 'base64'));
-      segmentPaths.push(segPath);
+      await jobRef.update({ shotsDone: FieldValue.increment(1), updatedAt: now() });
+      return segPath;
+    };
 
-      // Seed the next shot from this shot's last frame (skip after the last one)
-      if (i < SHOTS.length - 1) {
-        const framePath = path.join(workDir, `seg${i}_last.jpg`);
-        seedImage = await extractLastFrame(segPath, framePath);
-      }
-    }
-
-    // Concatenate the muted shots into one continuous clip.
-    await jobRef.update({ currentShot: SHOTS.length, step: 'concat', updatedAt: now() });
-    const combinedPath = path.join(workDir, 'combined.mp4');
-    await concatVideos(segmentPaths, workDir, combinedPath);
-    console.log(`[video] concatenated ${segmentPaths.length} shots jobId=${jobId}`);
-
-    // Build a single continuous narration from the per-shot voice-over lines.
-    await jobRef.update({ step: 'tts', updatedAt: now() });
+    // Narration only depends on the script, so TTS runs alongside the shots.
     const narrationText = SHOTS.map((s) => script[s.key].narracao.trim())
       .filter(Boolean)
       .join(' ');
-    const narrationBuffer = await synthesizeNarration(narrationText);
+
+    const [segmentPaths, narrationBuffer] = await Promise.all([
+      Promise.all(SHOTS.map((_, i) => generateShot(i))),
+      synthesizeNarration(narrationText),
+    ]);
     const narrationPath = path.join(workDir, 'narration.mp3');
     await fs.writeFile(narrationPath, narrationBuffer);
-    console.log(`[video] narration synthesized jobId=${jobId} chars=${narrationText.length}`);
+    console.log(`[video] ${segmentPaths.length} shots + narration ready jobId=${jobId} chars=${narrationText.length}`);
+
+    // Concatenate the muted shots into one continuous clip.
+    await jobRef.update({ step: 'concat', updatedAt: now() });
+    const combinedPath = path.join(workDir, 'combined.mp4');
+    await concatVideos(segmentPaths, workDir, combinedPath);
+    console.log(`[video] concatenated ${segmentPaths.length} shots jobId=${jobId}`);
 
     // Mix voice-over + background music over the muted video.
     await jobRef.update({ step: 'mixing', updatedAt: now() });
