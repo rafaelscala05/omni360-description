@@ -7,7 +7,7 @@ import express from 'express';
 import crypto from 'crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { num } from './tinyV2';
-import { STATUS_REF } from './tinyAgent';
+import { STATUS_REF, publicBaseUrl } from './tinyAgent';
 import type { TinyNormalizedProduct } from './tinyAgent';
 import { upsertProduct } from './tinyImportWorker';
 
@@ -121,7 +121,7 @@ export function registerTinyWebhookRoutes(app: express.Express, { verifyFirebase
 
       await STATUS_REF(uid).set(update, { merge: true });
 
-      const webhookUrl = `${req.protocol}://${req.get('host')}/api/tiny/webhook/${uid}/${secret}`;
+      const webhookUrl = `${publicBaseUrl(req)}/api/tiny/webhook/${uid}/${secret}`;
       return res.json({
         webhookUrl,
         cnpj: update.cnpj ?? cur.cnpj ?? '',
