@@ -19,6 +19,7 @@ import { registerWakeRoutes } from "./server/wakeAgent";
 import { registerTinyRoutes } from "./server/tinyAgent";
 import { registerTinyImportRoutes, startTinyScheduler } from "./server/tinyImportWorker";
 import { registerTinyProviderRoutes } from "./server/tinyProvider";
+import { registerTinyWebhookRoutes } from "./server/tinyWebhook";
 import { registerBlogPublic } from "./server/blogPublic";
 import { registerBlogAdminRoutes } from "./server/blogAdmin";
 import { registerMetaEventsRoutes } from "./server/metaEvents";
@@ -176,6 +177,7 @@ async function startServer() {
   registerTinyRoutes(app, { verifyFirebaseToken });
   registerTinyProviderRoutes(app, { verifyFirebaseToken });
   registerTinyImportRoutes(app, { verifyFirebaseToken });
+  registerTinyWebhookRoutes(app, { verifyFirebaseToken });
   registerMetaEventsRoutes(app);
 
   // Blog nativo (CMS) — serving público SSR. Precisa vir antes do Vite/static

@@ -440,11 +440,21 @@ export function registerTinyRoutes(app: express.Express, { verifyFirebaseToken }
       const sec = secretSnap.data() ?? {};
       // Infer the version for legacy secrets that predate the version field.
       const version = sec.version ?? d.apiVersion ?? (sec.accessToken ? 'v3' : sec.token ? 'v2' : null);
+      const webhookExtra = version === 'v2' ? {
+        syncMode: d.syncMode === 'webhook' ? 'webhook' : 'polling',
+        cnpj: d.cnpj ?? '',
+        webhookUrl: d.webhookSecret ? `${req.protocol}://${req.get('host')}/api/tiny/webhook/${uid}/${d.webhookSecret}` : null,
+        webhookStats: {
+          lastReceivedAt: d.webhookStats?.lastReceivedAt ?? null,
+          totalReceived: d.webhookStats?.totalReceived ?? 0,
+        },
+      } : {};
       return res.json({
         connected: hasToken,
         validated: hasToken && d.validated === true,
         version,
         lastValidatedAt: d.lastValidatedAt?.toDate?.()?.toISOString?.() ?? null,
+        ...webhookExtra,
       });
     } catch (e: any) {
       return res.status(401).json({ connected: false, validated: false, message: e?.message });
