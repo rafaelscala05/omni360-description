@@ -29,6 +29,7 @@ This is a full-stack TypeScript app with two runtimes:
 - `POST /api/gemini/generate-ambient-images` — generates lifestyle/ambient images via `gemini-2.5-flash-image`
 - `POST /api/gemini/enrich-product-data` — looks up GTIN/EAN, NCM, weights/dimensions via Google Search grounding
 - `POST /api/upload` — saves uploaded images to `./uploads/` and returns a URL
+- Bling ERP (API v3, OAuth2) — mirrors Tiny: `POST/GET /api/bling/oauth/*`, `/api/bling/status`, `/api/bling/disconnect`, `/api/bling/import/*`, `/api/bling/push`, and a single app-level HMAC webhook `POST /api/bling/webhook` (+ `/api/bling/webhook/config`). Server modules: `server/blingAgent.ts`, `server/blingImportWorker.ts`, `server/blingWebhook.ts`; client: `src/services/blingService.ts`, `src/components/integrations/BlingConnector.tsx`. Products tagged `_blingProductId`; deletions set `_blingDeleted: true`.
 
 **Frontend** (`src/`): React 19 SPA with Tailwind CSS v4. All state lives in `App.tsx` (very large file). The app is Portuguese (Brazilian) — all UI text, AI prompts, and product field names are in pt-BR.
 
