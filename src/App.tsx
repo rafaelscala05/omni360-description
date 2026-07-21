@@ -33,6 +33,8 @@ import type { WakePushFields } from './components/integrations/WakeConnector';
 import type { WakeNormalizedProduct, WakePushProduct } from './services/wakeService';
 import type { TinyPushFields } from './components/integrations/TinyConnector';
 import type { TinyPushProduct, TinyPushResult } from './services/tinyService';
+import { type BlingPushFields } from './components/integrations/BlingConnector';
+import type { BlingPushProduct, BlingPushResult } from './services/blingService';
 import { fetchAndProcessImage } from './utils/imageUtils';
 import { generateGrounded, parseJsonResponse } from './services/aiService';
 import { CREDIT_ACTIONS, resolveCreditCost, type CreditAction } from './credits';
@@ -1686,7 +1688,92 @@ export default function App() {
     if (n > 0) await batch.commit().catch((e) => console.warn('Falha ao salvar _tinyPushed:', e));
   };
 
-  const handleSaveImages = (productId: string, selectedImage: string, ambientImages: string[], tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number }) => {
+  // --- Bling push (mirrors the Tiny helpers; same group-signature logic) ------
+  const blingSelectedProducts = (source: Product[]): Product[] => {
+    const fromBling = source.filter((p) => p._blingProductId);
+    return selectedIds.size > 0 ? fromBling.filter((p) => selectedIds.has(p._id)) : fromBling;
+  };
+
+  const changedBlingGroups = (p: Product, campos: BlingPushFields): Record<TinyGroupKey, boolean> => {
+    const gen = tinyGenerated(p);
+    const out = { descricao: false, seo: false, fiscal: false, imagens: false };
+    (['descricao', 'seo', 'fiscal', 'imagens'] as const).forEach((g) => {
+      if (!campos[g] || !gen[g]) return;
+      const { sig } = tinyGroup[g](p);
+      out[g] = sig !== p._blingPushed?.[g];
+    });
+    return out;
+  };
+
+  const getBlingPushCandidates = (campos: BlingPushFields) => {
+    const out: { id: string; sku: string; nome: string; changed: Record<TinyGroupKey, boolean> }[] = [];
+    for (const p of blingSelectedProducts(products)) {
+      const ch = changedBlingGroups(p, campos);
+      if (ch.descricao || ch.seo || ch.fiscal || ch.imagens) {
+        out.push({ id: p._blingProductId!, sku: p['Código (SKU)'] || '', nome: p['Descrição'] || p['Título SEO'] || '', changed: ch });
+      }
+    }
+    return out;
+  };
+
+  const buildBlingPushPayload = async (campos: BlingPushFields): Promise<BlingPushProduct[]> => {
+    const out: BlingPushProduct[] = [];
+    for (const p of blingSelectedProducts(productsRef.current)) {
+      const ch = changedBlingGroups(p, campos);
+      if (!(ch.descricao || ch.seo || ch.fiscal || ch.imagens)) continue;
+      out.push({
+        blingId: p._blingProductId!,
+        sku: p['Código (SKU)'],
+        descricaoHtml: p['Descrição complementar'],
+        seoTitle: p['Título SEO'],
+        seoDescription: p['Descrição SEO'],
+        seoKeywords: p['Palavras chave SEO'],
+        ncm: p['NCM (Classificação fiscal)'],
+        gtin: p['GTIN/EAN'],
+        cest: p['CEST'],
+        pesoLiquido: tinyToNum(p['Peso líquido (Kg)']),
+        pesoBruto: tinyToNum(p['Peso bruto (Kg)']),
+        largura: tinyToNum(p['Largura embalagem']),
+        altura: tinyToNum(p['Altura Embalagem']),
+        comprimento: tinyToNum(p['Comprimento embalagem']),
+        imagens: ch.imagens ? collectTinyImages(p) : undefined,
+        campos: ch,
+      });
+    }
+    return out;
+  };
+
+  const handleBlingPushed = async (results: BlingPushResult[]) => {
+    if (!user) return;
+    const byId = new Map(results.map((r) => [r.blingId, r]));
+    const touched: Product[] = [];
+    const next = productsRef.current.map((p) => {
+      const r = p._blingProductId ? byId.get(p._blingProductId) : undefined;
+      if (!r) return p;
+      const pushed = { ...(p._blingPushed ?? {}) };
+      let upd = false;
+      (['descricao', 'seo', 'fiscal', 'imagens'] as const).forEach((g) => {
+        if (r.steps[g] === 'ok') { pushed[g] = tinyGroup[g](p).sig; upd = true; }
+      });
+      if (!upd) return p;
+      const np = { ...p, _blingPushed: pushed };
+      touched.push(np);
+      return np;
+    });
+    if (!touched.length) return;
+    productsRef.current = next;
+    setProducts(next);
+    // Persist just the _blingPushed field for the affected products.
+    let batch = writeBatch(db);
+    let n = 0;
+    for (const p of touched) {
+      batch.set(doc(db, `users/${user.uid}/products/${p._id}`), { _blingPushed: p._blingPushed }, { merge: true });
+      if (++n >= 400) { await batch.commit(); batch = writeBatch(db); n = 0; }
+    }
+    if (n > 0) await batch.commit().catch((e) => console.warn('Falha ao salvar _blingPushed:', e));
+  };
+
+  const handleSaveImages =(productId: string, selectedImage: string, ambientImages: string[], tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number }) => {
     setProducts(prev => {
       const updated = [...prev];
       const idx = updated.findIndex(p => p._id === productId);
@@ -2703,7 +2790,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           ) : mainView === 'history' ? (
             renderHistoryView()
           ) : mainView === 'integrations' ? (
-            <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} onTinyImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getTinyPushPayload={buildTinyPushPayload} getTinyPushCandidates={getTinyPushCandidates} onTinyPushed={handleTinyPushed} />
+            <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} onTinyImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getTinyPushPayload={buildTinyPushPayload} getTinyPushCandidates={getTinyPushCandidates} onTinyPushed={handleTinyPushed} onBlingImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getBlingPushPayload={buildBlingPushPayload} getBlingPushCandidates={getBlingPushCandidates} onBlingPushed={handleBlingPushed} />
           ) : mainView === 'tutorial' ? (
             <TutorialView onFinish={() => setMainView('products')} />
           ) : (

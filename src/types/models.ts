@@ -156,6 +156,11 @@ export interface Product {
   // Usado para enviar apenas o que mudou desde o último envio.
   _tinyPushed?: { descricao?: string; seo?: string; fiscal?: string; imagens?: string };
 
+  // Bling ERP integration
+  _blingProductId?: string;      // id do produto no Bling — chave de merge
+  _blingPushed?: { descricao?: string; seo?: string; fiscal?: string; imagens?: string };
+  _blingDeleted?: boolean;        // marcado true em product.deleted (doc preservado)
+
   // Modulo 1 / 3
   categoryId?: string; // FK to actual Category
   categoryPath?: string[]; // cache of path

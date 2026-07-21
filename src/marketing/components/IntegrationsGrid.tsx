@@ -32,6 +32,10 @@ const integrations: Integration[] = [
     ),
     comingSoon: true,
   },
+  {
+    name: 'ERP Bling',
+    render: () => <span className="text-porcelain font-semibold text-lg">Bling</span>,
+  },
 ];
 
 export default function IntegrationsGrid() {
