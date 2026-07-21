@@ -80,15 +80,17 @@ async function persistSecret(uid: string, secret: BlingSecret): Promise<void> {
 }
 
 // Best-effort decode of a companyId claim from the access token JWT payload.
-// Bling access tokens are JWTs; the exact claim name may vary, so we scan a few
-// likely keys. Returns '' when nothing is found (the user can still set it
-// manually via the webhook config route).
+// Bling access tokens are JWTs; the exact claim name may vary, so we only
+// accept the two known company-id claims (companyId/company_id). `cnpj` and
+// `sub` are not tenant ids and risk registering a wrong bling_companies/{id}
+// reverse-map entry on the shared app-level webhook — an empty result is
+// safer than a wrong guess (the user can still set it manually).
 function companyIdFromToken(accessToken: string): string {
   try {
     const seg = accessToken.split('.')[1];
     if (!seg) return '';
     const json = JSON.parse(Buffer.from(seg.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
-    const raw = json.companyId ?? json.company_id ?? json.cnpj ?? json.sub ?? '';
+    const raw = json.companyId ?? json.company_id ?? '';
     return raw ? String(raw) : '';
   } catch {
     return '';
@@ -221,7 +223,9 @@ export function normalizeProduct(p: any): BlingNormalizedProduct {
     altura: dim?.altura || undefined,
     comprimento: dim?.profundidade || undefined,
     precoPor: typeof p?.preco === 'number' ? p.preco : undefined,
-    precoDe: typeof p?.precoCusto === 'number' ? p.precoCusto : undefined,
+    // Bling v3 has no reliable "de"/promotional price on the product; leave empty
+    // rather than surfacing precoCusto (cost) as a promotional price.
+    precoDe: undefined,
     marca: p?.marca || undefined,
     categorias: catNome ? [String(catNome)] : [],
     imagens: Array.from(new Set(imagens)),
