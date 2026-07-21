@@ -20,6 +20,9 @@ import { registerTinyRoutes } from "./server/tinyAgent";
 import { registerTinyImportRoutes, startTinyScheduler } from "./server/tinyImportWorker";
 import { registerTinyProviderRoutes } from "./server/tinyProvider";
 import { registerTinyWebhookRoutes } from "./server/tinyWebhook";
+import { registerBlingRoutes } from "./server/blingAgent";
+import { registerBlingImportRoutes, startBlingScheduler } from "./server/blingImportWorker";
+import { registerBlingWebhookRoutes } from "./server/blingWebhook";
 import { registerBlogPublic } from "./server/blogPublic";
 import { registerBlogAdminRoutes } from "./server/blogAdmin";
 import { registerMetaEventsRoutes } from "./server/metaEvents";
@@ -166,7 +169,7 @@ async function startServer() {
   const PORT = parseInt(process.env.PORT || '3000', 10);
 
   // Increase payload limit for base64 images
-  app.use(express.json({ limit: '50mb' }));
+  app.use(express.json({ limit: '50mb', verify: (req, _res, buf) => { (req as any).rawBody = buf; } }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   // Agência de Criação de Conteúdo (Alfred) — server-side AI pipeline + scheduler.
@@ -178,6 +181,9 @@ async function startServer() {
   registerTinyProviderRoutes(app, { verifyFirebaseToken });
   registerTinyImportRoutes(app, { verifyFirebaseToken });
   registerTinyWebhookRoutes(app, { verifyFirebaseToken });
+  registerBlingRoutes(app, { verifyFirebaseToken });
+  registerBlingImportRoutes(app, { verifyFirebaseToken });
+  registerBlingWebhookRoutes(app, { verifyFirebaseToken });
   registerMetaEventsRoutes(app);
 
   // Blog nativo (CMS) — serving público SSR. Precisa vir antes do Vite/static
@@ -504,6 +510,10 @@ async function startServer() {
   // Tiny background import/sync worker (production also backed by Cloud Scheduler
   // hitting /api/tiny/cron/tick).
   startTinyScheduler();
+
+  // Bling background import/sync worker (production also backed by Cloud Scheduler
+  // hitting /api/bling/cron/tick).
+  startBlingScheduler();
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
