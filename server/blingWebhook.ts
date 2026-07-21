@@ -94,7 +94,14 @@ export function registerBlingWebhookRoutes(app: express.Express, { verifyFirebas
 
   // Public single callback for all merchants. Raw body for the HMAC check.
   app.post('/api/bling/webhook', express.raw({ type: '*/*' }), async (req, res) => {
-    const raw: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
+    // Prefer the raw bytes captured by the global express.json `verify` hook in
+    // server.ts (the global parser runs before this route and would otherwise
+    // consume a JSON body, making the route-level express.raw a no-op). Fall
+    // back to req.body when it's already a Buffer (non-JSON content types hit the
+    // route-level express.raw instead).
+    const raw: Buffer = Buffer.isBuffer((req as any).rawBody)
+      ? (req as any).rawBody as Buffer
+      : Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
     if (!validSignature(raw, req.headers['x-bling-signature-256'] as string | undefined)) {
       console.warn('[bling-webhook] assinatura inválida');
       return res.status(401).json({ message: 'Assinatura inválida.' });
@@ -128,7 +135,7 @@ export function registerBlingWebhookRoutes(app: express.Express, { verifyFirebas
         if (s.exists) return false;
         tx.set(evRef, { uid, event, companyId, receivedAt: FieldValue.serverTimestamp() });
         return true;
-      }).catch(() => true);
+      }).catch((e) => { console.warn(`[bling-webhook] dedup tx falhou eventId=${eventId}: ${e?.message}`); return true; });
       if (!created) return res.status(200).json({ ok: true, duplicate: true });
     }
 
