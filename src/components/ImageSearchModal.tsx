@@ -124,7 +124,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
 
   useEffect(() => {
     if (isOpen && product && step === 'search') {
-      setSelectedImageUrl(product._selectedImage || '');
+      setSelectedImageUrl(product._selectedImage || product['URL imagem 1'] || '');
       setAmbientImages(product._ambientImages || []);
       setImagePrompts(['', '', '']);
       setTokenUsage({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });

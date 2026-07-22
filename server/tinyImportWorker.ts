@@ -43,6 +43,50 @@ function stripUndefined<T extends Record<string, any>>(obj: T): T {
   return out as T;
 }
 
+// Category-name cache, keyed by uid, populated lazily from Firestore and reused
+// across the whole job run so we don't re-query per product.
+const categoryCache = new Map<string, Set<string>>();
+
+// Spreadsheet import lets the user review/enrich new categories via a modal;
+// this background worker has no UI to prompt, so it silently creates any
+// category missing from Firestore as a flat, top-level category (mirrors the
+// "no AI enrichment" branch of App.processCategoryImport).
+async function ensureCategoryExists(uid: string, name: string): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  let cache = categoryCache.get(uid);
+  if (!cache) {
+    cache = new Set();
+    const snap = await adminDb.collection('users').doc(uid).collection('categories').get();
+    snap.docs.forEach((d) => {
+      const n = (d.data()?.name ?? '').toString().trim().toLowerCase();
+      if (n) cache!.add(n);
+    });
+    categoryCache.set(uid, cache);
+  }
+  const key = trimmed.toLowerCase();
+  if (cache.has(key)) return;
+  cache.add(key);
+
+  const ref = adminDb.collection('users').doc(uid).collection('categories').doc();
+  const now = iso();
+  await ref.set({
+    id: ref.id,
+    name: trimmed,
+    slug: trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    parentId: null,
+    level: 0,
+    path: [trimmed],
+    pathIds: [ref.id],
+    attributes: [],
+    inheritParentAttributes: true,
+    productCount: 0,
+    aiGenerated: false,
+    createdAt: now,
+    updatedAt: now,
+  }).catch((e) => console.warn(`[tiny] falha ao criar categoria "${trimmed}" para ${uid}:`, e?.message));
+}
+
 // Writes one normalized product to Firestore. "Source" fields always update;
 // enriched fields (description/SEO) only fill when empty, preserving local work.
 // Returns the Firestore doc id — the webhook handler uses it as idMapeamento.
@@ -98,6 +142,8 @@ export async function upsertProduct(uid: string, t: TinyNormalizedProduct, sourc
   fillIfEmpty('Palavras chave SEO', t.seoKeywords);
   fillIfEmpty('Link do vídeo', t.linkVideo);
   fillIfEmpty('Slug', t.slug);
+
+  if (t.categorias[0]) await ensureCategoryExists(uid, t.categorias[0]);
 
   await ref.set(stripUndefined(data), { merge: true });
   await ref.collection('tiny_versions').add({

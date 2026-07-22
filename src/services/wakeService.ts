@@ -24,6 +24,7 @@ export interface WakeNormalizedProduct {
   seoKeywords?: string;
   categorias: string[];
   imagens: string[];
+  atributos: { nome: string; valor: string }[];
   raw: unknown;
 }
 

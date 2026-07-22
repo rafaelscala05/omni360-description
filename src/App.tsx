@@ -26,7 +26,7 @@ const ContentApp = lazy(() => import('./modules/content/ContentApp'));
 import CreditPurchaseModal from './components/modals/CreditPurchaseModal';
 import { Category, Product, AttributeValue, getProductStatusFlags, ProductModalTab } from './types/models';
 import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate } from './services/productService';
-import { fetchCategories, generateCategoryHierarchy, flattenHierarchy, getEffectiveAttributes, addAttributeToCategory } from './services/categoryService';
+import { fetchCategories, generateCategoryHierarchy, flattenHierarchy, getEffectiveAttributes, addAttributeToCategory, saveCategory } from './services/categoryService';
 import IntegrationsView from './components/integrations/IntegrationsView';
 import TutorialView from './components/tutorial/TutorialView';
 import type { WakePushFields } from './components/integrations/WakeConnector';
@@ -1444,6 +1444,38 @@ export default function App() {
     const next = [...productsRef.current];
     const backups: { id: string; raw: unknown }[] = [];
 
+    // Auto-create any category Wake reports that doesn't exist yet locally.
+    // Mirrors the spreadsheet-import behavior, but flat/no-AI since this import
+    // path has no modal to let the user review/enrich categories.
+    const uniqueCategories = Array.from(
+      new Set(incoming.map((w) => w.categorias[0]?.trim()).filter(Boolean)),
+    ) as string[];
+    if (uniqueCategories.length > 0) {
+      try {
+        const existingCats = await fetchCategories(uid);
+        const existingNames = new Set(existingCats.map((c) => c.name.trim().toLowerCase()));
+        for (const name of uniqueCategories) {
+          if (existingNames.has(name.toLowerCase())) continue;
+          existingNames.add(name.toLowerCase());
+          await saveCategory(uid, {
+            name,
+            slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+            parentId: null,
+            level: 0,
+            path: [name],
+            pathIds: [] as string[],
+            attributes: [] as Category['attributes'],
+            inheritParentAttributes: true,
+            inheritImagePrompts: true,
+            productCount: 0,
+            aiGenerated: false,
+          });
+        }
+      } catch (e) {
+        console.warn('Falha ao criar categorias da Wake:', e);
+      }
+    }
+
     for (const w of incoming) {
       const mapped: Partial<Product> = stripUndefined({
         'Código (SKU)': w.sku || undefined,
@@ -1458,6 +1490,12 @@ export default function App() {
         'GTIN/EAN': w.ean || undefined,
         _wakeProductId: w.produtoId,
         _wakeInformacaoId: w.informacaoId,
+        attributes: w.atributos.length
+          ? w.atributos.reduce((acc, a) => {
+              acc[a.nome] = { value: a.valor, aiSuggested: false, confirmed: true, source: 'imported' };
+              return acc;
+            }, {} as Record<string, AttributeValue>)
+          : undefined,
       });
       w.imagens.slice(0, 6).forEach((url, i) => { (mapped as any)[`URL imagem ${i + 1}`] = url; });
 

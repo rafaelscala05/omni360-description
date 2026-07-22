@@ -74,6 +74,7 @@ export interface WakeNormalizedProduct {
   seoKeywords?: string;
   categorias: string[];
   imagens: string[];
+  atributos: { nome: string; valor: string }[];
   raw: unknown; // aggregated raw payload — used for backup/versioning
 }
 
@@ -115,6 +116,11 @@ async function aggregateProduct(token: string, p: any): Promise<WakeNormalizedPr
       : [],
     imagens: Array.isArray(imagens)
       ? imagens.map((im: any) => im?.url ?? im?.urlImagem).filter(Boolean)
+      : [],
+    atributos: Array.isArray(p.atributos)
+      ? p.atributos
+          .map((a: any) => ({ nome: a?.nome, valor: a?.valor }))
+          .filter((a: { nome?: string; valor?: string }) => a.nome && a.valor)
       : [],
     raw: { produto: p, informacoes, categorias, imagens, seo, metaTag },
   };
