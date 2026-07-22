@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { X, Check, RefreshCw, Globe, ExternalLink, Play, Pencil, Eye, Code } from 'lucide-react';
 import type { CalendarArticle } from './types';
-import { updateArticle, publishArticle, produceArticle } from '../../services/contentService';
+import { updateArticle, publishArticle, produceArticle, listProductsForLinking, type LinkableProduct } from '../../services/contentService';
 import { markdownToHtml } from './markdown';
+import ProductLinkPicker from './ProductLinkPicker';
 
 interface Props {
   uid: string;
@@ -21,9 +22,25 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
   const [error, setError] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(article.titulo);
-  const [produtos, setProdutos] = useState(
-    (article.produtosVinculados ?? []).join(', '),
+  const [allProducts, setAllProducts] = useState<LinkableProduct[]>([]);
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>(article.produtosVinculados ?? []);
+
+  useEffect(() => {
+    listProductsForLinking(uid).then(setAllProducts).catch(() => setAllProducts([]));
+  }, [uid]);
+
+  const linkedProducts = useMemo(
+    () =>
+      selectedProductIds.map(
+        (id) => allProducts.find((p) => p.id === id) ?? { id, nome: id, sku: '', imagemPrincipal: undefined },
+      ),
+    [selectedProductIds, allProducts],
   );
+
+  const saveProdutos = (ids: string[]) => {
+    setSelectedProductIds(ids);
+    run('produtos', () => updateArticle(uid, projectId, article.id, { produtosVinculados: ids }));
+  };
   const [destino, setDestino] = useState<'nativo' | 'integracao'>('integracao');
   // O artigo é produzido em Markdown; a aba Visualizar mostra o texto renderizado.
   const [modo, setModo] = useState<'visualizar' | 'editar'>('visualizar');
@@ -110,15 +127,7 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
           {/* Produtos vinculados */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">Produtos vinculados</label>
-            <input
-              value={produtos}
-              onChange={(e) => setProdutos(e.target.value)}
-              onBlur={() => run('produtos', () => updateArticle(uid, projectId, article.id, {
-                produtosVinculados: produtos.split(',').map((s) => s.trim()).filter(Boolean),
-              }))}
-              placeholder="Nome ou ID dos produtos, separados por vírgula"
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03] focus:border-[#FF5B03]"
-            />
+            <ProductLinkPicker products={allProducts} selectedIds={selectedProductIds} onChange={saveProdutos} />
           </div>
 
           {article.status === 'agendado' ? (
