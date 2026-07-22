@@ -2,8 +2,10 @@
 //
 // Unlike the Product agent (which runs AI in the browser via Firebase AI Logic),
 // the content pipeline runs server-side so it can execute autonomously on a
-// schedule — without the user's browser open. AI calls use @google/genai with
-// GEMINI_API_KEY; persistence + credit debit use the Admin SDK.
+// schedule — without the user's browser open. AI calls use @google/genai in
+// Vertex AI mode (VERTEX_PROJECT_ID/VERTEX_LOCATION, project-based auth via
+// ADC — mirrors the Veo client in videoAgent.ts), not the Gemini Developer
+// API/AI Studio key; persistence + credit debit use the Admin SDK.
 
 import type express from 'express';
 import net from 'net';
@@ -33,12 +35,14 @@ import { loadStoreContext, extractSeedKeywords, discoverKeywordPool } from './ke
 const TEXT_MODEL = 'gemini-2.5-flash';
 const IMAGE_MODEL = 'gemini-2.5-flash-image';
 
+const VERTEX_PROJECT = process.env.VERTEX_PROJECT_ID || firebaseAppletConfig.projectId;
+const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
+
 function getClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw Object.assign(new Error('GEMINI_API_KEY não configurada no servidor'), { status: 500 });
+  if (!VERTEX_PROJECT) {
+    throw Object.assign(new Error('VERTEX_PROJECT_ID não configurado no servidor'), { status: 500 });
   }
-  return new GoogleGenAI({ apiKey });
+  return new GoogleGenAI({ vertexai: true, project: VERTEX_PROJECT, location: VERTEX_LOCATION });
 }
 
 // Retries transient 503/UNAVAILABLE/high-demand errors with linear backoff
