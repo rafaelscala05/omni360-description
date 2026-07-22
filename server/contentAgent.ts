@@ -668,7 +668,10 @@ async function runArticlePipeline(
 
 // Downloads an existing image (e.g. a product photo) and returns it as base64
 // + mime type, for use as a reference image in generateImageBase64().
-async function fetchImageAsBase64(url: string): Promise<{ mimeType: string; data: string }> {
+async function fetchImageAsBase64(rawUrl: string): Promise<{ mimeType: string; data: string }> {
+  // baseProductImageUrl is client-supplied (authenticated), so it goes through
+  // the same SSRF guard as other user-supplied URLs in this file (scanWebsite).
+  const url = await assertSafeUrl(rawUrl);
   const resp = await fetch(url);
   if (!resp.ok) throw new Error('Não foi possível baixar a imagem do produto.');
   const buf = Buffer.from(await resp.arrayBuffer());
