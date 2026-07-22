@@ -1,7 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, Check, RefreshCw, Globe, ExternalLink, Play, Pencil, Eye, Code } from 'lucide-react';
+import { X, Check, RefreshCw, Globe, ExternalLink, Play, Pencil, Eye, Code, Wand2, Image as ImageIcon } from 'lucide-react';
 import type { CalendarArticle } from './types';
-import { updateArticle, publishArticle, produceArticle, listProductsForLinking, type LinkableProduct } from '../../services/contentService';
+import {
+  updateArticle,
+  publishArticle,
+  produceArticle,
+  listProductsForLinking,
+  regenerateArticleImage,
+  type LinkableProduct,
+} from '../../services/contentService';
 import { markdownToHtml } from './markdown';
 import ProductLinkPicker from './ProductLinkPicker';
 
@@ -24,6 +31,9 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
   const [titleDraft, setTitleDraft] = useState(article.titulo);
   const [allProducts, setAllProducts] = useState<LinkableProduct[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>(article.produtosVinculados ?? []);
+  const [showImprovePrompt, setShowImprovePrompt] = useState(false);
+  const [improvementPrompt, setImprovementPrompt] = useState('');
+  const [productImageChoice, setProductImageChoice] = useState<string>('');
 
   useEffect(() => {
     listProductsForLinking(uid).then(setAllProducts).catch(() => setAllProducts([]));
@@ -121,7 +131,86 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
             <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{article.lastError}</div>
           )}
           {article.imageUrl && (
-            <img src={article.imageUrl} alt="Capa" className="w-full rounded-xl border border-slate-200" />
+            <div className="space-y-2">
+              <img src={article.imageUrl} alt="Capa" className="w-full rounded-xl border border-slate-200" />
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowImprovePrompt((v) => !v)}
+                  disabled={!!busy}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 disabled:opacity-60 rounded-lg"
+                >
+                  <Wand2 className="w-3.5 h-3.5" /> Gerar novamente
+                </button>
+                {linkedProducts.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      run('image-product', async () => {
+                        const targetId = linkedProducts.length === 1 ? linkedProducts[0].id : productImageChoice;
+                        const product = linkedProducts.find((p) => p.id === targetId);
+                        if (!product?.imagemPrincipal) {
+                          setError('Selecione um produto vinculado que tenha imagem principal.');
+                          return;
+                        }
+                        const { imageUrl } = await regenerateArticleImage(projectId, article.id, {
+                          mode: 'fromProduct',
+                          baseProductImageUrl: product.imagemPrincipal,
+                        });
+                        void imageUrl; // listenCalendar no componente pai atualiza o article.imageUrl
+                      })
+                    }
+                    disabled={!!busy}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 disabled:opacity-60 rounded-lg"
+                  >
+                    <ImageIcon className="w-3.5 h-3.5" /> Gerar a partir do produto
+                  </button>
+                )}
+                {linkedProducts.length > 1 && (
+                  <select
+                    value={productImageChoice}
+                    onChange={(e) => setProductImageChoice(e.target.value)}
+                    className="text-xs border border-slate-300 rounded-lg px-2 py-1.5"
+                  >
+                    <option value="">Escolher produto...</option>
+                    {linkedProducts
+                      .filter((p) => p.imagemPrincipal)
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.nome}
+                        </option>
+                      ))}
+                  </select>
+                )}
+              </div>
+              {showImprovePrompt && (
+                <div className="flex items-center gap-2">
+                  <input
+                    value={improvementPrompt}
+                    onChange={(e) => setImprovementPrompt(e.target.value)}
+                    placeholder="Ex: fundo branco, mais luminosa, foco no produto"
+                    className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03] focus:border-[#FF5B03]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      run('image-improve', async () => {
+                        await regenerateArticleImage(projectId, article.id, {
+                          mode: 'improve',
+                          improvementPrompt,
+                        });
+                        setShowImprovePrompt(false);
+                        setImprovementPrompt('');
+                      })
+                    }
+                    disabled={!!busy || !improvementPrompt.trim()}
+                    className="px-3 py-2 text-sm font-medium text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-lg"
+                  >
+                    {busy === 'image-improve' ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Aplicar'}
+                  </button>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Produtos vinculados */}

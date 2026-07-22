@@ -102,6 +102,21 @@ export const publishArticle = (
     destination ? { destination } : undefined,
   );
 
+export type RegenerateImagePayload =
+  | { mode: 'improve'; improvementPrompt: string }
+  | { mode: 'fromProduct'; baseProductImageUrl: string };
+
+export const regenerateArticleImage = (
+  projectId: string,
+  articleId: string,
+  payload: RegenerateImagePayload,
+) =>
+  callJson<{ imageUrl: string }>(
+    `/api/content/projects/${projectId}/articles/${articleId}/regenerate-image`,
+    'POST',
+    payload,
+  );
+
 // ---------------------------------------------------------------------------
 // Firestore CRUD
 // ---------------------------------------------------------------------------
