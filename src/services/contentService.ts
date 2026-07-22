@@ -10,6 +10,7 @@ import {
   addDoc,
   setDoc,
   updateDoc,
+  getDocs,
   onSnapshot,
   query,
   orderBy,
@@ -194,6 +195,32 @@ export async function moveArticle(
   await updateDoc(doc(db, `users/${uid}/contentProjects/${projectId}/calendar/${articleId}`), {
     clusterId: novoClusterId,
     updatedAt: new Date().toISOString(),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Product linking (Content module has no other visibility into the Product
+// domain — this reads users/{uid}/products directly, same path App.tsx uses,
+// no new server endpoint needed).
+// ---------------------------------------------------------------------------
+
+export interface LinkableProduct {
+  id: string;
+  nome: string;
+  sku: string;
+  imagemPrincipal?: string;
+}
+
+export async function listProductsForLinking(uid: string): Promise<LinkableProduct[]> {
+  const snap = await getDocs(collection(db, `users/${uid}/products`));
+  return snap.docs.map((d) => {
+    const data = d.data() as Record<string, unknown>;
+    const selectedImage = typeof data._selectedImage === 'string' ? data._selectedImage : undefined;
+    const firstImage = typeof data['URL imagem 1'] === 'string' ? (data['URL imagem 1'] as string) : undefined;
+    const id = (typeof data._id === 'string' && data._id) || d.id;
+    const nome = (typeof data['Descrição'] === 'string' && data['Descrição']) || '(sem nome)';
+    const sku = (typeof data['Código (SKU)'] === 'string' && data['Código (SKU)']) || '';
+    return { id, nome, sku, imagemPrincipal: selectedImage || firstImage };
   });
 }
 
