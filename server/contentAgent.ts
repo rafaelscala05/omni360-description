@@ -597,6 +597,7 @@ async function runArticlePipeline(
       [
         `Escreva o artigo completo em Markdown seguindo o outline abaixo, com 1.200 a 2.500 palavras.`,
         'Parágrafos curtos, subtítulos escaneáveis, KW principal no H1 e primeiro parágrafo, CTA ao final.',
+        'Comece direto pelo conteúdo do artigo: NUNCA inclua saudação, auto-apresentação ou menção ao autor/persona (por exemplo "Olá! [nome] aqui", "Prepare-se para uma leitura que...", "Sou [nome] e vou te contar"). O primeiro parágrafo deve ir direto ao assunto do H1, sem repetir o título.',
         `OUTLINE:\n${articleOutline}`,
       ].join('\n\n'),
       { systemInstruction: sys, temperature: 0.7 },
@@ -607,6 +608,7 @@ async function runArticlePipeline(
     const articleFinal = await generateText(
       [
         'Revise e humanize o artigo abaixo: elimine construções típicas de IA, adicione opiniões assertivas e exemplos concretos, mantenha o tom de voz.',
+        'Se o texto abaixo começar com qualquer saudação, auto-apresentação ou menção à persona/autor (por exemplo "Olá! [nome] aqui", "Prepare-se para..."), REMOVA essa abertura por completo e reescreva o início para começar direto no conteúdo do primeiro parágrafo.',
         'Ao final, em uma linha separada, forneça: SLUG: <slug-amigavel> e META: <meta description>.',
         `ARTIGO:\n${articleDraft}`,
       ].join('\n\n'),
