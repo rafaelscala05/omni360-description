@@ -16,6 +16,10 @@ env:
     value: "1541685420840320"
   - variable: META_CONVERSIONS_API_TOKEN
     secret: meta-conversions-api-token
+  - variable: VITE_TIKTOK_PIXEL_ID
+    value: "D9GCICRC77UBS5FSLDFG"
+  - variable: TIKTOK_ACCESS_TOKEN
+    secret: tiktok-access-token
   - variable: ASAAS_API_KEY
     secret: asaas-api-key
   - variable: ASAAS_WEBHOOK_TOKEN
