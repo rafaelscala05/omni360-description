@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Hero from '../components/Hero';
 import Section from '../components/Section';
@@ -5,6 +6,7 @@ import FAQ from '../components/FAQ';
 import FinalCTA from '../components/FinalCTA';
 import { FaqItem } from '../content';
 import { usePageMeta } from '../usePageMeta';
+import { trackPricingViewed, trackMarketingCtaClick } from '../../analytics';
 
 interface CreditRow {
   action: string;
@@ -46,6 +48,10 @@ export default function PricingPage() {
     title: 'Preços | Alfreds',
     description: 'Preço transparente por créditos. Comece com 10 créditos grátis.'
   });
+
+  useEffect(() => {
+    trackPricingViewed();
+  }, []);
 
   return (
     <>
@@ -104,6 +110,7 @@ export default function PricingPage() {
           </p>
           <Link
             to="/contato"
+            onClick={() => trackMarketingCtaClick({ label: 'Falar com especialista', destination: '/contato' })}
             className="inline-block px-8 py-4 rounded-xl font-bold text-lg bg-orange text-white hover:brightness-95 transition"
           >
             Falar com especialista

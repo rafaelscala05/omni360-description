@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AgentTheme, getTheme } from '../theme';
+import { trackMarketingCtaClick } from '../../analytics';
 
 interface HeroProps {
   theme?: AgentTheme;
@@ -47,9 +48,17 @@ export default function Hero({ theme = 'brand', eyebrow, titleLead, titleAccent,
         </h1>
         <p className={`mt-6 text-lg md:text-xl max-w-2xl mx-auto ${dark ? 'text-porcelain/70' : 'text-ink/70'}`}>{subtitle}</p>
         <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
-          <Link to={primaryCta.to} className={`px-6 py-3.5 rounded-xl font-bold ${ctaBgClass} ${ctaOnClass} hover:brightness-95 hover:-translate-y-0.5 transition`}>{primaryCta.label}</Link>
+          <Link
+            to={primaryCta.to}
+            onClick={() => trackMarketingCtaClick({ label: primaryCta.label, destination: primaryCta.to })}
+            className={`px-6 py-3.5 rounded-xl font-bold ${ctaBgClass} ${ctaOnClass} hover:brightness-95 hover:-translate-y-0.5 transition`}
+          >{primaryCta.label}</Link>
           {secondaryCta && (
-            <Link to={secondaryCta.to} className={`px-6 py-3.5 rounded-xl font-bold border ${dark ? 'border-porcelain/30 text-porcelain hover:bg-porcelain/10' : 'border-ink/20 text-ink hover:bg-ink/5'} hover:-translate-y-0.5 transition`}>{secondaryCta.label}</Link>
+            <Link
+              to={secondaryCta.to}
+              onClick={() => trackMarketingCtaClick({ label: secondaryCta.label, destination: secondaryCta.to })}
+              className={`px-6 py-3.5 rounded-xl font-bold border ${dark ? 'border-porcelain/30 text-porcelain hover:bg-porcelain/10' : 'border-ink/20 text-ink hover:bg-ink/5'} hover:-translate-y-0.5 transition`}
+            >{secondaryCta.label}</Link>
           )}
         </div>
         {microcopy && <p className={`mt-4 text-sm ${dark ? 'text-porcelain/50' : 'text-ink/50'}`}>{microcopy}</p>}

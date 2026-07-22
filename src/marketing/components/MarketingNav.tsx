@@ -1,6 +1,7 @@
 import { Link, NavLink } from 'react-router-dom';
 import { ChevronDown } from 'lucide-react';
 import { getTheme } from '../theme';
+import { trackMarketingCtaClick } from '../../analytics';
 
 const agentLinks = [
   { to: '/agente-de-produto', label: 'Agente de Produto', desc: 'Cadastro, SEO, imagens e vídeo' },
@@ -63,7 +64,11 @@ export default function MarketingNav() {
 
         <div className="flex items-center gap-3">
           <Link to="/entrar" className="text-sm font-semibold text-ink/80 hover:text-ink">Entrar</Link>
-          <Link to="/entrar" className="text-sm font-bold px-4 py-2 rounded-xl bg-orange text-white hover:brightness-95 transition">Começar grátis</Link>
+          <Link
+            to="/entrar"
+            onClick={() => trackMarketingCtaClick({ label: 'Começar grátis', destination: '/entrar' })}
+            className="text-sm font-bold px-4 py-2 rounded-xl bg-orange text-white hover:brightness-95 transition"
+          >Começar grátis</Link>
         </div>
       </nav>
     </header>

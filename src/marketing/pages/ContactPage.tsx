@@ -3,6 +3,7 @@ import Hero from '../components/Hero';
 import Section from '../components/Section';
 import { saveLead, LeadInput } from '../leadService';
 import { usePageMeta } from '../usePageMeta';
+import { trackContactLead } from '../../analytics';
 
 type Status = 'idle' | 'sending' | 'done' | 'error';
 
@@ -22,6 +23,7 @@ export default function ContactPage() {
     setStatus('sending');
     try {
       await saveLead(form);
+      trackContactLead();
       setStatus('done');
       setForm(emptyForm);
     } catch {
