@@ -189,7 +189,7 @@ export interface CalendarArticle {
   clusterId: string;
   scheduledDate: string; // ISO date (YYYY-MM-DD)
   scheduledTime?: string;        // "HH:MM" — hora de publicação
-  produtosVinculados?: string[]; // nomes/IDs de produtos vinculados
+  produtosVinculados?: string[]; // IDs de Product._id vinculados (artigos antigos podem ter texto livre até serem re-vinculados)
   status: ArticleStatus;
   stage: ArticleStage;
   // Outputs accumulated by the 5-stage pipeline.

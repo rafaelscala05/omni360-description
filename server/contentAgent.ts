@@ -124,13 +124,22 @@ async function generateGrounded(prompt: string, options: GenOptions = {}): Promi
   return resp.text ?? '';
 }
 
-// Generates a cover image, returns raw base64 (no data: prefix).
-async function generateImageBase64(prompt: string): Promise<string> {
+// Generates a cover image, returns raw base64 (no data: prefix). When
+// referenceImage is given, sends it as an inlineData part alongside the
+// prompt so the model anchors the new image on it (image-to-image), same
+// multi-part pattern as generateImage() in src/services/aiService.ts.
+async function generateImageBase64(
+  prompt: string,
+  referenceImage?: { mimeType: string; data: string },
+): Promise<string> {
   const ai = getClient();
+  const contents = referenceImage
+    ? [{ inlineData: { mimeType: referenceImage.mimeType, data: referenceImage.data } }, { text: prompt }]
+    : prompt;
   const resp = await withRetry(() =>
     ai.models.generateContent({
       model: IMAGE_MODEL,
-      contents: prompt,
+      contents: contents as never,
       config: { responseModalities: ['TEXT', 'IMAGE'] },
     }),
   );
@@ -597,6 +606,7 @@ async function runArticlePipeline(
       [
         `Escreva o artigo completo em Markdown seguindo o outline abaixo, com 1.200 a 2.500 palavras.`,
         'Parágrafos curtos, subtítulos escaneáveis, KW principal no H1 e primeiro parágrafo, CTA ao final.',
+        'Comece direto pelo conteúdo do artigo: NUNCA inclua saudação, auto-apresentação ou menção ao autor/persona (por exemplo "Olá! [nome] aqui", "Prepare-se para uma leitura que...", "Sou [nome] e vou te contar"). O primeiro parágrafo deve ir direto ao assunto do H1, sem repetir o título.',
         `OUTLINE:\n${articleOutline}`,
       ].join('\n\n'),
       { systemInstruction: sys, temperature: 0.7 },
@@ -607,6 +617,7 @@ async function runArticlePipeline(
     const articleFinal = await generateText(
       [
         'Revise e humanize o artigo abaixo: elimine construções típicas de IA, adicione opiniões assertivas e exemplos concretos, mantenha o tom de voz.',
+        'Se o texto abaixo começar com qualquer saudação, auto-apresentação ou menção à persona/autor (por exemplo "Olá! [nome] aqui", "Prepare-se para..."), REMOVA essa abertura por completo e reescreva o início para começar direto no conteúdo do primeiro parágrafo.',
         'Ao final, em uma linha separada, forneça: SLUG: <slug-amigavel> e META: <meta description>.',
         `ARTIGO:\n${articleDraft}`,
       ].join('\n\n'),
@@ -653,6 +664,67 @@ async function runArticlePipeline(
     await artRef.update({ status: 'erro', lastError: msg, updatedAt: new Date().toISOString() });
     throw error;
   }
+}
+
+// Downloads an existing image (e.g. a product photo) and returns it as base64
+// + mime type, for use as a reference image in generateImageBase64().
+async function fetchImageAsBase64(rawUrl: string): Promise<{ mimeType: string; data: string }> {
+  // baseProductImageUrl is client-supplied (authenticated), so it goes through
+  // the same SSRF guard as other user-supplied URLs in this file (scanWebsite).
+  const url = await assertSafeUrl(rawUrl);
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('Não foi possível baixar a imagem do produto.');
+  const buf = Buffer.from(await resp.arrayBuffer());
+  const mimeType = resp.headers.get('content-type') || 'image/jpeg';
+  return { mimeType, data: buf.toString('base64') };
+}
+
+async function regenerateArticleImage(
+  uid: string,
+  projectId: string,
+  articleId: string,
+  opts: { mode: 'improve' | 'fromProduct'; improvementPrompt?: string; baseProductImageUrl?: string },
+): Promise<string> {
+  const project = await loadProject(uid, projectId);
+  const artRef = projectRef(uid, projectId).collection('calendar').doc(articleId);
+  const snap = await artRef.get();
+  if (!snap.exists) throw Object.assign(new Error('Artigo não encontrado'), { status: 404 });
+  const article = { id: snap.id, ...(snap.data() as Omit<CalendarArticle, 'id'>) };
+
+  const estiloLabel = (() => {
+    const e = project.config.estiloImagem;
+    if (!e) return 'fotorrealista';
+    return e === 'Ilustracao' ? 'Ilustração' : e;
+  })();
+
+  const promptParts = [
+    `Imagem de capa para um artigo de blog sobre "${article.titulo}".`,
+    `Contexto: ${(article.articleFinal ?? article.articleDraft ?? '').slice(0, 400)}.`,
+    `Estilo visual: ${estiloLabel}. Composição limpa, elementos simbólicos do tema, sem texto e sem rostos hiperrealistas.`,
+    `Marca: ${project.config.nomeEmpresa}. Formato 16:9, alta resolução.`,
+  ];
+
+  let referenceImage: { mimeType: string; data: string } | undefined;
+  if (opts.mode === 'improve') {
+    if (!opts.improvementPrompt?.trim()) {
+      throw Object.assign(new Error('Descreva o ajuste desejado para a imagem.'), { status: 400 });
+    }
+    promptParts.push(`Ajustes solicitados pelo usuário: ${opts.improvementPrompt.trim()}.`);
+  } else {
+    if (!opts.baseProductImageUrl) {
+      throw Object.assign(new Error('Imagem do produto não informada.'), { status: 400 });
+    }
+    referenceImage = await fetchImageAsBase64(opts.baseProductImageUrl);
+    promptParts.push(
+      'Use a imagem do produto anexada como referência visual central da composição, mantendo suas cores e formato reconhecíveis.',
+    );
+  }
+
+  const base64 = await generateImageBase64(promptParts.join(' '), referenceImage);
+  const imageUrl = await saveImage(base64, uid, articleId);
+  await debitCreditsAdmin(uid, CREDIT_ACTIONS.contentImage, { productName: article.titulo });
+  await artRef.update({ imageUrl, updatedAt: new Date().toISOString() });
+  return imageUrl;
 }
 
 // ---------------------------------------------------------------------------
@@ -1053,6 +1125,30 @@ export function registerContentRoutes(app: express.Application, deps: ContentDep
       const decoded = await verifyFirebaseToken(req);
       await runArticlePipeline(decoded.uid, req.params.projectId, req.params.articleId);
       res.json({ ok: true });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  app.post('/api/content/projects/:projectId/articles/:articleId/regenerate-image', async (req, res) => {
+    try {
+      const decoded = await verifyFirebaseToken(req);
+      const body = req.body as {
+        mode?: 'improve' | 'fromProduct';
+        improvementPrompt?: string;
+        baseProductImageUrl?: string;
+      };
+      const { mode, improvementPrompt, baseProductImageUrl } = body;
+      if (mode !== 'improve' && mode !== 'fromProduct') {
+        return res.status(400).json({ error: 'mode inválido' });
+      }
+      const imageUrl = await regenerateArticleImage(
+        decoded.uid,
+        req.params.projectId,
+        req.params.articleId,
+        { mode, improvementPrompt, baseProductImageUrl },
+      );
+      res.json({ imageUrl });
     } catch (err) {
       sendError(res, err);
     }
