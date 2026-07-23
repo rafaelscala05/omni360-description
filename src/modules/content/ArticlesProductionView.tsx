@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Reorder } from 'motion/react';
 import {
-  CalendarDays, Sparkles, RefreshCw, Play, FileText, Pencil, Check, X, Clock, Plus,
+  CalendarDays, Sparkles, RefreshCw, Play, FileText, Pencil, Check, X, Clock, Plus, GripVertical,
 } from 'lucide-react';
 import type { CalendarArticle, ArticleStatus, ArticleSize, ContentCluster } from './types';
 import {
   listenCalendar, generateCalendar, produceArticle, updateArticle,
   createArticleManual, listProductsForLinking, type LinkableProduct,
+  updateArticlesPriority,
 } from '../../services/contentService';
 import ArticleView from './ArticleView';
 import ArticleSizePicker from './ArticleSizePicker';
@@ -85,6 +87,42 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
       setSelected(initialOpenId);
     }
   }, [initialOpenId, articles]);
+
+  // Migração automática (uma vez por projeto): artigos anteriores a esta
+  // feature não têm `priority`. Como `articles` já chega ordenado por
+  // scheduledDate (query de listenCalendar), atribuímos sequencialmente
+  // após o maior priority já existente, preservando a ordem relativa atual.
+  const migratedRef = useRef(false);
+  useEffect(() => {
+    if (migratedRef.current || !articles.length) return;
+    const missing = articles.filter((a) => a.priority === undefined);
+    if (missing.length === 0) {
+      migratedRef.current = true;
+      return;
+    }
+    migratedRef.current = true;
+    const existingPriorities = articles
+      .map((a) => a.priority)
+      .filter((p): p is number => p !== undefined);
+    let next = existingPriorities.length ? Math.max(...existingPriorities) + 1 : 0;
+    const updates = missing.map((a) => ({ id: a.id, priority: next++ }));
+    updateArticlesPriority(uid, projectId, updates).catch((e) =>
+      console.error('Falha ao migrar prioridade dos artigos:', e),
+    );
+  }, [articles, uid, projectId]);
+
+  const sortedArticles = useMemo(
+    () => [...articles].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0)),
+    [articles],
+  );
+
+  const handleReorder = (newOrder: CalendarArticle[]) => {
+    setArticles(newOrder);
+    const updates = newOrder.map((a, idx) => ({ id: a.id, priority: idx }));
+    updateArticlesPriority(uid, projectId, updates).catch((e) =>
+      console.error('Falha ao salvar nova ordem:', e),
+    );
+  };
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -217,11 +255,23 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm divide-y divide-slate-100 overflow-hidden">
-        {articles.map((a) => {
+      <Reorder.Group
+        as="div"
+        axis="y"
+        values={sortedArticles}
+        onReorder={handleReorder}
+        className="bg-white border border-slate-200 rounded-2xl shadow-sm divide-y divide-slate-100 overflow-hidden"
+      >
+        {sortedArticles.map((a) => {
           const cName = clusterName(a.clusterId);
           return (
-            <div key={a.id} className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors">
+            <Reorder.Item
+              key={a.id}
+              value={a}
+              as="div"
+              className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors bg-white"
+            >
+              <GripVertical className="w-4 h-4 text-slate-300 cursor-grab active:cursor-grabbing shrink-0" />
               <div className="text-xs font-medium text-slate-500 w-24 shrink-0">
                 {formatDateTime(a.scheduledDate, a.scheduledTime)}
               </div>
@@ -295,10 +345,10 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
                   </button>
                 )}
               </div>
-            </div>
+            </Reorder.Item>
           );
         })}
-      </div>
+      </Reorder.Group>
 
       {reschedulingId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm" onClick={() => setReschedulingId(null)}>
