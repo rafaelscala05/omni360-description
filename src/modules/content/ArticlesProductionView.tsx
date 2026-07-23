@@ -117,8 +117,9 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
   );
 
   const handleReorder = (newOrder: CalendarArticle[]) => {
-    setArticles(newOrder);
-    const updates = newOrder.map((a, idx) => ({ id: a.id, priority: idx }));
+    const reindexed = newOrder.map((a, idx) => ({ ...a, priority: idx }));
+    setArticles(reindexed);
+    const updates = reindexed.map((a) => ({ id: a.id, priority: a.priority as number }));
     updateArticlesPriority(uid, projectId, updates).catch((e) =>
       console.error('Falha ao salvar nova ordem:', e),
     );
