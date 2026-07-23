@@ -118,6 +118,7 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
       setIsEditing(false);
     } catch (e) {
       console.error(e);
+      alert('Erro ao salvar categoria. Verifique o console para mais detalhes.');
     } finally {
       setLoading(false);
     }

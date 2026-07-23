@@ -269,8 +269,12 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
   // External URLs are fetched/normalized client-side first (handles CORS via proxies in fetchAndProcessImage).
   const uploadImage = async (base64OrUrl: string, filename: string): Promise<string> => {
     try {
-      // Already a persistent Firebase Storage URL — nothing to re-upload.
-      if (base64OrUrl.includes('firebasestorage.googleapis.com') || base64OrUrl.includes('storage.googleapis.com')) {
+      // Already a persistent Firebase Storage URL with a real file extension —
+      // nothing to re-upload. URLs from before this convention (or written by a
+      // since-removed upload path) lack an extension and must fall through to be
+      // re-fetched and re-uploaded below, so they self-heal on the next save.
+      const hasImageExtension = /\.(jpe?g|png|webp|gif)(\?.*)?$/i.test(base64OrUrl);
+      if (hasImageExtension && (base64OrUrl.includes('firebasestorage.googleapis.com') || base64OrUrl.includes('storage.googleapis.com'))) {
         return base64OrUrl;
       }
 

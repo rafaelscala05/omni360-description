@@ -904,6 +904,33 @@ export default function App() {
     trackTemplateDownloaded();
   };
 
+  // Merges freshly imported products into the current catalog by SKU instead of
+  // replacing the whole array — importing an updated spreadsheet must not wipe
+  // out products that were already saved and aren't present in the new file.
+  const mergeImportedProducts = (existing: Product[], imported: Product[]): Product[] => {
+    const result = [...existing];
+    const indexBySku = new Map<string, number>();
+    result.forEach((p, i) => {
+      const sku = p['Código (SKU)'];
+      if (sku) indexBySku.set(sku, i);
+    });
+
+    imported.forEach(newProd => {
+      const sku = newProd['Código (SKU)'];
+      const existingIndex = sku ? indexBySku.get(sku) : undefined;
+      if (existingIndex !== undefined) {
+        // Same SKU already in the catalog: update it in place, keeping its
+        // original _id so cloud sync treats this as an update, not a delete+create.
+        result[existingIndex] = { ...newProd, _id: result[existingIndex]._id, _isDirty: true };
+      } else {
+        result.push(newProd);
+        if (sku) indexBySku.set(sku, result.length - 1);
+      }
+    });
+
+    return result;
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1004,13 +1031,13 @@ export default function App() {
               setShowCategoryImport(true);
             }).catch(e => {
               // fallback if network fails
-              setProducts(finalProducts);
+              setProducts(prev => mergeImportedProducts(prev, finalProducts));
             });
           } else {
-            setProducts(finalProducts);
+            setProducts(prev => mergeImportedProducts(prev, finalProducts));
           }
         } else {
-          setProducts(finalProducts);
+          setProducts(prev => mergeImportedProducts(prev, finalProducts));
         }
 
         setSelectedIds(new Set());
@@ -1115,7 +1142,7 @@ export default function App() {
         return prod;
       });
 
-      setProducts(updatedProducts);
+      setProducts(prev => mergeImportedProducts(prev, updatedProducts));
       setShowCategoryImport(false);
 
     } catch (e) {

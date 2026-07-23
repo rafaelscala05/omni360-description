@@ -14,9 +14,9 @@ export const fetchCategories = async (uid: string): Promise<Category[]> => {
 
 export const saveCategory = async (uid: string, category: Omit<Category, 'id' | 'createdAt' | 'updatedAt'>, id?: string) => {
   const categoryRef = id ? doc(db, getCategoriesPath(uid), id) : doc(collection(db, getCategoriesPath(uid)));
-  
+
   const now = new Date().toISOString();
-  const dataToSave = {
+  const dataToSave: any = {
     ...category,
     id: categoryRef.id,
     pathIds: category.pathIds.includes(categoryRef.id) ? category.pathIds : [...category.pathIds, categoryRef.id],
@@ -24,8 +24,15 @@ export const saveCategory = async (uid: string, category: Omit<Category, 'id' | 
   };
 
   if (!id) {
-    (dataToSave as any).createdAt = now;
+    dataToSave.createdAt = now;
   }
+
+  // Firestore's setDoc rejects any field whose value is `undefined` (this db
+  // isn't initialized with ignoreUndefinedProperties), so drop them before
+  // writing — otherwise creating a category without e.g. imagePrompts throws.
+  Object.keys(dataToSave).forEach(key => {
+    if (dataToSave[key] === undefined) delete dataToSave[key];
+  });
 
   await setDoc(categoryRef, dataToSave, { merge: true });
   return dataToSave as Category;
