@@ -24,6 +24,7 @@ import type {
   ClusterKeyword,
   CalendarArticle,
   ArticleStage,
+  ArticleSize,
 } from '../src/modules/content/types';
 import type { BlogPost, BlogSettings } from '../src/modules/content/blog/types';
 import { slugify, uniqueSlug } from '../src/modules/content/blog/slug';
@@ -34,6 +35,13 @@ import { loadStoreContext, extractSeedKeywords, discoverKeywordPool } from './ke
 
 const TEXT_MODEL = 'gemini-2.5-flash';
 const IMAGE_MODEL = 'gemini-2.5-flash-image';
+
+// Word-count target per article size, used in Stage 3 (Draft) of the pipeline.
+const ARTICLE_SIZE_WORD_RANGES: Record<ArticleSize, [number, number]> = {
+  curto: [600, 900],
+  medio: [1200, 1800],
+  longo: [2200, 3000],
+};
 
 const VERTEX_PROJECT = process.env.VERTEX_PROJECT_ID || firebaseAppletConfig.projectId;
 const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
@@ -509,21 +517,30 @@ async function generateCalendar(uid: string, project: ContentProject): Promise<C
     'A partir dos clusters abaixo (tema + palavras-chave por intenção), proponha tópicos de artigos para o calendário editorial.',
     'Para cada cluster, gere de 3 a 6 tópicos. Priorize por potencial de tráfego e relevância estratégica.',
     'Cada tópico deve ter um título atraente e uma palavra-chave principal coerente com o cluster.',
+    'Para cada tópico, defina também um "tamanho" ideal de artigo, com base na profundidade que o tema pede:',
+    '- "curto": tema pontual, resposta direta ou dica rápida, pouco material a cobrir.',
+    '- "medio": conteúdo explicativo padrão — use este para a maioria dos temas.',
+    '- "longo": guia completo, comparativo ou pilar do cluster, com muito material/subtemas a cobrir.',
     'Responda ESTRITAMENTE em JSON, já na ordem de prioridade desejada:',
-    '[{"titulo":"...","kwPrincipal":"...","clusterId":"<id do cluster>"}]',
+    '[{"titulo":"...","kwPrincipal":"...","clusterId":"<id do cluster>","tamanho":"curto"|"medio"|"longo"}]',
     '',
     `CLUSTERS:\n${JSON.stringify(clusterBrief)}`,
   ].join('\n');
 
-  let topics: Array<{ titulo: string; kwPrincipal: string; clusterId: string }>;
+  const validSize = (v: unknown): ArticleSize => (v === 'curto' || v === 'medio' || v === 'longo' ? v : 'medio');
+
+  let topics: Array<{ titulo: string; kwPrincipal: string; clusterId: string; tamanho: ArticleSize }>;
   try {
-    topics = parseJson<typeof topics>(await generateText(prompt, { systemInstruction: systemFor(project), temperature: 0.5 }));
-    topics = (Array.isArray(topics) ? topics : []).filter((t) => t?.titulo && source.some((c) => c.id === t.clusterId));
+    type RawTopic = { titulo: string; kwPrincipal: string; clusterId: string; tamanho?: unknown };
+    const raw = parseJson<RawTopic[]>(await generateText(prompt, { systemInstruction: systemFor(project), temperature: 0.5 }));
+    topics = (Array.isArray(raw) ? raw : [])
+      .filter((t) => t?.titulo && source.some((c) => c.id === t.clusterId))
+      .map((t) => ({ titulo: t.titulo, kwPrincipal: t.kwPrincipal, clusterId: t.clusterId, tamanho: validSize(t.tamanho) }));
     if (!topics.length) throw new Error('empty');
   } catch {
     // Fallback: one topic per cluster keyword.
     topics = source.flatMap((c) =>
-      (c.palavrasChave ?? []).slice(0, 3).map((k) => ({ titulo: `${c.nome}: ${k.termo}`, kwPrincipal: k.termo, clusterId: c.id })),
+      (c.palavrasChave ?? []).slice(0, 3).map((k) => ({ titulo: `${c.nome}: ${k.termo}`, kwPrincipal: k.termo, clusterId: c.id, tamanho: 'medio' as ArticleSize })),
     );
   }
   if (!topics.length) throw Object.assign(new Error('Não foi possível derivar tópicos dos clusters'), { status: 400 });
@@ -544,6 +561,7 @@ async function generateCalendar(uid: string, project: ContentProject): Promise<C
       titulo: topic.titulo,
       kwPrincipal: topic.kwPrincipal,
       clusterId: topic.clusterId,
+      tamanho: topic.tamanho,
       scheduledDate: toIsoDate(date),
       scheduledTime: defaultTime,
       status: 'agendado',
@@ -595,6 +613,7 @@ async function runArticlePipeline(
       [
         `Com base nesta pesquisa, crie um outline detalhado (H1, H2, H3) para "${article.titulo}".`,
         'Inclua título otimizado para SEO, meta description e resumo de cada seção.',
+        'Os títulos de H2/H3 devem ser sempre específicos ao conteúdo daquela seção. NUNCA use títulos genéricos como "Introdução", "Conclusão", "Considerações finais" ou "Resumo".',
         `PESQUISA:\n${researchBrief}`,
       ].join('\n\n'),
       { systemInstruction: sys, temperature: 0.5 },
@@ -602,9 +621,10 @@ async function runArticlePipeline(
     await setStage(2, { articleOutline });
 
     // ETAPA 3 — Draft
+    const [minWords, maxWords] = ARTICLE_SIZE_WORD_RANGES[article.tamanho ?? 'medio'];
     const articleDraft = await generateText(
       [
-        `Escreva o artigo completo em Markdown seguindo o outline abaixo, com 1.200 a 2.500 palavras.`,
+        `Escreva o artigo completo em Markdown seguindo o outline abaixo, com ${minWords} a ${maxWords} palavras.`,
         'Parágrafos curtos, subtítulos escaneáveis, KW principal no H1 e primeiro parágrafo, CTA ao final.',
         'Comece direto pelo conteúdo do artigo: NUNCA inclua saudação, auto-apresentação ou menção ao autor/persona (por exemplo "Olá! [nome] aqui", "Prepare-se para uma leitura que...", "Sou [nome] e vou te contar"). O primeiro parágrafo deve ir direto ao assunto do H1, sem repetir o título.',
         `OUTLINE:\n${articleOutline}`,
@@ -618,6 +638,8 @@ async function runArticlePipeline(
       [
         'Revise e humanize o artigo abaixo: elimine construções típicas de IA, adicione opiniões assertivas e exemplos concretos, mantenha o tom de voz.',
         'Se o texto abaixo começar com qualquer saudação, auto-apresentação ou menção à persona/autor (por exemplo "Olá! [nome] aqui", "Prepare-se para..."), REMOVA essa abertura por completo e reescreva o início para começar direto no conteúdo do primeiro parágrafo.',
+        'Se algum H2/H3 ainda tiver título genérico ("Introdução", "Conclusão", "Considerações finais", "Resumo"), renomeie para algo específico do conteúdo daquela seção — sem remover a seção.',
+        'Corte ou reescreva maneirismos típicos de texto gerado por IA, incluindo: construções de falso contraste ("Não é sobre X, é sobre Y", "Não se trata apenas de X, mas de Y"); frases de efeito/clichês ("Em um mundo cada vez mais [adjetivo]...", "É importante ressaltar/destacar que...", "Vale a pena mencionar que..."); e uso de "Em suma"/"Em resumo" como muleta de transição.',
         'Ao final, em uma linha separada, forneça: SLUG: <slug-amigavel> e META: <meta description>.',
         `ARTIGO:\n${articleDraft}`,
       ].join('\n\n'),

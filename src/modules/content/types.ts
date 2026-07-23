@@ -182,6 +182,10 @@ export type ArticleStatus =
 // Pipeline stage 1..5: DeepResearch → Outline → Draft → Review → Image.
 export type ArticleStage = 0 | 1 | 2 | 3 | 4 | 5;
 
+// Alvo de palavras do artigo. Artigos sem o campo (criados antes desta feature)
+// são tratados como 'medio' em toda a aplicação.
+export type ArticleSize = 'curto' | 'medio' | 'longo';
+
 export interface CalendarArticle {
   id: string;
   titulo: string;
@@ -190,6 +194,7 @@ export interface CalendarArticle {
   scheduledDate: string; // ISO date (YYYY-MM-DD)
   scheduledTime?: string;        // "HH:MM" — hora de publicação
   produtosVinculados?: string[]; // IDs de Product._id vinculados (artigos antigos podem ter texto livre até serem re-vinculados)
+  tamanho?: ArticleSize;
   status: ArticleStatus;
   stage: ArticleStage;
   // Outputs accumulated by the 5-stage pipeline.

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X, Check, RefreshCw, Globe, ExternalLink, Play, Pencil, Eye, Code, Wand2, Image as ImageIcon } from 'lucide-react';
-import type { CalendarArticle } from './types';
+import type { CalendarArticle, ArticleSize } from './types';
 import {
   updateArticle,
   publishArticle,
@@ -11,6 +11,7 @@ import {
 } from '../../services/contentService';
 import { markdownToHtml } from './markdown';
 import ProductLinkPicker from './ProductLinkPicker';
+import ArticleSizePicker from './ArticleSizePicker';
 
 interface Props {
   uid: string;
@@ -75,6 +76,11 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
     setEditingTitle(false);
   };
 
+  const changeSize = (tamanho: ArticleSize) => {
+    run('tamanho', () => updateArticle(uid, projectId, article.id, { tamanho }));
+  };
+  const hasDraft = article.stage >= 3 || !!article.articleDraft;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
@@ -108,6 +114,14 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
               </div>
             )}
             <p className="text-xs text-slate-400">KW: {article.kwPrincipal} · {article.scheduledDate}{article.scheduledTime ? ` · ${article.scheduledTime}` : ''}</p>
+            <div className="flex items-center gap-2 mt-1.5">
+              <ArticleSizePicker value={article.tamanho} onChange={changeSize} disabled={busy === 'tamanho'} />
+              {hasDraft && (
+                <span className="text-[10px] text-slate-400">
+                  Alterar o tamanho não reprocessa o rascunho já gerado desta produção.
+                </span>
+              )}
+            </div>
           </div>
           <button onClick={onClose} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg shrink-0"><X className="w-5 h-5" /></button>
         </div>

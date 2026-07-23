@@ -2,9 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   CalendarDays, Sparkles, RefreshCw, Play, FileText, Pencil, Check, X, Clock,
 } from 'lucide-react';
-import type { CalendarArticle, ArticleStatus, ContentCluster } from './types';
+import type { CalendarArticle, ArticleStatus, ArticleSize, ContentCluster } from './types';
 import { listenCalendar, generateCalendar, produceArticle, updateArticle } from '../../services/contentService';
 import ArticleView from './ArticleView';
+import ArticleSizePicker from './ArticleSizePicker';
 
 interface Props {
   uid: string;
@@ -114,6 +115,10 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
     setEditingTitleId(null);
   };
 
+  const changeSize = (articleId: string, tamanho: ArticleSize) => {
+    updateArticle(uid, projectId, articleId, { tamanho });
+  };
+
   const selectedArticle = articles.find((a) => a.id === selected) ?? null;
   const clusterName = (clusterId: string) => clusters.find((c) => c.id === clusterId)?.nome ?? null;
 
@@ -177,6 +182,7 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
                 )}
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className="text-[11px] text-slate-400">KW: {a.kwPrincipal}{a.status === 'em_producao' ? ` · etapa ${a.stage}/5` : ''}</span>
+                  <ArticleSizePicker value={a.tamanho} onChange={(size) => changeSize(a.id, size)} />
                   {cName && (
                     <button
                       onClick={() => onGoCluster(a.clusterId)}
