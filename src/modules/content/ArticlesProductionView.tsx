@@ -1,11 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  CalendarDays, Sparkles, RefreshCw, Play, FileText, Pencil, Check, X, Clock,
+  CalendarDays, Sparkles, RefreshCw, Play, FileText, Pencil, Check, X, Clock, Plus,
 } from 'lucide-react';
 import type { CalendarArticle, ArticleStatus, ArticleSize, ContentCluster } from './types';
-import { listenCalendar, generateCalendar, produceArticle, updateArticle } from '../../services/contentService';
+import {
+  listenCalendar, generateCalendar, produceArticle, updateArticle,
+  createArticleManual, listProductsForLinking, type LinkableProduct,
+} from '../../services/contentService';
 import ArticleView from './ArticleView';
 import ArticleSizePicker from './ArticleSizePicker';
+import ProductLinkPicker from './ProductLinkPicker';
 
 interface Props {
   uid: string;
@@ -54,9 +58,26 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState('');
 
+  const [creatingArticle, setCreatingArticle] = useState(false);
+  const [newTitulo, setNewTitulo] = useState('');
+  const [newKw, setNewKw] = useState('');
+  const [newTamanho, setNewTamanho] = useState<ArticleSize>('medio');
+  const [newScheduledDate, setNewScheduledDate] = useState('');
+  const [newClusterId, setNewClusterId] = useState('');
+  const [newProdutoIds, setNewProdutoIds] = useState<string[]>([]);
+  const [allProducts, setAllProducts] = useState<LinkableProduct[]>([]);
+  const [creatingSaving, setCreatingSaving] = useState(false);
+  const [creatingError, setCreatingError] = useState<string | null>(null);
+
   const didOpenInitial = useRef(false);
 
   useEffect(() => listenCalendar(uid, projectId, setArticles), [uid, projectId]);
+
+  useEffect(() => {
+    if (creatingArticle) {
+      listProductsForLinking(uid).then(setAllProducts).catch(() => setAllProducts([]));
+    }
+  }, [creatingArticle, uid]);
 
   useEffect(() => {
     if (initialOpenId && !didOpenInitial.current && articles.length) {
@@ -119,6 +140,46 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
     updateArticle(uid, projectId, articleId, { tamanho });
   };
 
+  const approvedClusters = useMemo(() => clusters.filter((c) => c.aprovado && !c.excluido), [clusters]);
+
+  const openCreateArticle = () => {
+    setNewTitulo('');
+    setNewKw('');
+    setNewTamanho('medio');
+    setNewScheduledDate(new Date().toISOString().slice(0, 10));
+    setNewClusterId('');
+    setNewProdutoIds([]);
+    setCreatingError(null);
+    setCreatingArticle(true);
+  };
+
+  const confirmCreateArticle = async () => {
+    if (!newTitulo.trim() || !newKw.trim() || !newScheduledDate) {
+      setCreatingError('Preencha título, palavra-chave e data.');
+      return;
+    }
+    setCreatingSaving(true);
+    setCreatingError(null);
+    try {
+      const priorities = articles.map((a) => a.priority ?? 0);
+      const minPriority = priorities.length ? Math.min(...priorities) : 0;
+      await createArticleManual(uid, projectId, {
+        titulo: newTitulo.trim(),
+        kwPrincipal: newKw.trim(),
+        tamanho: newTamanho,
+        scheduledDate: newScheduledDate,
+        clusterId: newClusterId,
+        produtosVinculados: newProdutoIds,
+        priority: minPriority - 1,
+      });
+      setCreatingArticle(false);
+    } catch (e) {
+      setCreatingError(e instanceof Error ? e.message : 'Erro ao criar artigo');
+    } finally {
+      setCreatingSaving(false);
+    }
+  };
+
   const selectedArticle = articles.find((a) => a.id === selected) ?? null;
   const clusterName = (clusterId: string) => clusters.find((c) => c.id === clusterId)?.nome ?? null;
 
@@ -129,14 +190,22 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
           <h1 className="font-display text-2xl font-bold text-slate-900">Produção de Artigos</h1>
           <p className="text-sm text-slate-500 mt-0.5">Artigos agendados. Produza manualmente ou aguarde a automação na data.</p>
         </div>
-        <button
-          onClick={handleGenerate}
-          disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-lg shadow-sm transition-colors"
-        >
-          {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-          {articles.length ? 'Regerar calendário' : 'Gerar calendário'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={openCreateArticle}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+          >
+            <Plus className="w-4 h-4" /> Criar artigo
+          </button>
+          <button
+            onClick={handleGenerate}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-lg shadow-sm transition-colors"
+          >
+            {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {articles.length ? 'Regerar calendário' : 'Gerar calendário'}
+          </button>
+        </div>
       </div>
 
       {error && <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
@@ -258,6 +327,80 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
             <div className="flex justify-end gap-2 mt-5">
               <button onClick={() => setReschedulingId(null)} className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg">Cancelar</button>
               <button onClick={confirmReschedule} className="px-4 py-2 text-sm font-medium text-white bg-[#FF5B03] hover:bg-[#E14E00] rounded-lg">Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {creatingArticle && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm" onClick={() => setCreatingArticle(false)}>
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-display text-lg font-bold text-slate-900 mb-4">Criar artigo</h3>
+            {creatingError && (
+              <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{creatingError}</div>
+            )}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Título</label>
+                <input
+                  autoFocus
+                  value={newTitulo}
+                  onChange={(e) => setNewTitulo(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Palavra-chave principal</label>
+                <input
+                  value={newKw}
+                  onChange={(e) => setNewKw(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
+                />
+              </div>
+              <div className="flex items-end gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Tamanho</label>
+                  <ArticleSizePicker value={newTamanho} onChange={setNewTamanho} />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Data agendada</label>
+                  <input
+                    type="date"
+                    value={newScheduledDate}
+                    onChange={(e) => setNewScheduledDate(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Cluster</label>
+                <select
+                  value={newClusterId}
+                  onChange={(e) => setNewClusterId(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
+                >
+                  <option value="">Nenhum</option>
+                  {approvedClusters.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nome}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Produtos vinculados</label>
+                <ProductLinkPicker products={allProducts} selectedIds={newProdutoIds} onChange={setNewProdutoIds} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-5">
+              <button onClick={() => setCreatingArticle(false)} className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg">
+                Cancelar
+              </button>
+              <button
+                onClick={confirmCreateArticle}
+                disabled={creatingSaving}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-lg"
+              >
+                {creatingSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : null} Criar artigo
+              </button>
             </div>
           </div>
         </div>
