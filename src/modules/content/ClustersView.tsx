@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Check, RefreshCw, Layers, Eye, Pencil, Trash2, X, FileText, TrendingUp } from 'lucide-react';
+import { Sparkles, Check, RefreshCw, Layers, Eye, Pencil, Trash2, X, FileText, TrendingUp, Plus } from 'lucide-react';
 import type { ContentCluster, CalendarArticle } from './types';
 import {
-  listenClusters, listenCalendar, generateClusters, approveCluster, updateClusterName, excludeCluster,
+  listenClusters, listenCalendar, generateClusters, approveCluster, updateClusterName, excludeCluster, createClusterManual,
 } from '../../services/contentService';
 import { INTENT_META } from './ClusterDetailView';
 import ClusterDetailView from './ClusterDetailView';
@@ -28,6 +28,11 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showManualForm, setShowManualForm] = useState(false);
+  const [manualNome, setManualNome] = useState('');
+  const [manualEstrategia, setManualEstrategia] = useState('');
+  const [manualSaving, setManualSaving] = useState(false);
+  const [manualError, setManualError] = useState<string | null>(null);
 
   useEffect(() => listenClusters(uid, projectId, setClusters), [uid, projectId]);
   useEffect(() => listenCalendar(uid, projectId, setArticles), [uid, projectId]);
@@ -66,6 +71,25 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
     setEditingId(null);
   };
 
+  const handleCreateManual = async () => {
+    if (!manualNome.trim()) {
+      setManualError('Nome é obrigatório.');
+      return;
+    }
+    setManualSaving(true);
+    setManualError(null);
+    try {
+      await createClusterManual(uid, projectId, { nome: manualNome.trim(), estrategia: manualEstrategia.trim() });
+      setManualNome('');
+      setManualEstrategia('');
+      setShowManualForm(false);
+    } catch (e) {
+      setManualError(e instanceof Error ? e.message : 'Erro ao criar cluster');
+    } finally {
+      setManualSaving(false);
+    }
+  };
+
   const selectedCluster = clusters.find((c) => c.id === selectedId) ?? null;
   if (selectedCluster) {
     return (
@@ -88,14 +112,22 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
           <h1 className="font-display text-2xl font-bold text-slate-900">Clusters de Conteúdo</h1>
           <p className="text-sm text-slate-500 mt-0.5">Temas estratégicos e palavras-chave por intenção de busca.</p>
         </div>
-        <button
-          onClick={handleGenerate}
-          disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-xl shadow-sm transition-colors"
-        >
-          {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-          {active.length ? 'Gerar novamente' : 'Gerar clusters'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowManualForm((v) => !v)}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+          >
+            <Plus className="w-4 h-4" /> Criar manualmente
+          </button>
+          <button
+            onClick={handleGenerate}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-xl shadow-sm transition-colors"
+          >
+            {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {active.length ? 'Gerar novamente' : 'Gerar clusters'}
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -110,6 +142,51 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
           </button>
         ))}
       </div>
+
+      {showManualForm && (
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 mb-5">
+          <h3 className="font-semibold text-slate-900 mb-3 text-sm">Novo cluster manual</h3>
+          {manualError && (
+            <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{manualError}</div>
+          )}
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Nome</label>
+              <input
+                value={manualNome}
+                onChange={(e) => setManualNome(e.target.value)}
+                placeholder="Ex.: Cuidados com o couro"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Estratégia</label>
+              <textarea
+                value={manualEstrategia}
+                onChange={(e) => setManualEstrategia(e.target.value)}
+                rows={2}
+                placeholder="Descreva o tema e o objetivo deste cluster"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <button
+              onClick={() => setShowManualForm(false)}
+              className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleCreateManual}
+              disabled={manualSaving}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-lg transition-colors"
+            >
+              {manualSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Criar cluster
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
 
