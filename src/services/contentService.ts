@@ -16,6 +16,7 @@ import {
   orderBy,
   limit as fsLimit,
   serverTimestamp,
+  writeBatch,
 } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import type {
@@ -23,6 +24,7 @@ import type {
   ContentProjectConfig,
   ContentCluster,
   CalendarArticle,
+  ArticleSize,
   SeoAudit,
 } from '../modules/content/types';
 
@@ -211,6 +213,87 @@ export async function moveArticle(
     clusterId: novoClusterId,
     updatedAt: new Date().toISOString(),
   });
+}
+
+// Manual (non-AI) cluster creation. Entra pronto para uso (aprovado=true) já
+// que o próprio usuário definiu o tema — sem etapa de aprovação como os
+// clusters gerados por IA. Palavras-chave podem ser adicionadas depois em
+// ClusterDetailView.
+export async function createClusterManual(
+  uid: string,
+  projectId: string,
+  data: { nome: string; estrategia: string },
+): Promise<string> {
+  const ref = await addDoc(collection(db, `users/${uid}/contentProjects/${projectId}/clusters`), {
+    nome: data.nome,
+    estrategia: data.estrategia,
+    palavrasChave: [],
+    aprovado: true,
+    excluido: false,
+    createdAt: new Date().toISOString(),
+  });
+  return ref.id;
+}
+
+export interface ManualArticleInput {
+  titulo: string;
+  kwPrincipal: string;
+  tamanho: ArticleSize;
+  scheduledDate: string;
+  clusterId: string; // '' quando criado sem cluster
+  produtosVinculados: string[];
+  priority: number;
+}
+
+// Cria só a "ficha" do artigo (sem disparar o pipeline de IA) — status/stage
+// iniciais idênticos a um artigo recém-gerado pelo calendário, para que as
+// ações já existentes em ArticleView (gerar pesquisa, outline, etc.)
+// funcionem sem diferenciação de origem.
+export async function createArticleManual(
+  uid: string,
+  projectId: string,
+  data: ManualArticleInput,
+): Promise<string> {
+  const now = new Date().toISOString();
+  const ref = await addDoc(collection(db, `users/${uid}/contentProjects/${projectId}/calendar`), {
+    titulo: data.titulo,
+    kwPrincipal: data.kwPrincipal,
+    clusterId: data.clusterId,
+    scheduledDate: data.scheduledDate,
+    tamanho: data.tamanho,
+    produtosVinculados: data.produtosVinculados,
+    status: 'agendado',
+    stage: 0,
+    priority: data.priority,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return ref.id;
+}
+
+// Persists new priority values after a drag-and-drop reorder (or the
+// one-time migration that backfills missing priorities). Chunked at 20
+// writes per batch, same convention as App.tsx's saveToCloud.
+export async function updateArticlesPriority(
+  uid: string,
+  projectId: string,
+  updates: { id: string; priority: number }[],
+): Promise<void> {
+  let batch = writeBatch(db);
+  let opCount = 0;
+  for (const { id, priority } of updates) {
+    batch.update(doc(db, `users/${uid}/contentProjects/${projectId}/calendar/${id}`), {
+      priority,
+      updatedAt: new Date().toISOString(),
+    });
+    opCount++;
+    if (opCount >= 20) {
+      await batch.commit();
+      batch = writeBatch(db);
+      opCount = 0;
+    }
+  }
+  if (opCount > 0) await batch.commit();
 }
 
 // ---------------------------------------------------------------------------

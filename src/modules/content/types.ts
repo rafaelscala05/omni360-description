@@ -190,11 +190,16 @@ export interface CalendarArticle {
   id: string;
   titulo: string;
   kwPrincipal: string;
-  clusterId: string;
+  clusterId?: string; // opcional: artigos criados sem cluster ficam na aba "Sem cluster"
   scheduledDate: string; // ISO date (YYYY-MM-DD)
   scheduledTime?: string;        // "HH:MM" — hora de publicação
   produtosVinculados?: string[]; // IDs de Product._id vinculados (artigos antigos podem ter texto livre até serem re-vinculados)
   tamanho?: ArticleSize;
+  // Ordem manual (drag-and-drop) na tela de Produção. Independente de
+  // scheduledDate (que segue regendo a tela de Calendário). Artigos
+  // anteriores a esta feature não têm o campo até serem migrados (ver
+  // ArticlesProductionView.tsx).
+  priority?: number;
   status: ArticleStatus;
   stage: ArticleStage;
   // Outputs accumulated by the 5-stage pipeline.
