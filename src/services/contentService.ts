@@ -146,6 +146,39 @@ export async function updateProjectConfig(uid: string, projectId: string, config
   });
 }
 
+export async function renameProject(uid: string, projectId: string, nomeEmpresa: string): Promise<void> {
+  await updateDoc(doc(db, `users/${uid}/contentProjects/${projectId}`), {
+    'config.nomeEmpresa': nomeEmpresa,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+const PROJECT_SUBCOLLECTIONS = ['clusters', 'calendar', 'seoAudits', 'blogPosts', 'blogCategories'] as const;
+const PROJECT_FIXED_DOCS = ['secrets/wordpress', 'secrets/sanity', 'blog/settings'] as const;
+
+export async function deleteProject(uid: string, projectId: string): Promise<void> {
+  const base = `users/${uid}/contentProjects/${projectId}`;
+  const refsToDelete: ReturnType<typeof doc>[] = [];
+
+  for (const sub of PROJECT_SUBCOLLECTIONS) {
+    const snap = await getDocs(collection(db, `${base}/${sub}`));
+    snap.forEach((d) => refsToDelete.push(d.ref));
+  }
+  for (const fixedPath of PROJECT_FIXED_DOCS) {
+    refsToDelete.push(doc(db, `${base}/${fixedPath}`));
+  }
+  refsToDelete.push(doc(db, base));
+
+  const CHUNK = 500;
+  for (let i = 0; i < refsToDelete.length; i += CHUNK) {
+    const batch = writeBatch(db);
+    for (const ref of refsToDelete.slice(i, i + CHUNK)) {
+      batch.delete(ref);
+    }
+    await batch.commit();
+  }
+}
+
 // Stores the sensitive WordPress Application Password in a separate subdoc the
 // client can write but never read back (Firestore rules: read=false).
 export async function saveWordpressSecret(uid: string, projectId: string, appPassword: string): Promise<void> {

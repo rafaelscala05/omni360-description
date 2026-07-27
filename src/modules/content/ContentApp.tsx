@@ -13,6 +13,7 @@ import CalendarView from './CalendarView';
 import ArticlesProductionView from './ArticlesProductionView';
 import DashboardPanel from './DashboardPanel';
 import CompanyProfile from './CompanyProfile';
+import CompanyManager from './CompanyManager';
 import IntegrationsView from './IntegrationsView';
 import BlogView from './blog/BlogView';
 
@@ -36,6 +37,7 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
   const [creatingProject, setCreatingProject] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [managingCompanies, setManagingCompanies] = useState(false);
   const [pendingClusterId, setPendingClusterId] = useState<string | null>(null);
   const [clusters, setClusters] = useState<ContentCluster[]>([]);
   const [openArticleId, setOpenArticleId] = useState<string | null>(null);
@@ -44,7 +46,7 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
     listenProjects(uid, (list) => {
       setProjects(list);
       setReady(true);
-      setSelectedId((prev) => prev ?? list[0]?.id ?? null);
+      setSelectedId((prev) => (prev && list.some((p) => p.id === prev)) ? prev : (list[0]?.id ?? null));
     }),
   [uid]);
 
@@ -122,6 +124,12 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
                   {p.config.nomeEmpresa}
                 </button>
               ))}
+              <button
+                onClick={() => { setManagingCompanies(true); setProjectMenuOpen(false); }}
+                className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-white/10 border-t border-white/10"
+              >
+                Gerenciar empresas
+              </button>
               <button
                 onClick={() => { setCreatingProject(true); setProjectMenuOpen(false); }}
                 className="w-full text-left px-3 py-2 text-sm text-[#FF9E78] hover:bg-white/10 flex items-center gap-2"
@@ -221,6 +229,10 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
           )}
         </main>
       </div>
+
+      {managingCompanies && (
+        <CompanyManager uid={uid} projects={projects} onClose={() => setManagingCompanies(false)} />
+      )}
     </div>
   );
 };
