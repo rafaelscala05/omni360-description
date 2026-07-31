@@ -141,8 +141,14 @@ export function extractImage(result: GenerateContentResult): string | null {
   return null;
 }
 
+// Ambient images are always photographic (never need transparency), so JPEG is safe here and
+// ~5x smaller than PNG for the same photo — matches the JPEG treatment fetchAndProcessImage
+// already applies to input images.
+const AMBIENT_IMAGE_JPEG_QUALITY = 0.92;
+
 // Center-crops a data URL to the given aspect ratio (e.g. "3:4") using an offscreen canvas.
 // This guarantees the correct ratio regardless of what the generative model returns.
+// Output is always re-encoded to JPEG.
 function cropToAspectRatio(dataUrl: string, aspectRatio: string): Promise<string> {
   const [wStr, hStr] = aspectRatio.split(':');
   const targetW = parseInt(wStr, 10);
@@ -177,10 +183,35 @@ function cropToAspectRatio(dataUrl: string, aspectRatio: string): Promise<string
 
       const ctx = canvas.getContext('2d');
       if (!ctx) { resolve(dataUrl); return; }
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/png'));
+      resolve(canvas.toDataURL('image/jpeg', AMBIENT_IMAGE_JPEG_QUALITY));
     };
     img.onerror = () => reject(new Error('Falha ao carregar imagem para recorte'));
+    img.src = dataUrl;
+  });
+}
+
+// Re-encodes a data URL as JPEG, capped at 1024px on the longest side, without cropping.
+// Used for the 1:1 case, which previously returned the model's raw (large) PNG untouched.
+function reencodeAsJpeg(dataUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const maxDim = 1024;
+      const scale = Math.min(maxDim / img.naturalWidth, maxDim / img.naturalHeight, 1);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(dataUrl); return; }
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', AMBIENT_IMAGE_JPEG_QUALITY));
+    };
+    img.onerror = () => reject(new Error('Falha ao converter imagem gerada para JPEG'));
     img.src = dataUrl;
   });
 }
@@ -208,6 +239,6 @@ export async function generateImage(base64Data: string, mimeType: string, prompt
   if (!imageData) throw new Error('O modelo não retornou uma imagem. Tente novamente.');
   const raw = `data:image/png;base64,${imageData}`;
 
-  if (aspectRatio === '1:1') return raw;
+  if (aspectRatio === '1:1') return reencodeAsJpeg(raw);
   return cropToAspectRatio(raw, aspectRatio);
 }

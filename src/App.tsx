@@ -1419,7 +1419,52 @@ export default function App() {
   };
 
   // generateDescriptionText moved to productService
-  
+
+  // Pure patch builders shared by the single-product apply functions below and by the
+  // mass-generation loops (startGenerateMass/startEnrichMass), which need to compute these
+  // patches without going through setProducts on every single processed item.
+  const buildGeneratedParentPatch = (parent: Product, generatedData: any) => {
+    const newAttributes = { ...(parent.attributes || {}) };
+    if (generatedData.extracted_attributes) {
+      Object.keys(generatedData.extracted_attributes).forEach(key => {
+        newAttributes[key] = {
+          value: generatedData.extracted_attributes[key].value,
+          confirmed: false,
+          aiSuggested: true,
+          source: 'text_ai'
+        };
+      });
+    }
+    const tituloOtimizado = decodeHTMLEntities(generatedData.titulo_seo);
+    return {
+      // O título otimizado também passa a ser o nome do produto (campo 'Descrição').
+      'Descrição': tituloOtimizado || parent['Descrição'],
+      'Descrição complementar': truncateHtml(decodeHTMLEntities(generatedData.descricao_html)),
+      'Título SEO': tituloOtimizado,
+      'Descrição SEO': decodeHTMLEntities(generatedData.descricao_seo),
+      'Palavras chave SEO': decodeHTMLEntities(generatedData.palavras_chave),
+      attributes: newAttributes,
+      _statusDescricao: 'Gerado por IA' as const,
+      _statusSEO: 'Gerado por IA' as const,
+      _generationLog: generatedData._promptLog,
+      _generationError: undefined,
+      _tokenUsage: {
+        ...parent._tokenUsage,
+        generation: generatedData._usage
+      },
+      _isGenerating: false,
+      _isDirty: true
+    };
+  };
+
+  // SEO fields are NOT copied to children according to prompt instructions
+  const buildGeneratedChildPatch = (generatedData: any) => ({
+    'Descrição complementar': decodeHTMLEntities(generatedData.descricao_html),
+    _statusDescricao: 'Gerado por IA' as const,
+    _generationError: undefined,
+    _isDirty: true
+  });
+
   const applyGenerationToProductAndChildren = (productId: string, generatedData: any) => {
     setProducts(prev => {
       const updated = [...prev];
@@ -1429,54 +1474,13 @@ export default function App() {
       const parent = updated[parentIdx];
       const parentSku = parent['Código (SKU)'];
 
-      // Prepare normalized attributes from extracted data
-      const newAttributes = { ...(parent.attributes || {}) };
-      if (generatedData.extracted_attributes) {
-        Object.keys(generatedData.extracted_attributes).forEach(key => {
-          newAttributes[key] = {
-            value: generatedData.extracted_attributes[key].value,
-            confirmed: false,
-            aiSuggested: true,
-            source: 'text_ai'
-          };
-        });
-      }
-
-      // Update parent
-      const tituloOtimizado = decodeHTMLEntities(generatedData.titulo_seo);
-      updated[parentIdx] = {
-        ...parent,
-        // O título otimizado também passa a ser o nome do produto (campo 'Descrição').
-        'Descrição': tituloOtimizado || parent['Descrição'],
-        'Descrição complementar': truncateHtml(decodeHTMLEntities(generatedData.descricao_html)),
-        'Título SEO': tituloOtimizado,
-        'Descrição SEO': decodeHTMLEntities(generatedData.descricao_seo),
-        'Palavras chave SEO': decodeHTMLEntities(generatedData.palavras_chave),
-        attributes: newAttributes,
-        _statusDescricao: 'Gerado por IA',
-        _statusSEO: 'Gerado por IA',
-        _generationLog: generatedData._promptLog,
-        _generationError: undefined,
-        _tokenUsage: {
-          ...parent._tokenUsage,
-          generation: generatedData._usage
-        },
-        _isGenerating: false,
-        _isDirty: true
-      };
+      updated[parentIdx] = { ...parent, ...buildGeneratedParentPatch(parent, generatedData) };
 
       // Update children
       if (parentSku) {
         for (let i = 0; i < updated.length; i++) {
           if (updated[i]['Código do pai'] === parentSku) {
-            updated[i] = {
-              ...updated[i],
-              'Descrição complementar': decodeHTMLEntities(generatedData.descricao_html),
-              // SEO fields are NOT copied to children according to prompt instructions
-              _statusDescricao: 'Gerado por IA',
-              _generationError: undefined,
-              _isDirty: true
-            };
+            updated[i] = { ...updated[i], ...buildGeneratedChildPatch(generatedData) };
           }
         }
       }
@@ -1948,6 +1952,23 @@ Retorne APENAS um JSON válido no seguinte formato:
     }
   };
 
+  // Pure patch builder — same shape applies to both the parent and its children.
+  const buildEnrichedPatch = (p: Product, enrichedData: any) => ({
+    'GTIN/EAN': enrichedData['GTIN/EAN'] || p['GTIN/EAN'],
+    'NCM (Classificação fiscal)': enrichedData['NCM (Classificação fiscal)'] || p['NCM (Classificação fiscal)'],
+    'Peso bruto (Kg)': enrichedData['Peso bruto (Kg)'] || p['Peso bruto (Kg)'],
+    'Largura embalagem': enrichedData['Largura embalagem'] || p['Largura embalagem'],
+    'Altura Embalagem': enrichedData['Altura Embalagem'] || p['Altura Embalagem'],
+    'Comprimento embalagem': enrichedData['Comprimento embalagem'] || p['Comprimento embalagem'],
+    _enrichmentLog: enrichedData['log_fontes'] || p._enrichmentLog,
+    _tokenUsage: {
+      ...p._tokenUsage,
+      enrichment: enrichedData._usage
+    },
+    _isEnriching: false,
+    _isDirty: true
+  });
+
   const applyEnrichmentToProductAndChildren = (productId: string, enrichedData: any) => {
     setProducts(prev => {
       const updated = [...prev];
@@ -1957,31 +1978,14 @@ Retorne APENAS um JSON válido no seguinte formato:
       const parent = updated[parentIdx];
       const parentSku = parent['Código (SKU)'];
 
-      const updateFields = (p: Product) => ({
-        ...p,
-        'GTIN/EAN': enrichedData['GTIN/EAN'] || p['GTIN/EAN'],
-        'NCM (Classificação fiscal)': enrichedData['NCM (Classificação fiscal)'] || p['NCM (Classificação fiscal)'],
-        'Peso bruto (Kg)': enrichedData['Peso bruto (Kg)'] || p['Peso bruto (Kg)'],
-        'Largura embalagem': enrichedData['Largura embalagem'] || p['Largura embalagem'],
-        'Altura Embalagem': enrichedData['Altura Embalagem'] || p['Altura Embalagem'],
-        'Comprimento embalagem': enrichedData['Comprimento embalagem'] || p['Comprimento embalagem'],
-        _enrichmentLog: enrichedData['log_fontes'] || p._enrichmentLog,
-        _tokenUsage: {
-          ...p._tokenUsage,
-          enrichment: enrichedData._usage
-        },
-        _isEnriching: false,
-        _isDirty: true
-      });
-
       // Update parent
-      updated[parentIdx] = updateFields(parent);
+      updated[parentIdx] = { ...parent, ...buildEnrichedPatch(parent, enrichedData) };
 
       // Update children
       if (parentSku) {
         for (let i = 0; i < updated.length; i++) {
           if (updated[i]['Código do pai'] === parentSku) {
-            updated[i] = updateFields(updated[i]);
+            updated[i] = { ...updated[i], ...buildEnrichedPatch(updated[i], enrichedData) };
           }
         }
       }
@@ -2106,53 +2110,75 @@ Retorne APENAS um JSON válido no seguinte formato:
     setShowMassActionConfirm(null);
     setIsGeneratingMass(true);
     setGenerationProgress({ current: 0, total: selectedIds.size });
-    
+
     const idsToProcess: string[] = Array.from(selectedIds);
     let successCount = 0;
 
+    // Work against a local copy + index maps instead of calling setProducts([...prev]) twice
+    // per item: that pattern clones the ENTIRE catalog array on every single processed
+    // product (O(selected × catalog)), which gets very slow on large catalogs. Here each
+    // per-item update is O(1) against `working`, and we only commit a new array reference
+    // to React state (which is what actually triggers the full-array clone) periodically.
+    let working = productsRef.current.slice();
+    const indexById = new Map(working.map((p, i) => [p._id, i] as const));
+    const childIndicesByParentSku = new Map<string, number[]>();
+    working.forEach((p, i) => {
+      const parentSku = p['Código do pai'];
+      if (parentSku) {
+        const list = childIndicesByParentSku.get(parentSku) || [];
+        list.push(i);
+        childIndicesByParentSku.set(parentSku, list);
+      }
+    });
+    const FLUSH_EVERY = 5;
+    const flush = () => {
+      working = working.slice();
+      productsRef.current = working;
+      setProducts(working);
+    };
+
     for (let i = 0; i < idsToProcess.length; i++) {
       const id = idsToProcess[i];
-      const productIndex = products.findIndex(p => p._id === id);
-      if (productIndex === -1) continue;
-      
-      const product = products[productIndex];
+      const idx = indexById.get(id);
+      if (idx === undefined) continue;
+
+      const product = working[idx];
       setGenerationLog(`Gerando descrição para: ${product['Descrição'] || product['Código (SKU)']}...`);
 
-      // Update UI to show this specific item is generating
-      setProducts(prev => {
-        const updated = [...prev];
-        const idx = updated.findIndex(p => p._id === id);
-        if (idx !== -1) updated[idx] = { ...updated[idx], _isGenerating: true };
-        return updated;
-      });
+      // Mark this specific item as generating
+      working[idx] = { ...product, _isGenerating: true };
 
       try {
         const template = templates.find(t => t.id === selectedTemplateId) || defaultTemplate;
         const generatedData = await generateDescriptionText(product, existingCategories, template);
-        applyGenerationToProductAndChildren(id, generatedData);
+
+        const parent = working[idx];
+        const parentSku = parent['Código (SKU)'];
+        working[idx] = { ...parent, ...buildGeneratedParentPatch(parent, generatedData) };
+        if (parentSku) {
+          (childIndicesByParentSku.get(parentSku) || []).forEach(childIdx => {
+            working[childIdx] = { ...working[childIdx], ...buildGeneratedChildPatch(generatedData) };
+          });
+        }
+
         // Debit only after success; stop the batch if the balance ran out.
-        if (!(await consumeCredit(CREDIT_ACTIONS.generateSeoMass, product['Descrição'], product['Código (SKU)']))) break;
+        if (!(await consumeCredit(CREDIT_ACTIONS.generateSeoMass, product['Descrição'], product['Código (SKU)']))) { flush(); break; }
         successCount++;
       } catch (error) {
         console.error(`Failed for ${id}`, error);
         const errorMessage = error instanceof Error ? error.message : String(error);
-        setProducts(prev => {
-          const updated = [...prev];
-          const idx = updated.findIndex(p => p._id === id);
-          if (idx !== -1) {
-            updated[idx] = { 
-              ...updated[idx], 
-              _isGenerating: false,
-              _generationError: errorMessage,
-              _statusDescricao: 'Erro',
-              _statusSEO: 'Erro',
-              _isDirty: true
-            };
-          }
-          return updated;
-        });
+        working[idx] = {
+          ...working[idx],
+          _isGenerating: false,
+          _generationError: errorMessage,
+          _statusDescricao: 'Erro',
+          _statusSEO: 'Erro',
+          _isDirty: true
+        };
       }
-      
+
+      if (i % FLUSH_EVERY === 0 || i === idsToProcess.length - 1) flush();
+
       setGenerationProgress({ current: i + 1, total: selectedIds.size });
       // Small delay to prevent UI freezing and respect rate limits
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -2195,41 +2221,63 @@ Retorne APENAS um JSON válido no seguinte formato:
     setShowMassActionConfirm(null);
     setIsEnrichingMass(true);
     setGenerationProgress({ current: 0, total: selectedIds.size });
-    
+
     const idsToProcess: string[] = Array.from(selectedIds);
     let successCount = 0;
 
+    // Same batching approach as startGenerateMass: mutate a local working copy by index
+    // (O(1) per item) and only commit to React state periodically, instead of cloning the
+    // whole catalog array twice per processed item.
+    let working = productsRef.current.slice();
+    const indexById = new Map(working.map((p, i) => [p._id, i] as const));
+    const childIndicesByParentSku = new Map<string, number[]>();
+    working.forEach((p, i) => {
+      const parentSku = p['Código do pai'];
+      if (parentSku) {
+        const list = childIndicesByParentSku.get(parentSku) || [];
+        list.push(i);
+        childIndicesByParentSku.set(parentSku, list);
+      }
+    });
+    const FLUSH_EVERY = 5;
+    const flush = () => {
+      working = working.slice();
+      productsRef.current = working;
+      setProducts(working);
+    };
+
     for (let i = 0; i < idsToProcess.length; i++) {
       const id = idsToProcess[i];
-      const productIndex = products.findIndex(p => p._id === id);
-      if (productIndex === -1) continue;
-      
-      const product = products[productIndex];
+      const idx = indexById.get(id);
+      if (idx === undefined) continue;
+
+      const product = working[idx];
       setGenerationLog(`Buscando dados para: ${product['Descrição'] || product['Código (SKU)']}...`);
 
-      setProducts(prev => {
-        const updated = [...prev];
-        const idx = updated.findIndex(p => p._id === id);
-        if (idx !== -1) updated[idx] = { ...updated[idx], _isEnriching: true };
-        return updated;
-      });
+      working[idx] = { ...product, _isEnriching: true };
 
       try {
         const enrichedData = await enrichProductData(product);
-        applyEnrichmentToProductAndChildren(id, enrichedData);
+
+        const parent = working[idx];
+        const parentSku = parent['Código (SKU)'];
+        working[idx] = { ...parent, ...buildEnrichedPatch(parent, enrichedData) };
+        if (parentSku) {
+          (childIndicesByParentSku.get(parentSku) || []).forEach(childIdx => {
+            working[childIdx] = { ...working[childIdx], ...buildEnrichedPatch(working[childIdx], enrichedData) };
+          });
+        }
+
         // Debit only after success; stop the batch if the balance ran out.
-        if (!(await consumeCredit(CREDIT_ACTIONS.enrichMass, product['Descrição'], product['Código (SKU)']))) break;
+        if (!(await consumeCredit(CREDIT_ACTIONS.enrichMass, product['Descrição'], product['Código (SKU)']))) { flush(); break; }
         successCount++;
       } catch (error) {
         console.error(`Failed enriching ${id}`, error);
-        setProducts(prev => {
-          const updated = [...prev];
-          const idx = updated.findIndex(p => p._id === id);
-          if (idx !== -1) updated[idx] = { ...updated[idx], _isEnriching: false };
-          return updated;
-        });
+        working[idx] = { ...working[idx], _isEnriching: false };
       }
-      
+
+      if (i % FLUSH_EVERY === 0 || i === idsToProcess.length - 1) flush();
+
       setGenerationProgress({ current: i + 1, total: selectedIds.size });
       await new Promise(resolve => setTimeout(resolve, 1000)); // Slightly longer delay for search API
     }

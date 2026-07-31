@@ -1,9 +1,32 @@
 import { storage } from '../firebase';
 import { ref, getBlob } from 'firebase/storage';
 
+// Small bounded cache so re-processing the same URL within a session (e.g. clicking
+// "Gerar novamente", or the save step re-fetching the image already used to generate
+// ambient shots) doesn't redecode a full-resolution source image from scratch each time.
+// Caches only the small final base64 result, not the raw decoded bitmap, so it stays cheap.
+const MAX_CACHE_ENTRIES = 20;
+const processedImageCache = new Map<string, Promise<{ base64Data: string; mimeType: string }>>();
+
 // Loads an image from a URL (data URL, Firebase Storage, direct fetch, or via CORS proxies),
 // normalizes it to JPEG capped at 1024px, and returns base64 + mimeType.
 export async function fetchAndProcessImage(imageUrl: string): Promise<{ base64Data: string; mimeType: string }> {
+  const cached = processedImageCache.get(imageUrl);
+  if (cached) return cached;
+
+  const promise = processImage(imageUrl);
+  promise.catch(() => processedImageCache.delete(imageUrl));
+  processedImageCache.set(imageUrl, promise);
+
+  if (processedImageCache.size > MAX_CACHE_ENTRIES) {
+    const oldestKey = processedImageCache.keys().next().value;
+    if (oldestKey !== undefined) processedImageCache.delete(oldestKey);
+  }
+
+  return promise;
+}
+
+async function processImage(imageUrl: string): Promise<{ base64Data: string; mimeType: string }> {
   let base64Data = '';
   let mimeType = '';
 
