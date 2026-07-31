@@ -119,6 +119,14 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
+    // Indique e Ganhe (referral) records. The referrer credit bonus depends on
+    // this doc's idempotency flags, so it's fully server-managed via the Admin
+    // SDK (server/referralAgent.ts) — the client reads its own referrals through
+    // GET /api/referrals/me instead of a direct Firestore query.
+    match /referrals/{referralId} {
+      allow read, write: if false;
+    }
+
     match /users/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUser();

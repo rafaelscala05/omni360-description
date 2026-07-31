@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { CheckCircle, Mail, Lock, Eye, EyeOff, ArrowLeft, Sparkles } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { CheckCircle, Mail, Lock, Eye, EyeOff, ArrowLeft, Sparkles, Gift, X } from 'lucide-react';
 import logoAlfreds from '../../assets/brand/logo-alfreds-produtos.png';
 import { THEMES } from '../theme';
+import { resolveReferrer } from '../../services/referralService';
 
 interface AuthPageProps {
   onGoogleLogin: () => void;
@@ -34,6 +35,25 @@ export default function AuthPage({ onGoogleLogin, onEmailLogin, onEmailRegister,
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetSent, setResetSent] = useState(false);
+  const [referrerName, setReferrerName] = useState<string | null>(null);
+  const [showReferralPopup, setShowReferralPopup] = useState(false);
+
+  // Indique e Ganhe: if this visit came from a referral link (?ref=CODE),
+  // resolve the referrer's name and greet the visitor with it. The code
+  // itself is captured/persisted separately in App.tsx (onAuthStateChanged),
+  // this is purely the friendly "you were invited by X" popup.
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('ref');
+    if (!code) return;
+    resolveReferrer(code)
+      .then((result) => {
+        if (result) {
+          setReferrerName(result.name);
+          setShowReferralPopup(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const agents = [
     { theme: THEMES.product, description: 'Importa sua planilha, enriquece dados e gera descrições e SEO com IA para cada produto.' },
@@ -251,6 +271,35 @@ export default function AuthPage({ onGoogleLogin, onEmailLogin, onEmailRegister,
           © {new Date().getFullYear()} Alfreds. Todos os direitos reservados.
         </div>
       </div>
+
+      {showReferralPopup && referrerName && (
+        <div className="fixed inset-0 z-[70] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="relative max-w-sm w-full overflow-hidden rounded-3xl bg-gradient-to-br from-[#141311] to-[#1e3a8a] p-7 text-white shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <button
+              onClick={() => setShowReferralPopup(false)}
+              className="absolute right-4 top-4 p-1.5 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-[#FF5B03]/30 blur-2xl" />
+            <div className="relative">
+              <div className="bg-white/10 backdrop-blur w-12 h-12 rounded-2xl ring-1 ring-white/20 flex items-center justify-center mb-4">
+                <Gift className="w-6 h-6" />
+              </div>
+              <h3 className="font-display text-xl font-bold tracking-tight mb-2">Você foi indicado!</h3>
+              <p className="text-sm text-white/70 leading-relaxed mb-6">
+                <strong className="text-white">{referrerName}</strong> te convidou para conhecer o Alfreds. Crie sua conta gratuita e comece a usar agora.
+              </p>
+              <button
+                onClick={() => { setShowReferralPopup(false); switchMode('register'); }}
+                className="w-full flex items-center justify-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] rounded-xl shadow-sm transition-colors"
+              >
+                Criar minha conta
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

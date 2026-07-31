@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'react';
-import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, FileSpreadsheet, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3, Plug, GraduationCap } from 'lucide-react';
+import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, FileSpreadsheet, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3, Plug, GraduationCap, Gift, Building2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import logoAlfreds from './assets/brand/logo-alfreds-produtos.png';
 import { Routes, Route, Navigate } from 'react-router-dom';
@@ -52,6 +52,11 @@ import {
   trackCategoryHierarchyGenerated,
   trackTemplateDownloaded,
 } from './analytics';
+import type { CompanyData } from './types/onboarding';
+import { registerReferralSignup } from './services/referralService';
+const OnboardingWizard = lazy(() => import('./modules/onboarding/OnboardingWizard'));
+const CompanyProfile = lazy(() => import('./modules/onboarding/CompanyProfile'));
+const ReferralPage = lazy(() => import('./modules/referral/ReferralPage'));
 
 // Build version injected at build time by Vite (git short hash + UTC date)
 declare const __BUILD_VERSION__: string;
@@ -72,7 +77,7 @@ interface Template {
 
 interface CreditLog {
   id: string;
-  type?: 'purchase';
+  type?: 'purchase' | 'bonus';
   actionType: string;
   actionKey?: string;
   productName: string;
@@ -165,7 +170,7 @@ export default function App() {
   useEffect(() => { productsRef.current = products; }, [products]);
   const [originalHeaders, setOriginalHeaders] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [mainView, setMainView] = useState<'products' | 'categories' | 'history' | 'integrations' | 'tutorial'>('products');
+  const [mainView, setMainView] = useState<'products' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company'>('products');
   // Top-level workspace: the Product agent (this App) or the Content agency module.
   const [workspace, setWorkspace] = useState<'product' | 'content'>('product');
   const [exportModel, setExportModel] = useState<'standard' | 'tinyerp'>('standard');
@@ -216,6 +221,16 @@ export default function App() {
   const [hasContentAgent, setHasContentAgent] = useState<boolean>(false);
   const [hasVideoModule, setHasVideoModule] = useState<boolean>(false);
   const [hasBlogModule, setHasBlogModule] = useState<boolean>(false);
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(false);
+  const [companyData, setCompanyData] = useState<CompanyData | null>(null);
+  const [isOnboardingWizardOpen, setIsOnboardingWizardOpen] = useState(false);
+  const [onboardingBannerDismissed, setOnboardingBannerDismissed] = useState(
+    () => typeof window !== 'undefined' && localStorage.getItem('onboardingBannerDismissed') === '1',
+  );
+  // Nudges the user to try Indique e Ganhe at least once; hidden for good after their first visit.
+  const [referralNavSeen, setReferralNavSeen] = useState(
+    () => typeof window !== 'undefined' && localStorage.getItem('referralNavSeen') === '1',
+  );
   const [videoReadyNotification, setVideoReadyNotification] = useState<{
     productId: string;
     productName: string;
@@ -313,6 +328,16 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [hasUnsavedChanges, user, products, originalHeaders]);
 
+  // Indique e Ganhe: capture ?ref=CODE from the referral link on first mount and
+  // stash it until the (possibly not-yet-created) account exists. Both the Google
+  // popup and the email/password form stay on /entrar, so this survives either path.
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('ref');
+    if (code && !localStorage.getItem('pendingReferralCode')) {
+      localStorage.setItem('pendingReferralCode', code);
+    }
+  }, []);
+
   useEffect(() => {
     let unsubscribeCredits: (() => void) | null = null;
 
@@ -335,6 +360,15 @@ export default function App() {
             });
             setCredits(initialCredits);
             trackSignUp('google');
+
+            // Indique e Ganhe: if this signup came from a referral link, associate
+            // it server-side (grants the referrer's +30 idempotently). Fire-and-forget
+            // — never block auth on this, and always clear the pending code.
+            const pendingCode = localStorage.getItem('pendingReferralCode');
+            if (pendingCode) {
+              registerReferralSignup(pendingCode).catch((e) => console.error('Referral signup registration failed:', e));
+              localStorage.removeItem('pendingReferralCode');
+            }
           }
           // Listener em tempo real para manter o saldo sempre atualizado
           unsubscribeCredits?.();
@@ -344,6 +378,8 @@ export default function App() {
               setHasContentAgent(snap.data().modules?.contentAgent === true);
               setHasVideoModule(snap.data().modules?.video === true);
               setHasBlogModule(snap.data().modules?.blog === true);
+              setOnboardingCompleted(snap.data().onboarding?.completed === true);
+              setCompanyData(snap.data().company ?? null);
             }
           });
 
@@ -2491,8 +2527,12 @@ Retorne APENAS um JSON válido no seguinte formato:
     );
   }
 
+  // Purchases and bonuses (onboarding/referral) both add credits; everything
+  // else (action debits) subtracts. Distinguishes which column/sign to render.
+  const isCreditGrant = (log: CreditLog) => log.type === 'purchase' || log.type === 'bonus';
+
   const renderHistoryView = () => (
-    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-5xl mx-auto w-full">
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 mx-auto w-full">
       <div className="flex justify-between items-end mb-6">
          <div>
            <h1 className="text-[28px] font-bold text-slate-900 tracking-tight leading-tight">Histórico de Créditos</h1>
@@ -2516,7 +2556,11 @@ Retorne APENAS um JSON válido no seguinte formato:
               <div>
                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Usado Este Mês</div>
                  <div className="flex items-baseline gap-2">
-                   <span className="text-2xl font-bold text-slate-900">{creditLogs.filter(l => l.type !== 'purchase').reduce((acc, log) => acc + log.creditsConsumed, 0)}</span>
+                   <span className="text-2xl font-bold text-slate-900">
+                     {creditLogs
+                       .filter((l) => !isCreditGrant(l) && new Date(l.timestamp).getMonth() === new Date().getMonth() && new Date(l.timestamp).getFullYear() === new Date().getFullYear())
+                       .reduce((acc, log) => acc + (log.creditsConsumed || 0), 0)}
+                   </span>
                    <span className="text-sm text-slate-500">créditos</span>
                  </div>
               </div>
@@ -2572,6 +2616,8 @@ Retorne APENAS um JSON válido no seguinte formato:
                            </div>
                          )}
                        </>
+                     ) : log.type === 'bonus' ? (
+                       <span className="text-slate-600">{log.actionType}</span>
                      ) : (
                        <>
                          {log.productName}
@@ -2580,10 +2626,10 @@ Retorne APENAS um JSON válido no seguinte formato:
                      )}
                    </td>
                    <td className="px-6 py-4 text-right font-medium">
-                     {log.type === 'purchase' ? (
+                     {isCreditGrant(log) ? (
                        <span className="text-green-600">+{log.creditsAdded ?? 0}</span>
                      ) : (
-                       <span className="text-red-500">-{log.creditsConsumed}</span>
+                       <span className="text-red-500">-{log.creditsConsumed || 0}</span>
                      )}
                    </td>
                  </tr>
@@ -2688,6 +2734,22 @@ Retorne APENAS um JSON válido no seguinte formato:
           >
             <RefreshCw className="w-4 h-4" /> Histórico
           </button>
+          <button
+            onClick={() => {
+              setMainView('referral');
+              setIsSidebarOpen(false);
+              if (!referralNavSeen) { setReferralNavSeen(true); localStorage.setItem('referralNavSeen', '1'); }
+            }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'referral' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
+          >
+            <Gift className="w-4 h-4" /> Indique e Ganhe
+            {!referralNavSeen && (
+              <span className="ml-auto relative flex h-2 w-2 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FF5B03] opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#FF5B03]" />
+              </span>
+            )}
+          </button>
         </nav>
 
         {/* Production queue widget — visible whenever a video job is active */}
@@ -2759,6 +2821,12 @@ Retorne APENAS um JSON válido no seguinte formato:
             <Plug className="w-4 h-4" /> Integrações
           </button>
           <button
+            onClick={() => { setMainView('company'); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${mainView === 'company' ? 'bg-[#1e293b] text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+          >
+            <Building2 className="w-4 h-4" /> Empresa
+          </button>
+          <button
             onClick={() => { setIsTemplateModalOpen(true); setIsSidebarOpen(false); }}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 font-medium hover:text-white hover:bg-white/5 transition-colors"
           >
@@ -2792,6 +2860,16 @@ Retorne APENAS um JSON válido no seguinte formato:
           </div>
 
           <div className="flex items-center gap-3 md:gap-5 shrink-0">
+            {!onboardingCompleted && (
+              <button
+                onClick={() => setIsOnboardingWizardOpen(true)}
+                className="hidden sm:flex items-center gap-1.5 text-xs md:text-sm font-semibold text-[#FF5B03] bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 px-2.5 md:px-3 py-1 rounded-full shadow-sm hover:border-orange-300 transition-colors animate-in fade-in"
+                title="Complete seu cadastro e ganhe créditos"
+              >
+                <Gift className="w-4 h-4 shrink-0" />
+                Ganhe 30 créditos
+              </button>
+            )}
             <button
               onClick={() => { setIsCreditPurchaseOpen(true); trackCreditPurchaseOpen(); }}
               className="flex items-center gap-1.5 text-xs md:text-sm font-semibold text-slate-600 bg-slate-50 border border-slate-200 px-2.5 md:px-3 py-1 rounded-full shadow-sm hover:bg-amber-50 hover:border-amber-200 transition-colors"
@@ -2858,8 +2936,41 @@ Retorne APENAS um JSON válido no seguinte formato:
             <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} onTinyImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getTinyPushPayload={buildTinyPushPayload} getTinyPushCandidates={getTinyPushCandidates} onTinyPushed={handleTinyPushed} onBlingImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getBlingPushPayload={buildBlingPushPayload} getBlingPushCandidates={getBlingPushCandidates} onBlingPushed={handleBlingPushed} />
           ) : mainView === 'tutorial' ? (
             <TutorialView onFinish={() => setMainView('products')} />
+          ) : mainView === 'referral' ? (
+            <Suspense fallback={<div className="h-full flex items-center justify-center text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
+              <ReferralPage user={user} />
+            </Suspense>
+          ) : mainView === 'company' ? (
+            <Suspense fallback={<div className="h-full flex items-center justify-center text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
+              <CompanyProfile company={companyData} onSaved={setCompanyData} />
+            </Suspense>
           ) : (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 h-full flex flex-col max-w-[1600px] mx-auto">
+               {!onboardingCompleted && !onboardingBannerDismissed && (
+                 <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 px-4 py-3 shrink-0">
+                   <div className="flex items-center gap-2.5 min-w-0">
+                     <Gift className="w-5 h-5 text-[#FF5B03] shrink-0" />
+                     <p className="text-sm text-slate-700 truncate">
+                       <span className="font-semibold">Complete seu cadastro</span> e ganhe 30 créditos — leva menos de 2 minutos.
+                     </p>
+                   </div>
+                   <div className="flex items-center gap-2 shrink-0">
+                     <button
+                       onClick={() => setIsOnboardingWizardOpen(true)}
+                       className="px-3 py-1.5 text-xs font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] rounded-lg shadow-sm transition-colors"
+                     >
+                       Completar agora
+                     </button>
+                     <button
+                       onClick={() => { setOnboardingBannerDismissed(true); localStorage.setItem('onboardingBannerDismissed', '1'); }}
+                       className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg transition-colors"
+                       title="Dispensar"
+                     >
+                       <X className="w-4 h-4" />
+                     </button>
+                   </div>
+                 </div>
+               )}
                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-5 gap-4 flex-shrink-0">
                  <div>
                    <h1 className="font-display text-xl md:text-2xl font-bold text-slate-900 tracking-tight">Catálogo de Produtos</h1>
@@ -3838,16 +3949,22 @@ Retorne APENAS um JSON válido no seguinte formato:
                             <span className="text-xs font-medium text-gray-900">{log.actionType}</span>
                           </td>
                           <td className="px-4 py-3">
-                            <div className="text-xs text-gray-900 truncate max-w-[200px]" title={log.productName}>
-                              {log.productName}
-                            </div>
-                            <div className="text-[10px] text-gray-500 font-mono">{log.sku}</div>
+                            {log.type === 'bonus' ? (
+                              <div className="text-xs text-gray-500">—</div>
+                            ) : (
+                              <>
+                                <div className="text-xs text-gray-900 truncate max-w-[200px]" title={log.productName}>
+                                  {log.productName}
+                                </div>
+                                <div className="text-[10px] text-gray-500 font-mono">{log.sku}</div>
+                              </>
+                            )}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-right text-xs font-bold">
-                            {log.type === 'purchase' ? (
+                            {isCreditGrant(log) ? (
                               <span className="text-green-600">+{log.creditsAdded}</span>
                             ) : (
-                              <span className="text-amber-600">-{log.creditsConsumed}</span>
+                              <span className="text-amber-600">-{log.creditsConsumed || 0}</span>
                             )}
                           </td>
                         </tr>
@@ -4054,6 +4171,16 @@ Retorne APENAS um JSON válido no seguinte formato:
 
       {isCreditPurchaseOpen && (
         <CreditPurchaseModal onClose={() => setIsCreditPurchaseOpen(false)} />
+      )}
+
+      {isOnboardingWizardOpen && user && (
+        <Suspense fallback={null}>
+          <OnboardingWizard
+            user={user}
+            onClose={() => setIsOnboardingWizardOpen(false)}
+            onCompleted={() => setIsOnboardingWizardOpen(false)}
+          />
+        </Suspense>
       )}
 
       {/* Build version footer */}

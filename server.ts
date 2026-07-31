@@ -27,6 +27,8 @@ import { registerBlogPublic } from "./server/blogPublic";
 import { registerBlogAdminRoutes } from "./server/blogAdmin";
 import { registerMetaEventsRoutes } from "./server/metaEvents";
 import { registerTiktokEventsRoutes } from "./server/tiktokEvents";
+import { registerOnboardingRoutes } from "./server/onboardingAgent";
+import { registerReferralRoutes } from "./server/referralAgent";
 
 // Do NOT override: in production the App Hosting environment (apphosting.yaml /
 // Secret Manager) must take precedence over any stray .env bundled in the image.
@@ -187,6 +189,10 @@ async function startServer() {
   registerBlingWebhookRoutes(app, { verifyFirebaseToken });
   registerMetaEventsRoutes(app);
   registerTiktokEventsRoutes(app);
+
+  // Onboarding wizard (CNPJ lookup + credit bonus) e Indique e Ganhe (referral).
+  registerOnboardingRoutes(app, { verifyFirebaseToken });
+  registerReferralRoutes(app, { verifyFirebaseToken });
 
   // Blog nativo (CMS) — serving público SSR. Precisa vir antes do Vite/static
   // para que /b/{slug} e domínios customizados não caiam no SPA.

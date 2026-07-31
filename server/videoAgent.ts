@@ -313,12 +313,13 @@ async function debitCreditsAdmin(
     const logRef = adminDb.collection('users').doc(uid).collection('credit_logs').doc();
     tx.update(userRef, { credits: FieldValue.increment(-cost) });
     tx.set(logRef, {
-      action: action.key,
-      label: action.label,
-      cost: -cost,
-      productName: meta.productName ?? '',
+      actionType: action.label,
+      actionKey: action.key,
+      productName: meta.productName || 'N/A',
+      sku: 'N/A',
       userName: meta.userName ?? '',
-      createdAt: now(),
+      creditsConsumed: cost,
+      timestamp: new Date().toISOString(),
     });
     return cost;
   });
@@ -334,12 +335,15 @@ async function refundCreditsAdmin(
   await adminDb.runTransaction(async (tx) => {
     tx.update(userRef, { credits: FieldValue.increment(cost) });
     tx.set(logRef, {
-      action: 'video_generation_refund',
-      label: 'Estorno — Geração de Vídeo',
-      cost: +cost,
-      productName: meta.productName ?? '',
+      type: 'bonus',
+      actionType: 'Estorno — Geração de Vídeo',
+      actionKey: 'video_generation_refund',
+      productName: meta.productName || 'N/A',
+      sku: 'N/A',
       userName: meta.userName ?? '',
-      createdAt: now(),
+      creditsConsumed: 0,
+      creditsAdded: cost,
+      timestamp: new Date().toISOString(),
     });
   });
 }
