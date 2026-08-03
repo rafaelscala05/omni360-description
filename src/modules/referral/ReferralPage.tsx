@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { Gift, Copy, Check, Users, ArrowRight, RefreshCw, UserPlus, Sparkles } from 'lucide-react';
 import type { User } from 'firebase/auth';
 import type { Referral } from '../../types/referral';
-import { REFERRAL_ONBOARDING_BONUS, REFERRAL_SIGNUP_BONUS } from '../../types/referral';
+import { REFERRAL_ONBOARDING_BONUS, REFERRAL_SIGNUP_BONUS, REFERRED_SIGNUP_BONUS } from '../../types/referral';
 import { getMyReferrals } from '../../services/referralService';
 
 interface Props {
@@ -87,6 +87,11 @@ const ReferralPage: React.FC<Props> = ({ user }) => {
             <p className="mt-2 font-display text-lg font-bold text-[#FFB08A]">+{REFERRAL_ONBOARDING_BONUS} créditos</p>
           </div>
         </div>
+
+        <p className="relative mt-4 flex items-center gap-1.5 text-xs text-white/60">
+          <Sparkles className="w-3.5 h-3.5 text-[#FFB08A] shrink-0" />
+          Seu amigo também ganha <strong className="text-white/90">+{REFERRED_SIGNUP_BONUS} créditos</strong> ao se cadastrar pelo seu link.
+        </p>
       </div>
 
       {/* Referral link — voucher-style card with perforated divider */}

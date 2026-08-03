@@ -19,3 +19,5 @@ export interface Referral {
 
 export const REFERRAL_SIGNUP_BONUS = 30;
 export const REFERRAL_ONBOARDING_BONUS = 70;
+// Bônus para quem se cadastra pelo link (o indicado), separado do bônus do indicador acima.
+export const REFERRED_SIGNUP_BONUS = 30;

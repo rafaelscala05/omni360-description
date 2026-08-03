@@ -8,7 +8,7 @@ import type express from 'express';
 import crypto from 'crypto';
 import { adminDb, FieldValue } from './firebaseAdmin';
 import type { Referral } from '../src/types/referral';
-import { REFERRAL_SIGNUP_BONUS } from '../src/types/referral';
+import { REFERRAL_SIGNUP_BONUS, REFERRED_SIGNUP_BONUS } from '../src/types/referral';
 
 interface ReferralDeps {
   verifyFirebaseToken: (req: express.Request) => Promise<{ uid: string; email?: string; name?: string }>;
@@ -131,7 +131,24 @@ export function registerReferralRoutes(app: express.Application, deps: ReferralD
           onboardingGrantedAt: null,
           createdAt: now,
         });
-        tx.update(userRef, { referredBy: referrerUid, referredByCode: referralCode });
+        tx.update(userRef, {
+          referredBy: referrerUid,
+          referredByCode: referralCode,
+          credits: FieldValue.increment(REFERRED_SIGNUP_BONUS),
+        });
+        const referredLogRef = userRef.collection('credit_logs').doc();
+        tx.set(referredLogRef, {
+          type: 'bonus',
+          actionType: 'Bônus por cadastro via indicação',
+          actionKey: 'referred_signup_bonus',
+          productName: 'N/A',
+          sku: 'N/A',
+          userName: '',
+          creditsConsumed: 0,
+          creditsAdded: REFERRED_SIGNUP_BONUS,
+          timestamp: new Date().toISOString(),
+        });
+
         tx.update(referrerRef, { credits: FieldValue.increment(REFERRAL_SIGNUP_BONUS) });
         const logRef = referrerRef.collection('credit_logs').doc();
         tx.set(logRef, {

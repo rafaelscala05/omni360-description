@@ -3,6 +3,7 @@ import { CheckCircle, Mail, Lock, Eye, EyeOff, ArrowLeft, Sparkles, Gift, X } fr
 import logoAlfreds from '../../assets/brand/logo-alfreds-produtos.png';
 import { THEMES } from '../theme';
 import { resolveReferrer } from '../../services/referralService';
+import { REFERRED_SIGNUP_BONUS } from '../../types/referral';
 
 interface AuthPageProps {
   onGoogleLogin: () => void;
@@ -144,6 +145,15 @@ export default function AuthPage({ onGoogleLogin, onEmailLogin, onEmailRegister,
                 : 'Enviaremos um link para redefinir sua senha.'}
             </p>
           </div>
+
+          {mode === 'register' && referrerName && (
+            <div className="flex items-center gap-2 mb-6 bg-ink rounded-xl px-3 py-2.5 border border-orange/20">
+              <Gift className="w-4 h-4 text-orange shrink-0" />
+              <p className="text-sm text-porcelain">
+                Você foi indicado por <strong>{referrerName}</strong> — ganhe <strong className="text-orange">+{REFERRED_SIGNUP_BONUS} créditos</strong> de bônus ao criar sua conta.
+              </p>
+            </div>
+          )}
 
           {resetSent ? (
             <div className="text-center p-6 bg-orange/5 rounded-2xl border border-orange/20">
@@ -287,9 +297,15 @@ export default function AuthPage({ onGoogleLogin, onEmailLogin, onEmailRegister,
                 <Gift className="w-6 h-6" />
               </div>
               <h3 className="font-display text-xl font-bold tracking-tight mb-2">Você foi indicado!</h3>
-              <p className="text-sm text-white/70 leading-relaxed mb-6">
+              <p className="text-sm text-white/70 leading-relaxed mb-4">
                 <strong className="text-white">{referrerName}</strong> te convidou para conhecer o Alfreds. Crie sua conta gratuita e comece a usar agora.
               </p>
+              <div className="flex items-center gap-2 mb-6 bg-white/10 rounded-xl px-3 py-2.5 ring-1 ring-white/10">
+                <Gift className="w-4 h-4 text-[#FFB08A] shrink-0" />
+                <p className="text-sm text-white/90">
+                  Crie sua conta pelo link e ganhe <strong className="text-[#FFB08A]">+{REFERRED_SIGNUP_BONUS} créditos</strong> de bônus.
+                </p>
+              </div>
               <button
                 onClick={() => { setShowReferralPopup(false); switchMode('register'); }}
                 className="w-full flex items-center justify-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] rounded-xl shadow-sm transition-colors"
