@@ -10,6 +10,8 @@ import ContentAgentPage from './marketing/pages/ContentAgentPage';
 import PricingPage from './marketing/pages/PricingPage';
 import CasesPage from './marketing/pages/CasesPage';
 import ContactPage from './marketing/pages/ContactPage';
+import TermsPage from './marketing/pages/TermsPage';
+import PrivacyPage from './marketing/pages/PrivacyPage';
 import AuthPage from './marketing/pages/AuthPage';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
@@ -4286,6 +4288,8 @@ Retorne APENAS um JSON válido no seguinte formato:
         <Route path="/precos" element={<PricingPage />} />
         <Route path="/casos" element={<CasesPage />} />
         <Route path="/contato" element={<ContactPage />} />
+        <Route path="/termos-de-servico" element={<TermsPage />} />
+        <Route path="/politica-de-privacidade" element={<PrivacyPage />} />
       </Route>
       <Route
         path="/entrar"
