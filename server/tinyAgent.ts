@@ -248,24 +248,35 @@ export interface TinyPushProduct {
   comprimento?: number;
   // Public image URLs to attach as product anexos.
   imagens?: string[];
-  campos: { descricao: boolean; seo: boolean; fiscal: boolean; imagens: boolean };
 }
+
+// Per-group outcome of a push attempt: 'ok' (sent — differed from Tiny's current
+// value), 'sem alteração' (local data matches Tiny already, nothing sent), or
+// 'sem dado local' (nothing locally to compare/send for this group). Field errors
+// use the exception message in place of one of these three.
+export type TinyPushSteps = Record<'descricao' | 'seo' | 'fiscal' | 'imagens', string>;
 
 export interface TinyPushResult {
   tinyId: string;
   sku?: string;
   ok: boolean;
-  steps: Record<'descricao' | 'seo' | 'fiscal' | 'imagens', string>;
+  steps: TinyPushSteps;
 }
 
 // Builds a valid AtualizarProdutoRequestModel body from the current product,
-// echoing the fields the API expects and overriding only the selected ones. Tiny
-// PUT semantics are treated as a full update, so existing values are preserved.
-export function buildProductPutBody(current: any, prod: TinyPushProduct): Record<string, unknown> {
+// echoing every field the API expects (Tiny's PUT is a full-record update) and
+// overriding only the fields whose local value actually differs from what Tiny
+// already has — never previously-selected groups, never blank local data.
+export function buildProductPutBody(current: any, prod: TinyPushProduct): { body: Record<string, unknown>; steps: TinyPushSteps } {
   const dim = current?.dimensoes ?? {};
   const seo = current?.seo ?? {};
   const precos = current?.precos ?? {};
   const estoque = current?.estoque ?? {};
+  const cur = normalizeProduct(current);
+  const steps: TinyPushSteps = {
+    descricao: 'sem dado local', seo: 'sem dado local', fiscal: 'sem dado local', imagens: 'sem dado local',
+  };
+  const strDiffers = (a?: string, b?: string) => (a ?? '').trim() !== (b ?? '').trim();
 
   const body: Record<string, any> = {
     sku: current?.sku,
@@ -306,37 +317,49 @@ export function buildProductPutBody(current: any, prod: TinyPushProduct): Record
     },
   };
 
-  if (prod.campos.descricao && prod.descricaoHtml) {
-    body.descricaoComplementar = prod.descricaoHtml;
+  if (prod.descricaoHtml) {
+    steps.descricao = strDiffers(prod.descricaoHtml, cur.descricaoHtml) ? 'ok' : 'sem alteração';
+    if (steps.descricao === 'ok') body.descricaoComplementar = prod.descricaoHtml;
   }
-  if (prod.campos.seo) {
-    if (prod.seoTitle) body.seo.titulo = prod.seoTitle;
-    if (prod.seoDescription) body.seo.descricao = prod.seoDescription;
-    if (prod.seoKeywords) {
-      body.seo.keywords = prod.seoKeywords.split(',').map((k) => k.trim()).filter(Boolean);
-    }
+
+  let seoChanged = false;
+  if (prod.seoTitle && strDiffers(prod.seoTitle, cur.seoTitle)) { body.seo.titulo = prod.seoTitle; seoChanged = true; }
+  if (prod.seoDescription && strDiffers(prod.seoDescription, cur.seoDescription)) { body.seo.descricao = prod.seoDescription; seoChanged = true; }
+  if (prod.seoKeywords && strDiffers(prod.seoKeywords, cur.seoKeywords)) {
+    body.seo.keywords = prod.seoKeywords.split(',').map((k) => k.trim()).filter(Boolean);
+    seoChanged = true;
   }
-  if (prod.campos.fiscal) {
-    if (prod.ncm) body.ncm = prod.ncm;
-    if (prod.gtin) body.gtin = prod.gtin;
-    if (prod.pesoLiquido != null) body.dimensoes.pesoLiquido = prod.pesoLiquido;
-    if (prod.pesoBruto != null) body.dimensoes.pesoBruto = prod.pesoBruto;
-    if (prod.largura != null) body.dimensoes.largura = prod.largura;
-    if (prod.altura != null) body.dimensoes.altura = prod.altura;
-    if (prod.comprimento != null) body.dimensoes.comprimento = prod.comprimento;
+  if (prod.seoTitle || prod.seoDescription || prod.seoKeywords) {
+    steps.seo = seoChanged ? 'ok' : 'sem alteração';
   }
-  if (prod.campos.imagens && prod.imagens?.length) {
+
+  let fiscalChanged = false;
+  const hasFiscalLocal = !!prod.ncm || !!prod.gtin || prod.pesoLiquido != null
+    || prod.pesoBruto != null || prod.largura != null || prod.altura != null || prod.comprimento != null;
+  if (prod.ncm && strDiffers(prod.ncm, cur.ncm)) { body.ncm = prod.ncm; fiscalChanged = true; }
+  if (prod.gtin && strDiffers(prod.gtin, cur.gtin)) { body.gtin = prod.gtin; fiscalChanged = true; }
+  if (prod.pesoLiquido != null && prod.pesoLiquido !== cur.pesoLiquido) { body.dimensoes.pesoLiquido = prod.pesoLiquido; fiscalChanged = true; }
+  if (prod.pesoBruto != null && prod.pesoBruto !== cur.pesoBruto) { body.dimensoes.pesoBruto = prod.pesoBruto; fiscalChanged = true; }
+  if (prod.largura != null && prod.largura !== cur.largura) { body.dimensoes.largura = prod.largura; fiscalChanged = true; }
+  if (prod.altura != null && prod.altura !== cur.altura) { body.dimensoes.altura = prod.altura; fiscalChanged = true; }
+  if (prod.comprimento != null && prod.comprimento !== cur.comprimento) { body.dimensoes.comprimento = prod.comprimento; fiscalChanged = true; }
+  if (hasFiscalLocal) steps.fiscal = fiscalChanged ? 'ok' : 'sem alteração';
+
+  if (prod.imagens?.length) {
     // anexos is documented on product creation; PUT appears to accept it too.
-    // Merge with the current anexos (dedup by url) so existing photos aren't lost.
+    // Merge with the current anexos (dedup by url) so existing photos aren't lost —
+    // and only touch the field at all when there's a genuinely new URL to add.
     const current_anexos: any[] = Array.isArray(current?.anexos) ? current.anexos : [];
     const byUrl = new Map<string, { url: string; externo: boolean }>();
     for (const a of current_anexos) {
       if (a?.url) byUrl.set(a.url, { url: a.url, externo: a.externo ?? true });
     }
+    let imagensChanged = false;
     for (const url of prod.imagens) {
-      if (url && !byUrl.has(url)) byUrl.set(url, { url, externo: true });
+      if (url && !byUrl.has(url)) { byUrl.set(url, { url, externo: true }); imagensChanged = true; }
     }
-    body.anexos = Array.from(byUrl.values());
+    steps.imagens = imagensChanged ? 'ok' : 'sem alteração';
+    if (imagensChanged) body.anexos = Array.from(byUrl.values());
   }
 
   // Drop empty nested objects and undefined keys so we never send nulls the API rejects.
@@ -350,7 +373,7 @@ export function buildProductPutBody(current: any, prod: TinyPushProduct): Record
     });
   };
   prune(body);
-  return body;
+  return { body, steps };
 }
 
 // --- Routes ----------------------------------------------------------------

@@ -5,7 +5,7 @@ import type express from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
 import {
   tinyFetch, normalizeProduct, buildProductPutBody, SECRET_REF, STATUS_REF,
-  type TinyNormalizedProduct, type TinyPushProduct, type TinyPushResult,
+  type TinyNormalizedProduct, type TinyPushProduct, type TinyPushResult, type TinyPushSteps,
 } from './tinyAgent';
 import { listV2Page, getV2Product, updateV2Product, validateV2Token } from './tinyV2';
 
@@ -54,11 +54,14 @@ export async function tinyGetProduct(uid: string, id: string, version?: TinyVers
   return normalizeProduct(await tinyFetch<any>(uid, 'GET', `/produtos/${id}`));
 }
 
-export async function tinyUpdateProduct(uid: string, id: string, prod: TinyPushProduct, version?: TinyVersion): Promise<void> {
+export async function tinyUpdateProduct(uid: string, id: string, prod: TinyPushProduct, version?: TinyVersion): Promise<TinyPushSteps> {
   const v = version ?? await getActiveVersion(uid);
-  if (v === 'v2') { await updateV2Product(uid, id, prod); return; }
+  if (v === 'v2') return updateV2Product(uid, id, prod);
   const current = await tinyFetch<any>(uid, 'GET', `/produtos/${id}`);
-  await tinyFetch(uid, 'PUT', `/produtos/${id}`, buildProductPutBody(current, prod));
+  const { body, steps } = buildProductPutBody(current, prod);
+  const hasAnyChange = steps.descricao === 'ok' || steps.seo === 'ok' || steps.fiscal === 'ok' || steps.imagens === 'ok';
+  if (hasAnyChange) await tinyFetch(uid, 'PUT', `/produtos/${id}`, body);
+  return steps;
 }
 
 // --- Routes (push + v2 connect) --------------------------------------------
@@ -100,7 +103,6 @@ export function registerTinyProviderRoutes(app: express.Express, { verifyFirebas
       const resultados: TinyPushResult[] = [];
 
       for (const prod of produtos) {
-        const steps: TinyPushResult['steps'] = { descricao: 'skip', seo: 'skip', fiscal: 'skip', imagens: 'skip' };
         if (!prod.tinyId) {
           resultados.push({ tinyId: prod.tinyId, sku: prod.sku, ok: false, steps: {
             descricao: 'Sem ID Tiny', seo: 'Sem ID Tiny', fiscal: 'Sem ID Tiny', imagens: 'Sem ID Tiny',
@@ -108,21 +110,14 @@ export function registerTinyProviderRoutes(app: express.Express, { verifyFirebas
           continue;
         }
         try {
-          await tinyUpdateProduct(uid, prod.tinyId, prod, version);
-          if (prod.campos.descricao) steps.descricao = prod.descricaoHtml ? 'ok' : 'sem descrição';
-          if (prod.campos.seo) steps.seo = (prod.seoTitle || prod.seoDescription || prod.seoKeywords) ? 'ok' : 'sem SEO';
-          if (prod.campos.fiscal) steps.fiscal = 'ok';
-          if (prod.campos.imagens) steps.imagens = prod.imagens?.length ? 'ok' : 'sem imagens';
+          const steps = await tinyUpdateProduct(uid, prod.tinyId, prod, version);
+          resultados.push({ tinyId: prod.tinyId, sku: prod.sku, ok: true, steps });
         } catch (e: any) {
           const msg = e?.message ?? 'erro';
-          if (prod.campos.descricao) steps.descricao = msg;
-          if (prod.campos.seo) steps.seo = msg;
-          if (prod.campos.fiscal) steps.fiscal = msg;
-          if (prod.campos.imagens) steps.imagens = msg;
+          resultados.push({ tinyId: prod.tinyId, sku: prod.sku, ok: false, steps: {
+            descricao: msg, seo: msg, fiscal: msg, imagens: msg,
+          } });
         }
-        const ok = (['descricao', 'seo', 'fiscal', 'imagens'] as const)
-          .every((k) => steps[k] === 'ok' || steps[k] === 'skip' || steps[k].startsWith('sem '));
-        resultados.push({ tinyId: prod.tinyId, sku: prod.sku, ok, steps });
       }
       return res.json({ resultados });
     } catch (e: any) {

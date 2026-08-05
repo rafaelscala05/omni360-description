@@ -1,7 +1,7 @@
 // Tiny ERP API v2 client. The legacy API authenticates with a static integration
 // token (POST form, formato=json) and wraps everything in { retorno: {...} }.
 // Used as an alternative to the v3 (OAuth) client via server/tinyProvider.ts.
-import { SECRET_REF, sleep, type TinyNormalizedProduct, type TinyPushProduct } from './tinyAgent';
+import { SECRET_REF, sleep, type TinyNormalizedProduct, type TinyPushProduct, type TinyPushSteps } from './tinyAgent';
 
 const V2_BASE = 'https://api.tiny.com.br/api2';
 const PAGE_SIZE = 100; // v2 lists 100 records per page
@@ -172,13 +172,20 @@ export async function getV2Product(uid: string, id: string): Promise<TinyNormali
   return normalizeV2Product(r?.produto ?? {});
 }
 
-// Updates a product via produto.alterar.php. nome is required by the API, so we
-// echo the current name; images merge with the existing external images.
-export async function updateV2Product(uid: string, id: string, prod: TinyPushProduct): Promise<void> {
+// Updates a product via produto.alterar.php, sending only the fields whose local
+// value actually differs from what Tiny currently has. produto.alterar is NOT a
+// partial update — it validates the whole record — so required fields
+// (unidade/preco/origem/situacao/tipo) are always echoed from the current product;
+// only descricao_complementar/seo/fiscal/imagens are conditionally overridden.
+// Skips the API call entirely when nothing differs.
+export async function updateV2Product(uid: string, id: string, prod: TinyPushProduct): Promise<TinyPushSteps> {
   const current = (await tinyV2Call(uid, 'produto.obter.php', { id }))?.produto ?? {};
-  // produto.alterar is NOT a partial update: it validates the product as a whole,
-  // so echo the required fields (unidade/preco/origem/situacao/tipo) from the
-  // current product, then override only the groups being sent.
+  const cur = normalizeV2Product(current);
+  const steps: TinyPushSteps = {
+    descricao: 'sem dado local', seo: 'sem dado local', fiscal: 'sem dado local', imagens: 'sem dado local',
+  };
+  const strDiffers = (a?: string, b?: string) => (a ?? '').trim() !== (b ?? '').trim();
+
   const produto: Record<string, any> = {
     sequencia: 1,
     id,
@@ -191,40 +198,52 @@ export async function updateV2Product(uid: string, id: string, prod: TinyPushPro
     tipo: current?.tipo,
   };
 
-  if (prod.campos.descricao && prod.descricaoHtml) produto.descricao_complementar = prod.descricaoHtml;
-
-  if (prod.campos.seo) {
-    const seo: Record<string, any> = {};
-    if (prod.seoTitle) seo.seo_title = prod.seoTitle;
-    if (prod.seoDescription) seo.seo_description = prod.seoDescription;
-    if (prod.seoKeywords) seo.seo_keywords = prod.seoKeywords;
-    if (Object.keys(seo).length) produto.seo = seo;
+  if (prod.descricaoHtml) {
+    steps.descricao = strDiffers(prod.descricaoHtml, cur.descricaoHtml) ? 'ok' : 'sem alteração';
+    if (steps.descricao === 'ok') produto.descricao_complementar = prod.descricaoHtml;
   }
 
-  if (prod.campos.fiscal) {
-    if (prod.ncm) produto.ncm = prod.ncm;
-    if (prod.gtin) produto.gtin = prod.gtin;
-    if (prod.pesoLiquido != null) produto.peso_liquido = prod.pesoLiquido;
-    if (prod.pesoBruto != null) produto.peso_bruto = prod.pesoBruto;
-    if (prod.largura != null) produto.largura_embalagem = prod.largura;
-    if (prod.altura != null) produto.altura_embalagem = prod.altura;
-    if (prod.comprimento != null) produto.comprimento_embalagem = prod.comprimento;
-  }
+  const seo: Record<string, any> = {};
+  let seoChanged = false;
+  if (prod.seoTitle && strDiffers(prod.seoTitle, cur.seoTitle)) { seo.seo_title = prod.seoTitle; seoChanged = true; }
+  if (prod.seoDescription && strDiffers(prod.seoDescription, cur.seoDescription)) { seo.seo_description = prod.seoDescription; seoChanged = true; }
+  if (prod.seoKeywords && strDiffers(prod.seoKeywords, cur.seoKeywords)) { seo.seo_keywords = prod.seoKeywords; seoChanged = true; }
+  if (prod.seoTitle || prod.seoDescription || prod.seoKeywords) steps.seo = seoChanged ? 'ok' : 'sem alteração';
+  if (seoChanged) produto.seo = seo;
 
-  if (prod.campos.imagens && prod.imagens?.length) {
+  const hasFiscalLocal = !!prod.ncm || !!prod.gtin || prod.pesoLiquido != null
+    || prod.pesoBruto != null || prod.largura != null || prod.altura != null || prod.comprimento != null;
+  let fiscalChanged = false;
+  if (prod.ncm && strDiffers(prod.ncm, cur.ncm)) { produto.ncm = prod.ncm; fiscalChanged = true; }
+  if (prod.gtin && strDiffers(prod.gtin, cur.gtin)) { produto.gtin = prod.gtin; fiscalChanged = true; }
+  if (prod.pesoLiquido != null && prod.pesoLiquido !== cur.pesoLiquido) { produto.peso_liquido = prod.pesoLiquido; fiscalChanged = true; }
+  if (prod.pesoBruto != null && prod.pesoBruto !== cur.pesoBruto) { produto.peso_bruto = prod.pesoBruto; fiscalChanged = true; }
+  if (prod.largura != null && prod.largura !== cur.largura) { produto.largura_embalagem = prod.largura; fiscalChanged = true; }
+  if (prod.altura != null && prod.altura !== cur.altura) { produto.altura_embalagem = prod.altura; fiscalChanged = true; }
+  if (prod.comprimento != null && prod.comprimento !== cur.comprimento) { produto.comprimento_embalagem = prod.comprimento; fiscalChanged = true; }
+  if (hasFiscalLocal) steps.fiscal = fiscalChanged ? 'ok' : 'sem alteração';
+
+  let imagensChanged = false;
+  if (prod.imagens?.length) {
     // Send ONLY images the product doesn't already have. Re-sending Tiny's own
     // hosted images (e.g. s3 tiny-anexos URLs, imported earlier) as "external"
     // makes produto.alterar fail with an internal error (cod 35).
     const currentUrls = new Set(collectV2Images(current));
     const novas = prod.imagens.filter((u) => !currentUrls.has(u));
+    imagensChanged = novas.length > 0;
+    steps.imagens = imagensChanged ? 'ok' : 'sem alteração';
     // Tiny's structure is imagens_externas[].imagem_externa.url — each URL must be
     // wrapped in an `imagem_externa` object, or produto.alterar fails with cod 35.
-    if (novas.length) produto.imagens_externas = novas.map((url) => ({ imagem_externa: { url } }));
+    if (imagensChanged) produto.imagens_externas = novas.map((url) => ({ imagem_externa: { url } }));
   }
+
+  const hasAnyChange = steps.descricao === 'ok' || steps.seo === 'ok' || steps.fiscal === 'ok' || steps.imagens === 'ok';
+  if (!hasAnyChange) return steps;
 
   Object.keys(produto).forEach((k) => { if (produto[k] === undefined || produto[k] === null) delete produto[k]; });
 
   const payload = JSON.stringify({ produtos: [{ produto }] });
   console.log(`[tiny-v2] produto.alterar id=${id} payload=${payload.slice(0, 1500)}`);
   await tinyV2Call(uid, 'produto.alterar.php', { produto: payload });
+  return steps;
 }
