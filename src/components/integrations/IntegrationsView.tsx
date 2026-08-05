@@ -1,9 +1,9 @@
 import React from 'react';
 import { Plug, Store, Database } from 'lucide-react';
 import WakeConnector, { type WakePushFields } from './WakeConnector';
-import TinyConnector, { type TinyPushFields, type TinyPushCandidate } from './TinyConnector';
+import TinyConnector from './TinyConnector';
 import type { WakeNormalizedProduct, WakePushProduct } from '../../services/wakeService';
-import type { TinyPushProduct, TinyPushResult } from '../../services/tinyService';
+import type { TinyPushProduct } from '../../services/tinyService';
 import BlingConnector, { type BlingPushFields, type BlingPushCandidate } from './BlingConnector';
 import type { BlingPushProduct, BlingPushResult } from '../../services/blingService';
 
@@ -11,16 +11,15 @@ interface Props {
   onImport: (produtos: WakeNormalizedProduct[]) => Promise<void>;
   getPushPayload: (campos: WakePushFields) => Promise<WakePushProduct[]>;
   onTinyImported: () => void;
-  getTinyPushPayload: (campos: TinyPushFields) => Promise<TinyPushProduct[]>;
-  getTinyPushCandidates: (campos: TinyPushFields) => TinyPushCandidate[];
-  onTinyPushed: (results: TinyPushResult[]) => void;
+  getTinyPushPayload: () => Promise<TinyPushProduct[]>;
+  tinyPushCandidateCount: number;
   onBlingImported: () => void;
   getBlingPushPayload: (campos: BlingPushFields) => Promise<BlingPushProduct[]>;
   getBlingPushCandidates: (campos: BlingPushFields) => BlingPushCandidate[];
   onBlingPushed: (results: BlingPushResult[]) => void;
 }
 
-const IntegrationsView: React.FC<Props> = ({ onImport, getPushPayload, onTinyImported, getTinyPushPayload, getTinyPushCandidates, onTinyPushed, onBlingImported, getBlingPushPayload, getBlingPushCandidates, onBlingPushed }) => {
+const IntegrationsView: React.FC<Props> = ({ onImport, getPushPayload, onTinyImported, getTinyPushPayload, tinyPushCandidateCount, onBlingImported, getBlingPushPayload, getBlingPushCandidates, onBlingPushed }) => {
   return (
     <div className="max-w-3xl mx-auto px-4 md:px-6 py-6 space-y-6">
       <div className="flex items-center gap-3">
@@ -61,7 +60,7 @@ const IntegrationsView: React.FC<Props> = ({ onImport, getPushPayload, onTinyImp
           </div>
         </header>
         <div className="px-5 py-5">
-          <TinyConnector onImported={onTinyImported} getPushPayload={getTinyPushPayload} getPushCandidates={getTinyPushCandidates} onPushed={onTinyPushed} />
+          <TinyConnector onImported={onTinyImported} getPushPayload={getTinyPushPayload} pushCandidateCount={tinyPushCandidateCount} />
         </div>
       </section>
 

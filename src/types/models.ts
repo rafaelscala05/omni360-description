@@ -152,9 +152,6 @@ export interface Product {
   // Tiny ERP integration
   _tinyProductId?: string;      // id do produto no Tiny — chave de merge
   _tinyVersionId?: string;      // id da última versão salva em tiny_versions
-  // Assinatura (hash) por grupo de campo no último envio bem-sucedido ao Tiny.
-  // Usado para enviar apenas o que mudou desde o último envio.
-  _tinyPushed?: { descricao?: string; seo?: string; fiscal?: string; imagens?: string };
 
   // Bling ERP integration
   _blingProductId?: string;      // id do produto no Bling — chave de merge

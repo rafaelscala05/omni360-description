@@ -6,38 +6,15 @@ import {
   type TinyStatus, type TinyImportJob, type TinyPushProduct, type TinyPushResult,
 } from '../../services/tinyService';
 
-export type TinyPushFields = TinyPushProduct['campos'];
-export type TinyPushCandidate = {
-  id: string;
-  sku: string;
-  nome: string;
-  changed: Record<'descricao' | 'seo' | 'fiscal' | 'imagens', boolean>;
-};
-
 interface Props {
   // Called when a background import finishes, so the app can reload products.
   onImported: () => void;
-  // Builds the push payload from the currently selected products and chosen fields.
-  getPushPayload: (campos: TinyPushFields) => Promise<TinyPushProduct[]>;
-  // Products that will be sent for a field selection (only the modified ones).
-  getPushCandidates: (campos: TinyPushFields) => TinyPushCandidate[];
-  // Called after a send so the app can record what was sent (avoid resending).
-  onPushed: (results: TinyPushResult[]) => void;
+  // Builds the push payload for every selected Tiny-linked product. The server
+  // diffs each field against Tiny's live data and only writes what changed.
+  getPushPayload: () => Promise<TinyPushProduct[]>;
+  // How many Tiny-linked products are currently selected — powers the button's count.
+  pushCandidateCount: number;
 }
-
-const FIELD_LABELS: { key: keyof TinyPushFields; label: string }[] = [
-  { key: 'descricao', label: 'Descrição complementar' },
-  { key: 'seo', label: 'SEO (título/descrição/keywords)' },
-  { key: 'fiscal', label: 'Fiscais (NCM, GTIN, peso, dimensões)' },
-  { key: 'imagens', label: 'Imagens (anexos por URL)' },
-];
-
-const CHANGED_TAGS: { key: keyof TinyPushFields; label: string }[] = [
-  { key: 'descricao', label: 'Desc' },
-  { key: 'seo', label: 'SEO' },
-  { key: 'fiscal', label: 'Fiscal' },
-  { key: 'imagens', label: 'Img' },
-];
 
 const JOB_ACTIVE = (s?: string) => s === 'running' || s === 'queued';
 
@@ -51,7 +28,7 @@ const V3_UI_ENABLED = false;
 // (compartilhado com a v3); flip pra true pra reoferecer o toggle na v2.
 const V2_POLLING_UI_ENABLED = false;
 
-const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCandidates, onPushed }) => {
+const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, pushCandidateCount }) => {
   const [status, setStatus] = useState<TinyStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [connecting, setConnecting] = useState(false);
@@ -71,9 +48,7 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCan
   const [cnpjInput, setCnpjInput] = useState('');
   const [savingWebhook, setSavingWebhook] = useState(false);
   const [pushing, setPushing] = useState(false);
-  const [campos, setCampos] = useState<TinyPushFields>({ descricao: true, seo: true, fiscal: true, imagens: true });
   const [pushResults, setPushResults] = useState<TinyPushResult[] | null>(null);
-  const [showCandidates, setShowCandidates] = useState(false);
 
   const refreshStatus = async (): Promise<TinyStatus> => {
     let next: TinyStatus;
@@ -239,14 +214,13 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCan
     setError(null);
     setPushResults(null);
     try {
-      const payload = await getPushPayload(campos);
+      const payload = await getPushPayload();
       if (!payload.length) {
         setError('Selecione produtos importados do Tiny (com ID Tiny) para enviar.');
         return;
       }
       const res = await tinyPush(payload);
       setPushResults(res.resultados);
-      onPushed(res.resultados);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Falha no envio.');
     } finally {
@@ -265,8 +239,6 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCan
   const active = JOB_ACTIVE(job?.status);
   const pct = job && job.total > 0 ? Math.min(100, Math.round((job.imported / job.total) * 100)) : 0;
   const autoSync = job?.autoSync ?? { enabled: false, everyHours: 24 };
-  // Only modified products (for the chosen field groups) are sent — this is that set.
-  const pushCandidates: TinyPushCandidate[] = connected ? getPushCandidates(campos) : [];
 
   return (
     <div className="space-y-5">
@@ -535,22 +507,9 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCan
             <div>
               <h4 className="text-sm font-semibold text-slate-800">Enviar para Tiny</h4>
               <p className="text-xs text-slate-500">
-                Envia de volta apenas os produtos cujos campos <strong>selecionados abaixo mudaram</strong>
-                {' '}desde o último envio — nada é reenviado sem necessidade.
+                Compara cada produto selecionado com o que está salvo no Tiny agora e envia
+                {' '}<strong>só os campos que realmente mudaram</strong> — nada é reenviado sem necessidade.
               </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              {FIELD_LABELS.map(({ key, label }) => (
-                <label key={key} className="inline-flex items-center gap-1.5 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={campos[key]}
-                    onChange={(e) => setCampos((c) => ({ ...c, [key]: e.target.checked }))}
-                    className="rounded border-slate-300 text-[#FF5B03] focus:ring-[#FF5B03]"
-                  />
-                  {label}
-                </label>
-              ))}
             </div>
             <p className="text-xs text-slate-400 inline-flex items-start gap-1.5">
               <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
@@ -560,21 +519,15 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCan
             <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={handlePush}
-                disabled={pushing || pushCandidates.length === 0}
+                disabled={pushing || pushCandidateCount === 0}
                 className="inline-flex items-center gap-2 bg-[#FF5B03] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#003a9e] disabled:opacity-50 transition-colors"
               >
                 {pushing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudUpload className="w-4 h-4" />}
                 Enviar selecionados para Tiny
               </button>
-              <button
-                type="button"
-                onClick={() => setShowCandidates(true)}
-                disabled={pushCandidates.length === 0}
-                title="Ver os produtos que serão enviados"
-                className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 border border-slate-300 px-3 py-2 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
-              >
-                {pushCandidates.length} {pushCandidates.length === 1 ? 'produto' : 'produtos'}
-              </button>
+              <span className="text-sm text-slate-500">
+                {pushCandidateCount} {pushCandidateCount === 1 ? 'produto será verificado' : 'produtos serão verificados'}
+              </span>
             </div>
 
             {pushResults && (
@@ -587,7 +540,7 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCan
                     <span className="font-medium text-slate-700">{r.sku || r.tinyId}</span>
                     <span className="text-slate-500">
                       {(['descricao', 'seo', 'fiscal', 'imagens'] as const)
-                        .filter((k) => r.steps[k] !== 'skip')
+                        .filter((k) => r.steps[k] !== 'sem dado local')
                         .map((k) => `${k}: ${r.steps[k]}`)
                         .join(' · ') || 'nada a enviar'}
                     </span>
@@ -595,53 +548,6 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCan
                 ))}
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* Preview of the products that will be sent to Tiny */}
-      {showCandidates && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setShowCandidates(false)}
-        >
-          <div
-            className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <header className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <h3 className="text-sm font-bold text-slate-800">
-                Produtos modificados a enviar ({pushCandidates.length})
-              </h3>
-              <button onClick={() => setShowCandidates(false)} className="text-slate-400 hover:text-slate-700">
-                <X className="w-5 h-5" />
-              </button>
-            </header>
-            <div className="overflow-auto divide-y divide-slate-100">
-              {pushCandidates.length === 0 ? (
-                <p className="text-sm text-slate-500 px-5 py-6 text-center">
-                  Nenhum produto modificado para os campos selecionados.
-                </p>
-              ) : (
-                pushCandidates.map((p) => (
-                  <div key={p.id} className="flex items-center gap-3 px-5 py-2.5 text-sm">
-                    <span className="font-mono text-xs text-slate-500 shrink-0">{p.sku || p.id}</span>
-                    <span className="text-slate-700 truncate flex-1">{p.nome || <span className="text-slate-400 italic">sem nome</span>}</span>
-                    <span className="flex gap-1 shrink-0">
-                      {CHANGED_TAGS.filter(({ key }) => p.changed[key]).map(({ key, label }) => (
-                        <span key={key} className="text-[10px] uppercase font-semibold text-[#FF5B03] bg-[#FF5B03]/10 rounded px-1.5 py-0.5">
-                          {label}
-                        </span>
-                      ))}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-            <footer className="px-5 py-3 border-t border-slate-100 text-xs text-slate-500">
-              Só entram produtos cujos campos <strong>selecionados</strong> mudaram desde o último envio.
-              Sem seleção na lista de produtos, considera todos os vindos do Tiny.
-            </footer>
           </div>
         </div>
       )}

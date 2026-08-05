@@ -52,9 +52,10 @@ export interface TinyPushProduct {
   altura?: number;
   comprimento?: number;
   imagens?: string[];
-  campos: { descricao: boolean; seo: boolean; fiscal: boolean; imagens: boolean };
 }
 
+// Per-group outcome: 'ok' (sent — differed from Tiny), 'sem alteração' (local data
+// matches Tiny already), 'sem dado local' (nothing local to send), or an error message.
 export interface TinyPushResult {
   tinyId: string;
   sku?: string;
