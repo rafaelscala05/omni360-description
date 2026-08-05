@@ -11,6 +11,11 @@ import { listV2Page, getV2Product, updateV2Product, validateV2Token } from './ti
 
 export type TinyVersion = 'v2' | 'v3';
 
+// The push route fetches each product live from Tiny before diffing, sequentially,
+// inside a single HTTP request. Cap the batch to keep the request from timing out
+// and to bound the cost of an unfiltered "all Tiny-linked products" push.
+const MAX_PUSH_BATCH = 50;
+
 export async function getActiveVersion(uid: string): Promise<TinyVersion | null> {
   const snap = await SECRET_REF(uid).get();
   const d = snap.data();
@@ -100,6 +105,11 @@ export function registerTinyProviderRoutes(app: express.Express, { verifyFirebas
       if (!version) return res.status(400).json({ message: 'Tiny não conectado.' });
 
       const produtos: TinyPushProduct[] = Array.isArray(req.body?.produtos) ? req.body.produtos : [];
+      if (produtos.length > MAX_PUSH_BATCH) {
+        return res.status(400).json({
+          message: `Selecione no máximo ${MAX_PUSH_BATCH} produtos por envio. Marque produtos específicos na lista antes de enviar.`,
+        });
+      }
       const resultados: TinyPushResult[] = [];
 
       for (const prod of produtos) {

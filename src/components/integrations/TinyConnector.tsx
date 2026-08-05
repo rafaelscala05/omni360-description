@@ -28,6 +28,11 @@ const V3_UI_ENABLED = false;
 // (compartilhado com a v3); flip pra true pra reoferecer o toggle na v2.
 const V2_POLLING_UI_ENABLED = false;
 
+// Must match MAX_PUSH_BATCH in server/tinyProvider.ts — the server rejects a push
+// above this size with a 400, so the button is disabled client-side first with a
+// clear message instead of letting the user hit that error.
+const MAX_PUSH_BATCH = 50;
+
 const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, pushCandidateCount }) => {
   const [status, setStatus] = useState<TinyStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
@@ -519,7 +524,7 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, pushCandid
             <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={handlePush}
-                disabled={pushing || pushCandidateCount === 0}
+                disabled={pushing || pushCandidateCount === 0 || pushCandidateCount > MAX_PUSH_BATCH}
                 className="inline-flex items-center gap-2 bg-[#FF5B03] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#003a9e] disabled:opacity-50 transition-colors"
               >
                 {pushing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudUpload className="w-4 h-4" />}
@@ -529,6 +534,12 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, pushCandid
                 {pushCandidateCount} {pushCandidateCount === 1 ? 'produto será verificado' : 'produtos serão verificados'}
               </span>
             </div>
+            {pushCandidateCount > MAX_PUSH_BATCH && (
+              <p className="text-xs text-red-600 inline-flex items-start gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                Muitos produtos selecionados (máx. {MAX_PUSH_BATCH} por envio) — marque produtos específicos na lista antes de enviar.
+              </p>
+            )}
 
             {pushResults && (
               <div className="mt-2 border-t border-slate-100 pt-3 space-y-1.5 max-h-64 overflow-auto">

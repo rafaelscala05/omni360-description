@@ -203,13 +203,23 @@ export async function updateV2Product(uid: string, id: string, prod: TinyPushPro
     if (steps.descricao === 'ok') produto.descricao_complementar = prod.descricaoHtml;
   }
 
-  const seo: Record<string, any> = {};
   let seoChanged = false;
-  if (prod.seoTitle && strDiffers(prod.seoTitle, cur.seoTitle)) { seo.seo_title = prod.seoTitle; seoChanged = true; }
-  if (prod.seoDescription && strDiffers(prod.seoDescription, cur.seoDescription)) { seo.seo_description = prod.seoDescription; seoChanged = true; }
-  if (prod.seoKeywords && strDiffers(prod.seoKeywords, cur.seoKeywords)) { seo.seo_keywords = prod.seoKeywords; seoChanged = true; }
+  if (prod.seoTitle && strDiffers(prod.seoTitle, cur.seoTitle)) seoChanged = true;
+  if (prod.seoDescription && strDiffers(prod.seoDescription, cur.seoDescription)) seoChanged = true;
+  if (prod.seoKeywords && strDiffers(prod.seoKeywords, cur.seoKeywords)) seoChanged = true;
   if (prod.seoTitle || prod.seoDescription || prod.seoKeywords) steps.seo = seoChanged ? 'ok' : 'sem alteração';
-  if (seoChanged) produto.seo = seo;
+  if (seoChanged) {
+    // v2's produto.alterar validates the whole record — send every sibling
+    // key (seeded from Tiny's own current value) so an unrelated field isn't
+    // blanked just because only one SEO sub-field changed.
+    const seo: Record<string, any> = {
+      seo_title: (prod.seoTitle && strDiffers(prod.seoTitle, cur.seoTitle)) ? prod.seoTitle : cur.seoTitle,
+      seo_description: (prod.seoDescription && strDiffers(prod.seoDescription, cur.seoDescription)) ? prod.seoDescription : cur.seoDescription,
+      seo_keywords: (prod.seoKeywords && strDiffers(prod.seoKeywords, cur.seoKeywords)) ? prod.seoKeywords : cur.seoKeywords,
+    };
+    Object.keys(seo).forEach((k) => { if (!seo[k]) delete seo[k]; });
+    if (Object.keys(seo).length) produto.seo = seo;
+  }
 
   const hasFiscalLocal = !!prod.ncm || !!prod.gtin || prod.pesoLiquido != null
     || prod.pesoBruto != null || prod.largura != null || prod.altura != null || prod.comprimento != null;
