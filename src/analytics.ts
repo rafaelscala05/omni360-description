@@ -1,5 +1,5 @@
 import { getAnalytics, logEvent, setUserId, Analytics } from 'firebase/analytics';
-import { app } from './firebase';
+import { app, auth } from './firebase';
 import { metaTrack, metaSetUser } from './meta';
 import { tiktokTrack, tiktokSetUser } from './tiktok';
 
@@ -15,6 +15,29 @@ function getAnalyticsInstance(): Analytics | null {
   }
 }
 
+// Quarto sink, ao lado de GA4/Meta/TikTok: persiste o evento no CRM interno
+// (server/crmEvents.ts), que é o que alimenta a jornada de ativação em /admin.
+// GA4/Meta/TikTok servem para otimizar anúncios e não são consultáveis para
+// operar a base — daí o registro próprio.
+//
+// Nunca derruba o fluxo do produto: qualquer falha aqui é só logada.
+function crmTrack(name: string, props: Record<string, unknown> = {}): void {
+  void (async () => {
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+      const token = await user.getIdToken();
+      await fetch('/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name, props }),
+      });
+    } catch (err) {
+      console.warn('crm track falhou', err);
+    }
+  })();
+}
+
 export function analyticsSetUser(uid: string, email?: string | null) {
   const a = getAnalyticsInstance();
   if (a) setUserId(a, uid);
@@ -28,6 +51,7 @@ export function trackLogin(method: string = 'google') {
   if (a) logEvent(a, 'login', { method });
   metaTrack('Login', { method }, false);
   tiktokTrack('Login', { method });
+  crmTrack('login', { method });
 }
 
 export function trackSignUp(method: string = 'google') {
@@ -43,6 +67,7 @@ export function trackSpreadsheetImport(params: { product_count: number; category
   if (a) logEvent(a, 'spreadsheet_import', params);
   metaTrack('spreadsheet_import', params, false);
   tiktokTrack('spreadsheet_import', params);
+  crmTrack('spreadsheet_import', params);
 }
 
 // 3. Geração de Descrição
@@ -51,6 +76,7 @@ export function trackDescriptionGenerated(params: { mode: 'single' | 'mass'; pro
   if (a) logEvent(a, 'description_generated', params);
   metaTrack('description_generated', params, false);
   tiktokTrack('description_generated', params);
+  crmTrack('description_generated', params);
 }
 
 // 4. Geração de Imagem Ambientada
@@ -59,6 +85,7 @@ export function trackImageGenerated(params: { type: 'ambient' | 'regenerate'; sk
   if (a) logEvent(a, 'image_generated', params);
   metaTrack('image_generated', params, false);
   tiktokTrack('image_generated', params);
+  crmTrack('image_generated', params);
 }
 
 // 5. Geração de Atributos
@@ -67,6 +94,7 @@ export function trackAttributesGenerated(params: { source: 'text' | 'image'; sku
   if (a) logEvent(a, 'attributes_generated', params);
   metaTrack('attributes_generated', params, false);
   tiktokTrack('attributes_generated', params);
+  crmTrack('attributes_generated', params);
 }
 
 // 6. Exportar Planilha
@@ -75,6 +103,7 @@ export function trackSpreadsheetExport(params: { model: 'standard' | 'tinyerp'; 
   if (a) logEvent(a, 'spreadsheet_export', params);
   metaTrack('spreadsheet_export', params, false);
   tiktokTrack('spreadsheet_export', params);
+  crmTrack('spreadsheet_export', params);
 }
 
 // 7. Adicionar Créditos (abertura do modal de compra)
@@ -83,6 +112,7 @@ export function trackCreditPurchaseOpen() {
   if (a) logEvent(a, 'credit_purchase_open');
   metaTrack('InitiateCheckout', {}, true);
   tiktokTrack('InitiateCheckout', {});
+  crmTrack('credit_purchase_open');
 }
 
 // 7b. Crédito comprado com sucesso
@@ -109,6 +139,7 @@ export function trackTemplateSaved(params: { is_new: boolean; template_name?: st
   if (a) logEvent(a, 'seo_template_saved', params);
   metaTrack('seo_template_saved', params, false);
   tiktokTrack('seo_template_saved', params);
+  crmTrack('seo_template_saved', params);
 }
 
 // Extra: Enriquecimento de produto (GTIN/NCM)
@@ -117,6 +148,7 @@ export function trackProductEnriched(params: { mode: 'single' | 'mass'; product_
   if (a) logEvent(a, 'product_enriched', params);
   metaTrack('product_enriched', params, false);
   tiktokTrack('product_enriched', params);
+  crmTrack('product_enriched', params);
 }
 
 // Extra: Hierarquia de categorias gerada
@@ -125,6 +157,7 @@ export function trackCategoryHierarchyGenerated(params: { category_count: number
   if (a) logEvent(a, 'category_hierarchy_generated', params);
   metaTrack('category_hierarchy_generated', params, false);
   tiktokTrack('category_hierarchy_generated', params);
+  crmTrack('category_hierarchy_generated', params);
 }
 
 // Extra: Download da planilha padrão
@@ -133,6 +166,7 @@ export function trackTemplateDownloaded() {
   if (a) logEvent(a, 'template_downloaded');
   metaTrack('template_downloaded', {}, false);
   tiktokTrack('template_downloaded', {});
+  crmTrack('template_downloaded');
 }
 
 // Marketing (site público, fora do app autenticado)

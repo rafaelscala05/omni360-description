@@ -4,6 +4,7 @@
 
 import type express from 'express';
 import { adminDb, FieldValue } from './firebaseAdmin';
+import { recordEvent } from './crmEvents';
 import type { CompanyData, OnboardingContact, OnboardingStep1 } from '../src/types/onboarding';
 import { ONBOARDING_BONUS } from '../src/types/onboarding';
 import { REFERRAL_ONBOARDING_BONUS } from '../src/types/referral';
@@ -172,6 +173,14 @@ export function registerOnboardingRoutes(app: express.Application, deps: Onboard
 
         return { alreadyCompleted: false };
       });
+
+      if (!result.alreadyCompleted) {
+        void recordEvent(decoded.uid, 'onboarding_completed', {
+          role: step1.role,
+          industry: step1.industry,
+          companySize: step1.companySize,
+        });
+      }
 
       res.json(result);
     } catch (err) {

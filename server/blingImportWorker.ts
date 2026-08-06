@@ -7,6 +7,7 @@
 import type express from 'express';
 import { adminDb } from './firebaseAdmin';
 import { PACE_MS, sleep, blingFetch, normalizeProduct, type BlingNormalizedProduct } from './blingAgent';
+import { recordEvent } from './crmEvents';
 
 const JOB_COL = 'bling_import_jobs';
 const JOB_REF = (uid: string) => adminDb.collection(JOB_COL).doc(uid);
@@ -163,6 +164,9 @@ async function processJob(uid: string): Promise<void> {
           status: 'done', offset: newOffset, total, imported: nextImported,
           finishedAt: iso(), lastSyncAt: iso(), lease: null, updatedAt: iso(), error: null,
         });
+        // Marca a jornada de ativação do CRM: importar do ERP conta como
+        // "Subiu Produtos". Nunca await — telemetria não segura o worker.
+        void recordEvent(uid, 'erp_import', { provider: 'bling', product_count: nextImported });
         return;
       }
 

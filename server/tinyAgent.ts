@@ -5,6 +5,7 @@
 // server-side via the Admin SDK and never returned to the client.
 import type express from 'express';
 import { adminDb } from './firebaseAdmin';
+import { recordEvent } from './crmEvents';
 import { FieldValue } from 'firebase-admin/firestore';
 
 const TINY_BASE = 'https://api.tiny.com.br/public-api/v3';
@@ -456,6 +457,10 @@ export function registerTinyRoutes(app: express.Express, { verifyFirebaseToken }
         connectedAt: FieldValue.serverTimestamp(),
         lastValidatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
+
+      // Marca a jornada de ativação do CRM: conectar ERP é um dos caminhos para
+      // o marco "Integrou ou Exportou".
+      void recordEvent(uid, 'erp_connected', { provider: 'tiny' });
 
       return res.status(200).send(closePopupHtml('Conta Tiny conectada com sucesso. Pode fechar esta janela.', true));
     } catch (e: any) {
