@@ -44,7 +44,7 @@ env:
   # CRM admin (/admin). Allowlist de bootstrap do acesso — resolve o ovo-e-galinha
   # do custom claim, que só pode ser concedido com uma service account.
   - variable: ADMIN_EMAILS
-    value: "rafaelscala@hotmail.com"
+    value: "rafaelscala@hotmail.com,omni360@omni360agencia.tech"
 
   # WhatsApp Oficial (Meta Cloud API) — régua de onboarding por etapa do Kanban.
   # Sem estas variáveis o CRM funciona inteiro; só a automação fica inerte.
@@ -60,4 +60,4 @@ env:
   # Começa em "true": a régua roda inteira e registra os envios SEM chamar a
   # Meta. Vire para "false" só depois de conferir que os disparos fazem sentido.
   - variable: WHATSAPP_DRY_RUN
-    value: "true"
+    value: "false"
