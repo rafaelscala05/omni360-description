@@ -32,6 +32,7 @@ import { registerReferralRoutes } from "./server/referralAgent";
 import { recordEvent, registerCrmEventRoutes } from "./server/crmEvents";
 import { registerCrmAdminRoutes } from "./server/crmAdmin";
 import { startCrmScheduler } from "./server/crmReconcile";
+import { startAutomationScheduler } from "./server/crmAutomation";
 
 // Do NOT override: in production the App Hosting environment (apphosting.yaml /
 // Secret Manager) must take precedence over any stray .env bundled in the image.
@@ -545,6 +546,10 @@ async function startServer() {
 
   // CRM: reconcilia os marcos da jornada a partir do estado do Firestore.
   startCrmScheduler();
+
+  // CRM: régua de WhatsApp por etapa do Kanban. Não faz nada se o provider não
+  // estiver configurado ou se nenhuma automação estiver ativa.
+  startAutomationScheduler();
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);

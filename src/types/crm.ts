@@ -72,6 +72,9 @@ export interface CrmSummary {
   pipelineUpdatedAt: string | null;
   pipelineUpdatedBy: string | null;
   tags: string[];
+  // Bloqueia todo envio automático de WhatsApp. Respeitar isso é exigência da
+  // política da Meta, não só cortesia.
+  whatsappOptOut?: boolean;
   updatedAt: string;
 }
 
@@ -154,6 +157,7 @@ export interface CustomerDetailPayload {
   stagnant: boolean;
   daysInStage: number;
   productCount: number;
+  whatsapp: string;
 }
 
 export interface TimelineEntry {
@@ -197,3 +201,81 @@ export const CLIENT_EVENT_NAMES = [
   'product_enriched',
   'category_hierarchy_generated',
 ] as const;
+
+// --- Automação de WhatsApp (spec 2) ---
+
+// Um documento por etapa do Kanban (id = a própria etapa), e não um motor de
+// regras genérico: assim é impossível configurar duas regras conflitantes para a
+// mesma coluna, e a UI vira uma linha por coluna.
+export type AutomationTrigger = 'entered' | 'stagnant';
+
+export const TRIGGER_LABELS: Record<AutomationTrigger, string> = {
+  entered: 'Ao entrar na etapa',
+  stagnant: 'Ao travar na etapa',
+};
+
+export interface CrmAutomation {
+  stage: CrmStage;
+  active: boolean;
+  trigger: AutomationTrigger;
+  delayHours: number;
+  templateName: string;
+  templateLanguage: string;
+  bodyParams: string[];
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+export interface CrmMessage {
+  id: string;
+  stage: CrmStage | 'manual';
+  trigger: AutomationTrigger | 'manual';
+  templateName: string;
+  to: string;
+  status: 'sent' | 'failed';
+  error: string | null;
+  messageId: string | null;
+  sentAt: string;
+  manual: boolean;
+  dryRun: boolean;
+}
+
+export interface WhatsAppTemplateInfo {
+  name: string;
+  language: string;
+  status: string;
+  category: string;
+  bodyParamCount: number;
+  bodyText: string;
+}
+
+export interface WhatsAppStatus {
+  configured: boolean;
+  missing: string[];
+  dryRun: boolean;
+  maxPerDay: number;
+}
+
+// Tokens que a automação resolve por cliente no momento do envio. Qualquer outro
+// texto vai literal para o parâmetro do template.
+export const TEMPLATE_TOKENS = [
+  { token: '{{nome}}', description: 'Primeiro nome do cliente' },
+  { token: '{{empresa}}', description: 'Nome fantasia ou razão social' },
+  { token: '{{creditos}}', description: 'Saldo de créditos atual' },
+  { token: '{{etapa}}', description: 'Nome da etapa atual' },
+  { token: '{{dias}}', description: 'Dias parado na etapa' },
+] as const;
+
+export function defaultAutomation(stage: CrmStage): CrmAutomation {
+  return {
+    stage,
+    active: false,
+    trigger: 'stagnant',
+    delayHours: 0,
+    templateName: '',
+    templateLanguage: 'pt_BR',
+    bodyParams: [],
+    updatedAt: null,
+    updatedBy: null,
+  };
+}

@@ -18,7 +18,8 @@ import {
   type CustomerListItem,
   type PipelineStatus,
 } from '../../types/crm';
-import { listCustomers, reconcile, setPipeline } from '../../services/adminService';
+import { listAutomations, listCustomers, reconcile, setPipeline } from '../../services/adminService';
+import type { CrmAutomation } from '../../types/crm';
 import {
   Card,
   ErrorBanner,
@@ -39,6 +40,7 @@ export default function KanbanBoard() {
   const [reconciling, setReconciling] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<PipelineStatus | null>(null);
+  const [automations, setAutomations] = useState<Record<string, CrmAutomation>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,6 +48,13 @@ export default function KanbanBoard() {
     try {
       const { customers: list } = await listCustomers();
       setCustomers(list);
+      // A régua é carregada em separado: falhar aqui não pode esconder o board.
+      try {
+        const { automations: rules } = await listAutomations();
+        setAutomations(Object.fromEntries(rules.map((r) => [r.stage, r])));
+      } catch {
+        setAutomations({});
+      }
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -140,7 +149,12 @@ export default function KanbanBoard() {
           ? CRM_STAGES.map((stage) => {
               const items = customers.filter((c) => c.crm?.stage === stage);
               return (
-                <Column key={stage} title={STAGE_LABELS[stage]} count={items.length}>
+                <Column
+                  key={stage}
+                  title={STAGE_LABELS[stage]}
+                  count={items.length}
+                  automated={automations[stage]?.active === true}
+                >
                   {items.map((c) => (
                     <KanbanCard key={c.uid} customer={c} />
                   ))}
@@ -197,6 +211,7 @@ function Column({
   count,
   children,
   highlighted = false,
+  automated = false,
   onDragOver,
   onDragLeave,
   onDrop,
@@ -205,6 +220,7 @@ function Column({
   count: number;
   children: React.ReactNode;
   highlighted?: boolean;
+  automated?: boolean;
   onDragOver?: React.DragEventHandler;
   onDragLeave?: React.DragEventHandler;
   onDrop?: React.DragEventHandler;
@@ -219,7 +235,17 @@ function Column({
       }`}
     >
       <div className="px-3 py-2.5 flex items-center justify-between border-b border-slate-200">
-        <span className="text-xs font-bold text-slate-600 uppercase tracking-wide leading-tight">{title}</span>
+        <span className="text-xs font-bold text-slate-600 uppercase tracking-wide leading-tight">
+          {title}
+          {automated && (
+            <span
+              title="Automação de WhatsApp ativa nesta etapa"
+              className="ml-1.5 inline-block px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 text-[10px] align-middle"
+            >
+              auto
+            </span>
+          )}
+        </span>
         <span className="shrink-0 ml-2 px-1.5 py-0.5 rounded bg-white text-xs font-bold text-slate-500">
           {count}
         </span>

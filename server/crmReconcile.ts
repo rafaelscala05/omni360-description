@@ -11,6 +11,8 @@
 import { adminDb } from './firebaseAdmin';
 import {
   GENERATION_ACTION_KEYS,
+  IMAGE_ACTION_KEYS,
+  TEXT_ACTION_KEYS,
   computeHealth,
   emptySummary,
   isoWeek,
@@ -56,10 +58,14 @@ export async function reconcileUser(uid: string): Promise<CrmSummary | null> {
     signed_up: existing?.milestones?.signed_up ?? accountCreated,
   };
 
+  // descriptions/images são DERIVADOS de credit_logs (fonte autoritativa, já que
+  // cada geração debita crédito), não acumulados de evento — assim o número bate
+  // com o estágio mesmo para quem usa o app desde antes da base de eventos.
+  // exports/erpSyncs não têm registro derivável, então preservam o acumulado.
   const counters = {
     products: 0,
-    descriptions: existing?.counters.descriptions ?? 0,
-    images: existing?.counters.images ?? 0,
+    descriptions: 0,
+    images: 0,
     exports: existing?.counters.exports ?? 0,
     erpSyncs: existing?.counters.erpSyncs ?? 0,
     aiOps30d: 0,
@@ -114,6 +120,8 @@ export async function reconcileUser(uid: string): Promise<CrmSummary | null> {
     if (log.actionKey && GENERATION_ACTION_KEYS.includes(log.actionKey)) {
       milestones.content_generated = earliest(milestones.content_generated, ts);
     }
+    if (log.actionKey && TEXT_ACTION_KEYS.includes(log.actionKey)) counters.descriptions += 1;
+    if (log.actionKey && IMAGE_ACTION_KEYS.includes(log.actionKey)) counters.images += 1;
   }
 
   // --- Integrações ERP: comprovam "Integrou ou Exportou" ---

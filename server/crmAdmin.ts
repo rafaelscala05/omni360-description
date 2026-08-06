@@ -6,10 +6,18 @@ import type express from 'express';
 import { adminDb, FieldValue } from './firebaseAdmin';
 import { reconcileAll, reconcileUser } from './crmReconcile';
 import { daysBetween, isStagnant } from './crmStage';
+import { AUTOMATION_REF, loadAutomations, runAutomations, stageFromId } from './crmAutomation';
+import { resolveParams } from './crmAutomationRules';
+import { isConfigured, listTemplates, sendTemplate } from './whatsappProvider';
+import { recordEvent } from './crmEvents';
 import {
   CRM_STAGES,
   PIPELINE_STATUSES,
+  STAGE_LABELS,
+  defaultAutomation,
   type AdminStats,
+  type CrmAutomation,
+  type CrmMessage,
   type CrmStage,
   type CrmSummary,
   type CrmTask,
@@ -52,6 +60,7 @@ const EVENT_LABELS: Record<string, string> = {
   seo_template_saved: 'Salvou um template de SEO',
   credit_purchase_open: 'Abriu a compra de créditos',
   credits_purchased: 'Comprou créditos',
+  whatsapp_sent: 'Mensagem de WhatsApp enviada',
 };
 
 function describeProps(props?: Record<string, unknown>): string {
@@ -64,6 +73,9 @@ function describeProps(props?: Record<string, unknown>): string {
   if (typeof props.provider === 'string') parts.push(props.provider);
   if (typeof props.mode === 'string') parts.push(props.mode);
   if (typeof props.source === 'string') parts.push(props.source);
+  if (typeof props.template === 'string') parts.push(props.template);
+  if (props.manual === true) parts.push('manual');
+  if (props.dryRun === true) parts.push('simulado');
   return parts.join(' · ');
 }
 
@@ -248,6 +260,7 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
         stagnant: crm ? isStagnant(crm, now) : false,
         daysInStage: crm ? daysBetween(crm.stageEnteredAt, now) : 0,
         productCount: products.data().count,
+        whatsapp: String(data.onboarding?.contact?.whatsapp ?? ''),
       };
       res.json(payload);
     } catch (err) {
@@ -515,6 +528,179 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
         doneAt: done ? new Date().toISOString() : null,
       });
       res.json({ ok: true });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // --- WhatsApp Oficial: status, templates, automações e envio ---
+
+  app.get('/api/admin/whatsapp/status', async (req, res) => {
+    try {
+      await requireAdmin(req);
+      res.json(isConfigured());
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  app.get('/api/admin/whatsapp/templates', async (req, res) => {
+    try {
+      await requireAdmin(req);
+      res.json({ templates: await listTemplates() });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // Sempre devolve as 5 etapas, preenchendo com o padrão as que nunca foram
+  // configuradas — a UI é uma linha por coluna do Kanban, então não pode faltar.
+  app.get('/api/admin/automations', async (req, res) => {
+    try {
+      await requireAdmin(req);
+      const stored = await loadAutomations();
+      const automations = CRM_STAGES.map((stage) => stored[stage] ?? defaultAutomation(stage));
+      res.json({ automations });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  app.put('/api/admin/automations/:stage', async (req, res) => {
+    try {
+      const admin = await requireAdmin(req);
+      const stage = stageFromId(req.params.stage);
+      if (!stage) throw Object.assign(new Error('Etapa inválida'), { status: 422 });
+
+      const body = req.body ?? {};
+      const trigger = body.trigger === 'entered' ? 'entered' : 'stagnant';
+      const active = body.active === true;
+      const templateName = String(body.templateName ?? '').trim();
+      if (active && !templateName) {
+        throw Object.assign(new Error('Escolha um template para ativar a automação'), { status: 422 });
+      }
+
+      const automation: CrmAutomation = {
+        stage,
+        active,
+        trigger,
+        delayHours: Math.max(0, Math.min(720, Number(body.delayHours ?? 0) || 0)),
+        templateName,
+        templateLanguage: String(body.templateLanguage ?? 'pt_BR').trim() || 'pt_BR',
+        bodyParams: Array.isArray(body.bodyParams) ? body.bodyParams.map((p: unknown) => String(p)) : [],
+        updatedAt: new Date().toISOString(),
+        updatedBy: admin.uid,
+      };
+
+      await AUTOMATION_REF(stage).set(automation);
+      await auditLog(
+        admin,
+        'automation',
+        'automacao',
+        `${STAGE_LABELS[stage]}: ${active ? `ativa (${templateName}, ${trigger})` : 'desativada'}`,
+      );
+      res.json({ ok: true, automation });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  app.get('/api/admin/customers/:uid/messages', async (req, res) => {
+    try {
+      await requireAdmin(req);
+      const snap = await adminDb
+        .collection('users')
+        .doc(req.params.uid)
+        .collection('crm_messages')
+        .get();
+      const messages = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }) as CrmMessage)
+        .sort((a, b) => (b.sentAt ?? '').localeCompare(a.sentAt ?? ''));
+      res.json({ messages });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // Envio manual. NÃO cria doc de idempotência com id de etapa, então não
+  // consome nem bloqueia a régua automática daquela etapa.
+  app.post('/api/admin/customers/:uid/whatsapp', async (req, res) => {
+    try {
+      const admin = await requireAdmin(req);
+      const uid = req.params.uid;
+      const templateName = String(req.body?.templateName ?? '').trim();
+      const templateLanguage = String(req.body?.templateLanguage ?? 'pt_BR').trim() || 'pt_BR';
+      const rawParams = Array.isArray(req.body?.bodyParams) ? req.body.bodyParams : [];
+      if (!templateName) throw Object.assign(new Error('Escolha um template'), { status: 422 });
+
+      const ref = adminDb.collection('users').doc(uid);
+      const snap = await ref.get();
+      if (!snap.exists) throw Object.assign(new Error('Cliente não encontrado'), { status: 404 });
+      const data = snap.data() ?? {};
+      const crm = data.crm as CrmSummary | undefined;
+
+      const whatsapp = String(data.onboarding?.contact?.whatsapp ?? '');
+      if (!whatsapp.trim()) {
+        throw Object.assign(new Error('Este cliente não informou WhatsApp no onboarding'), { status: 422 });
+      }
+
+      const now = new Date();
+      const params = resolveParams(
+        rawParams.map((p: unknown) => String(p)),
+        {
+          displayName: data.displayName ?? '',
+          companyName: data.company?.nomeFantasia || data.company?.razaoSocial || '',
+          credits: Number(data.credits ?? 0),
+          stage: crm?.stage ?? 'signed_up',
+          daysInStage: crm ? daysBetween(crm.stageEnteredAt, now) : 0,
+        },
+      );
+
+      const messageRef = ref.collection('crm_messages').doc();
+      try {
+        const sent = await sendTemplate(whatsapp, templateName, templateLanguage, params);
+        await messageRef.set({
+          stage: 'manual', trigger: 'manual', templateName, to: whatsapp,
+          status: 'sent', error: null, messageId: sent.messageId,
+          sentAt: now.toISOString(), manual: true, dryRun: sent.dryRun,
+        });
+        void recordEvent(uid, 'whatsapp_sent', { template: templateName, manual: true, dryRun: sent.dryRun });
+        await auditLog(admin, uid, 'whatsapp', `envio manual: ${templateName}`);
+        res.json({ ok: true, messageId: sent.messageId, dryRun: sent.dryRun });
+      } catch (err) {
+        await messageRef.set({
+          stage: 'manual', trigger: 'manual', templateName, to: whatsapp,
+          status: 'failed', error: (err as Error).message.slice(0, 500), messageId: null,
+          sentAt: now.toISOString(), manual: true, dryRun: false,
+        });
+        throw err;
+      }
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  app.post('/api/admin/customers/:uid/optout', async (req, res) => {
+    try {
+      const admin = await requireAdmin(req);
+      const uid = req.params.uid;
+      const optOut = req.body?.optOut === true;
+      const ref = adminDb.collection('users').doc(uid);
+      const crm = (await ref.get()).get('crm') as CrmSummary | undefined;
+      if (!crm) throw Object.assign(new Error('Cliente ainda não reconciliado'), { status: 409 });
+      await ref.set({ crm: { ...crm, whatsappOptOut: optOut } }, { merge: true });
+      await auditLog(admin, uid, 'optout', optOut ? 'bloqueou WhatsApp' : 'liberou WhatsApp');
+      res.json({ ok: true, optOut });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // Roda a régua sob demanda, sem esperar os 30 min do scheduler.
+  app.post('/api/admin/automations/run', async (req, res) => {
+    try {
+      await requireAdmin(req);
+      res.json(await runAutomations());
     } catch (err) {
       sendError(res, err);
     }

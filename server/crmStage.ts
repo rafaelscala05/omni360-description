@@ -27,17 +27,25 @@ export const EVENT_MILESTONE: Record<string, CrmStage> = {
   erp_push: 'integrated_or_exported',
 };
 
-// actionKeys de credit_logs que comprovam "Gerou Descrição ou Imagem".
-export const GENERATION_ACTION_KEYS = [
+// actionKeys de credit_logs que produzem texto e que produzem imagem. A união
+// das duas listas é o que comprova o marco "Gerou Descrição ou Imagem", e cada
+// lista alimenta o contador correspondente na reconciliação — senão a aba "Uso"
+// mostraria estágio "Gerou Descrição" com 0 descrições, que parece bug.
+export const TEXT_ACTION_KEYS = [
   'generate_seo_single',
   'generate_seo_mass',
   'regenerate_single',
+  'content_article',
+];
+
+export const IMAGE_ACTION_KEYS = [
   'ambient_image',
   'regenerate_image',
-  'video_generation',
-  'content_article',
   'content_image',
+  'video_generation',
 ];
+
+export const GENERATION_ACTION_KEYS = [...TEXT_ACTION_KEYS, ...IMAGE_ACTION_KEYS];
 
 export function stageRank(stage: CrmStage): number {
   return CRM_STAGES.indexOf(stage);

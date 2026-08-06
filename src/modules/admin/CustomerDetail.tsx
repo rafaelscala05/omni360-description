@@ -29,13 +29,15 @@ import CustomerOverview from './CustomerOverview';
 import CustomerTimeline from './CustomerTimeline';
 import CustomerNotes from './CustomerNotes';
 import CreditAdjustModal from './CreditAdjustModal';
+import CustomerWhatsApp from './CustomerWhatsApp';
 
-type Tab = 'visao' | 'timeline' | 'uso' | 'notas';
+type Tab = 'visao' | 'timeline' | 'uso' | 'whatsapp' | 'notas';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'visao', label: 'Visão geral' },
   { key: 'timeline', label: 'Timeline' },
   { key: 'uso', label: 'Uso' },
+  { key: 'whatsapp', label: 'WhatsApp' },
   { key: 'notas', label: 'Notas & Tarefas' },
 ];
 
@@ -205,6 +207,16 @@ export default function CustomerDetail() {
       {tab === 'visao' && <CustomerOverview customer={customer} />}
       {tab === 'timeline' && <CustomerTimeline uid={uid} />}
       {tab === 'uso' && <UsageTab customer={customer} />}
+      {tab === 'whatsapp' && (
+        <CustomerWhatsApp
+          uid={uid}
+          whatsapp={customer.whatsapp}
+          optOut={customer.crm?.whatsappOptOut === true}
+          onOptOutChange={(value) =>
+            setCustomer((c) => (c && c.crm ? { ...c, crm: { ...c.crm, whatsappOptOut: value } } : c))
+          }
+        />
+      )}
       {tab === 'notas' && <CustomerNotes uid={uid} customerName={customer.displayName || customer.email} />}
 
       {showCreditModal && (

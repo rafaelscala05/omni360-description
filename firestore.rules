@@ -150,6 +150,10 @@ service cloud.firestore {
     match /crm_audit/{auditId} {
       allow read, write: if false;
     }
+    // Régua de WhatsApp por etapa do Kanban — escrita só pelo admin via Admin SDK.
+    match /crm_automations/{stage} {
+      allow read, write: if false;
+    }
 
     match /users/{userId} {
       allow read: if isOwner(userId);
@@ -166,6 +170,11 @@ service cloud.firestore {
         allow read, write: if false;
       }
       match /crm_notes/{noteId} {
+        allow read, write: if false;
+      }
+      // Histórico de WhatsApp + trava de idempotência da régua. O cliente não
+      // pode ler nem, principalmente, apagar — apagar aqui reabriria o envio.
+      match /crm_messages/{messageId} {
         allow read, write: if false;
       }
 

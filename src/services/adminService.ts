@@ -7,18 +7,23 @@
 import { auth } from '../firebase';
 import type {
   AdminStats,
+  CrmAutomation,
+  CrmMessage,
   CrmNote,
+  CrmStage,
   CrmSummary,
   CrmTask,
   CustomerDetailPayload,
   CustomerListItem,
   PipelineStatus,
   TimelineEntry,
+  WhatsAppStatus,
+  WhatsAppTemplateInfo,
 } from '../types/crm';
 
 async function call<T>(
   url: string,
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE' = 'GET',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'GET',
   body?: unknown,
 ): Promise<T> {
   const user = auth.currentUser;
@@ -96,3 +101,32 @@ export const reconcile = (uid?: string) =>
     'POST',
     uid ? { uid } : {},
   );
+
+// --- WhatsApp Oficial ---
+
+export const getWhatsAppStatus = () => call<WhatsAppStatus>('/api/admin/whatsapp/status');
+
+export const listTemplates = () =>
+  call<{ templates: WhatsAppTemplateInfo[] }>('/api/admin/whatsapp/templates');
+
+export const listAutomations = () => call<{ automations: CrmAutomation[] }>('/api/admin/automations');
+
+export const saveAutomation = (stage: CrmStage, automation: Partial<CrmAutomation>) =>
+  call<{ ok: boolean; automation: CrmAutomation }>(`/api/admin/automations/${stage}`, 'PUT', automation);
+
+export const runAutomations = () =>
+  call<{ evaluated: number; sent: number; failed: number; skipped: number; dryRun: boolean; reason?: string }>(
+    '/api/admin/automations/run',
+    'POST',
+  );
+
+export const listMessages = (uid: string) =>
+  call<{ messages: CrmMessage[] }>(`/api/admin/customers/${uid}/messages`);
+
+export const sendWhatsApp = (
+  uid: string,
+  input: { templateName: string; templateLanguage: string; bodyParams: string[] },
+) => call<{ ok: boolean; messageId: string; dryRun: boolean }>(`/api/admin/customers/${uid}/whatsapp`, 'POST', input);
+
+export const setOptOut = (uid: string, optOut: boolean) =>
+  call<{ ok: boolean; optOut: boolean }>(`/api/admin/customers/${uid}/optout`, 'POST', { optOut });

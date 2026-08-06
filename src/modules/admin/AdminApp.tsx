@@ -9,11 +9,13 @@ import AttentionQueue from './AttentionQueue';
 import KanbanBoard from './KanbanBoard';
 import CustomerList from './CustomerList';
 import CustomerDetail from './CustomerDetail';
+import AutomationsView from './AutomationsView';
 
 const NAV = [
   { to: '/admin', label: 'Atenção hoje', exact: true },
   { to: '/admin/kanban', label: 'Kanban' },
   { to: '/admin/clientes', label: 'Clientes' },
+  { to: '/admin/automacoes', label: 'Automações' },
 ];
 
 export default function AdminApp() {
@@ -98,6 +100,7 @@ export default function AdminApp() {
           <Route path="kanban" element={<KanbanBoard />} />
           <Route path="clientes" element={<CustomerList />} />
           <Route path="clientes/:uid" element={<CustomerDetail />} />
+          <Route path="automacoes" element={<AutomationsView />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>
       </main>
