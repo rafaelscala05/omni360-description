@@ -58,6 +58,8 @@ import { registerReferralSignup } from './services/referralService';
 const OnboardingWizard = lazy(() => import('./modules/onboarding/OnboardingWizard'));
 const CompanyProfile = lazy(() => import('./modules/onboarding/CompanyProfile'));
 const ReferralPage = lazy(() => import('./modules/referral/ReferralPage'));
+// CRM interno: só o admin abre, então não deve pesar no bundle de todo usuário.
+const AdminApp = lazy(() => import('./modules/admin/AdminApp'));
 
 // Build version injected at build time by Vite (git short hash + UTC date)
 declare const __BUILD_VERSION__: string;
@@ -4245,6 +4247,20 @@ Retorne APENAS um JSON válido no seguinte formato:
         )}
       />
       <Route path="/app/*" element={user ? renderApp() : <Navigate to="/entrar" replace />} />
+      {/* CRM interno. O acesso real é gravado no custom claim e verificado no
+          servidor em todo /api/admin/*; aqui só exigimos estar logado. */}
+      <Route
+        path="/admin/*"
+        element={
+          user ? (
+            <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+              <AdminApp />
+            </Suspense>
+          ) : (
+            <Navigate to="/entrar" replace />
+          )
+        }
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

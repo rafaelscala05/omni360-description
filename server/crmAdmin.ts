@@ -12,6 +12,7 @@ import {
   type AdminStats,
   type CrmStage,
   type CrmSummary,
+  type CrmTask,
   type CustomerDetailPayload,
   type CustomerListItem,
   type PipelineStatus,
@@ -76,7 +77,17 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
   const { verifyFirebaseToken } = deps;
 
   async function requireAdmin(req: express.Request): Promise<AdminIdentity> {
-    const decoded = await verifyFirebaseToken(req);
+    // verifyFirebaseToken só marca status 401 quando o header falta; um token
+    // malformado ou expirado sobe como erro cru do Firebase, que sem este catch
+    // viraria 500 e vazaria a mensagem interna. Token expirado é rotina (o
+    // Firebase renova de hora em hora), então precisa ser um 401 limpo.
+    let decoded: Awaited<ReturnType<typeof verifyFirebaseToken>>;
+    try {
+      decoded = await verifyFirebaseToken(req);
+    } catch (err) {
+      const status = (err as { status?: number }).status ?? 401;
+      throw Object.assign(new Error('Sessão inválida ou expirada. Entre novamente.'), { status });
+    }
     if (decoded.admin !== true) {
       throw Object.assign(new Error('Acesso restrito a administradores'), { status: 403 });
     }
@@ -456,11 +467,14 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
   app.get('/api/admin/tasks', async (req, res) => {
     try {
       await requireAdmin(req);
-      const onlyOpen = req.query.open === 'true';
-      let query: FirebaseFirestore.Query = adminDb.collection('crm_tasks');
-      if (onlyOpen) query = query.where('done', '==', false);
-      const snap = await query.orderBy('dueDate', 'asc').limit(200).get();
-      res.json({ tasks: snap.docs.map((d) => ({ id: d.id, ...d.data() })) });
+      // Ordena no Firestore (índice de campo único, automático) e filtra `done`
+      // em memória de propósito: combinar where + orderBy exigiria um índice
+      // composto, e a home inteira quebraria enquanto ele não fosse publicado.
+      // O volume de tarefas de um CRM interno não justifica essa dependência.
+      const snap = await adminDb.collection('crm_tasks').orderBy('dueDate', 'asc').limit(400).get();
+      let tasks = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as CrmTask);
+      if (req.query.open === 'true') tasks = tasks.filter((t) => !t.done);
+      res.json({ tasks: tasks.slice(0, 200) });
     } catch (err) {
       sendError(res, err);
     }
