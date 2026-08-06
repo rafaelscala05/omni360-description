@@ -53,10 +53,18 @@ export async function reconcileUser(uid: string): Promise<CrmSummary | null> {
   const accountCreated =
     existing?.firstSeenAt ?? toIso(data.onboarding?.completedAt) ?? toIso(data.lastSync) ?? nowIso;
 
-  const milestones: Partial<Record<CrmStage, string>> = {
-    ...(existing?.milestones ?? {}),
-    signed_up: existing?.milestones?.signed_up ?? accountCreated,
-  };
+  // Saneia os marcos herdados: qualquer valor que não seja uma data parseável é
+  // descartado para ser recalculado. Sem isso um marco gravado errado seria
+  // pegajoso para sempre — o bloco que o recalcula só roda quando ele está
+  // ausente. (Foi exatamente o que aconteceu com `active`, gravado uma vez como
+  // string de semana '2026-W30' em vez de timestamp.)
+  const milestones: Partial<Record<CrmStage, string>> = {};
+  for (const [stage, value] of Object.entries(existing?.milestones ?? {})) {
+    if (typeof value === 'string' && !Number.isNaN(new Date(value).getTime())) {
+      milestones[stage as CrmStage] = value;
+    }
+  }
+  milestones.signed_up = milestones.signed_up ?? accountCreated;
 
   // descriptions/images são DERIVADOS de credit_logs (fonte autoritativa, já que
   // cada geração debita crédito), não acumulados de evento — assim o número bate
@@ -72,6 +80,9 @@ export async function reconcileUser(uid: string): Promise<CrmSummary | null> {
   };
 
   const weeks = new Set<string>(existing?.activeWeeks ?? []);
+  // Timestamps reais de uso, para datar o marco 'active' com uma data de verdade
+  // em vez da string de semana (que viraria Invalid Date lá na frente).
+  const usageTimestamps: string[] = [];
   let lastSeenAt = existing?.lastSeenAt ?? accountCreated;
   let firstSeenAt = existing?.firstSeenAt ?? accountCreated;
 
@@ -115,6 +126,7 @@ export async function reconcileUser(uid: string): Promise<CrmSummary | null> {
     firstSeenAt = earliest(firstSeenAt, ts) ?? firstSeenAt;
     const week = isoWeek(ts);
     if (week) weeks.add(week);
+    usageTimestamps.push(ts);
     if (ts >= cutoff30d) counters.aiOps30d += 1;
 
     if (log.actionKey && GENERATION_ACTION_KEYS.includes(log.actionKey)) {
@@ -139,11 +151,22 @@ export async function reconcileUser(uid: string): Promise<CrmSummary | null> {
   }
 
   // --- 'active': ≥2 semanas distintas de uso após integrar/exportar ---
+  // O marco precisa ser um TIMESTAMP, não a string de semana: ele vira
+  // stageEnteredAt, e uma string como '2026-W31' produziria Invalid Date — o que
+  // marcaria o cliente como eternamente travado e dispararia WhatsApp à toa.
   const activeWeeks = [...weeks].sort();
   if (milestones.integrated_or_exported && !milestones.active) {
     const since = isoWeek(milestones.integrated_or_exported);
-    const after = activeWeeks.filter((w) => w >= since);
-    if (after.length >= 2) milestones.active = after[1];
+    const distinctWeeks = new Set<string>();
+    for (const ts of usageTimestamps.sort()) {
+      const w = isoWeek(ts);
+      if (!w || w < since) continue;
+      distinctWeeks.add(w);
+      if (distinctWeeks.size >= 2) {
+        milestones.active = ts; // instante em que virou recorrente
+        break;
+      }
+    }
   }
 
   const stage = resolveStage(milestones);

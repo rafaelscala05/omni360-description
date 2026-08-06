@@ -76,5 +76,14 @@ const frio = computeHealth(emptySummary('2026-01-01T00:00:00.000Z'), new Date('2
 check('cliente sumido pontua 0', frio.score, 0);
 check('cliente sumido é banda inativo', frio.band, 'inativo');
 
+// 'active' é terminal: nunca conta como travado, por mais tempo que passe.
+const recorrente = { ...emptySummary('2026-01-01T00:00:00.000Z'), stage: 'active', stageEnteredAt: '2026-01-01T00:00:00.000Z' };
+check('estágio terminal nunca fica travado', isStagnant(recorrente, new Date('2026-08-06T00:00:00.000Z')), false);
+
+// Regressão: marco 'active' com data inválida NÃO pode marcar como travado —
+// esse sinal dispara WhatsApp, então dado ruim jamais pode virar disparo.
+const dataRuim = { ...emptySummary('2026-08-01T00:00:00.000Z'), stage: 'active', stageEnteredAt: '2026-W31' };
+check('data inválida não marca como travado', isStagnant(dataRuim, new Date('2026-08-06T00:00:00.000Z')), false);
+
 console.log(failures === 0 ? '\nTodas as verificações passaram.' : `\n${failures} verificação(ões) falharam.`);
 process.exit(failures === 0 ? 0 : 1);

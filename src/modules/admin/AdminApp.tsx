@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { checkAdmin } from '../../services/adminService';
+import { accessCheck, checkAdmin, type AccessCheck } from '../../services/adminService';
 import { Spinner } from './ui';
 import AttentionQueue from './AttentionQueue';
 import KanbanBoard from './KanbanBoard';
@@ -21,6 +21,7 @@ const NAV = [
 export default function AdminApp() {
   const [state, setState] = useState<'checking' | 'allowed' | 'denied'>('checking');
   const [adminName, setAdminName] = useState('');
+  const [diagnosis, setDiagnosis] = useState<AccessCheck | null>(null);
   const location = useLocation();
 
   useEffect(() => {
@@ -29,7 +30,14 @@ export default function AdminApp() {
         setAdminName(r.name);
         setState('allowed');
       })
-      .catch(() => setState('denied'));
+      .catch(() => {
+        setState('denied');
+        // Descobre POR QUE foi negado — sem isso a tela só diz "não pode" e a
+        // pessoa fica adivinhando entre claim ausente, e-mail errado e env var.
+        accessCheck()
+          .then(setDiagnosis)
+          .catch(() => setDiagnosis(null));
+      });
   }, []);
 
   if (state === 'checking') {
@@ -40,23 +48,61 @@ export default function AdminApp() {
     );
   }
 
-  // Não redireciona em silêncio: o admin precisa saber que o claim não está no
-  // token, porque o motivo mais comum é o token ser anterior à concessão.
+  // Não redireciona em silêncio: mostra exatamente qual das condições falhou,
+  // porque os três motivos possíveis (claim ausente, e-mail fora da allowlist,
+  // env var não configurada) exigem ações completamente diferentes.
   if (state === 'denied') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 px-6">
-        <div className="max-w-md text-center">
-          <h1 className="text-xl font-bold text-slate-800">Acesso restrito</h1>
-          <p className="mt-2 text-sm text-slate-500">
-            Esta área é só para administradores. Se você acabou de receber o acesso, saia e entre de
-            novo para o token ser renovado.
+        <div className="max-w-lg">
+          <h1 className="text-xl font-bold text-slate-800 text-center">Acesso restrito</h1>
+          <p className="mt-2 text-sm text-slate-500 text-center">
+            Esta área é só para administradores.
           </p>
-          <Link
-            to="/app"
-            className="inline-block mt-6 text-sm font-semibold text-violet-600 hover:text-violet-800"
-          >
-            Voltar para o Alfred →
-          </Link>
+
+          {diagnosis && (
+            <div className="mt-5 p-4 rounded-xl bg-white border border-slate-200 text-sm">
+              <p className="text-slate-600">
+                Você está logado como{' '}
+                <strong className="text-slate-800">{diagnosis.email ?? 'e-mail desconhecido'}</strong>.
+              </p>
+              <ul className="mt-3 space-y-1.5 text-xs text-slate-500">
+                <li>
+                  {diagnosis.viaClaim ? '✓' : '✗'} Custom claim <code>admin</code> no token
+                </li>
+                <li>
+                  {diagnosis.viaAllowlist ? '✓' : '✗'} E-mail na allowlist{' '}
+                  <code>ADMIN_EMAILS</code>
+                  {!diagnosis.allowlistConfigured && ' (não configurada)'}
+                </li>
+              </ul>
+
+              {!diagnosis.allowlistConfigured && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <p className="text-xs text-slate-600 font-semibold">Para liberar:</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Adicione ao <code>.env</code> e reinicie o servidor:
+                  </p>
+                  <code className="mt-1.5 block px-2 py-1.5 rounded bg-slate-900 text-slate-100 text-[11px] overflow-x-auto">
+                    ADMIN_EMAILS={diagnosis.email ?? 'seu@email.com'}
+                  </code>
+                </div>
+              )}
+
+              {diagnosis.allowlistConfigured && !diagnosis.viaAllowlist && !diagnosis.viaClaim && (
+                <p className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
+                  A allowlist existe mas não inclui este e-mail. Confira{' '}
+                  <code>ADMIN_EMAILS</code> no ambiente do servidor, ou entre com a conta correta.
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="mt-5 text-center">
+            <Link to="/app" className="text-sm font-semibold text-violet-600 hover:text-violet-800">
+              Voltar para o Alfred →
+            </Link>
+          </div>
         </div>
       </div>
     );

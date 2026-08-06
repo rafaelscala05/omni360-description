@@ -51,6 +51,17 @@ export interface CustomerFilters {
 
 export const checkAdmin = () => call<{ admin: boolean; uid: string; name: string }>('/api/admin/me');
 
+export interface AccessCheck {
+  email: string | null;
+  viaClaim: boolean;
+  viaAllowlist: boolean;
+  allowlistConfigured: boolean;
+}
+
+// Diagnóstico de por que o acesso foi negado. Não exige ser admin — é o que
+// alimenta a tela de "Acesso restrito".
+export const accessCheck = () => call<AccessCheck>('/api/admin/access-check');
+
 export const getStats = () => call<AdminStats>('/api/admin/stats');
 
 export function listCustomers(filters: CustomerFilters = {}) {

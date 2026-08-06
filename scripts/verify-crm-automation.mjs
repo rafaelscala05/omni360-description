@@ -121,5 +121,12 @@ check(
 );
 check('lista de parâmetros', resolveParams(['{{nome}}', '{{etapa}}'], ctx), ['Rafael', 'Subiu Produtos']);
 
+// Regressão: a régua não pode disparar para cliente com stageEnteredAt inválido.
+const dataRuim = { ...emptySummary('2026-08-01T00:00:00.000Z'), stage: 'active', stageEnteredAt: '2026-W31' };
+check('data inválida não dispara a régua', shouldSend(dataRuim, automation({ stage: 'active' }), '11999999999', meioDia), {
+  send: false,
+  reason: 'gatilho_nao_atingido',
+});
+
 console.log(failures === 0 ? '\nTodas as verificações passaram.' : `\n${failures} verificação(ões) falharam.`);
 process.exit(failures === 0 ? 0 : 1);

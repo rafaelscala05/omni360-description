@@ -76,9 +76,11 @@ export function isoWeek(iso: string): string {
   return `${target.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 }
 
+// Retorna NaN para data inválida (não Infinity): quem consome precisa poder
+// distinguir "faz muito tempo" de "não sei", e Infinity vira null no JSON.
 export function daysBetween(iso: string, now: Date): number {
   const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return Infinity;
+  if (Number.isNaN(then)) return NaN;
   return Math.floor((now.getTime() - then) / 86400000);
 }
 
@@ -131,8 +133,12 @@ export function computeHealth(
 
 // Estagnado = parado no mesmo estágio além do limite daquele estágio. É o sinal
 // que alimenta a fila de atenção e, no spec 2, o gatilho de WhatsApp.
+// Falha para o lado seguro: data inválida NÃO marca como travado. Este sinal
+// dispara mensagem de WhatsApp, então dado ruim jamais pode virar disparo.
 export function isStagnant(summary: CrmSummary, now: Date): boolean {
-  return daysBetween(summary.stageEnteredAt, now) > STAGNATION_DAYS[summary.stage];
+  const days = daysBetween(summary.stageEnteredAt, now);
+  if (!Number.isFinite(days)) return false;
+  return days > STAGNATION_DAYS[summary.stage];
 }
 
 // Aplica um evento ao resumo, retornando um novo objeto. Puro: não muta a

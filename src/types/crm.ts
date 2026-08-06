@@ -40,13 +40,18 @@ export const HEALTH_BAND_LABELS: Record<HealthBand, string> = {
 };
 
 // Dias parado no mesmo estágio antes de o cliente ser considerado estagnado.
-// Varia por estágio: 3 dias em "Cadastrou" é grave, 30 em "Ativo" é normal.
+// Varia por estágio: 3 dias em "Cadastrou" é grave, 14 em "Integrou" é normal.
+//
+// 'active' é TERMINAL — não há para onde avançar, então "tempo parado" ali não
+// significa nada. Um cliente recorrente esfriando aparece pelo health score
+// (que é dirigido por recência), não pela estagnação. Sem esta exceção, seus
+// melhores clientes seriam listados como precisando de resgate.
 export const STAGNATION_DAYS: Record<CrmStage, number> = {
   signed_up: 3,
   products_uploaded: 5,
   content_generated: 7,
   integrated_or_exported: 14,
-  active: 30,
+  active: Infinity,
 };
 
 export interface CrmCounters {

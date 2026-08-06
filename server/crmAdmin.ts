@@ -88,6 +88,22 @@ function sendError(res: express.Response, err: unknown) {
 export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps): void {
   const { verifyFirebaseToken } = deps;
 
+  // Allowlist de bootstrap. Existe para resolver o ovo-e-galinha do custom claim:
+  // conceder o claim exige a API Admin de Auth, que por sua vez exige uma service
+  // account — então numa máquina com ADC de usuário não haveria como abrir o CRM
+  // pela primeira vez. O claim continua sendo o caminho principal e é o que
+  // escala para outros admins; isto é a porta de entrada.
+  //
+  // O e-mail vem do ID token já verificado pelo Firebase, e o Firebase Auth
+  // garante e-mail único por conta — quem apresenta o token controla a conta.
+  // Ainda assim: só coloque aqui e-mails cujas contas você já criou.
+  function adminEmails(): string[] {
+    return (process.env.ADMIN_EMAILS ?? '')
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+  }
+
   async function requireAdmin(req: express.Request): Promise<AdminIdentity> {
     // verifyFirebaseToken só marca status 401 quando o header falta; um token
     // malformado ou expirado sobe como erro cru do Firebase, que sem este catch
@@ -100,7 +116,12 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
       const status = (err as { status?: number }).status ?? 401;
       throw Object.assign(new Error('Sessão inválida ou expirada. Entre novamente.'), { status });
     }
-    if (decoded.admin !== true) {
+
+    const email = decoded.email?.toLowerCase();
+    const viaClaim = decoded.admin === true;
+    const viaAllowlist = !!email && adminEmails().includes(email);
+
+    if (!viaClaim && !viaAllowlist) {
       throw Object.assign(new Error('Acesso restrito a administradores'), { status: 403 });
     }
     return { uid: decoded.uid, name: decoded.name ?? decoded.email ?? decoded.uid };
@@ -141,6 +162,24 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
     try {
       const admin = await requireAdmin(req);
       res.json({ admin: true, uid: admin.uid, name: admin.name });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // Diagnóstico do acesso, SEM exigir ser admin — é justamente o que a tela de
+  // "Acesso restrito" precisa para dizer por que o acesso foi negado. Só revela
+  // se a allowlist está configurada, nunca o conteúdo dela.
+  app.get('/api/admin/access-check', async (req, res) => {
+    try {
+      const decoded = await verifyFirebaseToken(req).catch(() => null);
+      if (!decoded) return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+      res.json({
+        email: decoded.email ?? null,
+        viaClaim: decoded.admin === true,
+        viaAllowlist: !!decoded.email && adminEmails().includes(decoded.email.toLowerCase()),
+        allowlistConfigured: adminEmails().length > 0,
+      });
     } catch (err) {
       sendError(res, err);
     }

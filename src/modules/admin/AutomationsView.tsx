@@ -208,13 +208,15 @@ function AutomationRow({
 
   return (
     <Card className={`p-4 ${automation.active ? 'border-violet-300' : ''}`}>
+      {/* Largura fixa no rótulo para os controles alinharem entre as linhas —
+          sem isso cada etapa empurra os selects para uma posição diferente. */}
       <div className="flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 cursor-pointer">
+        <label className="flex items-center gap-2 cursor-pointer w-full sm:w-56 shrink-0">
           <input
             type="checkbox"
             checked={automation.active}
             onChange={(e) => onChange({ active: e.target.checked })}
-            className="accent-violet-600 w-4 h-4"
+            className="accent-violet-600 w-4 h-4 shrink-0"
           />
           <span className="font-semibold text-sm text-slate-800">{STAGE_LABELS[stage]}</span>
         </label>
@@ -222,7 +224,7 @@ function AutomationRow({
         <select
           value={automation.trigger}
           onChange={(e) => onChange({ trigger: e.target.value as AutomationTrigger })}
-          className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-sm bg-white"
+          className="w-44 shrink-0 px-2.5 py-1.5 rounded-lg border border-slate-300 text-sm bg-white"
         >
           {(['entered', 'stagnant'] as AutomationTrigger[]).map((t) => (
             <option key={t} value={t}>
@@ -231,7 +233,7 @@ function AutomationRow({
           ))}
         </select>
 
-        <label className="flex items-center gap-1.5 text-sm text-slate-500">
+        <label className="flex items-center gap-1.5 text-sm text-slate-500 shrink-0">
           após
           <input
             type="number"
@@ -267,9 +269,11 @@ function AutomationRow({
         </select>
       </div>
 
-      <p className="mt-2 text-xs text-slate-400">
+      <p className="mt-2 sm:ml-56 text-xs text-slate-400">
         {automation.trigger === 'stagnant'
-          ? `Dispara quando o cliente passa de ${STAGNATION_DAYS[stage]} dias nesta etapa.`
+          ? Number.isFinite(STAGNATION_DAYS[stage])
+            ? `Dispara quando o cliente passa de ${STAGNATION_DAYS[stage]} dias nesta etapa.`
+            : 'Esta etapa é final — não existe “travado” aqui, então este gatilho nunca dispara. Use “ao entrar”.'
           : 'Dispara assim que o cliente chega nesta etapa.'}
         {automation.delayHours > 0 && ` Espera mais ${automation.delayHours}h antes de enviar.`}
       </p>
