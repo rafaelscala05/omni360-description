@@ -1,0 +1,199 @@
+// Tipos do CRM admin, compartilhados entre client (src/modules/admin) e
+// servidor (server/crm*.ts). Sem I/O e sem imports de firebase, para poder ser
+// importado dos dois lados.
+
+export const CRM_STAGES = [
+  'signed_up',
+  'products_uploaded',
+  'content_generated',
+  'integrated_or_exported',
+  'active',
+] as const;
+export type CrmStage = (typeof CRM_STAGES)[number];
+
+export const STAGE_LABELS: Record<CrmStage, string> = {
+  signed_up: 'Cadastrou',
+  products_uploaded: 'Subiu Produtos',
+  content_generated: 'Gerou Descrição ou Imagem',
+  integrated_or_exported: 'Integrou ou Exportou',
+  active: 'Ativo / Recorrente',
+};
+
+export const PIPELINE_STATUSES = ['novo', 'em_contato', 'qualificado', 'ganho', 'perdido'] as const;
+export type PipelineStatus = (typeof PIPELINE_STATUSES)[number];
+
+export const PIPELINE_LABELS: Record<PipelineStatus, string> = {
+  novo: 'Novo',
+  em_contato: 'Em contato',
+  qualificado: 'Qualificado',
+  ganho: 'Ganho',
+  perdido: 'Perdido',
+};
+
+export type HealthBand = 'ativo' | 'atencao' | 'risco' | 'inativo';
+
+export const HEALTH_BAND_LABELS: Record<HealthBand, string> = {
+  ativo: 'Ativo',
+  atencao: 'Atenção',
+  risco: 'Risco',
+  inativo: 'Inativo',
+};
+
+// Dias parado no mesmo estágio antes de o cliente ser considerado estagnado.
+// Varia por estágio: 3 dias em "Cadastrou" é grave, 30 em "Ativo" é normal.
+export const STAGNATION_DAYS: Record<CrmStage, number> = {
+  signed_up: 3,
+  products_uploaded: 5,
+  content_generated: 7,
+  integrated_or_exported: 14,
+  active: 30,
+};
+
+export interface CrmCounters {
+  products: number;
+  descriptions: number;
+  images: number;
+  exports: number;
+  erpSyncs: number;
+  aiOps30d: number;
+}
+
+export interface CrmSummary {
+  stage: CrmStage;
+  stageEnteredAt: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  milestones: Partial<Record<CrmStage, string>>;
+  counters: CrmCounters;
+  activeWeeks: string[];
+  healthScore: number;
+  healthBand: HealthBand;
+  pipelineStatus: PipelineStatus;
+  pipelineUpdatedAt: string | null;
+  pipelineUpdatedBy: string | null;
+  tags: string[];
+  updatedAt: string;
+}
+
+export type CrmEventSource = 'server' | 'client' | 'derived';
+
+export interface CrmEvent {
+  id: string;
+  name: string;
+  ts: string;
+  source: CrmEventSource;
+  props: Record<string, unknown>;
+}
+
+export interface CrmNote {
+  id: string;
+  body: string;
+  createdAt: string;
+  createdBy: string;
+  createdByName: string;
+}
+
+export interface CrmTask {
+  id: string;
+  uid: string;
+  customerName: string;
+  title: string;
+  dueDate: string;
+  done: boolean;
+  doneAt: string | null;
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface CrmAudit {
+  id: string;
+  uid: string;
+  action: string;
+  detail: string;
+  at: string;
+  by: string;
+  byName: string;
+}
+
+export interface CustomerListItem {
+  uid: string;
+  displayName: string;
+  email: string;
+  companyName: string;
+  whatsapp: string;
+  credits: number;
+  crm: CrmSummary | null;
+  stagnant: boolean;
+  daysInStage: number;
+}
+
+export interface CustomerIntegrations {
+  tiny: boolean;
+  bling: boolean;
+  wake: boolean;
+}
+
+export interface CustomerDetailPayload {
+  uid: string;
+  displayName: string;
+  email: string;
+  photoURL: string | null;
+  credits: number;
+  createdAt: string | null;
+  referredBy: string | null;
+  referralCode: string | null;
+  onboarding: {
+    completed: boolean;
+    completedAt: string | null;
+    step1: Record<string, string> | null;
+    contact: Record<string, unknown> | null;
+  } | null;
+  company: Record<string, unknown> | null;
+  integrations: CustomerIntegrations;
+  crm: CrmSummary | null;
+  stagnant: boolean;
+  daysInStage: number;
+  productCount: number;
+}
+
+export interface TimelineEntry {
+  id: string;
+  kind: 'event' | 'credit';
+  name: string;
+  label: string;
+  ts: string;
+  detail: string;
+  credits: number;
+}
+
+export interface AdminStats {
+  total: number;
+  byStage: Record<CrmStage, number>;
+  byPipeline: Record<PipelineStatus, number>;
+  stagnant: number;
+  atRisk: number;
+  notReconciled: number;
+}
+
+// Eventos que o client pode reportar pelo beacon. O servidor rejeita qualquer
+// nome fora desta lista — o client não inventa evento novo.
+//
+// A geração de IA roda no client (Firebase AI Logic), não no servidor, então os
+// eventos de geração precisam vir daqui. Isso é falsificável em tese, mas cada
+// geração debita crédito de forma transacional, e o reconciliador deriva o marco
+// `content_generated` de `credit_logs` — que é a fonte autoritativa. O beacon só
+// acrescenta granularidade à timeline.
+export const CLIENT_EVENT_NAMES = [
+  'login',
+  'spreadsheet_import',
+  'spreadsheet_export',
+  'template_downloaded',
+  'seo_template_saved',
+  'credit_purchase_open',
+  'description_generated',
+  'image_generated',
+  'attributes_generated',
+  'video_generated',
+  'product_enriched',
+  'category_hierarchy_generated',
+] as const;

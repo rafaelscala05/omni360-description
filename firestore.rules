@@ -60,6 +60,21 @@ service cloud.firestore {
           || request.resource.data.credits <= resource.data.credits;
     }
 
+    // O resumo do CRM (users/{uid}.crm) é escrito só pelo servidor via Admin SDK,
+    // que bypassa estas regras. O cliente não pode criá-lo nem alterá-lo — senão
+    // poderia mentir sobre o próprio estágio na jornada de ativação.
+    function crmNotTouched() {
+      return !('crm' in request.resource.data)
+          || (('crm' in resource.data) && request.resource.data.crm == resource.data.crm);
+    }
+
+    // Idem para hasPurchased, que alimenta o health score e é escrito apenas
+    // pelo webhook de pagamento.
+    function purchaseFlagNotTouched() {
+      return !('hasPurchased' in request.resource.data)
+          || (('hasPurchased' in resource.data) && request.resource.data.hasPurchased == resource.data.hasPurchased);
+    }
+
     function isValidTemplate() {
       let data = request.resource.data;
       return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
@@ -127,11 +142,32 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // CRM admin — tarefas e trilha de auditoria. Escritas e leituras apenas pelo
+    // servidor via Admin SDK (server/crmAdmin.ts); o cliente é totalmente negado.
+    match /crm_tasks/{taskId} {
+      allow read, write: if false;
+    }
+    match /crm_audit/{auditId} {
+      allow read, write: if false;
+    }
+
     match /users/{userId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidUser();
-      allow update: if isOwner(userId) && isValidUser() && creditsNotIncreased();
+      allow create: if isOwner(userId) && isValidUser()
+                    && !('crm' in request.resource.data)
+                    && !('hasPurchased' in request.resource.data);
+      allow update: if isOwner(userId) && isValidUser() && creditsNotIncreased()
+                    && crmNotTouched() && purchaseFlagNotTouched();
       allow delete: if isOwner(userId);
+
+      // Eventos do CRM e notas do admin. Escritos pelo servidor via Admin SDK;
+      // nem o próprio usuário lê ou escreve.
+      match /events/{eventId} {
+        allow read, write: if false;
+      }
+      match /crm_notes/{noteId} {
+        allow read, write: if false;
+      }
 
       match /settings/{settingId} {
         allow read: if isOwner(userId);

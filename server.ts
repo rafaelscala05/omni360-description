@@ -29,6 +29,9 @@ import { registerMetaEventsRoutes } from "./server/metaEvents";
 import { registerTiktokEventsRoutes } from "./server/tiktokEvents";
 import { registerOnboardingRoutes } from "./server/onboardingAgent";
 import { registerReferralRoutes } from "./server/referralAgent";
+import { recordEvent, registerCrmEventRoutes } from "./server/crmEvents";
+import { registerCrmAdminRoutes } from "./server/crmAdmin";
+import { startCrmScheduler } from "./server/crmReconcile";
 
 // Do NOT override: in production the App Hosting environment (apphosting.yaml /
 // Secret Manager) must take precedence over any stray .env bundled in the image.
@@ -193,6 +196,10 @@ async function startServer() {
   // Onboarding wizard (CNPJ lookup + credit bonus) e Indique e Ganhe (referral).
   registerOnboardingRoutes(app, { verifyFirebaseToken });
   registerReferralRoutes(app, { verifyFirebaseToken });
+
+  // CRM admin: beacon de eventos do client (/api/events) e as rotas /api/admin/*.
+  registerCrmEventRoutes(app, { verifyFirebaseToken });
+  registerCrmAdminRoutes(app, { verifyFirebaseToken });
 
   // Blog nativo (CMS) — serving público SSR. Precisa vir antes do Vite/static
   // para que /b/{slug} e domínios customizados não caiam no SPA.
@@ -436,6 +443,10 @@ async function startServer() {
 
       const pendingRef = adminDb.collection('pendingPayments').doc(paymentId);
 
+      // Capturado dentro da transação para o evento do CRM ser emitido só depois
+      // do commit — se a transação abortar, nenhum evento é registrado.
+      let purchase: { uid: string; credits: number; amount: number } | null = null;
+
       await adminDb.runTransaction(async (tx) => {
         const pendingSnap = await tx.get(pendingRef);
         if (!pendingSnap.exists || pendingSnap.data()?.status === 'completed') return;
@@ -445,12 +456,16 @@ async function startServer() {
           credits: number;
           amount: number;
         };
+        purchase = { uid, credits, amount };
 
         const userRef = adminDb.collection('users').doc(uid);
         const logRef = adminDb.collection('users').doc(uid).collection('credit_logs').doc();
 
         tx.update(userRef, {
           credits: FieldValue.increment(credits),
+          // Marca o cliente como pagante — entra no health score do CRM e não
+          // some se o saldo for todo consumido depois.
+          hasPurchased: true,
         });
 
         tx.set(logRef, {
@@ -471,6 +486,11 @@ async function startServer() {
           completedAt: FieldValue.serverTimestamp(),
         });
       });
+
+      if (purchase) {
+        const { uid, credits, amount } = purchase as { uid: string; credits: number; amount: number };
+        void recordEvent(uid, 'credits_purchased', { credits, amount });
+      }
 
       return res.status(200).json({ received: true });
     } catch (err) {
@@ -522,6 +542,9 @@ async function startServer() {
   // Bling background import/sync worker (production also backed by Cloud Scheduler
   // hitting /api/bling/cron/tick).
   startBlingScheduler();
+
+  // CRM: reconcilia os marcos da jornada a partir do estado do Firestore.
+  startCrmScheduler();
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
