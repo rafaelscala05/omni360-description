@@ -36,7 +36,8 @@ env:
   - variable: TINY_CLIENT_ID
     value: "tiny-api-5e4a4723ff9b577c8967b4cd2179f2deb20bad26-1783971027"
   - variable: TINY_REDIRECT_URI
-    value: "https://alfreds--project-95918f0d-50bb-4f66-a0d.us-east4.hosted.app/api/tiny/oauth/callback"
+    value: "https://alfreds--project-95918f0d-50bb-4f66-a0d.us-east4.hosted.app/api\
+      /tiny/oauth/callback"
   - variable: TINY_CLIENT_SECRET
     secret: tiny-client-secret
 
@@ -47,22 +48,16 @@ env:
 
   # WhatsApp Oficial (Meta Cloud API) — régua de onboarding por etapa do Kanban.
   # Sem estas variáveis o CRM funciona inteiro; só a automação fica inerte.
-  #
-  # DESCOMENTE só DEPOIS de criar os três secrets — o App Hosting falha o rollout
-  # se referenciar um secret que não existe:
-  #   firebase apphosting:secrets:set whatsapp-access-token
-  #   firebase apphosting:secrets:set whatsapp-phone-number-id
-  #   firebase apphosting:secrets:set whatsapp-waba-id
-  #   firebase apphosting:secrets:grantaccess whatsapp-access-token,whatsapp-phone-number-id,whatsapp-waba-id --backend alfreds
-  #
-  # - variable: WHATSAPP_ACCESS_TOKEN
-  #   secret: whatsapp-access-token
-  # - variable: WHATSAPP_PHONE_NUMBER_ID
-  #   secret: whatsapp-phone-number-id
-  # - variable: WHATSAPP_WABA_ID
-  #   secret: whatsapp-waba-id
-  # - variable: WHATSAPP_MAX_PER_DAY
-  #   value: "50"
-  # # Comece com "true" para validar a régua sem gastar mensagem real.
-  # - variable: WHATSAPP_DRY_RUN
-  #   value: "true"
+  - variable: WHATSAPP_ACCESS_TOKEN
+    secret: whatsapp-access-token
+  - variable: WHATSAPP_PHONE_NUMBER_ID
+    secret: whatsapp-phone-number-id
+  - variable: WHATSAPP_WABA_ID
+    secret: whatsapp-waba-id
+  # Teto de envios por rodada — trava contra disparo em massa por bug.
+  - variable: WHATSAPP_MAX_PER_DAY
+    value: "50"
+  # Começa em "true": a régua roda inteira e registra os envios SEM chamar a
+  # Meta. Vire para "false" só depois de conferir que os disparos fazem sentido.
+  - variable: WHATSAPP_DRY_RUN
+    value: "true"
