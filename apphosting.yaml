@@ -47,14 +47,22 @@ env:
 
   # WhatsApp Oficial (Meta Cloud API) — régua de onboarding por etapa do Kanban.
   # Sem estas variáveis o CRM funciona inteiro; só a automação fica inerte.
-  - variable: WHATSAPP_ACCESS_TOKEN
-    secret: whatsapp-access-token
-  - variable: WHATSAPP_PHONE_NUMBER_ID
-    secret: whatsapp-phone-number-id
-  - variable: WHATSAPP_WABA_ID
-    secret: whatsapp-waba-id
-  - variable: WHATSAPP_MAX_PER_DAY
-    value: "50"
-  # Comece com "true" para validar a régua sem gastar mensagem real.
-  - variable: WHATSAPP_DRY_RUN
-    value: "true"
+  #
+  # DESCOMENTE só DEPOIS de criar os três secrets — o App Hosting falha o rollout
+  # se referenciar um secret que não existe:
+  #   firebase apphosting:secrets:set whatsapp-access-token
+  #   firebase apphosting:secrets:set whatsapp-phone-number-id
+  #   firebase apphosting:secrets:set whatsapp-waba-id
+  #   firebase apphosting:secrets:grantaccess whatsapp-access-token,whatsapp-phone-number-id,whatsapp-waba-id --backend alfreds
+  #
+  # - variable: WHATSAPP_ACCESS_TOKEN
+  #   secret: whatsapp-access-token
+  # - variable: WHATSAPP_PHONE_NUMBER_ID
+  #   secret: whatsapp-phone-number-id
+  # - variable: WHATSAPP_WABA_ID
+  #   secret: whatsapp-waba-id
+  # - variable: WHATSAPP_MAX_PER_DAY
+  #   value: "50"
+  # # Comece com "true" para validar a régua sem gastar mensagem real.
+  # - variable: WHATSAPP_DRY_RUN
+  #   value: "true"
