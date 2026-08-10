@@ -59,6 +59,31 @@ function readCookie(name: string): string | undefined {
   return match ? decodeURIComponent(match[1]) : undefined;
 }
 
+// _fbp/_fbc são setados pelo fbevents.js, carregado async (index.html) — na
+// primeira chamada de um page load, o cookie muitas vezes ainda não existe no
+// instante em que um evento dispara. Faz polling curto antes de desistir, pra
+// não perder o fbp/fbc de eventos disparados logo no mount (ex. ViewContent
+// da página de preços). Resolve na hora se o cookie já existir.
+function waitForCookie(name: string, timeoutMs = 600, intervalMs = 50): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    const existing = readCookie(name);
+    if (existing) {
+      resolve(existing);
+      return;
+    }
+    const start = Date.now();
+    const poll = () => {
+      const value = readCookie(name);
+      if (value || Date.now() - start >= timeoutMs) {
+        resolve(value);
+        return;
+      }
+      setTimeout(poll, intervalMs);
+    };
+    setTimeout(poll, intervalMs);
+  });
+}
+
 interface MetaEventPayload {
   event_name: string;
   event_id: string;
@@ -88,17 +113,18 @@ function buildUserData(): MetaEventPayload['user_data'] {
   return userData;
 }
 
-function sendToCapi(eventName: string, eventId: string, customData?: Record<string, unknown>): void {
+async function sendToCapi(eventName: string, eventId: string, customData?: Record<string, unknown>): Promise<void> {
   try {
     if (typeof window === 'undefined') return;
+    const [fbp, fbc] = await Promise.all([waitForCookie('_fbp'), waitForCookie('_fbc')]);
     const payload: MetaEventPayload = {
       event_name: eventName,
       event_id: eventId,
       event_source_url: window.location.href,
       custom_data: customData,
       user_data: buildUserData(),
-      fbp: readCookie('_fbp'),
-      fbc: readCookie('_fbc'),
+      fbp,
+      fbc,
     };
     fetch('/api/meta/events', {
       method: 'POST',
