@@ -16,18 +16,39 @@ const PIXEL_ID = '1541685420840320';
 let pixelInitialized = false;
 let currentUid: string | null = null;
 let currentEmail: string | null = null;
+let currentFirstName: string | null = null;
+let currentLastName: string | null = null;
+let currentPhone: string | null = null;
+let currentCity: string | null = null;
 
-export function metaSetUser(uid: string, email?: string | null): void {
+const COUNTRY = 'br';
+
+export function metaSetUser(uid: string, email?: string | null, displayName?: string | null): void {
   currentUid = uid;
   currentEmail = email ?? null;
+  if (displayName) {
+    const [first, ...rest] = displayName.trim().split(/\s+/);
+    currentFirstName = first || null;
+    currentLastName = rest.length > 0 ? rest.join(' ') : null;
+  } else {
+    currentFirstName = null;
+    currentLastName = null;
+  }
+}
+
+export function metaSetProfile(profile: { phone?: string | null; city?: string | null }): void {
+  if (profile.phone !== undefined) currentPhone = profile.phone || null;
+  if (profile.city !== undefined) currentCity = profile.city || null;
 }
 
 export function metaInit(): void {
   try {
     if (pixelInitialized || !PIXEL_ID || typeof window === 'undefined' || !window.fbq) return;
     window.fbq('init', PIXEL_ID);
-    window.fbq('track', 'PageView');
+    const eventId = crypto.randomUUID();
+    window.fbq('track', 'PageView', {}, { eventID: eventId });
     pixelInitialized = true;
+    sendToCapi('PageView', eventId);
   } catch (err) {
     console.warn('meta pixel init failed', err);
   }
@@ -41,10 +62,54 @@ function readCookie(name: string): string | undefined {
 interface MetaEventPayload {
   event_name: string;
   event_id: string;
+  event_source_url: string;
   custom_data?: Record<string, unknown>;
-  user_data?: { email?: string };
+  user_data?: {
+    email?: string;
+    first_name?: string;
+    last_name?: string;
+    phone?: string;
+    city?: string;
+    country?: string;
+    external_id?: string;
+  };
   fbp?: string;
   fbc?: string;
+}
+
+function buildUserData(): MetaEventPayload['user_data'] {
+  const userData: NonNullable<MetaEventPayload['user_data']> = { country: COUNTRY };
+  if (currentEmail) userData.email = currentEmail;
+  if (currentFirstName) userData.first_name = currentFirstName;
+  if (currentLastName) userData.last_name = currentLastName;
+  if (currentPhone) userData.phone = currentPhone;
+  if (currentCity) userData.city = currentCity;
+  if (currentUid) userData.external_id = currentUid;
+  return userData;
+}
+
+function sendToCapi(eventName: string, eventId: string, customData?: Record<string, unknown>): void {
+  try {
+    if (typeof window === 'undefined') return;
+    const payload: MetaEventPayload = {
+      event_name: eventName,
+      event_id: eventId,
+      event_source_url: window.location.href,
+      custom_data: customData,
+      user_data: buildUserData(),
+      fbp: readCookie('_fbp'),
+      fbc: readCookie('_fbc'),
+    };
+    fetch('/api/meta/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch((err) => {
+      console.warn('meta CAPI request failed', err);
+    });
+  } catch (err) {
+    console.warn('meta CAPI send failed', err);
+  }
 }
 
 export function metaTrack(
@@ -62,22 +127,13 @@ export function metaTrack(
       window.fbq(isStandard ? 'track' : 'trackCustom', eventName, params, { eventID: eventId });
     }
 
-    const payload: MetaEventPayload = {
-      event_name: eventName,
-      event_id: eventId,
-      custom_data: params,
-      user_data: currentEmail ? { email: currentEmail } : undefined,
-      fbp: readCookie('_fbp'),
-      fbc: readCookie('_fbc'),
-    };
+    const customData: Record<string, unknown> = { ...params };
+    if (typeof params.sku === 'string' && params.sku) {
+      customData.content_ids = [params.sku];
+      customData.content_type = 'product';
+    }
 
-    fetch('/api/meta/events', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }).catch((err) => {
-      console.warn('meta CAPI request failed', err);
-    });
+    sendToCapi(eventName, eventId, customData);
   } catch (err) {
     console.warn('meta track failed', err);
   }
