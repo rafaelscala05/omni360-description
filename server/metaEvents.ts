@@ -10,14 +10,27 @@ const GRAPH_API_VERSION = 'v21.0';
 interface MetaEventBody {
   event_name?: string;
   event_id?: string;
+  event_source_url?: string;
   custom_data?: Record<string, unknown>;
-  user_data?: { email?: string };
+  user_data?: {
+    email?: string;
+    first_name?: string;
+    last_name?: string;
+    phone?: string;
+    city?: string;
+    country?: string;
+    external_id?: string;
+  };
   fbp?: string;
   fbc?: string;
 }
 
 function sha256(value: string): string {
   return crypto.createHash('sha256').update(value.trim().toLowerCase()).digest('hex');
+}
+
+function normalizePhone(value: string): string {
+  return value.replace(/\D/g, '');
 }
 
 export function registerMetaEventsRoutes(app: express.Express): void {
@@ -39,6 +52,12 @@ async function forwardToMeta(req: express.Request): Promise<void> {
 
   const userData: Record<string, unknown> = {};
   if (body.user_data?.email) userData.em = [sha256(body.user_data.email)];
+  if (body.user_data?.first_name) userData.fn = [sha256(body.user_data.first_name)];
+  if (body.user_data?.last_name) userData.ln = [sha256(body.user_data.last_name)];
+  if (body.user_data?.phone) userData.ph = [sha256(normalizePhone(body.user_data.phone))];
+  if (body.user_data?.city) userData.ct = [sha256(body.user_data.city)];
+  if (body.user_data?.country) userData.country = [sha256(body.user_data.country)];
+  if (body.user_data?.external_id) userData.external_id = [sha256(body.user_data.external_id)];
 
   const forwardedFor = req.headers['x-forwarded-for'];
   const clientIp = typeof forwardedFor === 'string' ? forwardedFor.split(',')[0].trim() : req.socket.remoteAddress;
@@ -57,6 +76,7 @@ async function forwardToMeta(req: express.Request): Promise<void> {
     action_source: 'website',
     user_data: userData,
   };
+  if (body.event_source_url) eventPayload.event_source_url = body.event_source_url;
   if (body.custom_data && Object.keys(body.custom_data).length > 0) {
     eventPayload.custom_data = body.custom_data;
   }
