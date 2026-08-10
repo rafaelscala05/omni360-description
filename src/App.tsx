@@ -42,6 +42,7 @@ import { CREDIT_ACTIONS, resolveCreditCost, type CreditAction } from './credits'
 import { listenVideoJob, type VideoJob } from './services/videoService';
 import {
   analyticsSetUser,
+  metaSetProfile,
   trackLogin,
   trackSignUp,
   trackSpreadsheetImport,
@@ -347,7 +348,7 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        analyticsSetUser(currentUser.uid, currentUser.email);
+        analyticsSetUser(currentUser.uid, currentUser.email, currentUser.displayName);
         // Fetch credits
         const userRef = doc(db, `users/${currentUser.uid}`);
         try {
@@ -382,7 +383,9 @@ export default function App() {
               setHasVideoModule(snap.data().modules?.video === true);
               setHasBlogModule(snap.data().modules?.blog === true);
               setOnboardingCompleted(snap.data().onboarding?.completed === true);
-              setCompanyData(snap.data().company ?? null);
+              const company = snap.data().company ?? null;
+              setCompanyData(company);
+              metaSetProfile({ phone: company?.telefone, city: company?.endereco?.cidade });
             }
           });
 

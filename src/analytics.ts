@@ -1,6 +1,8 @@
 import { getAnalytics, logEvent, setUserId, Analytics } from 'firebase/analytics';
 import { app, auth } from './firebase';
-import { metaTrack, metaSetUser } from './meta';
+import { metaTrack, metaSetUser, metaSetProfile } from './meta';
+
+export { metaSetProfile };
 import { tiktokTrack, tiktokSetUser } from './tiktok';
 
 let analytics: Analytics | null = null;
@@ -38,10 +40,10 @@ function crmTrack(name: string, props: Record<string, unknown> = {}): void {
   })();
 }
 
-export function analyticsSetUser(uid: string, email?: string | null) {
+export function analyticsSetUser(uid: string, email?: string | null, displayName?: string | null) {
   const a = getAnalyticsInstance();
   if (a) setUserId(a, uid);
-  metaSetUser(uid, email);
+  metaSetUser(uid, email, displayName);
   tiktokSetUser(uid, email);
 }
 
