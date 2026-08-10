@@ -122,8 +122,14 @@ export const listTemplates = () =>
 
 export const listAutomations = () => call<{ automations: CrmAutomation[] }>('/api/admin/automations');
 
-export const saveAutomation = (stage: CrmStage, automation: Partial<CrmAutomation>) =>
-  call<{ ok: boolean; automation: CrmAutomation }>(`/api/admin/automations/${stage}`, 'PUT', automation);
+export const createAutomation = (stage: CrmStage, automation: Partial<CrmAutomation>) =>
+  call<{ ok: boolean; automation: CrmAutomation }>('/api/admin/automations', 'POST', { ...automation, stage });
+
+export const updateAutomation = (id: string, automation: Partial<CrmAutomation>) =>
+  call<{ ok: boolean; automation: CrmAutomation }>(`/api/admin/automations/${id}`, 'PUT', automation);
+
+export const deleteAutomation = (id: string) =>
+  call<{ ok: boolean }>(`/api/admin/automations/${id}`, 'DELETE');
 
 export const runAutomations = () =>
   call<{ evaluated: number; sent: number; failed: number; skipped: number; dryRun: boolean; reason?: string }>(
