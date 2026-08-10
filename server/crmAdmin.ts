@@ -6,7 +6,7 @@ import type express from 'express';
 import { adminDb, FieldValue } from './firebaseAdmin';
 import { reconcileAll, reconcileUser } from './crmReconcile';
 import { daysBetween, isStagnant } from './crmStage';
-import { AUTOMATION_REF, loadAutomations, runAutomations, stageFromId } from './crmAutomation';
+import { loadAutomations, runAutomations, stageFromId } from './crmAutomation';
 import { resolveParams } from './crmAutomationRules';
 import { isConfigured, listTemplates, sendTemplate } from './whatsappProvider';
 import { recordEvent } from './crmEvents';
@@ -14,8 +14,8 @@ import {
   CRM_STAGES,
   PIPELINE_STATUSES,
   STAGE_LABELS,
-  defaultAutomation,
   type AdminStats,
+  type AutomationTrigger,
   type CrmAutomation,
   type CrmMessage,
   type CrmStage,
@@ -594,53 +594,108 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
     }
   });
 
-  // Sempre devolve as 5 etapas, preenchendo com o padrão as que nunca foram
-  // configuradas — a UI é uma linha por coluna do Kanban, então não pode faltar.
+  // Todas as automações, de todas as etapas — a UI agrupa por coluna do
+  // Kanban no client.
   app.get('/api/admin/automations', async (req, res) => {
     try {
       await requireAdmin(req);
-      const stored = await loadAutomations();
-      const automations = CRM_STAGES.map((stage) => stored[stage] ?? defaultAutomation(stage));
-      res.json({ automations });
+      res.json({ automations: await loadAutomations() });
     } catch (err) {
       sendError(res, err);
     }
   });
 
-  app.put('/api/admin/automations/:stage', async (req, res) => {
+  function parseAutomationBody(body: Record<string, unknown>, stage: CrmStage) {
+    const trigger: AutomationTrigger = body.trigger === 'entered' ? 'entered' : 'stagnant';
+    const active = body.active === true;
+    const templateName = String(body.templateName ?? '').trim();
+    if (active && !templateName) {
+      throw Object.assign(new Error('Escolha um template para ativar a automação'), { status: 422 });
+    }
+    return {
+      stage,
+      active,
+      trigger,
+      delayHours: Math.max(0, Math.min(720, Number(body.delayHours ?? 0) || 0)),
+      templateName,
+      templateLanguage: String(body.templateLanguage ?? 'pt_BR').trim() || 'pt_BR',
+      bodyParams: Array.isArray(body.bodyParams) ? body.bodyParams.map((p: unknown) => String(p)) : [],
+    };
+  }
+
+  // Cria uma automação nova para a etapa informada no corpo. Não há mais
+  // limite de uma por etapa — id é auto-gerado.
+  app.post('/api/admin/automations', async (req, res) => {
     try {
       const admin = await requireAdmin(req);
-      const stage = stageFromId(req.params.stage);
+      const body = req.body ?? {};
+      const stage = stageFromId(String(body.stage ?? ''));
       if (!stage) throw Object.assign(new Error('Etapa inválida'), { status: 422 });
 
-      const body = req.body ?? {};
-      const trigger = body.trigger === 'entered' ? 'entered' : 'stagnant';
-      const active = body.active === true;
-      const templateName = String(body.templateName ?? '').trim();
-      if (active && !templateName) {
-        throw Object.assign(new Error('Escolha um template para ativar a automação'), { status: 422 });
-      }
-
+      const fields = parseAutomationBody(body, stage);
+      const ref = adminDb.collection('crm_automations').doc();
       const automation: CrmAutomation = {
-        stage,
-        active,
-        trigger,
-        delayHours: Math.max(0, Math.min(720, Number(body.delayHours ?? 0) || 0)),
-        templateName,
-        templateLanguage: String(body.templateLanguage ?? 'pt_BR').trim() || 'pt_BR',
-        bodyParams: Array.isArray(body.bodyParams) ? body.bodyParams.map((p: unknown) => String(p)) : [],
+        id: ref.id,
+        ...fields,
         updatedAt: new Date().toISOString(),
         updatedBy: admin.uid,
       };
-
-      await AUTOMATION_REF(stage).set(automation);
+      await ref.set(automation);
       await auditLog(
         admin,
         'automation',
         'automacao',
-        `${STAGE_LABELS[stage]}: ${active ? `ativa (${templateName}, ${trigger})` : 'desativada'}`,
+        `${STAGE_LABELS[stage]}: criada${automation.active ? ` (ativa, ${automation.templateName}, ${automation.trigger})` : ''}`,
       );
       res.json({ ok: true, automation });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  app.put('/api/admin/automations/:id', async (req, res) => {
+    try {
+      const admin = await requireAdmin(req);
+      const id = req.params.id;
+      const ref = adminDb.collection('crm_automations').doc(id);
+      const existing = await ref.get();
+      if (!existing.exists) throw Object.assign(new Error('Automação não encontrada'), { status: 404 });
+
+      const body = req.body ?? {};
+      const currentStage = (existing.data() as CrmAutomation).stage;
+      const stage = stageFromId(String(body.stage ?? currentStage)) ?? currentStage;
+      const fields = parseAutomationBody(body, stage);
+
+      const automation: CrmAutomation = {
+        id,
+        ...fields,
+        updatedAt: new Date().toISOString(),
+        updatedBy: admin.uid,
+      };
+      await ref.set(automation);
+      await auditLog(
+        admin,
+        'automation',
+        'automacao',
+        `${STAGE_LABELS[stage]}: ${automation.active ? `ativa (${automation.templateName}, ${automation.trigger})` : 'desativada'}`,
+      );
+      res.json({ ok: true, automation });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  app.delete('/api/admin/automations/:id', async (req, res) => {
+    try {
+      const admin = await requireAdmin(req);
+      const id = req.params.id;
+      const ref = adminDb.collection('crm_automations').doc(id);
+      const existing = await ref.get();
+      if (!existing.exists) throw Object.assign(new Error('Automação não encontrada'), { status: 404 });
+      const stage = (existing.data() as CrmAutomation).stage;
+      await ref.delete();
+      await auditLog(admin, 'automation', 'automacao', `${STAGE_LABELS[stage]}: removida`);
+      res.json({ ok: true });
     } catch (err) {
       sendError(res, err);
     }
