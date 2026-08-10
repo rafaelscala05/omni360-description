@@ -209,11 +209,12 @@ export const CLIENT_EVENT_NAMES = [
   'category_hierarchy_generated',
 ] as const;
 
-// --- Automação de WhatsApp (spec 2) ---
+// --- Automação de WhatsApp (spec 2, revisado no spec 3) ---
 
-// Um documento por etapa do Kanban (id = a própria etapa), e não um motor de
-// regras genérico: assim é impossível configurar duas regras conflitantes para a
-// mesma coluna, e a UI vira uma linha por coluna.
+// N automações por etapa do Kanban, cada uma com seu próprio gatilho, atraso
+// e template — não um motor de regras genérico com prioridade/branching entre
+// elas. `id` é a chave do documento (auto-gerado); `stage` é só um campo de
+// filtro, não mais a chave.
 export type AutomationTrigger = 'entered' | 'stagnant';
 
 export const TRIGGER_LABELS: Record<AutomationTrigger, string> = {
@@ -222,6 +223,7 @@ export const TRIGGER_LABELS: Record<AutomationTrigger, string> = {
 };
 
 export interface CrmAutomation {
+  id: string;
   stage: CrmStage;
   active: boolean;
   trigger: AutomationTrigger;
@@ -235,6 +237,9 @@ export interface CrmAutomation {
 
 export interface CrmMessage {
   id: string;
+  // null para envios manuais e para mensagens antigas gravadas antes desta
+  // mudança (id de documento era o nome da etapa, não de uma automação).
+  automationId: string | null;
   stage: CrmStage | 'manual';
   trigger: AutomationTrigger | 'manual';
   templateName: string;
@@ -273,7 +278,9 @@ export const TEMPLATE_TOKENS = [
   { token: '{{dias}}', description: 'Dias parado na etapa' },
 ] as const;
 
-export function defaultAutomation(stage: CrmStage): CrmAutomation {
+// Valor inicial de um formulário de automação nova — ainda sem id, porque o id
+// só existe depois de criada no Firestore.
+export function defaultAutomation(stage: CrmStage): Omit<CrmAutomation, 'id'> {
   return {
     stage,
     active: false,
