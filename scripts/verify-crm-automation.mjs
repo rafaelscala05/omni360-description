@@ -22,6 +22,7 @@ function check(label, actual, expected) {
 }
 
 const automation = (over = {}) => ({
+  id: 'automation-1',
   stage: 'signed_up',
   active: true,
   trigger: 'stagnant',
@@ -97,6 +98,25 @@ check(
   'sem atraso dispara na hora',
   shouldSend(recente, automation({ trigger: 'entered', delayHours: 0 }), { whatsapp: '11999999999', consent: true }, meioDia),
   { send: true },
+);
+
+// --- Duas automações ativas na mesma etapa (spec 3): cada uma decide sozinha,
+// sem interferir na outra. A trava de idempotência por automação.id é
+// responsabilidade do worker (Firestore), não desta função pura — aqui só
+// confirmamos que shouldSend() não tem noção de "já existe uma automação
+// desta etapa", então nada nela impede as duas de retornar send:true juntas.
+const automacao1h = automation({ id: 'auto-1h', trigger: 'entered', delayHours: 1 });
+const automacao10h = automation({ id: 'auto-10h', trigger: 'entered', delayHours: 10 });
+const entrouHa5h = { ...emptySummary('2026-08-06T10:00:00.000Z'), stageEnteredAt: '2026-08-06T10:00:00.000Z' };
+check(
+  'duas automações da mesma etapa: a de 1h dispara independente da de 10h',
+  shouldSend(entrouHa5h, automacao1h, { whatsapp: '11999999999', consent: true }, meioDia),
+  { send: true },
+);
+check(
+  'duas automações da mesma etapa: a de 10h ainda não dispara, mesmo com a de 1h ativa',
+  shouldSend(entrouHa5h, automacao10h, { whatsapp: '11999999999', consent: true }, meioDia),
+  { send: false, reason: 'gatilho_nao_atingido' },
 );
 
 // --- Tokens ---
