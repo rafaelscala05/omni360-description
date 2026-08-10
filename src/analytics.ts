@@ -59,7 +59,10 @@ export function trackLogin(method: string = 'google') {
 export function trackSignUp(method: string = 'google') {
   const a = getAnalyticsInstance();
   if (a) logEvent(a, 'sign_up', { method });
-  metaTrack('CompleteRegistration', { method }, true);
+  // value/currency são exigidos pelo Meta para calcular ROAS em cima do
+  // CompleteRegistration — não é um valor cobrado de verdade, é o sinal
+  // mínimo (> 0) que o Meta pede para o evento contar em otimização de valor.
+  metaTrack('CompleteRegistration', { method, value: 1, currency: 'BRL' }, true);
   tiktokTrack('CompleteRegistration', { method });
 }
 
