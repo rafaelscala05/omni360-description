@@ -1,7 +1,8 @@
-// Automações de WhatsApp: uma linha por coluna do Kanban, na ordem da jornada.
-// É assim que a pessoa pensa sobre o problema — "o que mando quando o cliente
-// chega/trava nesta etapa" — então a UI espelha o board em vez de virar um editor
-// de regras genérico.
+// Automações de WhatsApp: um Card por coluna do Kanban, cada um com sua
+// própria lista de automações (spec 3). Continua espelhando o board — "o que
+// mando quando o cliente chega/trava nesta etapa" — mas agora cada etapa pode
+// ter N réguas independentes (ex.: "1h depois" e "10h depois"), não mais só
+// uma.
 
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -18,11 +19,13 @@ import {
   type WhatsAppTemplateInfo,
 } from '../../types/crm';
 import {
+  createAutomation,
+  deleteAutomation,
   getWhatsAppStatus,
   listAutomations,
   listTemplates,
   runAutomations,
-  saveAutomation,
+  updateAutomation,
 } from '../../services/adminService';
 import { Card, ErrorBanner, Spinner } from './ui';
 
@@ -30,7 +33,7 @@ export default function AutomationsView() {
   const [status, setStatus] = useState<WhatsAppStatus | null>(null);
   const [templates, setTemplates] = useState<WhatsAppTemplateInfo[]>([]);
   const [templatesError, setTemplatesError] = useState('');
-  const [automations, setAutomations] = useState<Record<CrmStage, CrmAutomation>>();
+  const [automations, setAutomations] = useState<CrmAutomation[]>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [running, setRunning] = useState(false);
@@ -42,11 +45,7 @@ export default function AutomationsView() {
     try {
       const [s, a] = await Promise.all([getWhatsAppStatus(), listAutomations()]);
       setStatus(s);
-      const map = {} as Record<CrmStage, CrmAutomation>;
-      for (const stage of CRM_STAGES) {
-        map[stage] = a.automations.find((x) => x.stage === stage) ?? defaultAutomation(stage);
-      }
-      setAutomations(map);
+      setAutomations(a.automations);
 
       // Templates só existem se o provider estiver configurado; a falha aqui não
       // pode impedir de ver/editar o resto da tela.
@@ -69,14 +68,39 @@ export default function AutomationsView() {
     void load();
   }, [load]);
 
-  async function persist(stage: CrmStage, patch: Partial<CrmAutomation>) {
+  async function addAutomation(stage: CrmStage) {
     if (!automations) return;
-    const previous = automations;
-    const next = { ...automations[stage], ...patch };
-    setAutomations({ ...automations, [stage]: next });
     setError('');
     try {
-      await saveAutomation(stage, next);
+      const { automation } = await createAutomation(stage, defaultAutomation(stage));
+      setAutomations([...automations, automation]);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function persist(id: string, patch: Partial<CrmAutomation>) {
+    if (!automations) return;
+    const previous = automations;
+    const next = automations.map((a) => (a.id === id ? { ...a, ...patch } : a));
+    setAutomations(next);
+    setError('');
+    try {
+      const target = next.find((a) => a.id === id)!;
+      await updateAutomation(id, target);
+    } catch (err) {
+      setAutomations(previous);
+      setError((err as Error).message);
+    }
+  }
+
+  async function remove(id: string) {
+    if (!automations) return;
+    const previous = automations;
+    setAutomations(automations.filter((a) => a.id !== id));
+    setError('');
+    try {
+      await deleteAutomation(id);
     } catch (err) {
       setAutomations(previous);
       setError((err as Error).message);
@@ -137,8 +161,8 @@ export default function AutomationsView() {
 
       <div className="flex flex-wrap items-center gap-3">
         <p className="text-sm text-slate-500">
-          Uma automação por coluna do Kanban. O envio respeita opt-out, horário comercial (9h–20h) e
-          nunca repete a mesma etapa para o mesmo cliente.
+          Cada coluna pode ter várias automações independentes. O envio respeita opt-out, horário
+          comercial (9h–20h) e nunca repete a mesma automação para o mesmo cliente.
         </p>
         <button
           onClick={run}
@@ -155,12 +179,14 @@ export default function AutomationsView() {
 
       <div className="space-y-3">
         {CRM_STAGES.map((stage) => (
-          <AutomationRow
+          <StageCard
             key={stage}
             stage={stage}
-            automation={automations[stage]}
+            automations={automations.filter((a) => a.stage === stage)}
             templates={templates}
-            onChange={(patch) => persist(stage, patch)}
+            onAdd={() => addAutomation(stage)}
+            onChange={(id, patch) => persist(id, patch)}
+            onRemove={(id) => remove(id)}
           />
         ))}
       </div>
@@ -185,16 +211,65 @@ export default function AutomationsView() {
   );
 }
 
+function StageCard({
+  stage,
+  automations,
+  templates,
+  onAdd,
+  onChange,
+  onRemove,
+}: {
+  stage: CrmStage;
+  automations: CrmAutomation[];
+  templates: WhatsAppTemplateInfo[];
+  onAdd: () => void;
+  onChange: (id: string, patch: Partial<CrmAutomation>) => void;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <Card className="p-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-sm text-slate-800">{STAGE_LABELS[stage]}</h3>
+        <button
+          onClick={onAdd}
+          className="px-2.5 py-1 rounded-lg border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+        >
+          + Adicionar automação
+        </button>
+      </div>
+
+      {automations.length === 0 ? (
+        <p className="mt-2 text-xs text-slate-400">Nenhuma automação configurada nesta etapa.</p>
+      ) : (
+        <div className="mt-3 space-y-3">
+          {automations.map((automation) => (
+            <AutomationRow
+              key={automation.id}
+              stage={stage}
+              automation={automation}
+              templates={templates}
+              onChange={(patch) => onChange(automation.id, patch)}
+              onRemove={() => onRemove(automation.id)}
+            />
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function AutomationRow({
   stage,
   automation,
   templates,
   onChange,
+  onRemove,
 }: {
   stage: CrmStage;
   automation: CrmAutomation;
   templates: WhatsAppTemplateInfo[];
   onChange: (patch: Partial<CrmAutomation>) => void;
+  onRemove: () => void;
 }) {
   const selected = templates.find((t) => t.name === automation.templateName);
   const expected = selected?.bodyParamCount ?? automation.bodyParams.length;
@@ -207,18 +282,16 @@ function AutomationRow({
   }
 
   return (
-    <Card className={`p-4 ${automation.active ? 'border-violet-300' : ''}`}>
-      {/* Largura fixa no rótulo para os controles alinharem entre as linhas —
-          sem isso cada etapa empurra os selects para uma posição diferente. */}
+    <div className={`p-3 rounded-lg border ${automation.active ? 'border-violet-300' : 'border-slate-200'}`}>
       <div className="flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 cursor-pointer w-full sm:w-56 shrink-0">
+        <label className="flex items-center gap-2 cursor-pointer w-full sm:w-32 shrink-0">
           <input
             type="checkbox"
             checked={automation.active}
             onChange={(e) => onChange({ active: e.target.checked })}
             className="accent-violet-600 w-4 h-4 shrink-0"
           />
-          <span className="font-semibold text-sm text-slate-800">{STAGE_LABELS[stage]}</span>
+          <span className="text-sm text-slate-600">Ativa</span>
         </label>
 
         <select
@@ -267,9 +340,16 @@ function AutomationRow({
             </option>
           ))}
         </select>
+
+        <button
+          onClick={onRemove}
+          className="shrink-0 px-2.5 py-1.5 rounded-lg border border-red-200 text-xs font-semibold text-red-600 hover:bg-red-50"
+        >
+          Remover
+        </button>
       </div>
 
-      <p className="mt-2 sm:ml-56 text-xs text-slate-400">
+      <p className="mt-2 text-xs text-slate-400">
         {automation.trigger === 'stagnant'
           ? Number.isFinite(STAGNATION_DAYS[stage])
             ? `Dispara quando o cliente passa de ${STAGNATION_DAYS[stage]} dias nesta etapa.`
@@ -300,6 +380,6 @@ function AutomationRow({
           )}
         </div>
       )}
-    </Card>
+    </div>
   );
 }
