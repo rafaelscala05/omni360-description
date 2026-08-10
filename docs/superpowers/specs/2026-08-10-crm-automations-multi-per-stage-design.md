@@ -57,12 +57,19 @@ uma vez por cliente.
 
 ### Sem migração automática de dados
 
-Os 5 documentos atuais (`crm_automations/signed_up`, etc.) são recriados
-manualmente no admin depois do deploy — confirmado com o usuário. O deploy
-troca a coleção de forma e os documentos antigos, com id = nome da etapa,
-simplesmente deixam de ser lidos (o novo código nunca faz `.doc(stage)`, só
-`.doc(automation.id)`). Não é necessário apagá-los, mas o admin precisa
-reconfigurar as 5 régua atuais na UI nova.
+Os 5 documentos atuais (`crm_automations/signed_up`, etc.) NÃO ficam inertes
+após o deploy: `loadAutomations()` faz um scan completo da coleção
+(`.collection('crm_automations').get()`), então continua lendo esses 5 docs
+normalmente — o id do documento (`signed_up`, etc.) simplesmente vira o
+`automation.id` da automação. Se algum deles ainda estiver `active: true`,
+ele continua disparando depois do deploy, agora travando em
+`crm_messages/{stage}` (por coincidência o mesmo id de lock que o código
+antigo já usava). Eles também passam a aparecer, editáveis e deletáveis,
+como automações comuns na nova UI de lista.
+
+Por isso a primeira ação do admin depois do deploy precisa ser abrir
+`/admin` → Automações e revisar/desativar/apagar essas 5 réguas antigas,
+substituindo-as pelas novas conforme necessário.
 
 ## §1 — Modelo de dados
 

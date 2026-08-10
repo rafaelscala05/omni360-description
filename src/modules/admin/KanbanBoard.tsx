@@ -15,11 +15,11 @@ import {
   PIPELINE_LABELS,
   PIPELINE_STATUSES,
   STAGE_LABELS,
+  type CrmStage,
   type CustomerListItem,
   type PipelineStatus,
 } from '../../types/crm';
 import { listAutomations, listCustomers, reconcile, setPipeline } from '../../services/adminService';
-import type { CrmAutomation } from '../../types/crm';
 import {
   Card,
   ErrorBanner,
@@ -40,7 +40,7 @@ export default function KanbanBoard() {
   const [reconciling, setReconciling] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<PipelineStatus | null>(null);
-  const [automations, setAutomations] = useState<Record<string, CrmAutomation>>({});
+  const [automatedStages, setAutomatedStages] = useState<Set<CrmStage>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -51,9 +51,9 @@ export default function KanbanBoard() {
       // A régua é carregada em separado: falhar aqui não pode esconder o board.
       try {
         const { automations: rules } = await listAutomations();
-        setAutomations(Object.fromEntries(rules.map((r) => [r.stage, r])));
+        setAutomatedStages(new Set(rules.filter((r) => r.active).map((r) => r.stage)));
       } catch {
-        setAutomations({});
+        setAutomatedStages(new Set());
       }
     } catch (err) {
       setError((err as Error).message);
@@ -153,7 +153,7 @@ export default function KanbanBoard() {
                   key={stage}
                   title={STAGE_LABELS[stage]}
                   count={items.length}
-                  automated={automations[stage]?.active === true}
+                  automated={automatedStages.has(stage)}
                 >
                   {items.map((c) => (
                     <KanbanCard key={c.uid} customer={c} />

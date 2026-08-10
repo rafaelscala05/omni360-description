@@ -756,7 +756,7 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
       try {
         const sent = await sendTemplate(whatsapp, templateName, templateLanguage, params);
         await messageRef.set({
-          stage: 'manual', trigger: 'manual', templateName, to: whatsapp,
+          stage: 'manual', trigger: 'manual', automationId: null, templateName, to: whatsapp,
           status: 'sent', error: null, messageId: sent.messageId,
           sentAt: now.toISOString(), manual: true, dryRun: sent.dryRun,
         });
@@ -765,7 +765,7 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
         res.json({ ok: true, messageId: sent.messageId, dryRun: sent.dryRun });
       } catch (err) {
         await messageRef.set({
-          stage: 'manual', trigger: 'manual', templateName, to: whatsapp,
+          stage: 'manual', trigger: 'manual', automationId: null, templateName, to: whatsapp,
           status: 'failed', error: (err as Error).message.slice(0, 500), messageId: null,
           sentAt: now.toISOString(), manual: true, dryRun: false,
         });

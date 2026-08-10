@@ -13,7 +13,7 @@
 - Portuguese (pt-BR) for all UI text, comments follow existing file style (see current files — sparse, explaining *why* not *what*).
 - No automated test suite exists; `scripts/verify-crm-automation.mjs` is the only executable verification for the pure logic, run via `npx tsx scripts/verify-crm-automation.mjs`.
 - `npm run lint` (tsc --noEmit) must stay clean after every task.
-- No data migration: existing 5 docs at `crm_automations/{stage}` are abandoned in place (never read by new code), not deleted. Admin reconfigures manually in the new UI.
+- No data migration: existing 5 docs at `crm_automations/{stage}` are not deleted, but they are NOT inert — `loadAutomations()` does a full collection scan, so it reads them too (their doc id becomes `automation.id`), and any of them still `active: true` keeps firing after deploy. Admin must open `/admin` → Automações post-deploy and review/deactivate/delete the 5 legacy rows, which now show up as ordinary editable/deletable automations in the new UI.
 - Firestore rules already deny all client access to `crm_automations` and `crm_messages` at the collection level (`firestore.rules:154-156,177-179`) — no rule changes needed, the wildcard match covers any doc id.
 - Every automation is evaluated fully independently: no priority/order/mutual exclusion between automations of the same stage.
 
