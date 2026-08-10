@@ -1,13 +1,14 @@
 // Worker da automação de WhatsApp: percorre os clientes, avalia a automação da
 // etapa em que cada um está e dispara o template configurado.
 //
-// Cinco travas, todas obrigatórias (§Decisões do spec):
+// Seis travas, todas obrigatórias (§Decisões do spec):
 //  1. Idempotência via create() — a mesma etapa nunca dispara duas vezes, nem sob
 //     concorrência nem se o worker reiniciar no meio.
-//  2. Opt-out do cliente.
-//  3. Janela de horário (09h–20h de Brasília).
-//  4. Teto de envios por rodada.
-//  5. Só template aprovado, nunca texto livre.
+//  2. Consentimento registrado no onboarding (falso por omissão).
+//  3. Opt-out do cliente.
+//  4. Janela de horário (09h–20h de Brasília).
+//  5. Teto de envios por rodada.
+//  6. Só template aprovado, nunca texto livre.
 
 import { adminDb } from './firebaseAdmin';
 import { recordEvent } from './crmEvents';
@@ -63,8 +64,9 @@ export async function runAutomations(): Promise<RunResult> {
       result.evaluated += 1;
 
       const whatsapp = String(data.onboarding?.contact?.whatsapp ?? '');
+      const consent = data.onboarding?.contact?.whatsappConsent === true;
       const automation = automations[crm.stage];
-      const decision = shouldSend(crm, automation, whatsapp, now);
+      const decision = shouldSend(crm, automation, { whatsapp, consent }, now);
       if (!decision.send) {
         result.skipped += 1;
         continue;

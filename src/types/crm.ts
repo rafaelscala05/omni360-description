@@ -163,6 +163,8 @@ export interface CustomerDetailPayload {
   daysInStage: number;
   productCount: number;
   whatsapp: string;
+  whatsappConsent: boolean;
+  whatsappConsentAt: string | null;
 }
 
 export interface TimelineEntry {

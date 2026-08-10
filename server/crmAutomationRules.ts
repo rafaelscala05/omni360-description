@@ -30,10 +30,19 @@ export type SkipReason =
   | 'sem_template'
   | 'opt_out'
   | 'sem_whatsapp'
+  | 'sem_consentimento'
   | 'fora_do_horario'
   | 'gatilho_nao_atingido';
 
 export type Decision = { send: true } | { send: false; reason: SkipReason };
+
+export interface ContactInfo {
+  whatsapp: string;
+  // Autorização registrada no onboarding. Quem se cadastrou antes de o texto de
+  // consentimento existir não tem esta flag — e não consentiu de fato, então não
+  // recebe. Falso por omissão é a única leitura defensável.
+  consent: boolean;
+}
 
 // Decide se este cliente deve receber a mensagem desta etapa AGORA.
 // Não checa idempotência: isso é responsabilidade do worker, via create() no
@@ -41,14 +50,15 @@ export type Decision = { send: true } | { send: false; reason: SkipReason };
 export function shouldSend(
   summary: CrmSummary,
   automation: CrmAutomation | undefined,
-  whatsapp: string,
+  contact: ContactInfo,
   now: Date,
 ): Decision {
   if (!automation) return { send: false, reason: 'sem_automacao' };
   if (!automation.active) return { send: false, reason: 'inativa' };
   if (!automation.templateName) return { send: false, reason: 'sem_template' };
   if (summary.whatsappOptOut === true) return { send: false, reason: 'opt_out' };
-  if (!whatsapp?.trim()) return { send: false, reason: 'sem_whatsapp' };
+  if (!contact.whatsapp?.trim()) return { send: false, reason: 'sem_whatsapp' };
+  if (!contact.consent) return { send: false, reason: 'sem_consentimento' };
   if (!isWithinSendWindow(now)) return { send: false, reason: 'fora_do_horario' };
 
   const daysInStage = daysBetween(summary.stageEnteredAt, now);

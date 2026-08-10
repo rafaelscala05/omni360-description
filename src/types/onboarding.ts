@@ -14,7 +14,20 @@ export interface OnboardingContact {
   sameAsAccountEmail: boolean;
   firstName: string;
   lastName: string;
+  // Consentimento para contato por WhatsApp. Guardamos o texto exato que a
+  // pessoa viu e a data — sem isso o consentimento não é comprovável, e tanto a
+  // LGPD quanto a política de opt-in da Meta exigem essa prova.
+  whatsappConsent?: boolean;
+  whatsappConsentAt?: string;
+  whatsappConsentText?: string;
 }
+
+// Versionado: se o texto mudar, altere aqui. O que ficou gravado em cada usuário
+// continua sendo o que ELE viu, não o texto atual.
+export const WHATSAPP_CONSENT_TEXT =
+  'Ao concluir, você autoriza a Alfreds a entrar em contato pelo WhatsApp informado ' +
+  'com mensagens sobre sua conta, dicas de uso e novidades. Você pode pedir para parar ' +
+  'a qualquer momento, respondendo à própria conversa.';
 
 export interface CompanyAddress {
   logradouro: string;

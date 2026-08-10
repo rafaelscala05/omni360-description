@@ -47,55 +47,55 @@ const meioDia = new Date('2026-08-06T15:00:00Z'); // 12h em Brasília
 // --- Travas ---
 const parado = { ...emptySummary('2026-08-01T00:00:00.000Z'), stageEnteredAt: '2026-08-01T00:00:00.000Z' };
 
-check('sem automação não envia', shouldSend(parado, undefined, '11999999999', meioDia), {
+check('sem automação não envia', shouldSend(parado, undefined, { whatsapp: '11999999999', consent: true }, meioDia), {
   send: false,
   reason: 'sem_automacao',
 });
-check('automação inativa não envia', shouldSend(parado, automation({ active: false }), '11999999999', meioDia), {
+check('automação inativa não envia', shouldSend(parado, automation({ active: false }), { whatsapp: '11999999999', consent: true }, meioDia), {
   send: false,
   reason: 'inativa',
 });
-check('sem template não envia', shouldSend(parado, automation({ templateName: '' }), '11999999999', meioDia), {
+check('sem template não envia', shouldSend(parado, automation({ templateName: '' }), { whatsapp: '11999999999', consent: true }, meioDia), {
   send: false,
   reason: 'sem_template',
 });
 check(
   'opt-out não envia',
-  shouldSend({ ...parado, whatsappOptOut: true }, automation(), '11999999999', meioDia),
+  shouldSend({ ...parado, whatsappOptOut: true }, automation(), { whatsapp: '11999999999', consent: true }, meioDia),
   { send: false, reason: 'opt_out' },
 );
-check('sem whatsapp não envia', shouldSend(parado, automation(), '', meioDia), {
+check('sem whatsapp não envia', shouldSend(parado, automation(), { whatsapp: '', consent: true }, meioDia), {
   send: false,
   reason: 'sem_whatsapp',
 });
 check(
   'fora do horário não envia',
-  shouldSend(parado, automation(), '11999999999', new Date('2026-08-06T06:00:00Z')),
+  shouldSend(parado, automation(), { whatsapp: '11999999999', consent: true }, new Date('2026-08-06T06:00:00Z')),
   { send: false, reason: 'fora_do_horario' },
 );
 
 // --- Gatilho 'stagnant': signed_up trava em 3 dias ---
-check('5 dias parado em signed_up dispara', shouldSend(parado, automation(), '11999999999', meioDia), {
+check('5 dias parado em signed_up dispara', shouldSend(parado, automation(), { whatsapp: '11999999999', consent: true }, meioDia), {
   send: true,
 });
 const recente = { ...emptySummary('2026-08-06T00:00:00.000Z'), stageEnteredAt: '2026-08-06T00:00:00.000Z' };
-check('recém-chegado não dispara o gatilho de travado', shouldSend(recente, automation(), '11999999999', meioDia), {
+check('recém-chegado não dispara o gatilho de travado', shouldSend(recente, automation(), { whatsapp: '11999999999', consent: true }, meioDia), {
   send: false,
   reason: 'gatilho_nao_atingido',
 });
 
 // --- Gatilho 'entered' com atraso ---
 const entered = automation({ trigger: 'entered', delayHours: 24 });
-check('entrou há 15h, atraso de 24h: não dispara', shouldSend(recente, entered, '11999999999', meioDia), {
+check('entrou há 15h, atraso de 24h: não dispara', shouldSend(recente, entered, { whatsapp: '11999999999', consent: true }, meioDia), {
   send: false,
   reason: 'gatilho_nao_atingido',
 });
-check('entrou há 5 dias, atraso de 24h: dispara', shouldSend(parado, entered, '11999999999', meioDia), {
+check('entrou há 5 dias, atraso de 24h: dispara', shouldSend(parado, entered, { whatsapp: '11999999999', consent: true }, meioDia), {
   send: true,
 });
 check(
   'sem atraso dispara na hora',
-  shouldSend(recente, automation({ trigger: 'entered', delayHours: 0 }), '11999999999', meioDia),
+  shouldSend(recente, automation({ trigger: 'entered', delayHours: 0 }), { whatsapp: '11999999999', consent: true }, meioDia),
   { send: true },
 );
 
@@ -121,9 +121,17 @@ check(
 );
 check('lista de parâmetros', resolveParams(['{{nome}}', '{{etapa}}'], ctx), ['Rafael', 'Subiu Produtos']);
 
+// Consentimento é obrigatório: quem se cadastrou antes do texto de autorização
+// existir não tem a flag, e não pode receber.
+check(
+  'sem consentimento não envia',
+  shouldSend(parado, automation(), { whatsapp: '11999999999', consent: false }, meioDia),
+  { send: false, reason: 'sem_consentimento' },
+);
+
 // Regressão: a régua não pode disparar para cliente com stageEnteredAt inválido.
 const dataRuim = { ...emptySummary('2026-08-01T00:00:00.000Z'), stage: 'active', stageEnteredAt: '2026-W31' };
-check('data inválida não dispara a régua', shouldSend(dataRuim, automation({ stage: 'active' }), '11999999999', meioDia), {
+check('data inválida não dispara a régua', shouldSend(dataRuim, automation({ stage: 'active' }), { whatsapp: '11999999999', consent: true }, meioDia), {
   send: false,
   reason: 'gatilho_nao_atingido',
 });

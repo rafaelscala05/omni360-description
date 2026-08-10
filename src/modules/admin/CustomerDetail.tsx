@@ -212,6 +212,8 @@ export default function CustomerDetail() {
           uid={uid}
           whatsapp={customer.whatsapp}
           optOut={customer.crm?.whatsappOptOut === true}
+          consent={customer.whatsappConsent}
+          consentAt={customer.whatsappConsentAt}
           onOptOutChange={(value) =>
             setCustomer((c) => (c && c.crm ? { ...c, crm: { ...c.crm, whatsappOptOut: value } } : c))
           }

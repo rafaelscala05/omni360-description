@@ -300,6 +300,8 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
         daysInStage: crm ? daysBetween(crm.stageEnteredAt, now) : 0,
         productCount: products.data().count,
         whatsapp: String(data.onboarding?.contact?.whatsapp ?? ''),
+        whatsappConsent: data.onboarding?.contact?.whatsappConsent === true,
+        whatsappConsentAt: data.onboarding?.contact?.whatsappConsentAt ?? null,
       };
       res.json(payload);
     } catch (err) {

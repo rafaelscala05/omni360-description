@@ -25,11 +25,15 @@ export default function CustomerWhatsApp({
   uid,
   whatsapp,
   optOut,
+  consent,
+  consentAt,
   onOptOutChange,
 }: {
   uid: string;
   whatsapp: string;
   optOut: boolean;
+  consent: boolean;
+  consentAt: string | null;
   onOptOutChange: (value: boolean) => void;
 }) {
   const [status, setStatus] = useState<WhatsAppStatus | null>(null);
@@ -141,6 +145,21 @@ export default function CustomerWhatsApp({
               <span className="block text-xs text-slate-400">Bloqueia toda a régua para este cliente</span>
             </span>
           </label>
+        </div>
+
+        <div className="mt-4 pt-3 border-t border-slate-100">
+          {consent ? (
+            <p className="text-xs text-emerald-700">
+              ✓ Autorizou contato por WhatsApp no onboarding
+              {consentAt && <span className="text-slate-400"> · {formatDateTime(consentAt)}</span>}
+            </p>
+          ) : (
+            <p className="text-xs text-amber-700">
+              Sem autorização registrada — a régua automática <strong>não</strong> envia para este
+              cliente. Contas criadas antes do texto de consentimento existir caem neste caso; use o
+              envio manual só se tiver a autorização por outro meio.
+            </p>
+          )}
         </div>
       </Card>
 

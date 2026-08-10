@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, ChevronRight, ChevronLeft, Check, RefreshCw, Search, PenLine, X, Gift } from 'lucide-react';
 import type { User } from 'firebase/auth';
 import type { CompanyData, OnboardingContact, OnboardingStep1 } from '../../types/onboarding';
-import { COMPANY_SIZE_OPTIONS, ONBOARDING_BONUS } from '../../types/onboarding';
+import { COMPANY_SIZE_OPTIONS, ONBOARDING_BONUS, WHATSAPP_CONSENT_TEXT } from '../../types/onboarding';
 import { completeOnboarding, lookupCnpj, saveCompanyProfile } from '../../services/onboardingService';
 import ProfileSummary from './ProfileSummary';
 
@@ -101,6 +101,11 @@ const OnboardingWizard: React.FC<Props> = ({ user, onClose, onCompleted }) => {
         sameAsAccountEmail: !!sameEmail,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
+        // Registra o consentimento junto com o texto exato que foi exibido: é o
+        // que torna a autorização comprovável depois.
+        whatsappConsent: true,
+        whatsappConsentAt: new Date().toISOString(),
+        whatsappConsentText: WHATSAPP_CONSENT_TEXT,
       };
       if (company) await saveCompanyProfile(company);
       await completeOnboarding(step1, contact);
@@ -284,6 +289,21 @@ const OnboardingWizard: React.FC<Props> = ({ user, onClose, onCompleted }) => {
                           placeholder="(00) 00000-0000"
                           className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
                         />
+                        {/* Aviso no ponto de coleta, nomeando a empresa e o canal —
+                            é o que a política de opt-in da Meta exige e o que torna
+                            o consentimento informado sob a LGPD. */}
+                        <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                          {WHATSAPP_CONSENT_TEXT}{' '}
+                          <a
+                            href="/politica-de-privacidade"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-semibold text-[#FF5B03] hover:underline"
+                          >
+                            Política de Privacidade
+                          </a>
+                          .
+                        </p>
                       </div>
                       <div>
                         <label className="block text-sm font-semibold text-slate-700 mb-2">O e-mail corporativo é o mesmo do cadastro ({user.email})? *</label>

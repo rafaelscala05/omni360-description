@@ -65,7 +65,29 @@ export default function PrivacyPage() {
         <li>Realizar análises de mercado.</li>
         <li>Garantir segurança da Plataforma e cumprir obrigações legais.</li>
         <li>Enviar comunicações operacionais e notificações.</li>
+        <li>
+          Entrar em contato pelo WhatsApp informado no cadastro, com mensagens sobre a conta,
+          orientações de uso e novidades da Plataforma.
+        </li>
       </ul>
+
+      <p><strong>4.1 Comunicações por WhatsApp</strong></p>
+      <p>
+        Ao informar seu número no cadastro, o Usuário autoriza a Alfreds a contatá-lo pelo WhatsApp.
+        O texto da autorização exibido no momento da coleta fica registrado junto ao cadastro, com a
+        respectiva data.
+      </p>
+      <p>
+        As mensagens tratam da própria conta do Usuário, de orientações para uso da Plataforma e de
+        novidades. A Alfreds não vende, aluga nem cede o número informado a terceiros para fins
+        publicitários.
+      </p>
+      <p>
+        O Usuário pode solicitar a interrupção dos envios a qualquer momento, respondendo à própria
+        conversa no WhatsApp ou escrevendo para o contato indicado na seção 14. O pedido é atendido
+        sem prejuízo do uso da Plataforma: comunicações estritamente operacionais e legais podem
+        continuar a ser enviadas por outros canais.
+      </p>
 
       <h2>5. Base Legal para o Tratamento</h2>
       <p>O tratamento fundamenta-se em:</p>
