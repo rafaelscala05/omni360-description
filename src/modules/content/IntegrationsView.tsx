@@ -1,8 +1,25 @@
 import React, { useState } from 'react';
-import { Plug, RefreshCw, Check, Globe, ScrollText } from 'lucide-react';
+import { Plug, RefreshCw, Check, Globe, ScrollText, Search } from 'lucide-react';
 import type { ContentProject } from './types';
-import { updateProjectConfig, saveWordpressSecret, saveSanitySecret } from '../../services/contentService';
+import {
+  updateProjectConfig, saveWordpressSecret, saveSanitySecret,
+  fetchSanitySchemaTypes, fetchSanitySchemaFields,
+  type SanitySchemaType, type SanitySchemaField,
+} from '../../services/contentService';
 import PublishLogsPanel from './PublishLogsPanel';
+
+// Escolhe o campo mais provável para um papel (corpo/categoria/nome) a partir
+// da "natureza" inferida de cada campo amostrado — só usado para pré-preencher;
+// o usuário sempre pode trocar pelo <select> antes de salvar.
+function guessField(fields: SanitySchemaField[], kind: SanitySchemaField['kind'], preferNames: string[]): string | undefined {
+  const candidatos = fields.filter((f) => f.kind === kind);
+  const preferido = candidatos.find((f) => preferNames.includes(f.field.toLowerCase()));
+  return (preferido ?? candidatos[0])?.field;
+}
+
+function guessType(types: SanitySchemaType[], patterns: RegExp): string | undefined {
+  return types.find((t) => patterns.test(t.type))?.type;
+}
 
 interface Props {
   uid: string;
@@ -24,6 +41,7 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
   const [sanityDataset, setSanityDataset] = useState(project.config.sanityDataset ?? 'production');
   const [sanityBlogUrl, setSanityBlogUrl] = useState(project.config.sanityBlogUrl ?? '');
   const [sanityDocType, setSanityDocType] = useState(project.config.sanityDocType ?? '');
+  const [sanityBodyField, setSanityBodyField] = useState(project.config.sanityBodyField ?? '');
   const [sanityCategoryField, setSanityCategoryField] = useState(project.config.sanityCategoryField ?? '');
   const [sanityCategoryType, setSanityCategoryType] = useState(project.config.sanityCategoryType ?? '');
   const [sanityCategoryNameField, setSanityCategoryNameField] = useState(project.config.sanityCategoryNameField ?? '');
@@ -33,6 +51,77 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
   const [savedSanity, setSavedSanity] = useState(false);
   const [errorSanity, setErrorSanity] = useState<string | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
+
+  // Estado da checagem de schema: tipos/campos amostrados do dataset real,
+  // usados só para popular os <datalist> e sugerir valores — nunca salvos
+  // até o usuário clicar em "Salvar integração".
+  const [schemaTypes, setSchemaTypes] = useState<SanitySchemaType[]>([]);
+  const [docTypeFields, setDocTypeFields] = useState<SanitySchemaField[]>([]);
+  const [categoryTypeFields, setCategoryTypeFields] = useState<SanitySchemaField[]>([]);
+  const [checkingSchema, setCheckingSchema] = useState(false);
+  const [schemaMsg, setSchemaMsg] = useState<string | null>(null);
+  const [schemaMsgIsError, setSchemaMsgIsError] = useState(false);
+
+  const checkSchema = async () => {
+    setCheckingSchema(true);
+    setSchemaMsg(null);
+    setSchemaMsgIsError(false);
+    setShowSanitySchema(true);
+    try {
+      const types = await fetchSanitySchemaTypes(project.id);
+      setSchemaTypes(types);
+      if (!types.length) {
+        setSchemaMsgIsError(false);
+        setSchemaMsg('Não encontramos documentos no dataset ainda — publique um artigo de teste e verifique de novo, ou configure os campos manualmente abaixo.');
+        return;
+      }
+
+      const guessedDocType = sanityDocType.trim() || guessType(types, /post|article|blog|noticia|not[íi]cia/i) || types[0].type;
+      const guessedCategoryType = sanityCategoryType.trim() || guessType(types, /categor|tag|topic|assunto/i);
+      if (!sanityDocType.trim()) setSanityDocType(guessedDocType);
+      if (!sanityCategoryType.trim() && guessedCategoryType) setSanityCategoryType(guessedCategoryType);
+
+      const [docFields, catFields] = await Promise.all([
+        fetchSanitySchemaFields(project.id, guessedDocType),
+        guessedCategoryType ? fetchSanitySchemaFields(project.id, guessedCategoryType) : Promise.resolve([]),
+      ]);
+      setDocTypeFields(docFields);
+      setCategoryTypeFields(catFields);
+
+      if (!sanityBodyField.trim()) {
+        const corpo = guessField(docFields, 'portableText', ['body', 'content', 'conteudo', 'conteúdo', 'texto']);
+        if (corpo) setSanityBodyField(corpo);
+      }
+      if (!sanityCategoryField.trim()) {
+        const cat = guessField(docFields, 'referenceArray', ['categories', 'category', 'categorias', 'tags']);
+        if (cat) setSanityCategoryField(cat);
+      }
+      if (!sanityCategoryNameField.trim() && catFields.length) {
+        const nome = guessField(catFields, 'string', ['title', 'name', 'nome', 'titulo', 'título']);
+        if (nome) setSanityCategoryNameField(nome);
+      }
+
+      const partes = [`tipo de artigo "${guessedDocType}"`];
+      if (guessedCategoryType) partes.push(`tipo de categoria "${guessedCategoryType}"`);
+      setSchemaMsg(`Schema verificado: ${types.length} tipo(s) encontrado(s) no dataset, ${partes.join(', ')}. Confira os campos sugeridos abaixo antes de salvar.`);
+    } catch (e) {
+      setSchemaMsgIsError(true);
+      setSchemaMsg(e instanceof Error ? e.message : 'Não consegui verificar o schema.');
+    } finally {
+      setCheckingSchema(false);
+    }
+  };
+
+  // Troca manual de tipo (usuário editou o campo/select) também busca os
+  // campos daquele tipo, pra manter os <datalist> de baixo em dia.
+  const refreshDocTypeFields = async (type: string) => {
+    if (!type.trim()) { setDocTypeFields([]); return; }
+    try { setDocTypeFields(await fetchSanitySchemaFields(project.id, type.trim())); } catch { /* silencioso: só afeta sugestões */ }
+  };
+  const refreshCategoryTypeFields = async (type: string) => {
+    if (!type.trim()) { setCategoryTypeFields([]); return; }
+    try { setCategoryTypeFields(await fetchSanitySchemaFields(project.id, type.trim())); } catch { /* silencioso: só afeta sugestões */ }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -67,6 +156,7 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
         sanityDataset: sanityDataset.trim() || 'production',
         sanityBlogUrl: sanityBlogUrl.trim(),
         sanityDocType: sanityDocType.trim(),
+        sanityBodyField: sanityBodyField.trim(),
         sanityCategoryField: sanityCategoryField.trim(),
         sanityCategoryType: sanityCategoryType.trim(),
         sanityCategoryNameField: sanityCategoryNameField.trim(),
@@ -211,32 +301,72 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
           </div>
 
           <div className="border-t border-slate-100 pt-4">
-            <button
-              type="button"
-              onClick={() => setShowSanitySchema((v) => !v)}
-              className="text-xs font-semibold text-slate-600 hover:text-slate-900"
-            >
-              {showSanitySchema ? '▾' : '▸'} Schema do projeto (avançado)
-            </button>
-            <p className="text-xs text-slate-400 mt-1">Cada projeto Sanity define seus próprios nomes de tipo/campo — é isso que diz para onde cada artigo é enviado. Deixe em branco para usar os padrões do starter do Sanity.</p>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setShowSanitySchema((v) => !v)}
+                className="text-xs font-semibold text-slate-600 hover:text-slate-900"
+              >
+                {showSanitySchema ? '▾' : '▸'} Schema do projeto (avançado)
+              </button>
+              <button
+                type="button"
+                onClick={checkSchema}
+                disabled={checkingSchema || !sanityProjectId.trim()}
+                className="flex items-center gap-1.5 text-xs font-semibold text-[#FF5B03] hover:text-[#E14E00] disabled:opacity-50 disabled:cursor-not-allowed"
+                title={sanityProjectId.trim() ? 'Amostra o dataset e sugere os campos abaixo' : 'Informe o Project ID primeiro'}
+              >
+                {checkingSchema ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />} Verificar schema
+              </button>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">Cada projeto Sanity define seus próprios nomes de tipo/campo — é isso que diz para onde cada artigo é enviado. "Verificar schema" olha os documentos já existentes no seu dataset e pré-preenche os campos abaixo; ajuste e clique em Salvar. Deixe em branco para usar os padrões do starter do Sanity.</p>
+            {schemaMsg && (
+              <p className={`text-xs mt-2 rounded-lg px-3 py-2 ${schemaMsgIsError ? 'text-red-600 bg-red-50 border border-red-200' : 'text-emerald-700 bg-emerald-50 border border-emerald-200'}`}>
+                {schemaMsg}
+              </p>
+            )}
 
             {showSanitySchema && (
               <div className="mt-3 grid sm:grid-cols-2 gap-4">
+                <datalist id="sanity-types">
+                  {schemaTypes.map((t) => <option key={t.type} value={t.type}>{`${t.type} (${t.count} doc${t.count === 1 ? '' : 's'})`}</option>)}
+                </datalist>
+                <datalist id="sanity-doc-fields">
+                  {docTypeFields.map((f) => <option key={f.field} value={f.field}>{f.kind}</option>)}
+                </datalist>
+                <datalist id="sanity-cat-fields">
+                  {categoryTypeFields.map((f) => <option key={f.field} value={f.field}>{f.kind}</option>)}
+                </datalist>
+
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1.5">Tipo do documento do artigo</label>
                   <input
                     value={sanityDocType}
                     onChange={(e) => setSanityDocType(e.target.value)}
+                    onBlur={(e) => refreshDocTypeFields(e.target.value)}
+                    list="sanity-types"
                     placeholder="post"
                     className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
                   />
                   <p className="text-xs text-slate-400 mt-1">O <code>_type</code> usado no schema do cliente para artigos (ex.: <code>post</code>, <code>article</code>, <code>blogPost</code>).</p>
                 </div>
                 <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Campo de corpo/conteúdo</label>
+                  <input
+                    value={sanityBodyField}
+                    onChange={(e) => setSanityBodyField(e.target.value)}
+                    list="sanity-doc-fields"
+                    placeholder="body"
+                    className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">Campo de texto rico onde o artigo é escrito. Errado aqui = artigo publica "vazio" (o frontend do cliente lê outro campo).</p>
+                </div>
+                <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1.5">Campo de categoria no artigo</label>
                   <input
                     value={sanityCategoryField}
                     onChange={(e) => setSanityCategoryField(e.target.value)}
+                    list="sanity-doc-fields"
                     placeholder="categories"
                     className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
                   />
@@ -247,6 +377,8 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
                   <input
                     value={sanityCategoryType}
                     onChange={(e) => setSanityCategoryType(e.target.value)}
+                    onBlur={(e) => refreshCategoryTypeFields(e.target.value)}
+                    list="sanity-types"
                     placeholder="category"
                     className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
                   />
@@ -256,6 +388,7 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
                   <input
                     value={sanityCategoryNameField}
                     onChange={(e) => setSanityCategoryNameField(e.target.value)}
+                    list="sanity-cat-fields"
                     placeholder="title"
                     className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
                   />

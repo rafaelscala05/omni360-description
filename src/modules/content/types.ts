@@ -36,6 +36,7 @@ export interface ContentProjectConfig {
   // Sanity: doc de artigo = 'post', campo de categorias = 'categories', doc
   // de categoria = 'category', campo do nome da categoria = 'title'.
   sanityDocType?: string;
+  sanityBodyField?: string;
   sanityCategoryField?: string;
   sanityCategoryType?: string;
   sanityCategoryNameField?: string;

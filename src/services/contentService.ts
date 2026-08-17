@@ -130,6 +130,21 @@ export const fetchPublishLogs = (projectId: string, limit = 50) =>
     'GET',
   ).then((r) => r.logs);
 
+// "Verificar schema" do Sanity — amostra o dataset em vez de depender de
+// `sanity schema deploy` (a maioria dos projetos nunca roda isso).
+export interface SanitySchemaType { type: string; count: number }
+export const fetchSanitySchemaTypes = (projectId: string) =>
+  callJson<{ types: SanitySchemaType[] }>(`/api/content/projects/${projectId}/sanity/schema-types`, 'GET')
+    .then((r) => r.types);
+
+export type SanityFieldKind = 'portableText' | 'reference' | 'referenceArray' | 'string' | 'slug' | 'image' | 'other';
+export interface SanitySchemaField { field: string; kind: SanityFieldKind }
+export const fetchSanitySchemaFields = (projectId: string, type: string) =>
+  callJson<{ fields: SanitySchemaField[] }>(
+    `/api/content/projects/${projectId}/sanity/schema-fields?type=${encodeURIComponent(type)}`,
+    'GET',
+  ).then((r) => r.fields);
+
 export type RegenerateImagePayload =
   | { mode: 'improve'; improvementPrompt: string }
   | { mode: 'fromProduct'; baseProductImageUrl: string };

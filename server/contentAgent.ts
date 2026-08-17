@@ -966,11 +966,83 @@ async function sanityMutate(
   return bodyJson;
 }
 
+async function loadSanityCreds(uid: string, projectId: string): Promise<{ sanityProjectId: string; dataset: string; apiToken: string }> {
+  const project = await loadProject(uid, projectId);
+  const { sanityProjectId, sanityDataset } = project.config;
+  if (!sanityProjectId) throw Object.assign(new Error('Project ID do Sanity não configurado'), { status: 400 });
+  const dataset = sanityDataset || 'production';
+  const secretSnap = await projectRef(uid, projectId).collection('secrets').doc('sanity').get();
+  const apiToken = secretSnap.exists ? (secretSnap.data() as { apiToken?: string }).apiToken : undefined;
+  if (!apiToken) throw Object.assign(new Error('API Token do Sanity ausente'), { status: 400 });
+  return { sanityProjectId, dataset, apiToken };
+}
+
+async function sanityQuery<T>(
+  sanityProjectId: string, dataset: string, apiToken: string, groq: string, params: Record<string, string> = {},
+): Promise<T> {
+  const url = new URL(`https://${sanityProjectId}.api.sanity.io/v2021-10-21/data/query/${dataset}`);
+  url.searchParams.set('query', groq);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(`$${k}`, JSON.stringify(v));
+  const resp = await fetch(url.toString(), { headers: { Authorization: `Bearer ${apiToken}` } });
+  const text = await resp.text();
+  if (!resp.ok) throw Object.assign(new Error(`Falha ao consultar o Sanity: ${resp.status} — ${text}`), { status: 502 });
+  return (JSON.parse(text) as { result: T }).result;
+}
+
+// Descobre os _type existentes no dataset amostrando documentos (não depende de
+// `sanity schema deploy`, que a maioria dos projetos nunca roda — funciona com
+// qualquer dataset acessível pelo token). Tipos internos do Sanity são excluídos.
+async function detectSanityTypes(uid: string, projectId: string): Promise<Array<{ type: string; count: number }>> {
+  const { sanityProjectId, dataset, apiToken } = await loadSanityCreds(uid, projectId);
+  const types = await sanityQuery<string[]>(sanityProjectId, dataset, apiToken, '*[0...1000]._type');
+  const counts = new Map<string, number>();
+  for (const t of types) {
+    if (!t || t.startsWith('sanity.') || t.startsWith('system.')) continue;
+    counts.set(t, (counts.get(t) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([type, count]) => ({ type, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+type SanityFieldKind = 'portableText' | 'reference' | 'referenceArray' | 'string' | 'slug' | 'image' | 'other';
+
+function inferSanityFieldKind(value: unknown): SanityFieldKind {
+  if (Array.isArray(value)) {
+    const first = value[0] as Record<string, unknown> | undefined;
+    if (first && typeof first === 'object' && first._type === 'block') return 'portableText';
+    if (first && typeof first === 'object' && first._type === 'reference') return 'referenceArray';
+    return 'other';
+  }
+  if (value && typeof value === 'object') {
+    const v = value as Record<string, unknown>;
+    if (v._type === 'slug') return 'slug';
+    if (v._type === 'reference') return 'reference';
+    if (v._type === 'image') return 'image';
+    return 'other';
+  }
+  if (typeof value === 'string') return 'string';
+  return 'other';
+}
+
+// Amostra um documento existente do tipo dado e devolve os campos com um
+// "palpite" de natureza (texto rico, referência(s), string...) — é isso que
+// deixa a UI sugerir qual campo é o corpo do artigo e qual é a categoria, em
+// vez do usuário precisar abrir o Studio pra ler o schema.
+async function detectSanityFields(uid: string, projectId: string, type: string): Promise<Array<{ field: string; kind: SanityFieldKind }>> {
+  const { sanityProjectId, dataset, apiToken } = await loadSanityCreds(uid, projectId);
+  const doc = await sanityQuery<Record<string, unknown> | null>(sanityProjectId, dataset, apiToken, '*[_type == $type][0]', { type });
+  if (!doc) return [];
+  return Object.keys(doc)
+    .filter((k) => !k.startsWith('_'))
+    .map((field) => ({ field, kind: inferSanityFieldKind(doc[field]) }));
+}
+
 async function publishToSanity(uid: string, projectId: string, articleId: string): Promise<string> {
   const project = await loadProject(uid, projectId);
   const {
     sanityProjectId, sanityDataset, sanityBlogUrl,
-    sanityDocType, sanityCategoryField, sanityCategoryType, sanityCategoryNameField,
+    sanityDocType, sanityBodyField, sanityCategoryField, sanityCategoryType, sanityCategoryNameField,
   } = project.config;
   if (!sanityProjectId) {
     throw Object.assign(new Error('Project ID do Sanity não configurado'), { status: 400 });
@@ -990,6 +1062,20 @@ async function publishToSanity(uid: string, projectId: string, articleId: string
   const slug = article.slug || article.titulo.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const docId = `article-${articleId}`;
   const docType = (sanityDocType || 'post').trim();
+  // Se o campo de corpo do schema do cliente tiver outro nome (ex.: 'content'),
+  // escrever em 'body' publica um documento sem o conteúdo aparecer no site —
+  // o frontend do cliente lê o campo pelo nome dele, não pelo nosso.
+  const bodyField = (sanityBodyField || 'body').trim();
+
+  const doc: Record<string, unknown> = {
+    _id: docId,
+    _type: docType,
+    title: article.titulo,
+    slug: { _type: 'slug', current: slug },
+    [bodyField]: markdownToPortableText(article.articleFinal),
+    excerpt: article.metaDescription || undefined,
+    publishedAt: new Date().toISOString(),
+  };
 
   // O schema do Sanity é do cliente, não nosso — o nome do tipo/campo de
   // categoria é configurável (ver ContentProjectConfig). Sem sanityCategoryField
@@ -1008,33 +1094,10 @@ async function publishToSanity(uid: string, projectId: string, articleId: string
       mutations.push({
         createIfNotExists: { _id: categoryDocId, _type: categoryType, [nameField]: clusterNome },
       });
-      mutations.push({
-        createOrReplace: {
-          _id: docId,
-          _type: docType,
-          title: article.titulo,
-          slug: { _type: 'slug', current: slug },
-          body: markdownToPortableText(article.articleFinal),
-          excerpt: article.metaDescription || undefined,
-          publishedAt: new Date().toISOString(),
-          [categoryField]: [{ _type: 'reference', _key: crypto.randomUUID(), _ref: categoryDocId }],
-        },
-      });
+      doc[categoryField] = [{ _type: 'reference', _key: crypto.randomUUID(), _ref: categoryDocId }];
     }
   }
-  if (!mutations.length) {
-    mutations.push({
-      createOrReplace: {
-        _id: docId,
-        _type: docType,
-        title: article.titulo,
-        slug: { _type: 'slug', current: slug },
-        body: markdownToPortableText(article.articleFinal),
-        excerpt: article.metaDescription || undefined,
-        publishedAt: new Date().toISOString(),
-      },
-    });
-  }
+  mutations.push({ createOrReplace: doc });
 
   await sanityMutate(uid, projectId, articleId, article.titulo, sanityProjectId, dataset, apiToken, 'mutate', mutations);
 
@@ -1430,6 +1493,35 @@ export function registerContentRoutes(app: express.Application, deps: ContentDep
         .collection('publishLogs').orderBy('at', 'desc').limit(limit).get();
       const logs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       res.json({ logs });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // "Verificar schema": amostra o dataset do Sanity pra descobrir quais _type
+  // existem, sem depender de `sanity schema deploy` (a maioria dos projetos
+  // nunca roda isso). É o que popula os selects de tipo de artigo/categoria
+  // na integração em vez do usuário digitar de cabeça.
+  app.get('/api/content/projects/:projectId/sanity/schema-types', async (req, res) => {
+    try {
+      const decoded = await verifyFirebaseToken(req);
+      const types = await detectSanityTypes(decoded.uid, req.params.projectId);
+      res.json({ types });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // Dado um _type (escolhido a partir de schema-types), lista os campos de um
+  // documento de exemplo com um palpite de natureza (texto rico/referência/
+  // string) — popula os selects de campo (corpo, categoria, nome da categoria).
+  app.get('/api/content/projects/:projectId/sanity/schema-fields', async (req, res) => {
+    try {
+      const decoded = await verifyFirebaseToken(req);
+      const type = String(req.query.type || '').trim();
+      if (!type) return res.status(400).json({ error: 'type é obrigatório' });
+      const fields = await detectSanityFields(decoded.uid, req.params.projectId, type);
+      res.json({ fields });
     } catch (err) {
       sendError(res, err);
     }
