@@ -878,7 +878,7 @@ async function publishToWordpress(uid: string, projectId: string, articleId: str
 
 async function publishToSanity(uid: string, projectId: string, articleId: string): Promise<string> {
   const project = await loadProject(uid, projectId);
-  const { sanityProjectId, sanityDataset } = project.config;
+  const { sanityProjectId, sanityDataset, sanityBlogUrl } = project.config;
   if (!sanityProjectId) {
     throw Object.assign(new Error('Project ID do Sanity não configurado'), { status: 400 });
   }
@@ -926,7 +926,14 @@ async function publishToSanity(uid: string, projectId: string, articleId: string
     throw Object.assign(new Error(`Falha ao publicar no Sanity: ${mutateResp.status} — ${body}`), { status: 502 });
   }
 
-  const documentUrl = `https://${sanityProjectId}.sanity.studio/desk/post;${docId}`;
+  // O Sanity é headless: não publica em uma URL própria. Só é possível montar
+  // um link para o artigo publicado se o cliente informou onde o frontend
+  // renderiza o conteúdo (sanityBlogUrl). Sem isso, aponta para o painel de
+  // gestão do projeto, que sempre existe — nunca para um Studio hospedado
+  // "adivinhado" em {projectId}.sanity.studio, que pode não estar implantado.
+  const documentUrl = sanityBlogUrl
+    ? `${sanityBlogUrl.replace(/\/+$/, '')}/${slug}`
+    : `https://www.sanity.io/manage/project/${sanityProjectId}`;
 
   await debitCreditsAdmin(uid, CREDIT_ACTIONS.contentPublish, { productName: article.titulo });
   await artRef.update({

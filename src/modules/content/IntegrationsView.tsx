@@ -21,6 +21,7 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
 
   const [sanityProjectId, setSanityProjectId] = useState(project.config.sanityProjectId ?? '');
   const [sanityDataset, setSanityDataset] = useState(project.config.sanityDataset ?? 'production');
+  const [sanityBlogUrl, setSanityBlogUrl] = useState(project.config.sanityBlogUrl ?? '');
   const [sanityToken, setSanityToken] = useState('');
   const [savingSanity, setSavingSanity] = useState(false);
   const [savedSanity, setSavedSanity] = useState(false);
@@ -57,6 +58,7 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
         ...project.config,
         sanityProjectId: sanityProjectId.trim(),
         sanityDataset: sanityDataset.trim() || 'production',
+        sanityBlogUrl: sanityBlogUrl.trim(),
       });
       if (sanityToken.trim()) {
         await saveSanitySecret(uid, project.id, sanityToken.trim());
@@ -175,6 +177,16 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
               className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
             />
             <p className="text-xs text-slate-400 mt-1">Gere em <strong>sanity.io/manage → API → Tokens</strong> com permissão <strong>Editor</strong>. Guardado com segurança; usado apenas pelo servidor.</p>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1.5">URL do blog</label>
+            <input
+              value={sanityBlogUrl}
+              onChange={(e) => setSanityBlogUrl(e.target.value)}
+              placeholder="https://blog.empresa.com"
+              className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
+            />
+            <p className="text-xs text-slate-400 mt-1">O Sanity é headless — quem publica o artigo em uma URL é o frontend do cliente, não o Sanity. Informe onde ele renderiza os posts para gerarmos o link "Ver publicado" ({'{URL do blog}'}/{'{slug}'}). Deixe em branco para linkar o painel de gestão do projeto no Sanity.</p>
           </div>
         </div>
 

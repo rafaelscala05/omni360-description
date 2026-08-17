@@ -26,6 +26,10 @@ export interface ContentProjectConfig {
   // secrets subdoc (secrets/sanity), never readable by the client.
   sanityProjectId: string;
   sanityDataset: string;
+  // URL base do blog/frontend que renderiza o conteúdo do Sanity (o Sanity é
+  // headless — não publica em URL própria). Usada para montar o link "Ver
+  // publicado" como {sanityBlogUrl}/{slug}.
+  sanityBlogUrl?: string;
   estiloImagem?: 'Realista' | 'Ilustracao' | '3D' | 'Cartoon';
   // URL do site do cliente, capturada no passo "Analisar site com IA" do
   // onboarding. Reaproveitada para disparar a Auditoria de SEO (SE Ranking).
