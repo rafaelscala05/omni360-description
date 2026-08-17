@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Reorder } from 'motion/react';
 import {
-  CalendarDays, Sparkles, RefreshCw, Play, FileText, Pencil, Check, X, Clock, Plus, GripVertical,
+  CalendarDays, Sparkles, RefreshCw, Play, FileText, Pencil, Check, X, Clock, Plus, GripVertical, Trash2,
 } from 'lucide-react';
 import type { CalendarArticle, ArticleStatus, ArticleSize, ContentCluster } from './types';
 import {
-  listenCalendar, generateCalendar, produceArticle, updateArticle,
+  listenCalendar, generateCalendar, produceArticle, updateArticle, deleteArticle,
   createArticleManual, listProductsForLinking, type LinkableProduct,
   updateArticlesPriority,
 } from '../../services/contentService';
@@ -179,6 +179,16 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
     updateArticle(uid, projectId, articleId, { tamanho });
   };
 
+  const handleDelete = async (a: CalendarArticle) => {
+    if (!window.confirm(`Excluir o artigo "${a.titulo}"? Essa ação não pode ser desfeita.`)) return;
+    try {
+      await deleteArticle(uid, projectId, a.id);
+      if (selected === a.id) setSelected(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao excluir artigo');
+    }
+  };
+
   const approvedClusters = useMemo(() => clusters.filter((c) => c.aprovado && !c.excluido), [clusters]);
 
   const openCreateArticle = () => {
@@ -295,8 +305,12 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
                     <button onClick={() => setSelected(a.id)} className="text-sm font-medium text-slate-900 hover:text-[#FF5B03] truncate text-left">
                       {a.titulo}
                     </button>
-                    <button onClick={() => startTitleEdit(a)} className="p-0.5 text-slate-300 hover:text-slate-600 rounded shrink-0">
-                      <Pencil className="w-3 h-3" />
+                    <button
+                      onClick={() => startTitleEdit(a)}
+                      title="Editar título"
+                      className="p-1 text-slate-400 hover:text-[#FF5B03] hover:bg-[#FFF3EC] rounded shrink-0 transition-colors"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 )}
@@ -345,6 +359,13 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
                     <FileText className="w-3.5 h-3.5" /> Ver
                   </button>
                 )}
+                <button
+                  onClick={() => handleDelete(a)}
+                  title="Excluir artigo"
+                  className="flex items-center gap-1 text-xs font-medium p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
             </Reorder.Item>
           );

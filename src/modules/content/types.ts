@@ -195,6 +195,7 @@ export interface CalendarArticle {
   scheduledTime?: string;        // "HH:MM" — hora de publicação
   produtosVinculados?: string[]; // IDs de Product._id vinculados (artigos antigos podem ter texto livre até serem re-vinculados)
   tamanho?: ArticleSize;
+  responsavel?: string; // opcional: nome exibido como autor ao publicar no blog nativo
   // Ordem manual (drag-and-drop) na tela de Produção. Independente de
   // scheduledDate (que segue regendo a tela de Calendário). Artigos
   // anteriores a esta feature não têm o campo até serem migrados (ver

@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, Check, RefreshCw, Globe, ExternalLink, Play, Pencil, Eye, Code, Wand2, Image as ImageIcon } from 'lucide-react';
+import { X, Check, RefreshCw, Globe, ExternalLink, Play, Pencil, Eye, Code, Wand2, Image as ImageIcon, Trash2, User } from 'lucide-react';
 import type { CalendarArticle, ArticleSize } from './types';
 import {
   updateArticle,
+  deleteArticle,
   publishArticle,
   produceArticle,
   listProductsForLinking,
@@ -35,6 +36,8 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
   const [showImprovePrompt, setShowImprovePrompt] = useState(false);
   const [improvementPrompt, setImprovementPrompt] = useState('');
   const [productImageChoice, setProductImageChoice] = useState<string>('');
+  const [responsavel, setResponsavel] = useState(article.responsavel ?? '');
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     listProductsForLinking(uid).then(setAllProducts).catch(() => setAllProducts([]));
@@ -79,11 +82,30 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
   const changeSize = (tamanho: ArticleSize) => {
     run('tamanho', () => updateArticle(uid, projectId, article.id, { tamanho }));
   };
+
+  const saveResponsavel = (value: string) => {
+    setResponsavel(value);
+    run('responsavel', () => updateArticle(uid, projectId, article.id, { responsavel: value.trim() || undefined }));
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`Excluir o artigo "${article.titulo}"? Essa ação não pode ser desfeita.`)) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await deleteArticle(uid, projectId, article.id);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao excluir artigo');
+    } finally {
+      setDeleting(false);
+    }
+  };
   const hasDraft = article.stage >= 3 || !!article.articleDraft;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl h-full sm:h-[calc(100vh-3rem)] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-4 p-5 border-b border-slate-100">
           <div className="min-w-0 flex-1">
             {editingTitle ? (
@@ -108,7 +130,11 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
             ) : (
               <div className="flex items-center gap-1.5 min-w-0">
                 <h2 className="font-display text-lg font-bold text-slate-900 truncate">{article.titulo}</h2>
-                <button onClick={() => setEditingTitle(true)} className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded shrink-0">
+                <button
+                  onClick={() => setEditingTitle(true)}
+                  title="Editar título"
+                  className="p-1 text-slate-400 hover:text-[#FF5B03] hover:bg-[#FFF3EC] rounded shrink-0 transition-colors"
+                >
                   <Pencil className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -123,7 +149,17 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
               )}
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg shrink-0"><X className="w-5 h-5" /></button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              title="Excluir artigo"
+              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-60 rounded-lg"
+            >
+              {deleting ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
+            </button>
+            <button onClick={onClose} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5" /></button>
+          </div>
         </div>
 
         {/* Pipeline progress */}
@@ -231,6 +267,20 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">Produtos vinculados</label>
             <ProductLinkPicker products={allProducts} selectedIds={selectedProductIds} onChange={saveProdutos} />
+          </div>
+
+          {/* Responsável (opcional) */}
+          <div>
+            <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+              <User className="w-3.5 h-3.5 text-slate-400" /> Responsável pelo artigo <span className="text-xs font-normal text-slate-400">(opcional)</span>
+            </label>
+            <input
+              value={responsavel}
+              onChange={(e) => setResponsavel(e.target.value)}
+              onBlur={(e) => saveResponsavel(e.target.value)}
+              placeholder="Nome exibido como autor ao publicar no blog"
+              className="w-full max-w-sm border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03] focus:border-[#FF5B03]"
+            />
           </div>
 
           {article.status === 'agendado' ? (

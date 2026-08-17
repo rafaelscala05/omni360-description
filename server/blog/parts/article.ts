@@ -17,6 +17,30 @@ function byline(ctx: BlogRenderContext, p: BlogPost, light = false): string {
   </div>`;
 }
 
+function fmtPrice(v: number): string {
+  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+// Vitrine dos produtos vinculados ao artigo (Produção → "Produtos vinculados").
+// Sem link: os produtos não têm URL pública cadastrada nesta plataforma.
+function productsSection(post: BlogPost): string {
+  if (!post.products?.length) return '';
+  const cards = post.products.map((prod) => `
+    <div class="bc-product-card">
+      ${prod.imagemPrincipal
+        ? `<img class="bc-product-img" src="${escapeHtml(prod.imagemPrincipal)}" alt="${escapeHtml(prod.nome)}">`
+        : `<div class="bc-product-img bc-product-img--placeholder"></div>`}
+      <div class="bc-product-info">
+        <span class="bc-product-name">${escapeHtml(prod.nome)}</span>
+        ${prod.preco != null ? `<span class="bc-product-price">${fmtPrice(prod.preco)}</span>` : ''}
+      </div>
+    </div>`).join('');
+  return `<div class="bc-products">
+    <h2 class="bc-products-title">Produtos</h2>
+    <div class="bc-products-grid">${cards}</div>
+  </div>`;
+}
+
 export function renderArticle(ctx: BlogRenderContext, post: BlogPost, variant: string): string {
   if (variant === 'capa-larga') {
     const heroStyle = post.coverImageUrl
@@ -29,7 +53,7 @@ export function renderArticle(ctx: BlogRenderContext, post: BlogPost, variant: s
         ${byline(ctx, post, true)}
       </div>
     </div>
-    <div class="bc-inner"><article class="bc-article post-body">${post.html}</article></div>`;
+    <div class="bc-inner"><article class="bc-article post-body">${post.html}${productsSection(post)}</article></div>`;
   }
 
   if (variant === 'lateral-meta') {
@@ -41,6 +65,7 @@ export function renderArticle(ctx: BlogRenderContext, post: BlogPost, variant: s
       <article class="bc-article post-body">
         ${post.coverImageUrl ? `<img class="bc-article-cover" src="${escapeHtml(post.coverImageUrl)}" alt="${escapeHtml(post.title)}">` : ''}
         ${post.html}
+        ${productsSection(post)}
       </article>
     </div></div>`;
   }
@@ -51,6 +76,7 @@ export function renderArticle(ctx: BlogRenderContext, post: BlogPost, variant: s
     <h1>${escapeHtml(post.title)}</h1>
     ${byline(ctx, post)}
     ${post.html}
+    ${productsSection(post)}
   </article></div>`;
 }
 
@@ -81,4 +107,14 @@ export const articleCss = `
     .bc-article h1{font-size:2rem;}
     .bc-article-split{grid-template-columns:1fr;gap:20px;} .bc-article-aside{position:static;}
   }
+
+  .bc-products{margin-top:44px;padding-top:32px;border-top:1px solid rgba(0,0,0,.1);}
+  .bc-products-title{font-size:1.3rem;margin-bottom:16px;}
+  .bc-products-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px;}
+  .bc-product-card{border:1px solid rgba(0,0,0,.1);border-radius:var(--radius);overflow:hidden;}
+  .bc-product-img{width:100%;aspect-ratio:1/1;object-fit:cover;display:block;background:rgba(0,0,0,.04);}
+  .bc-product-img--placeholder{background:rgba(0,0,0,.06);}
+  .bc-product-info{padding:10px 12px;}
+  .bc-product-name{display:block;font-size:.86rem;font-weight:600;line-height:1.3;margin-bottom:4px;}
+  .bc-product-price{display:block;font-size:.82rem;opacity:.72;}
 `;

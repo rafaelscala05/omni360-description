@@ -188,6 +188,16 @@ export interface BlogSettings {
 
 export type BlogPostStatus = 'draft' | 'published';
 
+// Vitrine de produtos vinculados ao artigo de origem, congelada no momento da
+// publicação (mesmo padrão de coverImageUrl/title — cópia, não referência
+// viva, então segue exibível mesmo se o produto for depois alterado/excluído).
+export interface BlogPostProduct {
+  id: string;
+  nome: string;
+  imagemPrincipal?: string;
+  preco?: number;
+}
+
 export interface BlogPost {
   id: string;
   title: string;
@@ -200,6 +210,7 @@ export interface BlogPost {
   publishedAt?: string;
   seo: { metaTitle?: string; metaDescription?: string };
   authorName?: string;
+  products?: BlogPostProduct[]; // snapshot dos produtos vinculados ao artigo, se houver
   sourceArticleId?: string; // quando publicado a partir do calendário editorial
   createdAt: string;
   updatedAt: string;

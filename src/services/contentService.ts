@@ -10,6 +10,7 @@ import {
   addDoc,
   setDoc,
   updateDoc,
+  deleteDoc,
   getDocs,
   onSnapshot,
   query,
@@ -234,6 +235,10 @@ export async function updateArticle(
     ...fields,
     updatedAt: new Date().toISOString(),
   });
+}
+
+export async function deleteArticle(uid: string, projectId: string, articleId: string): Promise<void> {
+  await deleteDoc(doc(db, `users/${uid}/contentProjects/${projectId}/calendar/${articleId}`));
 }
 
 export async function moveArticle(

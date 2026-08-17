@@ -26,7 +26,7 @@ import type {
   ArticleStage,
   ArticleSize,
 } from '../src/modules/content/types';
-import type { BlogPost, BlogSettings } from '../src/modules/content/blog/types';
+import type { BlogPost, BlogPostProduct, BlogSettings } from '../src/modules/content/blog/types';
 import { slugify, uniqueSlug } from '../src/modules/content/blog/slug';
 import { markdownToHtml } from '../src/modules/content/markdown';
 import * as seRanking from './seRankingClient';
@@ -939,6 +939,34 @@ async function publishToSanity(uid: string, projectId: string, articleId: string
   return documentUrl;
 }
 
+// Congela os produtos vinculados ao artigo num snapshot leve (mesmo espírito
+// de coverImageUrl/title: cópia, não referência viva — o post publicado
+// continua exibindo a vitrine mesmo que o produto seja depois editado/removido).
+async function snapshotLinkedProducts(uid: string, produtosVinculados: string[] | undefined): Promise<BlogPostProduct[]> {
+  if (!produtosVinculados?.length) return [];
+  const ids = new Set(produtosVinculados);
+  const snap = await adminDb.collection('users').doc(uid).collection('products').get();
+  const out: BlogPostProduct[] = [];
+  for (const d of snap.docs) {
+    const data = d.data() as Record<string, unknown>;
+    const id = (typeof data._id === 'string' && data._id) || d.id;
+    if (!ids.has(id)) continue;
+    const nome = (typeof data['Descrição'] === 'string' && data['Descrição']) || '(sem nome)';
+    const selectedImage = typeof data._selectedImage === 'string' ? data._selectedImage : undefined;
+    const firstImage = typeof data['URL imagem 1'] === 'string' ? (data['URL imagem 1'] as string) : undefined;
+    const rawPrice = data['Preço promocional'] ?? data['Preço'];
+    const preco = typeof rawPrice === 'number' ? rawPrice
+      : typeof rawPrice === 'string' && rawPrice.trim() ? Number(rawPrice.replace(',', '.')) : undefined;
+    out.push({
+      id,
+      nome,
+      ...(selectedImage || firstImage ? { imagemPrincipal: selectedImage || firstImage } : {}),
+      ...(preco != null && !Number.isNaN(preco) ? { preco } : {}),
+    });
+  }
+  return out;
+}
+
 // Fase 5 — publicação no Blog nativo (CMS da plataforma).
 // Copia o artigo final para blogPosts como published e retorna a URL pública.
 async function publishToBlog(uid: string, projectId: string, articleId: string): Promise<string> {
@@ -978,6 +1006,7 @@ async function publishToBlog(uid: string, projectId: string, articleId: string):
   const htmlBody = markdownToHtml(article.articleFinal);
   const excerpt = (article.metaDescription || htmlBody.replace(/<[^>]+>/g, ' '))
     .replace(/\s+/g, ' ').trim().slice(0, 200);
+  const products = await snapshotLinkedProducts(uid, article.produtosVinculados);
 
   await postRef.set({
     title: article.titulo,
@@ -991,6 +1020,8 @@ async function publishToBlog(uid: string, projectId: string, articleId: string):
     status: 'published',
     publishedAt: now,
     seo: { metaTitle: article.titulo, metaDescription: article.metaDescription ?? '' },
+    products,
+    ...(article.responsavel ? { authorName: article.responsavel } : {}),
     sourceArticleId: articleId,
     createdAt: existing.empty ? now : (existing.docs[0].data() as BlogPost).createdAt,
     updatedAt: now,
