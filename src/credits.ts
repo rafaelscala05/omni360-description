@@ -27,6 +27,8 @@ export const CREDIT_ACTIONS = {
   contentImage: { key: 'content_image', label: 'Geração de Imagem de Capa' },
   contentPublish: { key: 'content_publish', label: 'Publicação no WordPress' },
   videoGeneration: { key: 'video_generation', label: 'Geração de Vídeo de Produto' },
+  // Agente Operacional (ações executadas em e-commerce/ERP)
+  agentAction: { key: 'agent_action', label: 'Ação do Agente Operacional' },
   // Auditoria de SEO (SE Ranking)
   seoAudit: { key: 'seo_audit', label: 'Auditoria de SEO (SE Ranking)' },
   seoKeywordResearch: { key: 'seo_keyword_research', label: 'Pesquisa de Volume de Palavras-chave' },
@@ -54,6 +56,7 @@ export const DEFAULT_CREDIT_COSTS: Record<string, number> = {
   // Domain Analysis roda hoje (overview/history/keywords/gap + expansão do catálogo).
   seo_audit: 3,
   seo_keyword_research: 1,
+  agent_action: 1,
 };
 
 export const DEFAULT_COST = 1;

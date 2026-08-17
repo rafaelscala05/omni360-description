@@ -178,6 +178,34 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      // Agente Operacional. O dono lê a conversa para renderizar o chat, mas
+      // toda escrita passa pelo servidor: as mensagens são o histórico que
+      // alimenta o modelo, e as ações carregam o status de aprovação. Deixar o
+      // cliente escrever aqui permitiria forjar um 'approved' e pular o gate.
+      match /agent_threads/{threadId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+
+        match /messages/{messageId} {
+          allow read: if isOwner(userId);
+          allow write: if false;
+        }
+      }
+      match /agent_actions/{actionId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+      // Log de diagnóstico das chamadas HTTP do agente. Só o servidor escreve.
+      match /agent_logs/{logId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+      // Trilha de auditoria do que o agente executou: imutável, inclusive para o dono.
+      match /agent_audit/{entryId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+
       match /settings/{settingId} {
         allow read: if isOwner(userId);
         allow write: if isOwner(userId);

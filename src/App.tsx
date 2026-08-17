@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'react';
-import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, FileSpreadsheet, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3, Plug, GraduationCap, Gift, Building2 } from 'lucide-react';
+import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, FileSpreadsheet, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3, Plug, GraduationCap, Gift, Building2, Zap } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import logoAlfreds from './assets/brand/logo-alfreds-produtos.png';
 import { Routes, Route, Navigate } from 'react-router-dom';
@@ -25,6 +25,7 @@ const CategoryManager = lazy(() => import('./components/categories/CategoryManag
 const CategoryImportModal = lazy(() => import('./components/modals/CategoryImportModal'));
 const ProductEditModal = lazy(() => import('./components/modals/ProductEditModal'));
 const ContentApp = lazy(() => import('./modules/content/ContentApp'));
+const OperationsApp = lazy(() => import('./modules/operations/OperationsApp'));
 import CreditPurchaseModal from './components/modals/CreditPurchaseModal';
 import { Category, Product, AttributeValue, getProductStatusFlags, ProductModalTab } from './types/models';
 import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate } from './services/productService';
@@ -176,7 +177,7 @@ export default function App() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [mainView, setMainView] = useState<'products' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company'>('products');
   // Top-level workspace: the Product agent (this App) or the Content agency module.
-  const [workspace, setWorkspace] = useState<'product' | 'content'>('product');
+  const [workspace, setWorkspace] = useState<'product' | 'content' | 'operations'>('product');
   const [exportModel, setExportModel] = useState<'standard' | 'tinyerp'>('standard');
   const [existingCategories, setExistingCategories] = useState<Category[]>([]);
   const [showCategoryImport, setShowCategoryImport] = useState(false);
@@ -223,6 +224,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [credits, setCredits] = useState<number>(0);
   const [hasContentAgent, setHasContentAgent] = useState<boolean>(false);
+  const [hasOperationsAgent, setHasOperationsAgent] = useState<boolean>(false);
   const [hasVideoModule, setHasVideoModule] = useState<boolean>(false);
   const [hasBlogModule, setHasBlogModule] = useState<boolean>(false);
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(false);
@@ -380,6 +382,7 @@ export default function App() {
             if (snap.exists()) {
               setCredits(snap.data().credits ?? 0);
               setHasContentAgent(snap.data().modules?.contentAgent === true);
+              setHasOperationsAgent(snap.data().modules?.operationsAgent === true);
               setHasVideoModule(snap.data().modules?.video === true);
               setHasBlogModule(snap.data().modules?.blog === true);
               setOnboardingCompleted(snap.data().onboarding?.completed === true);
@@ -2645,6 +2648,20 @@ Retorne APENAS um JSON válido no seguinte formato:
     </div>
   );
 
+  if (user && workspace === 'operations') {
+    return (
+      <Suspense fallback={<div className="h-screen flex items-center justify-center bg-[#f7f9fb] text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
+        <OperationsApp
+          user={user}
+          credits={credits}
+          onSwitchToProduct={() => setWorkspace('product')}
+          onBuyCredits={() => setIsCreditPurchaseOpen(true)}
+          onLogout={handleLogout}
+        />
+      </Suspense>
+    );
+  }
+
   if (user && workspace === 'content') {
     return (
       <Suspense fallback={<div className="h-screen flex items-center justify-center bg-[#f7f9fb] text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
@@ -2707,6 +2724,19 @@ Retorne APENAS um JSON válido no seguinte formato:
               title="Trocar para a Agente de Conteúdo"
             >
               <FileText className="w-4 h-4" /> Ir para Agente de Conteúdo
+            </button>
+          </div>
+        )}
+
+        {/* Agente Operacional — opera Wake/Tiny por conversa, com aprovação por ação */}
+        {hasOperationsAgent && (
+          <div className="px-3 mb-3">
+            <button
+              onClick={() => { setWorkspace('operations'); setIsSidebarOpen(false); }}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 bg-white/5 hover:bg-white/10 transition-colors"
+              title="Trocar para o Agente Operacional"
+            >
+              <Zap className="w-4 h-4" /> Ir para Agente Operacional
             </button>
           </div>
         )}

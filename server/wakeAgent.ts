@@ -48,12 +48,15 @@ export async function fbitsFetch<T = any>(
 
   if (!res.ok) {
     const msg = (json as WakeError)?.mensagem || `Wake respondeu ${res.status}`;
-    throw Object.assign(new Error(msg), { status: res.status });
+    // Wake devolve 422 com o detalhe da validação no corpo, mas a `mensagem` é
+    // genérica ("Erro ao inserir banner!"). Carregar o corpo inteiro no erro é o
+    // que permite o painel de logs mostrar QUAL campo a API recusou.
+    throw Object.assign(new Error(msg), { status: res.status, responseBody: json });
   }
   return json as T;
 }
 
-async function getUserToken(uid: string): Promise<string | null> {
+export async function getUserToken(uid: string): Promise<string | null> {
   const snap = await SECRET_REF(uid).get();
   return snap.exists ? (snap.data()?.token ?? null) : null;
 }
@@ -152,7 +155,12 @@ export interface WakePushResult {
 // Builds a valid body for PUT /produtos from the current product, echoing the
 // fields the API requires/validates and swapping in the merged attribute list.
 // Existing attributes are preserved; new values override matching names.
-function buildProductPutBody(current: any, novos: { nome: string; valor: string }[], novaNome?: string): Record<string, unknown> {
+export function buildProductPutBody(
+  current: any,
+  novos: { nome: string; valor: string }[],
+  novaNome?: string,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
   // Preserve the full existing attribute objects (tipoAtributo, isFiltro, …);
   // only override the value when a new attribute matches by name.
   const byName = new Map<string, Record<string, unknown>>();
@@ -193,6 +201,12 @@ function buildProductPutBody(current: any, novos: { nome: string; valor: string 
     listaAtacado: Array.isArray(current?.listaAtacado) ? current.listaAtacado : [],
     listaAtributos: Array.from(byName.values()),
   };
+  // Caller-supplied field overrides (used by the operational agent to edit a
+  // single field without losing the rest of the atomic PUT body).
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v !== undefined) body[k] = v;
+  }
+
   // Drop undefined keys so we never send nulls the API may reject.
   Object.keys(body).forEach((k) => { if (body[k] === undefined) delete body[k]; });
   return body;

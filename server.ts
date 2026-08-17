@@ -1,14 +1,13 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import net from "net";
 import crypto from "crypto";
-import { lookup } from "dns/promises";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 // Admin SDK init lives in a shared leaf module so server/contentAgent.ts can also
 // use adminDb/adminAuth without re-triggering this server's bootstrap.
 import { adminDb, adminAuth, adminStorage, FieldValue } from "./server/firebaseAdmin";
+import { assertSafeImageUrl } from "./server/safeUrl";
 import firebaseAppletConfig from "./firebase-applet-config.json";
 
 const STORAGE_BUCKET = firebaseAppletConfig.storageBucket;
@@ -31,6 +30,7 @@ import { registerOnboardingRoutes } from "./server/onboardingAgent";
 import { registerReferralRoutes } from "./server/referralAgent";
 import { recordEvent, registerCrmEventRoutes } from "./server/crmEvents";
 import { registerCrmAdminRoutes } from "./server/crmAdmin";
+import { registerOperationsRoutes } from "./server/agent/routes";
 import { startCrmScheduler } from "./server/crmReconcile";
 import { startAutomationScheduler } from "./server/crmAutomation";
 
@@ -48,49 +48,6 @@ async function verifyFirebaseToken(req: express.Request): Promise<import('fireba
   }
   const idToken = authHeader.split('Bearer ')[1];
   return adminAuth.verifyIdToken(idToken);
-}
-
-// Bloqueia ranges privados/loopback/link-local para evitar SSRF (ex.: acessar o
-// endpoint de metadados 169.254.169.254 ou serviços internos da VPC).
-function isPrivateIp(ip: string): boolean {
-  if (net.isIPv4(ip)) {
-    const [a, b] = ip.split('.').map(Number);
-    return (
-      a === 10 ||                          // 10.0.0.0/8
-      a === 127 ||                         // loopback
-      (a === 172 && b >= 16 && b <= 31) || // 172.16.0.0/12
-      (a === 192 && b === 168) ||          // 192.168.0.0/16
-      (a === 169 && b === 254) ||          // link-local (metadata)
-      a === 0
-    );
-  }
-  const v6 = ip.toLowerCase();
-  // ::1 (loopback), fc00::/7 (ULA), fe80::/10 (link-local) e IPv4-mapeado.
-  if (v6 === '::1' || v6.startsWith('fc') || v6.startsWith('fd') || v6.startsWith('fe8') || v6.startsWith('fe9') || v6.startsWith('fea') || v6.startsWith('feb')) {
-    return true;
-  }
-  if (v6.startsWith('::ffff:')) return isPrivateIp(v6.slice(7));
-  return false;
-}
-
-// Valida uma URL de imagem fornecida pelo cliente antes de o servidor buscá-la.
-// Só permite http/https e resolve o host para garantir que não aponta para a
-// rede interna (defesa contra SSRF). Lança em caso de URL não permitida.
-async function assertSafeImageUrl(rawUrl: string): Promise<void> {
-  let url: URL;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    throw Object.assign(new Error('URL inválida'), { status: 400 });
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw Object.assign(new Error('Protocolo não permitido'), { status: 400 });
-  }
-  // Resolve TODOS os endereços do host e rejeita se qualquer um for interno.
-  const results = await lookup(url.hostname, { all: true });
-  if (!results.length || results.some((r) => isPrivateIp(r.address))) {
-    throw Object.assign(new Error('Destino não permitido'), { status: 400 });
-  }
 }
 
 // Asaas hosts (api.asaas.com / api-sandbox.asaas.com) expose the API under /v3,
@@ -201,6 +158,9 @@ async function startServer() {
   // CRM admin: beacon de eventos do client (/api/events) e as rotas /api/admin/*.
   registerCrmEventRoutes(app, { verifyFirebaseToken });
   registerCrmAdminRoutes(app, { verifyFirebaseToken });
+
+  // Agente Operacional (chat que opera Wake/Tiny com aprovação por ação).
+  registerOperationsRoutes(app, { verifyFirebaseToken });
 
   // Blog nativo (CMS) — serving público SSR. Precisa vir antes do Vite/static
   // para que /b/{slug} e domínios customizados não caiam no SPA.
@@ -498,6 +458,18 @@ async function startServer() {
       console.error('Webhook processing error:', err);
       return res.status(200).json({ received: true });
     }
+  });
+
+  // Qualquer /api/* que não casou com uma rota acima é um 404 de API, não uma
+  // rota do SPA. Sem isso a requisição cai no fallback e o cliente recebe
+  // index.html com status 200, virando um "Unexpected token '<'" na hora do
+  // .json() — erro que não diz nada sobre a causa real (rota inexistente, quase
+  // sempre por servidor desatualizado, já que tsx não recarrega o backend).
+  app.use('/api', (req, res) => {
+    res.status(404).json({
+      message: `Rota de API não encontrada: ${req.method} /api${req.path}. `
+        + 'Se ela deveria existir, reinicie o servidor — o backend não recarrega sozinho.',
+    });
   });
 
   // Vite middleware for development
