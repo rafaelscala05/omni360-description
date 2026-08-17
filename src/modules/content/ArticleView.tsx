@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, Check, RefreshCw, Globe, ExternalLink, Play, Pencil, Eye, Code, Wand2, Image as ImageIcon, Trash2, User } from 'lucide-react';
+import { X, Check, RefreshCw, Globe, ExternalLink, EyeOff, Play, Pencil, Eye, Code, Wand2, Image as ImageIcon, Trash2, User } from 'lucide-react';
 import type { CalendarArticle, ArticleSize } from './types';
 import {
   updateArticle,
   deleteArticle,
   publishArticle,
+  unpublishArticle,
   produceArticle,
   listProductsForLinking,
   regenerateArticleImage,
@@ -369,6 +370,15 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
                 {busy === 'publish' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />} {blogEnabled ? 'Publicar' : 'Publicar no WordPress'}
               </button>
             </>
+          )}
+          {article.status === 'publicado' && (
+            <button
+              onClick={() => run('unpublish', () => unpublishArticle(projectId, article.id))}
+              disabled={!!busy}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-60 rounded-lg"
+            >
+              {busy === 'unpublish' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <EyeOff className="w-4 h-4" />} Despublicar
+            </button>
           )}
         </div>
       </div>

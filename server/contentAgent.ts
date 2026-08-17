@@ -32,6 +32,7 @@ import { markdownToHtml } from '../src/modules/content/markdown';
 import * as seRanking from './seRankingClient';
 import { getLatestFinishedAudit, auditSummaryText, omitUndefined } from './seoAgent';
 import { loadStoreContext, extractSeedKeywords, discoverKeywordPool } from './keywordDiscovery';
+import { logPublishCall } from './contentTelemetry';
 
 const TEXT_MODEL = 'gemini-2.5-flash';
 const IMAGE_MODEL = 'gemini-2.5-flash-image';
@@ -848,37 +849,129 @@ async function publishToWordpress(uid: string, projectId: string, articleId: str
     }
   }
 
-  const postResp = await fetch(`${base}/wp-json/wp/v2/posts`, {
+  const postBody = {
+    title: article.titulo,
+    content: markdownToHtml(article.articleFinal),
+    status: 'publish',
+    slug: article.slug || undefined,
+    excerpt: article.metaDescription || undefined,
+    featured_media: featuredMedia,
+  };
+  const postUrl = `${base}/wp-json/wp/v2/posts`;
+  const inicio = Date.now();
+  const postResp = await fetch(postUrl, {
     method: 'POST',
     headers: { Authorization: auth, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      title: article.titulo,
-      content: markdownToHtml(article.articleFinal),
-      status: 'publish',
-      slug: article.slug || undefined,
-      excerpt: article.metaDescription || undefined,
-      featured_media: featuredMedia,
-    }),
+    body: JSON.stringify(postBody),
+  });
+  const postBodyText = await postResp.text();
+  let postJson: unknown = postBodyText;
+  try { postJson = JSON.parse(postBodyText); } catch { /* corpo não é JSON — mantém texto cru */ }
+  await logPublishCall(uid, projectId, {
+    destino: 'wordpress', operacao: 'posts', alvo: postUrl, articleId, articleTitulo: article.titulo,
+    requisicao: postBody, resposta: postJson, status: postResp.status, ok: postResp.ok,
+    erro: postResp.ok ? undefined : postBodyText, ms: Date.now() - inicio,
   });
   if (!postResp.ok) {
-    const body = await postResp.text();
-    throw Object.assign(new Error(`Falha ao publicar no WordPress: ${postResp.status} — ${body}`), { status: 502 });
+    throw Object.assign(new Error(`Falha ao publicar no WordPress: ${postResp.status} — ${postBodyText}`), { status: 502 });
   }
-  const post = (await postResp.json()) as { link: string };
+  const post = postJson as { id: number; link: string };
 
   await debitCreditsAdmin(uid, CREDIT_ACTIONS.contentPublish, { productName: article.titulo });
   await artRef.update({
     status: 'publicado',
     urlPublicado: post.link,
     dataPublicacao: new Date().toISOString(),
+    publishDestination: 'wordpress',
+    wordpressPostId: post.id,
     updatedAt: new Date().toISOString(),
   });
   return post.link;
 }
 
+async function unpublishFromWordpress(uid: string, projectId: string, articleId: string, wordpressPostId: number, articleTitulo: string): Promise<void> {
+  const project = await loadProject(uid, projectId);
+  const { wordpressUrl, wordpressUser } = project.config;
+  if (!wordpressUrl || !wordpressUser) throw Object.assign(new Error('Credenciais do WordPress não configuradas'), { status: 400 });
+  const secretSnap = await projectRef(uid, projectId).collection('secrets').doc('wordpress').get();
+  const appPassword = secretSnap.exists ? (secretSnap.data() as { appPassword?: string }).appPassword : undefined;
+  if (!appPassword) throw Object.assign(new Error('Application Password do WordPress ausente'), { status: 400 });
+
+  const base = wordpressUrl.replace(/\/+$/, '');
+  const auth = 'Basic ' + Buffer.from(`${wordpressUser}:${appPassword}`).toString('base64');
+  const url = `${base}/wp-json/wp/v2/posts/${wordpressPostId}`;
+  const inicio = Date.now();
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'draft' }),
+  });
+  const bodyText = await resp.text();
+  await logPublishCall(uid, projectId, {
+    destino: 'wordpress', operacao: 'posts.update', alvo: url, articleId, articleTitulo,
+    requisicao: { status: 'draft' }, resposta: bodyText, status: resp.status, ok: resp.ok,
+    erro: resp.ok ? undefined : bodyText, ms: Date.now() - inicio,
+  });
+  if (!resp.ok) {
+    throw Object.assign(new Error(`Falha ao despublicar do WordPress: ${resp.status} — ${bodyText}`), { status: 502 });
+  }
+}
+
+/** _id/_ref determinísticos: nada de e-mail no e-mail, evita duplicar categoria a cada publish. */
+function sanityCategoryDocId(nome: string): string {
+  return `category-${slugify(nome)}`;
+}
+
+async function sanityMutate(
+  uid: string,
+  projectId: string,
+  articleId: string,
+  articleTitulo: string,
+  sanityProjectId: string,
+  dataset: string,
+  apiToken: string,
+  operacao: string,
+  mutations: unknown[],
+): Promise<unknown> {
+  const apiUrl = `https://${sanityProjectId}.api.sanity.io/v2021-10-21/data/mutate/${dataset}`;
+  const inicio = Date.now();
+  let resp: Response;
+  try {
+    resp = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mutations }),
+    });
+  } catch (e) {
+    await logPublishCall(uid, projectId, {
+      destino: 'sanity', operacao, alvo: apiUrl, articleId, articleTitulo,
+      requisicao: { mutations }, status: null, ok: false,
+      erro: e instanceof Error ? e.message : String(e), ms: Date.now() - inicio,
+    });
+    throw e;
+  }
+  const bodyText = await resp.text();
+  let bodyJson: unknown = bodyText;
+  try { bodyJson = JSON.parse(bodyText); } catch { /* corpo não é JSON — mantém texto cru */ }
+
+  await logPublishCall(uid, projectId, {
+    destino: 'sanity', operacao, alvo: apiUrl, articleId, articleTitulo,
+    requisicao: { mutations }, resposta: bodyJson, status: resp.status, ok: resp.ok,
+    erro: resp.ok ? undefined : bodyText, ms: Date.now() - inicio,
+  });
+
+  if (!resp.ok) {
+    throw Object.assign(new Error(`Falha ao falar com o Sanity: ${resp.status} — ${bodyText}`), { status: 502 });
+  }
+  return bodyJson;
+}
+
 async function publishToSanity(uid: string, projectId: string, articleId: string): Promise<string> {
   const project = await loadProject(uid, projectId);
-  const { sanityProjectId, sanityDataset, sanityBlogUrl } = project.config;
+  const {
+    sanityProjectId, sanityDataset, sanityBlogUrl,
+    sanityDocType, sanityCategoryField, sanityCategoryType, sanityCategoryNameField,
+  } = project.config;
   if (!sanityProjectId) {
     throw Object.assign(new Error('Project ID do Sanity não configurado'), { status: 400 });
   }
@@ -896,35 +989,54 @@ async function publishToSanity(uid: string, projectId: string, articleId: string
 
   const slug = article.slug || article.titulo.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const docId = `article-${articleId}`;
+  const docType = (sanityDocType || 'post').trim();
 
-  const mutations = [
-    {
+  // O schema do Sanity é do cliente, não nosso — o nome do tipo/campo de
+  // categoria é configurável (ver ContentProjectConfig). Sem sanityCategoryField
+  // configurado, publica sem categoria (comportamento anterior).
+  const categoryField = sanityCategoryField?.trim();
+  const mutations: unknown[] = [];
+  if (categoryField && article.clusterId) {
+    const clusterSnap = await projectRef(uid, projectId).collection('clusters').doc(article.clusterId).get();
+    const clusterNome = clusterSnap.exists ? (clusterSnap.data() as ContentCluster).nome : undefined;
+    if (clusterNome) {
+      const categoryType = (sanityCategoryType || 'category').trim();
+      const nameField = (sanityCategoryNameField || 'title').trim();
+      const categoryDocId = sanityCategoryDocId(clusterNome);
+      // createIfNotExists: garante o doc de categoria sem sobrescrever edições
+      // que o cliente já tenha feito nele direto no Studio.
+      mutations.push({
+        createIfNotExists: { _id: categoryDocId, _type: categoryType, [nameField]: clusterNome },
+      });
+      mutations.push({
+        createOrReplace: {
+          _id: docId,
+          _type: docType,
+          title: article.titulo,
+          slug: { _type: 'slug', current: slug },
+          body: markdownToPortableText(article.articleFinal),
+          excerpt: article.metaDescription || undefined,
+          publishedAt: new Date().toISOString(),
+          [categoryField]: [{ _type: 'reference', _key: crypto.randomUUID(), _ref: categoryDocId }],
+        },
+      });
+    }
+  }
+  if (!mutations.length) {
+    mutations.push({
       createOrReplace: {
         _id: docId,
-        _type: 'post',
+        _type: docType,
         title: article.titulo,
         slug: { _type: 'slug', current: slug },
         body: markdownToPortableText(article.articleFinal),
         excerpt: article.metaDescription || undefined,
         publishedAt: new Date().toISOString(),
       },
-    },
-  ];
-
-  const apiUrl = `https://${sanityProjectId}.api.sanity.io/v2021-10-21/data/mutate/${dataset}`;
-  const mutateResp = await fetch(apiUrl, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ mutations }),
-  });
-
-  if (!mutateResp.ok) {
-    const body = await mutateResp.text();
-    throw Object.assign(new Error(`Falha ao publicar no Sanity: ${mutateResp.status} — ${body}`), { status: 502 });
+    });
   }
+
+  await sanityMutate(uid, projectId, articleId, article.titulo, sanityProjectId, dataset, apiToken, 'mutate', mutations);
 
   // O Sanity é headless: não publica em uma URL própria. Só é possível montar
   // um link para o artigo publicado se o cliente informou onde o frontend
@@ -940,10 +1052,28 @@ async function publishToSanity(uid: string, projectId: string, articleId: string
     status: 'publicado',
     urlPublicado: documentUrl,
     dataPublicacao: new Date().toISOString(),
+    publishDestination: 'sanity',
     updatedAt: new Date().toISOString(),
   });
 
   return documentUrl;
+}
+
+async function unpublishFromSanity(uid: string, projectId: string, articleId: string, articleTitulo: string): Promise<void> {
+  const project = await loadProject(uid, projectId);
+  const { sanityProjectId, sanityDataset } = project.config;
+  if (!sanityProjectId) throw Object.assign(new Error('Project ID do Sanity não configurado'), { status: 400 });
+  const dataset = sanityDataset || 'production';
+
+  const secretSnap = await projectRef(uid, projectId).collection('secrets').doc('sanity').get();
+  const apiToken = secretSnap.exists ? (secretSnap.data() as { apiToken?: string }).apiToken : undefined;
+  if (!apiToken) throw Object.assign(new Error('API Token do Sanity ausente'), { status: 400 });
+
+  const docId = `article-${articleId}`;
+  // Não apaga o doc de categoria (pode estar em uso por outros artigos) — só o post.
+  await sanityMutate(uid, projectId, articleId, articleTitulo, sanityProjectId, dataset, apiToken, 'mutate.delete', [
+    { delete: { id: docId } },
+  ]);
 }
 
 // Congela os produtos vinculados ao artigo num snapshot leve (mesmo espírito
@@ -1048,10 +1178,56 @@ async function publishToBlog(uid: string, projectId: string, articleId: string):
     status: 'publicado',
     urlPublicado: url,
     dataPublicacao: now,
+    publishDestination: 'blog',
     updatedAt: now,
   });
 
   return url;
+}
+
+async function unpublishFromBlog(uid: string, projectId: string, articleId: string): Promise<void> {
+  const postsCol = projectRef(uid, projectId).collection('blogPosts');
+  const existing = await postsCol.where('sourceArticleId', '==', articleId).limit(1).get();
+  if (existing.empty) return; // já não está publicado no blog nativo — nada a fazer
+  await existing.docs[0].ref.update({ status: 'draft', updatedAt: new Date().toISOString() });
+}
+
+// Fase 5 — despublicação: some do destino externo/blog e o artigo volta a
+// 'aprovado' (não 'agendado' — o conteúdo final continua pronto, só não está
+// mais no ar). O destino é lido de publishDestination; artigos publicados
+// antes dessa feature não têm o campo, então cai na mesma prioridade do
+// publish (sanity > wordpress > blog nativo) usada quando nenhum destino é informado.
+async function unpublishArticle(uid: string, projectId: string, articleId: string): Promise<void> {
+  const artRef = projectRef(uid, projectId).collection('calendar').doc(articleId);
+  const snap = await artRef.get();
+  if (!snap.exists) throw Object.assign(new Error('Artigo não encontrado'), { status: 404 });
+  const article = { id: snap.id, ...(snap.data() as Omit<CalendarArticle, 'id'>) };
+  if (article.status !== 'publicado') {
+    throw Object.assign(new Error('Artigo não está publicado'), { status: 400 });
+  }
+
+  const project = await loadProject(uid, projectId);
+  const destino = article.publishDestination
+    ?? (project.config.sanityProjectId ? 'sanity' : project.config.wordpressUrl ? 'wordpress' : 'blog');
+
+  if (destino === 'sanity') {
+    await unpublishFromSanity(uid, projectId, articleId, article.titulo);
+  } else if (destino === 'wordpress') {
+    if (!article.wordpressPostId) {
+      throw Object.assign(new Error('Artigo publicado no WordPress antes desta função existir — sem o ID do post não é possível despublicar automaticamente. Remova manualmente no WordPress.'), { status: 400 });
+    }
+    await unpublishFromWordpress(uid, projectId, articleId, article.wordpressPostId, article.titulo);
+  } else {
+    await unpublishFromBlog(uid, projectId, articleId);
+  }
+
+  await artRef.update({
+    status: 'aprovado',
+    urlPublicado: null,
+    dataPublicacao: null,
+    publishDestination: null,
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 // Approved/published articles the Product agent can reuse in descriptions
@@ -1228,6 +1404,32 @@ export function registerContentRoutes(app: express.Application, deps: ContentDep
         url = await publishToWordpress(decoded.uid, req.params.projectId, req.params.articleId);
       }
       res.json({ url });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  app.post('/api/content/projects/:projectId/articles/:articleId/unpublish', async (req, res) => {
+    try {
+      const decoded = await verifyFirebaseToken(req);
+      await unpublishArticle(decoded.uid, req.params.projectId, req.params.articleId);
+      res.json({ ok: true });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // Diagnóstico: as últimas chamadas HTTP que a publicação fez para Sanity/WordPress,
+  // com requisição, resposta e status. Mesmo espírito de GET /api/agent/logs.
+  app.get('/api/content/projects/:projectId/publish-logs', async (req, res) => {
+    try {
+      const decoded = await verifyFirebaseToken(req);
+      await loadProject(decoded.uid, req.params.projectId); // valida posse do projeto
+      const limit = Math.min(Number(req.query.limit ?? 50), 200);
+      const snap = await projectRef(decoded.uid, req.params.projectId)
+        .collection('publishLogs').orderBy('at', 'desc').limit(limit).get();
+      const logs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      res.json({ logs });
     } catch (err) {
       sendError(res, err);
     }

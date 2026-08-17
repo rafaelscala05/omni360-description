@@ -105,6 +105,31 @@ export const publishArticle = (
     destination ? { destination } : undefined,
   );
 
+export const unpublishArticle = (projectId: string, articleId: string) =>
+  postJson<{ ok: true }>(`/api/content/projects/${projectId}/articles/${articleId}/unpublish`);
+
+export interface PublishLog {
+  id: string;
+  destino: 'sanity' | 'wordpress' | 'blog';
+  operacao: string;
+  alvo: string;
+  articleId: string;
+  articleTitulo: string;
+  requisicao?: unknown;
+  resposta?: unknown;
+  status: number | null;
+  ok: boolean;
+  erro?: string | null;
+  ms: number;
+  at: string;
+}
+
+export const fetchPublishLogs = (projectId: string, limit = 50) =>
+  callJson<{ logs: PublishLog[] }>(
+    `/api/content/projects/${projectId}/publish-logs?limit=${limit}`,
+    'GET',
+  ).then((r) => r.logs);
+
 export type RegenerateImagePayload =
   | { mode: 'improve'; improvementPrompt: string }
   | { mode: 'fromProduct'; baseProductImageUrl: string };

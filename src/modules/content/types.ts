@@ -30,6 +30,15 @@ export interface ContentProjectConfig {
   // headless — não publica em URL própria). Usada para montar o link "Ver
   // publicado" como {sanityBlogUrl}/{slug}.
   sanityBlogUrl?: string;
+  // O schema do Sanity é definido pelo cliente (cada projeto pode nomear os
+  // tipos/campos diferente), então esses nomes são configuráveis em vez de
+  // fixos no código. Vazios/ausentes caem nos defaults usuais do starter do
+  // Sanity: doc de artigo = 'post', campo de categorias = 'categories', doc
+  // de categoria = 'category', campo do nome da categoria = 'title'.
+  sanityDocType?: string;
+  sanityCategoryField?: string;
+  sanityCategoryType?: string;
+  sanityCategoryNameField?: string;
   estiloImagem?: 'Realista' | 'Ilustracao' | '3D' | 'Cartoon';
   // URL do site do cliente, capturada no passo "Analisar site com IA" do
   // onboarding. Reaproveitada para disparar a Auditoria de SEO (SE Ranking).
@@ -218,6 +227,11 @@ export interface CalendarArticle {
   // Publication results (Fase 5).
   urlPublicado?: string;
   dataPublicacao?: string;
+  // Onde foi publicado por último — usado para saber o que desfazer ao despublicar.
+  publishDestination?: 'blog' | 'wordpress' | 'sanity';
+  // ID do post no WordPress (necessário para despublicar via REST API; o Sanity
+  // e o blog nativo derivam o próprio ID a partir do articleId).
+  wordpressPostId?: number;
   lastError?: string;
   createdAt: string;
   updatedAt: string;
