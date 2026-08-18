@@ -174,6 +174,25 @@ export function trackTemplateDownloaded() {
   crmTrack('template_downloaded');
 }
 
+// Extra: Onboarding de primeiro produto via URL
+export function trackProductUrlImportStarted() {
+  const a = getAnalyticsInstance();
+  if (a) logEvent(a, 'product_url_import_started');
+  crmTrack('product_url_import_started');
+}
+
+export function trackProductUrlImportResult(params: { source: 'structured' | 'hybrid' | 'ai' | 'failed' | 'manual' }) {
+  const a = getAnalyticsInstance();
+  if (a) logEvent(a, 'product_url_import_result', params);
+  crmTrack('product_url_import_result', params);
+}
+
+export function trackOnboardingStepCompleted(params: { step: 'description' | 'attributes' | 'image'; skipped: boolean }) {
+  const a = getAnalyticsInstance();
+  if (a) logEvent(a, 'onboarding_step_completed', params);
+  crmTrack('onboarding_step_completed', params);
+}
+
 // Marketing (site público, fora do app autenticado)
 
 // Clique em CTA de marketing (Hero, FinalCTA, nav) — sinal de topo/meio de

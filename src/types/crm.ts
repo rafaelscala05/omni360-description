@@ -207,6 +207,9 @@ export const CLIENT_EVENT_NAMES = [
   'video_generated',
   'product_enriched',
   'category_hierarchy_generated',
+  'product_url_import_started',
+  'product_url_import_result',
+  'onboarding_step_completed',
 ] as const;
 
 // --- Automação de WhatsApp (spec 2, revisado no spec 3) ---
