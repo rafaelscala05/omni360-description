@@ -260,12 +260,17 @@ contexto no topo.
     `{ imageBase64, filename }`, recebe `{ url }`), ou colar uma URL de
     imagem externa. O botão "Criar produto"/avançar só habilita com uma
     imagem definida (upload concluído ou URL preenchida).
-- **`enrich-description` / `enrich-attributes`** — copy explicando a ação +
-  custo em créditos visível ("Isso usa 1 crédito. Você tem 9."), botão
-  "Gerar" que chama, via prop, exatamente o handler que `App.tsx` já usa
-  hoje (`startGenerateSingle`-equivalente / handler de atributos) — o modal
-  não duplica a lógica de `ensureCredits`/`consumeCredit`/tracking, só
-  invoca. Botão "Pular" sempre disponível.
+- **`enrich-description`** — copy explicando a ação + custo em créditos
+  visível ("Isso usa 1 crédito. Você tem 9."), botão "Gerar" que chama, via
+  prop, exatamente o handler que `App.tsx` já usa hoje
+  (`startGenerateSingle`) — o modal não duplica a lógica de
+  `ensureCredits`/`consumeCredit`/tracking, só invoca. Botão "Pular" sempre
+  disponível.
+- **`enrich-attributes`** — mesma mecânica, mas essa etapa é **grátis**: a
+  sugestão de atributos por IA (`generateProductAttributes`/
+  `generateAttributesFromImage`, hoje usada em `ProductEditModal`'s
+  "Analisar") não passa por `ensureCredits`/`consumeCredit` no código atual
+  — copy reflete isso ("Grátis"), sem menção a custo.
 - **`enrich-image`** — em vez de reimplementar geração ambientada, abre o
   `ImageSearchModal` já existente para o produto recém-criado (reuso
   direto, é o componente que já faz `runGenerateAmbient`). Ao fechar,
