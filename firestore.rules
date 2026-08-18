@@ -46,6 +46,8 @@ service cloud.firestore {
       let data = request.resource.data;
       return (!('email' in data) || data.email is string || data.email == null) &&
              (!('displayName' in data) || data.displayName is string || data.displayName == null) &&
+             (!('phone' in data) || data.phone is string || data.phone == null) &&
+             (!('productOnboarding' in data) || data.productOnboarding is map) &&
              (!('credits' in data) || data.credits is number) &&
              (!('lastSync' in data) || data.lastSync is string);
     }
