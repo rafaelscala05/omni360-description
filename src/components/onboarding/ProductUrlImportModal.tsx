@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Link as LinkIcon, PenLine, Camera, Tag, FolderTree } from 'lucide-react';
+import { X, Link as LinkIcon, PenLine, Camera, Tag, FolderTree, FileText, Tags, Image as ImageIcon, PartyPopper } from 'lucide-react';
 import type { Category, Product } from '../../types/models';
 import { scrapeProductUrl, type ScrapeProductUrlResult } from '../../services/productImportService';
 import { uploadProductImage } from '../../services/uploadService';
-import { trackProductUrlImportStarted, trackProductUrlImportResult } from '../../analytics';
+import { trackProductUrlImportStarted, trackProductUrlImportResult, trackOnboardingStepCompleted } from '../../analytics';
 import ProductFormFields, { isProductFormValid, type ProductFormValue } from './ProductFormFields';
+import EnrichmentStepCard from './EnrichmentStepCard';
 
 export type WizardStep =
   | 'intro' | 'loading' | 'review' | 'manual'
@@ -58,6 +59,8 @@ const ProductUrlImportModal: React.FC<ProductUrlImportModalProps> = ({
   const [manualReason, setManualReason] = useState<'chosen' | 'fallback' | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isRunningStep, setIsRunningStep] = useState(false);
+  const [stepError, setStepError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -110,6 +113,41 @@ const ProductUrlImportModal: React.FC<ProductUrlImportModalProps> = ({
     setProduct(created);
     onProductCreated(created);
     setStep('enrich-description');
+  };
+
+  const handleGenerateDescription = async () => {
+    if (!product) return;
+    setIsRunningStep(true);
+    setStepError(null);
+    try {
+      await onGenerateDescription(product._id);
+      trackOnboardingStepCompleted({ step: 'description', skipped: false });
+      setStep('enrich-attributes');
+    } catch (e) {
+      setStepError(e instanceof Error ? e.message : 'Erro ao gerar descrição.');
+    } finally {
+      setIsRunningStep(false);
+    }
+  };
+
+  const handleSuggestAttributes = async () => {
+    if (!product) return;
+    setIsRunningStep(true);
+    setStepError(null);
+    try {
+      await onSuggestAttributes(product._id);
+      trackOnboardingStepCompleted({ step: 'attributes', skipped: false });
+      setStep('enrich-image');
+    } catch (e) {
+      setStepError(e instanceof Error ? e.message : 'Erro ao sugerir atributos.');
+    } finally {
+      setIsRunningStep(false);
+    }
+  };
+
+  const skipStep = (step: 'description' | 'attributes' | 'image', next: WizardStep) => {
+    trackOnboardingStepCompleted({ step, skipped: true });
+    setStep(next);
   };
 
   const renderIntro = () => (
@@ -211,7 +249,63 @@ const ProductUrlImportModal: React.FC<ProductUrlImportModalProps> = ({
               {step === 'loading' && renderLoading()}
               {step === 'review' && renderForm(false)}
               {step === 'manual' && renderForm(true)}
-              {/* enrich-description / enrich-attributes / enrich-image / done: Task 14 */}
+              {step === 'enrich-description' && (
+                <EnrichmentStepCard
+                  icon={FileText}
+                  title="Gerar descrição com IA"
+                  description="Criamos uma descrição de venda a partir do título, categoria e imagem do produto."
+                  costLabel={`${descriptionCreditCost} crédito${descriptionCreditCost === 1 ? '' : 's'} · você tem ${currentCredits}`}
+                  isRunning={isRunningStep}
+                  isDone={false}
+                  error={stepError}
+                  onRun={handleGenerateDescription}
+                  onSkip={() => skipStep('description', 'enrich-attributes')}
+                />
+              )}
+              {step === 'enrich-attributes' && (
+                <EnrichmentStepCard
+                  icon={Tags}
+                  title="Sugerir atributos"
+                  description="A IA analisa o texto e a imagem do produto e sugere atributos da categoria."
+                  costLabel="Grátis"
+                  isRunning={isRunningStep}
+                  isDone={false}
+                  error={stepError}
+                  onRun={handleSuggestAttributes}
+                  onSkip={() => skipStep('attributes', 'enrich-image')}
+                />
+              )}
+              {step === 'enrich-image' && (
+                <EnrichmentStepCard
+                  icon={ImageIcon}
+                  title="Gerar imagens ambientadas"
+                  description="Coloque seu produto em cenários realistas gerados por IA."
+                  costLabel="1 crédito por imagem"
+                  isRunning={false}
+                  isDone={false}
+                  error={null}
+                  onRun={() => product && onOpenImageSearch(product._id)}
+                  onSkip={() => skipStep('image', 'done')}
+                />
+              )}
+              {step === 'done' && (
+                <div className="text-center py-6">
+                  <div className="w-14 h-14 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-4">
+                    <PartyPopper className="w-7 h-7 text-emerald-500" />
+                  </div>
+                  <h3 className="font-display text-lg font-bold text-slate-900">Seu primeiro produto está pronto!</h3>
+                  <p className="text-sm text-slate-500 mt-1">Você já pode continuar editando ou importar mais produtos.</p>
+                  <div className="flex items-center justify-center gap-3 mt-6">
+                    <button
+                      type="button"
+                      onClick={onFinish}
+                      className="px-5 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] rounded-xl shadow-sm transition-colors"
+                    >
+                      Ver produto
+                    </button>
+                  </div>
+                </div>
+              )}
             </motion.div>
           </AnimatePresence>
         </div>
