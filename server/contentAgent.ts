@@ -8,14 +8,13 @@
 // API/AI Studio key; persistence + credit debit use the Admin SDK.
 
 import type express from 'express';
-import net from 'net';
 import crypto from 'crypto';
-import { lookup } from 'dns/promises';
 import * as cheerio from 'cheerio';
 import { GoogleGenAI } from '@google/genai';
 import { adminDb, adminStorage } from './firebaseAdmin';
 import { CREDIT_ACTIONS, resolveCreditCost, type CreditAction } from '../src/credits';
 import firebaseAppletConfig from '../firebase-applet-config.json';
+import { assertSafeUrl, fetchHtmlSafely } from './safeUrl';
 
 const STORAGE_BUCKET = firebaseAppletConfig.storageBucket;
 import type {
@@ -270,35 +269,6 @@ function systemFor(project: ContentProject): string {
 // Onboarding aid — analyze a website with AI and pre-fill the config
 // ---------------------------------------------------------------------------
 
-// SSRF guard: block private/loopback/link-local targets (mirrors server.ts).
-function isPrivateIp(ip: string): boolean {
-  if (net.isIPv4(ip)) {
-    const [a, b] = ip.split('.').map(Number);
-    return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || a === 0;
-  }
-  const v6 = ip.toLowerCase();
-  if (v6 === '::1' || v6.startsWith('fc') || v6.startsWith('fd') || v6.startsWith('fe8') || v6.startsWith('fe9') || v6.startsWith('fea') || v6.startsWith('feb')) return true;
-  if (v6.startsWith('::ffff:')) return isPrivateIp(v6.slice(7));
-  return false;
-}
-
-async function assertSafeUrl(rawUrl: string): Promise<URL> {
-  let url: URL;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    throw Object.assign(new Error('URL inválida'), { status: 400 });
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw Object.assign(new Error('Protocolo não permitido'), { status: 400 });
-  }
-  const results = await lookup(url.hostname, { all: true });
-  if (!results.length || results.some((r) => isPrivateIp(r.address))) {
-    throw Object.assign(new Error('Destino não permitido'), { status: 400 });
-  }
-  return url;
-}
-
 export interface ScannedConfig {
   nomeEmpresa?: string;
   descricao?: string;
@@ -313,24 +283,7 @@ export interface ScannedConfig {
 // company profile so the onboarding form can be pre-filled.
 async function scanWebsite(rawUrl: string): Promise<ScannedConfig> {
   const url = await assertSafeUrl(rawUrl);
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
-  let html: string;
-  try {
-    const resp = await fetch(url.toString(), {
-      redirect: 'follow',
-      signal: controller.signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AlfredBot/1.0)' },
-    });
-    if (!resp.ok) throw Object.assign(new Error(`Não foi possível acessar o site (${resp.status})`), { status: 502 });
-    html = await resp.text();
-  } catch (e) {
-    if ((e as Error).name === 'AbortError') throw Object.assign(new Error('Tempo esgotado ao acessar o site'), { status: 504 });
-    throw e;
-  } finally {
-    clearTimeout(timer);
-  }
+  const html = await fetchHtmlSafely(rawUrl);
 
   // Extract a compact, readable digest of the page.
   const $ = cheerio.load(html);
