@@ -52,6 +52,18 @@ precisa de eventos próprios para diferenciar da planilha.
   propósito) e é infraestrutura nova sem necessidade.
 - **Fallback:** scraping fraco ou site bloqueado nunca é um dead-end de
   erro — cai num formulário manual mínimo dentro do mesmo modal.
+- **Entrada manual como escolha, não só fallback:** o passo inicial mostra,
+  além do campo de URL, um botão "Quero inserir manualmente meu produto" —
+  quem já sabe o que quer cadastrar não precisa passar pelo scraping.
+- **Explicação simples do funcionamento:** o passo inicial traz um resumo
+  de 3 itens ("Anexe Imagem, Título e Categoria — nós fazemos o resto"),
+  deixando explícito o que o sistema espera do usuário e o que ele ganha em
+  troca.
+- **Imagem, Título e Categoria passam a ser obrigatórios** para criar o
+  produto (via scraping ou manual) — sem os três, o produto não avança pro
+  wizard de enriquecimento. Antes só o nome era obrigatório; a imagem em
+  especial é essencial porque a geração de descrição e a imagem ambientada
+  dependem dela.
 - **Créditos:** o scrape em si é grátis; cada etapa de enriquecimento usa o
   fluxo de crédito já existente (`ensureCredits`/`consumeCredit`), com o
   custo mostrado antes de cada ação.
@@ -59,23 +71,28 @@ precisa de eventos próprios para diferenciar da planilha.
 ## 4. Arquitetura
 
 ```
-Usuário cola URL
+Passo inicial: "Anexe Imagem, Título e Categoria — nós fazemos o resto"
       │
-      ▼
-POST /api/product-import/scrape  (server/productImport.ts, novo)
-      │  1. assertSafeUrl(url)          — server/safeUrl.ts, estendido
-      │  2. fetchHtmlSafely(url)        — fetch com timeout/limite/redirect:'error'
-      │  3. parse determinístico         — cheerio: JSON-LD Product, senão OG tags
-      │  4. lacunas → Gemini (server)    — mesmo padrão de generateText/generateJson
-      │                                     que contentAgent.ts já usa
-      ▼
-{ product: Partial<ProductFields>, source: 'structured'|'ai'|'hybrid', warnings? }
-      │
-      ▼
-ProductUrlImportModal (novo, src/components/onboarding/)
-      │  step "review" (dados pré-preenchidos, editáveis) OU
-      │  step "manual-fallback" (scrape falhou/insuficiente)
-      ▼
+      ├── Usuário cola URL ──────────────────┐
+      │                                       ▼
+      │                     POST /api/product-import/scrape  (server/productImport.ts, novo)
+      │                           1. assertSafeUrl(url)        — server/safeUrl.ts, estendido
+      │                           2. fetchHtmlSafely(url)      — fetch com timeout/limite/redirect:'error'
+      │                           3. parse determinístico       — cheerio: JSON-LD Product, senão OG tags
+      │                           4. lacunas → Gemini (server)  — mesmo padrão de generateText/generateJson
+      │                                                            que contentAgent.ts já usa
+      │                                       │
+      │                                       ▼
+      │                     { product: Partial<ProductFields>, source: 'structured'|'ai'|'hybrid', warnings? }
+      │                                       │
+      └── "Quero inserir manualmente" ────────┤
+                                               ▼
+                          ProductUrlImportModal (novo, src/components/onboarding/)
+                                step "review" (scrape) OU "manual" (direto ou fallback)
+                                — Título, Categoria e Imagem obrigatórios em ambos
+                                  (imagem via upload de arquivo — /api/upload já existe —
+                                   ou colar URL externa)
+                                               ▼
 onProductCreated(product) → App.tsx injeta em `products` state
       │  (mesmo formato que handleFileUpload já produz; persistência
       │   continua sendo saveToCloud, sem escrita nova no Firestore)
@@ -178,7 +195,7 @@ export function registerProductImportRoutes(
      ```
      Nunca lança erro para "scrape pobre" — sempre 200 com o que foi
      possível extrair; o cliente decide se é suficiente para pular pro
-     `review` ou cair no `manual-fallback`.
+     `review` ou cair no `manual`.
 
 Registrado em `server.ts` junto aos demais `registerXRoutes(app, { verifyFirebaseToken })`, antes do catch-all `/api/*` 404.
 
@@ -207,18 +224,42 @@ header com gradiente escuro, `STEPS` como barra de progresso segmentada,
 `motion/react` `AnimatePresence`/`motion.div` para transição entre passos.
 
 Estados (`step`):
-`'url' → 'loading' → ('review' | 'manual-fallback') → 'enrich-description' → 'enrich-attributes' → 'enrich-image' → 'done'`
+`'intro' → 'loading' → ('review' | 'manual') → 'enrich-description' → 'enrich-attributes' → 'enrich-image' → 'done'`
 
-- **`url`** — input único: "Cole o link do produto que você quer testar" +
-  botão "Analisar". Copy explica em uma linha o que vai acontecer.
+`manual` é alcançado por dois caminhos: diretamente do `intro` (usuário
+escolheu inserir manualmente) ou como fallback do `review` (scrape falhou
+ou insuficiente) — é a mesma tela nos dois casos, só muda a mensagem de
+contexto no topo.
+
+- **`intro`** — passo de entrada, com duas partes:
+  1. Explicação simples do funcionamento, sempre visível, 3 itens com
+     ícone: "📷 Imagem (obrigatória) · 🏷️ Título · 📁 Categoria — o resto
+     (descrição, atributos, imagens ambientadas) a IA faz por você."
+  2. Duas formas de começar: campo de URL + botão "Analisar produto", **ou**
+     um botão secundário "Quero inserir manualmente meu produto" que vai
+     direto pro passo `manual` com os campos em branco.
 - **`loading`** — spinner com copy tipo "Lendo a página do seu produto...".
 - **`review`** (quando `source !== 'failed'` e há nome extraído) — campos
-  pré-preenchidos e editáveis: nome, preço, thumbnail da imagem, descrição
-  curta. Botão "Criar produto".
-- **`manual-fallback`** (quando falhou ou nome ausente) — mesmo shell,
-  formulário mínimo: nome (obrigatório), URL de imagem, preço. Mensagem
-  amigável acima: "Não conseguimos ler essa página automaticamente — sem
-  problema, preencha à mão." Nunca uma tela de erro sem saída.
+  pré-preenchidos e editáveis: **Título*** , **Categoria*** (select — reusa
+  o padrão de `ProductEditModal.tsx:668-674` contra `existingCategories`),
+  **Imagem*** (thumbnail extraída, com opção de trocar — ver abaixo),
+  preço e descrição curta (opcionais, vieram do scrape). Botão "Criar
+  produto" fica desabilitado até os 3 campos obrigatórios (*) estarem
+  preenchidos. Se o scrape não trouxe imagem, o campo já nasce vazio e
+  precisa ser preenchido manualmente antes de avançar.
+- **`manual`** (escolha direta ou fallback de scrape) — mesmo formulário do
+  `review`: **Título***, **Categoria***, **Imagem*** obrigatórios; preço
+  opcional. Quando chega como fallback, mostra a mensagem "Não conseguimos
+  ler essa página automaticamente — sem problema, preencha à mão." Nunca
+  uma tela de erro sem saída.
+  - **Campo Imagem** (obrigatório nos dois passos acima): dois modos —
+    anexar arquivo do dispositivo (`<input type="file" accept="image/*" capture="environment">`,
+    natural no mobile — tira foto ou escolhe da galeria) que sobe via o
+    `POST /api/upload` já existente (mesmo padrão de
+    `blog/PostEditor.tsx:28-38`: lê como base64, `POST` com
+    `{ imageBase64, filename }`, recebe `{ url }`), ou colar uma URL de
+    imagem externa. O botão "Criar produto"/avançar só habilita com uma
+    imagem definida (upload concluído ou URL preenchida).
 - **`enrich-description` / `enrich-attributes`** — copy explicando a ação +
   custo em créditos visível ("Isso usa 1 crédito. Você tem 9."), botão
   "Gerar" que chama, via prop, exatamente o handler que `App.tsx` já usa
@@ -308,7 +349,7 @@ nomes no allowlist e adicionar as funções de tracking correspondentes em
 
 | Situação | Comportamento |
 |---|---|
-| Timeout (15s) no fetch | `source: 'failed'` → modal cai em `manual-fallback` |
+| Timeout (15s) no fetch | `source: 'failed'` → modal cai em `manual` (com contexto de fallback) |
 | Site bloqueia (403/429/anti-bot) | idem |
 | JSON-LD/OG ausentes, Gemini também não extrai nome | idem |
 | URL aponta pra IP privado/interno | 400 genérico, mensagem "URL inválida" |
@@ -337,6 +378,12 @@ Checklist manual, via `npm run dev`:
       `http://localhost/...` / IP privado.
 - [ ] Fluxo completo em emulação mobile (Chrome DevTools) — popup, criação,
       3 passos de enriquecimento, tela final.
+- [ ] Caminho "Quero inserir manualmente" a partir do `intro` (sem passar
+      por URL nenhuma) chega ao `manual` com campos em branco.
+- [ ] Botão "Criar produto" permanece desabilitado sem Título, Categoria ou
+      Imagem preenchidos, em `review` e em `manual`.
+- [ ] Upload de imagem via `<input type="file" capture="environment">` no
+      mobile (foto/galeria) funciona fim a fim via `/api/upload`.
 - [ ] Crédito debita corretamente em cada etapa e bloqueia corretamente em
       0 créditos (usando `CREDIT_ACTIONS` já configurados).
 - [ ] Produto criado aparece na tabela normal, editável no `ProductEditModal`
