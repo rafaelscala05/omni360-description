@@ -30,10 +30,10 @@ export function isPrivateIp(ip: string): boolean {
   return false;
 }
 
-// Valida uma URL de imagem fornecida pelo cliente antes de o servidor buscá-la.
-// Só permite http/https e resolve o host para garantir que não aponta para a
-// rede interna (defesa contra SSRF). Lança em caso de URL não permitida.
-export async function assertSafeImageUrl(rawUrl: string): Promise<void> {
+// Valida protocolo (só http/s) e resolve TODOS os endereços do host, rejeitando
+// se qualquer um for interno — defesa contra SSRF/DNS rebinding. Compartilhada
+// por qualquer fetch de URL fornecida pelo cliente (imagem ou página HTML).
+async function assertSafeDestination(rawUrl: string): Promise<URL> {
   let url: URL;
   try {
     url = new URL(rawUrl);
@@ -43,10 +43,60 @@ export async function assertSafeImageUrl(rawUrl: string): Promise<void> {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw Object.assign(new Error('Protocolo não permitido'), { status: 400 });
   }
-  // Resolve TODOS os endereços do host e rejeita se qualquer um for interno.
   const results = await lookup(url.hostname, { all: true });
   if (!results.length || results.some((r) => isPrivateIp(r.address))) {
     throw Object.assign(new Error('Destino não permitido'), { status: 400 });
+  }
+  return url;
+}
+
+// Valida uma URL de imagem fornecida pelo cliente antes de o servidor buscá-la.
+export async function assertSafeImageUrl(rawUrl: string): Promise<void> {
+  await assertSafeDestination(rawUrl);
+}
+
+// Valida uma URL de página (produto/site) fornecida pelo cliente antes do scrape.
+export async function assertSafeUrl(rawUrl: string): Promise<URL> {
+  return assertSafeDestination(rawUrl);
+}
+
+// Busca o HTML de uma URL já validada por assertSafeUrl, com timeout e limite
+// de tamanho. redirect: 'follow' (não 'error') é intencional — mesma escolha
+// já aceita em scanWebsite (server/contentAgent.ts): produtos reais têm
+// redirecionamentos comuns (http->https, www, slug canônico) e bloquear todos
+// tornaria o scraping inútil na prática. O DNS já foi checado no destino
+// inicial; hops de redirecionamento não são revalidados (risco aceito,
+// idêntico ao já existente em scanWebsite).
+export async function fetchHtmlSafely(
+  rawUrl: string,
+  opts?: { timeoutMs?: number; maxBytes?: number },
+): Promise<string> {
+  const url = await assertSafeUrl(rawUrl);
+  const timeoutMs = opts?.timeoutMs ?? 15000;
+  const maxBytes = opts?.maxBytes ?? 2 * 1024 * 1024;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url.toString(), {
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AlfredBot/1.0)' },
+    });
+    if (!resp.ok) {
+      throw Object.assign(new Error(`Não foi possível acessar a página (${resp.status})`), { status: 502 });
+    }
+    const buf = Buffer.from(await resp.arrayBuffer());
+    if (buf.byteLength > maxBytes) {
+      throw Object.assign(new Error('Página muito grande.'), { status: 400 });
+    }
+    return buf.toString('utf-8');
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') {
+      throw Object.assign(new Error('Tempo esgotado ao acessar a página'), { status: 504 });
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
