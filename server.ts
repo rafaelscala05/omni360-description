@@ -28,6 +28,7 @@ import { registerMetaEventsRoutes } from "./server/metaEvents";
 import { registerTiktokEventsRoutes } from "./server/tiktokEvents";
 import { registerOnboardingRoutes } from "./server/onboardingAgent";
 import { registerReferralRoutes } from "./server/referralAgent";
+import { registerProductImportRoutes } from "./server/productImport";
 import { recordEvent, registerCrmEventRoutes } from "./server/crmEvents";
 import { registerCrmAdminRoutes } from "./server/crmAdmin";
 import { registerOperationsRoutes } from "./server/agent/routes";
@@ -154,6 +155,7 @@ async function startServer() {
   // Onboarding wizard (CNPJ lookup + credit bonus) e Indique e Ganhe (referral).
   registerOnboardingRoutes(app, { verifyFirebaseToken });
   registerReferralRoutes(app, { verifyFirebaseToken });
+  registerProductImportRoutes(app, { verifyFirebaseToken });
 
   // CRM admin: beacon de eventos do client (/api/events) e as rotas /api/admin/*.
   registerCrmEventRoutes(app, { verifyFirebaseToken });
