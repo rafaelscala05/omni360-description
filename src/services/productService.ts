@@ -1,4 +1,4 @@
-import { Product, AttributeDefinition, Category } from '../types/models';
+import { Product, AttributeDefinition, AttributeValue, Category } from '../types/models';
 import { getEffectiveAttributes } from './categoryService';
 import { generateJson } from './aiService';
 import { fetchAndProcessImage } from '../utils/imageUtils';
@@ -233,3 +233,64 @@ Responda APENAS com o objeto JSON.
 
   return await generateJson(parts, { temperature: 0.2, maxOutputTokens: 8192 });
 };
+
+export async function suggestProductAttributes(
+  product: Partial<Product>,
+  effectiveAttributes: AttributeDefinition[],
+): Promise<{ attributes: Record<string, AttributeValue>; suggestedNewAttributes: AttributeDefinition[] }> {
+  const attributes: Record<string, AttributeValue> = {};
+  let suggestedNewAttributes: AttributeDefinition[] = [];
+
+  try {
+    const textResult = await generateProductAttributes(product, effectiveAttributes);
+    if (textResult.attributes) {
+      Object.keys(textResult.attributes).forEach((key) => {
+        attributes[key] = { value: textResult.attributes[key].value, confirmed: false, aiSuggested: true, source: 'ai' };
+      });
+    }
+    if (textResult.suggestedNewAttributes) {
+      suggestedNewAttributes = [...suggestedNewAttributes, ...textResult.suggestedNewAttributes];
+    }
+  } catch (e) {
+    console.error('Erro na análise de texto:', e);
+  }
+
+  const imageUrl = product._selectedImage || product['URL imagem 1'];
+  if (imageUrl) {
+    try {
+      let base64 = imageUrl;
+      if (!base64.startsWith('data:')) {
+        const response = await fetch(imageUrl);
+        if (response.ok) {
+          const blob = await response.blob();
+          base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+        }
+      }
+      if (base64.startsWith('data:')) {
+        const imageResult = await generateAttributesFromImage(base64, effectiveAttributes, product);
+        if (imageResult.attributes) {
+          Object.keys(imageResult.attributes).forEach((key) => {
+            attributes[key] = { value: imageResult.attributes[key].value, confirmed: false, aiSuggested: true, source: 'ai' };
+          });
+        }
+        if (imageResult.suggestedNewAttributes) {
+          suggestedNewAttributes = [...suggestedNewAttributes, ...imageResult.suggestedNewAttributes];
+        }
+      }
+    } catch (e) {
+      console.error('Erro na análise de imagem:', e);
+    }
+  }
+
+  const uniqueSuggested = suggestedNewAttributes.reduce<AttributeDefinition[]>((acc, curr) => {
+    if (!acc.find((a) => a.key === curr.key)) acc.push(curr);
+    return acc;
+  }, []);
+
+  return { attributes, suggestedNewAttributes: uniqueSuggested };
+}

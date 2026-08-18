@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Product, Category, AttributeDefinition, ProductModalTab, getProductStatusFlags } from '../../types/models';
 import { getEffectiveAttributes } from '../../services/categoryService';
-import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate, type Template } from '../../services/productService';
+import { suggestProductAttributes, generateDescriptionText, defaultTemplate, type Template } from '../../services/productService';
 import { trackAttributesGenerated } from '../../analytics';
 import { listReusableArticles } from '../../services/contentService';
 import VideoGenerationTab from './VideoGenerationTab';
@@ -410,82 +410,16 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
     setSuggestedAttributes([]);
-    let newAttrs = { ...(editedProduct.attributes || {}) };
-    let allSuggested: any[] = [];
-    let hasUpdates = false;
+    const result = await suggestProductAttributes(editedProduct, effectiveAttributes);
+    setSuggestedAttributes(result.suggestedNewAttributes);
 
-    try {
-      const textResult = await generateProductAttributes(editedProduct, effectiveAttributes);
-      if (textResult.attributes) {
-        Object.keys(textResult.attributes).forEach(key => {
-          newAttrs[key] = {
-            value: textResult.attributes[key].value,
-            confirmed: false,
-            aiSuggested: true,
-            source: 'text_ai'
-          };
-          hasUpdates = true;
-        });
-      }
-      if (textResult.suggestedNewAttributes) {
-        allSuggested = [...allSuggested, ...textResult.suggestedNewAttributes];
-      }
-    } catch (e) {
-      console.error("Erro na análise de texto:", e);
-    }
-
-    const imageUrl = editedProduct._selectedImage || editedProduct['URL imagem 1'];
-    if (imageUrl) {
-      try {
-        let base64 = imageUrl;
-        if (!base64.startsWith('data:')) {
-          const response = await fetch(imageUrl);
-          if (response.ok) {
-              const blob = await response.blob();
-              base64 = await new Promise<string>((resolve, reject) => {
-                  const reader = new FileReader();
-                  reader.onloadend = () => resolve(reader.result as string);
-                  reader.onerror = reject;
-                  reader.readAsDataURL(blob);
-              });
-          }
-        }
-        
-        if (base64.startsWith('data:')) {
-            const imageResult = await generateAttributesFromImage(base64, effectiveAttributes, editedProduct);
-            if (imageResult.attributes) {
-                Object.keys(imageResult.attributes).forEach(key => {
-                    newAttrs[key] = {
-                        value: imageResult.attributes[key].value,
-                        confirmed: false,
-                        aiSuggested: true,
-                        source: 'image_ai'
-                    };
-                    hasUpdates = true;
-                });
-            }
-            if (imageResult.suggestedNewAttributes) {
-              allSuggested = [...allSuggested, ...imageResult.suggestedNewAttributes];
-            }
-        }
-      } catch (e) {
-        console.error("Erro na análise de imagem:", e);
-      }
-    }
-
-    const uniqueSuggested = allSuggested.reduce((acc: any[], curr: any) => {
-      if (!acc.find(a => a.key === curr.key)) acc.push(curr);
-      return acc;
-    }, []);
-
-    setSuggestedAttributes(uniqueSuggested);
-
+    const hasUpdates = Object.keys(result.attributes).length > 0;
     if (hasUpdates) {
-        setEditedProduct(prev => ({ ...prev, attributes: newAttrs }));
-        const hasImage = !!(editedProduct._selectedImage || editedProduct['URL imagem 1']);
-        trackAttributesGenerated({ source: hasImage ? 'image' : 'text', sku: editedProduct['Código (SKU)'] as string });
-    } else if (uniqueSuggested.length === 0) {
-        alert("A IA não encontrou novos atributos.");
+      setEditedProduct((prev) => ({ ...prev, attributes: { ...(prev.attributes || {}), ...result.attributes } }));
+      const hasImage = !!(editedProduct._selectedImage || editedProduct['URL imagem 1']);
+      trackAttributesGenerated({ source: hasImage ? 'image' : 'text', sku: editedProduct['Código (SKU)'] as string });
+    } else if (result.suggestedNewAttributes.length === 0) {
+      alert('A IA não encontrou novos atributos.');
     }
     setIsAnalyzing(false);
   };
