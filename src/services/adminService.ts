@@ -15,6 +15,7 @@ import type {
   CrmTask,
   CustomerDetailPayload,
   CustomerListItem,
+  EmailStatus,
   PipelineStatus,
   TimelineEntry,
   WhatsAppStatus,
@@ -117,6 +118,8 @@ export const reconcile = (uid?: string) =>
 
 export const getWhatsAppStatus = () => call<WhatsAppStatus>('/api/admin/whatsapp/status');
 
+export const getEmailStatus = () => call<EmailStatus>('/api/admin/email/status');
+
 export const listTemplates = () =>
   call<{ templates: WhatsAppTemplateInfo[] }>('/api/admin/whatsapp/templates');
 
@@ -147,3 +150,6 @@ export const sendWhatsApp = (
 
 export const setOptOut = (uid: string, optOut: boolean) =>
   call<{ ok: boolean; optOut: boolean }>(`/api/admin/customers/${uid}/optout`, 'POST', { optOut });
+
+export const setEmailOptOut = (uid: string, optOut: boolean) =>
+  call<{ ok: boolean; optOut: boolean }>(`/api/admin/customers/${uid}/email/optout`, 'POST', { optOut });
