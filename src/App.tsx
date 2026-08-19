@@ -3200,21 +3200,21 @@ Retorne APENAS um JSON válido no seguinte formato:
                  </div>
                 </div>
 
-                <div className="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col flex-1 min-h-0 relative">
-                  
+                <div className="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col md:flex-1 md:min-h-0 relative">
+
                   {/* Toolbar */}
-                  <div className="px-5 py-3.5 flex flex-wrap items-center justify-between border-b border-slate-200 bg-white gap-3 rounded-t-xl shrink-0 relative z-30">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <select 
-                          className="px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-700 font-medium focus:ring-[#FF5B03] outline-none focus:border-[#FF5B03] bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
+                  <div className="px-3 md:px-5 py-3 md:py-3.5 flex flex-wrap items-center justify-between border-b border-slate-200 bg-white gap-2 md:gap-3 rounded-t-xl shrink-0 relative z-30">
+                      <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
+                        <select
+                          className="w-[calc(50%-4px)] md:w-auto px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-700 font-medium focus:ring-[#FF5B03] outline-none focus:border-[#FF5B03] bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
                           value={filterMarca}
                           onChange={(e) => setFilterMarca(e.target.value)}
                         >
                           <option value="">Todas as Marcas</option>
                           {marcas.map(m => <option key={m} value={m}>{m}</option>)}
                         </select>
-                        <select 
-                          className="px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-700 font-medium focus:ring-[#FF5B03] outline-none focus:border-[#FF5B03] bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
+                        <select
+                          className="w-[calc(50%-4px)] md:w-auto px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-700 font-medium focus:ring-[#FF5B03] outline-none focus:border-[#FF5B03] bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
                           value={filterCategoria}
                           onChange={(e) => setFilterCategoria(e.target.value)}
                         >
@@ -3312,7 +3312,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                         <div className="w-px h-5 bg-slate-200 mx-1 sm:mx-2"></div>
                         <div className="text-xs text-slate-500 font-medium">{paginatedProducts.length} itens</div>
                       </div>
-                     <div className="flex items-center gap-2 ml-auto relative">
+                     <div className="hidden md:flex items-center gap-2 ml-auto relative">
                         {generationLog && (
                           <div className="mr-3 flex items-center gap-2 text-xs font-medium text-[#FF5B03] bg-orange-50 px-3 py-1.5 rounded-full border border-orange-100 shadow-sm animate-in fade-in slide-in-from-right-4">
                             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -3755,8 +3755,10 @@ Retorne APENAS um JSON válido no seguinte formato:
                      </table>
                   </div>
 
-                  {/* Lista de cards — mobile only, substitui a tabela (que exige scroll horizontal em telas pequenas) */}
-                  <div className="md:hidden flex-1 overflow-auto p-3 space-y-3">
+                  {/* Lista de cards — mobile only, substitui a tabela (que exige scroll horizontal em telas pequenas).
+                      Sem flex-1/overflow-auto: flui com a página (rolagem do <main>) em vez de ficar
+                      espremida numa caixa de altura fixa, que sobrava pouquíssimo espaço abaixo da toolbar. */}
+                  <div className="md:hidden p-3 space-y-3">
                     {paginatedProducts.length === 0 ? (
                       products.length > 0 && (
                         <p className="text-center text-sm text-slate-500 py-12">Nenhum produto corresponde aos filtros.</p>
