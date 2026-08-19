@@ -61,3 +61,24 @@ env:
   # Meta. Vire para "false" só depois de conferir que os disparos fazem sentido.
   - variable: WHATSAPP_DRY_RUN
     value: "false"
+
+  # E-mail (SMTP genérico) — mesma régua de onboarding, canal paralelo ao
+  # WhatsApp acima. Sem estas variáveis o CRM funciona inteiro; só o canal de
+  # e-mail fica inerte.
+  - variable: SMTP_HOST
+    value: "mail.alfreds.com.br"
+  - variable: SMTP_PORT
+    value: "587"
+  - variable: SMTP_SECURE
+    value: "false"
+  - variable: SMTP_USER
+    secret: smtp-user
+  - variable: SMTP_PASS
+    secret: smtp-pass
+  - variable: SMTP_FROM
+    value: "Raquel <raquel@alfreds.com.br>"
+  # Teto de envios por rodada — trava contra disparo em massa por bug.
+  - variable: EMAIL_MAX_PER_DAY
+    value: "100"
+  - variable: EMAIL_DRY_RUN
+    value: "false"
