@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'react';
-import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, FileSpreadsheet, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3, Plug, GraduationCap, Gift, Building2, Zap } from 'lucide-react';
+import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, Link as LinkIcon, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3, Plug, GraduationCap, Gift, Building2, Zap } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import logoAlfreds from './assets/brand/logo-alfreds-produtos.png';
 import { Routes, Route, Navigate } from 'react-router-dom';
@@ -21,6 +21,7 @@ import { auth, db } from './firebase';
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, User } from 'firebase/auth';
 import { collection, doc, writeBatch, getDocs, setDoc, getDoc, deleteDoc, getDocFromServer, runTransaction, onSnapshot, updateDoc } from 'firebase/firestore';
 const ImageSearchModal = lazy(() => import('./components/ImageSearchModal'));
+const ProductUrlImportModal = lazy(() => import('./components/onboarding/ProductUrlImportModal'));
 const CategoryManager = lazy(() => import('./components/categories/CategoryManager'));
 const CategoryImportModal = lazy(() => import('./components/modals/CategoryImportModal'));
 const ProductEditModal = lazy(() => import('./components/modals/ProductEditModal'));
@@ -229,6 +230,7 @@ export default function App() {
   const [hasVideoModule, setHasVideoModule] = useState<boolean>(false);
   const [hasBlogModule, setHasBlogModule] = useState<boolean>(false);
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(false);
+  const [productOnboardingPromptShown, setProductOnboardingPromptShown] = useState<boolean>(false);
   const [companyData, setCompanyData] = useState<CompanyData | null>(null);
   const [isOnboardingWizardOpen, setIsOnboardingWizardOpen] = useState(false);
   const [isProductUrlImportOpen, setIsProductUrlImportOpen] = useState(false);
@@ -316,6 +318,17 @@ export default function App() {
     testConnection();
   }, [isAuthReady, user]);
 
+  // Auto-abre o wizard de onboarding de primeiro produto uma única vez,
+  // quando o dashboard carrega vazio.
+  useEffect(() => {
+    if (!isAuthReady || !user || productOnboardingPromptShown || products.length !== 0) return;
+    setIsProductUrlImportOpen(true);
+    setProductOnboardingPromptShown(true);
+    updateDoc(doc(db, `users/${user.uid}`), { productOnboarding: { promptShown: true } }).catch((err) =>
+      console.error('Erro ao marcar productOnboarding.promptShown:', err),
+    );
+  }, [isAuthReady, user, productOnboardingPromptShown, products.length]);
+
   // Track changes for auto-save
   useEffect(() => {
     if (skipNextChangeTrack.current) {
@@ -390,6 +403,7 @@ export default function App() {
               setHasVideoModule(snap.data().modules?.video === true);
               setHasBlogModule(snap.data().modules?.blog === true);
               setOnboardingCompleted(snap.data().onboarding?.completed === true);
+              setProductOnboardingPromptShown(snap.data().productOnboarding?.promptShown === true);
               const company = snap.data().company ?? null;
               setCompanyData(company);
               metaSetProfile({ phone: company?.telefone, city: company?.endereco?.cidade });
@@ -3372,18 +3386,25 @@ Retorne APENAS um JSON válido no seguinte formato:
                               <td colSpan={20}>
                                 <div className="p-16 flex flex-col items-center justify-center text-center w-full">
                                   <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-center mb-4">
-                                    <FileSpreadsheet className="w-8 h-8 text-slate-400" />
+                                    <LinkIcon className="w-8 h-8 text-slate-400" />
                                   </div>
                                   <h3 className="font-display text-2xl font-bold text-slate-900 mb-2 text-center">Pronto para começar?</h3>
                                   <p className="text-sm text-slate-500 mb-8 max-w-sm text-center">
-                                    Faça o upload de uma planilha Excel (XLSX) para gerenciar e aprimorar seus produtos com IA.
+                                    Cole o link de um produto e deixe a IA preencher o resto para você.
                                   </p>
+                                  <button
+                                    onClick={() => setIsProductUrlImportOpen(true)}
+                                    className="px-8 py-3 bg-[#FF5B03] text-white rounded-xl shadow-lg shadow-orange-200 font-bold hover:bg-[#E14E00] transition-all hover:scale-105 active:scale-95 flex items-center gap-2 mb-4"
+                                  >
+                                    <LinkIcon className="w-5 h-5" /> Colar link do produto
+                                  </button>
+                                  <p className="text-xs text-slate-400 mb-2">ou importe uma planilha</p>
                                   <div className="flex flex-col sm:flex-row items-center gap-3">
                                     <button
                                       onClick={() => fileInputRef.current?.click()}
-                                      className="px-8 py-3 bg-[#FF5B03] text-white rounded-xl shadow-lg shadow-orange-200 font-bold hover:bg-[#E14E00] transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+                                      className="px-6 py-3 bg-white text-slate-700 rounded-xl border border-slate-200 font-semibold hover:bg-slate-50 transition-all hover:scale-105 active:scale-95 flex items-center gap-2 text-sm"
                                     >
-                                      <Upload className="w-5 h-5" /> Importar Arquivo
+                                      <Upload className="w-4 h-4" /> Importar Arquivo
                                     </button>
                                     <button
                                       onClick={downloadBlankTemplate}
@@ -4242,6 +4263,25 @@ Retorne APENAS um JSON válido no seguinte formato:
             existingCategories={existingCategories}
             onConfirm={processCategoryImport}
             isProcessing={isProcessingCategories}
+          />
+        </Suspense>
+      )}
+
+      {isProductUrlImportOpen && (
+        <Suspense fallback={null}>
+          <ProductUrlImportModal
+            isOpen={isProductUrlImportOpen}
+            onClose={() => setIsProductUrlImportOpen(false)}
+            categories={existingCategories}
+            initialStep={productUrlImportResumeStep ?? undefined}
+            initialProduct={products.find((p) => p._id === productUrlImportProductId) ?? null}
+            onProductCreated={handleProductCreatedFromOnboarding}
+            onGenerateDescription={handleGenerateDescriptionForOnboarding}
+            onSuggestAttributes={handleSuggestAttributesForOnboarding}
+            onOpenImageSearch={handleOpenImageSearchFromOnboarding}
+            onFinish={() => { setIsProductUrlImportOpen(false); setProductUrlImportResumeStep(null); }}
+            descriptionCreditCost={getCreditCost(CREDIT_ACTIONS.generateSeoSingle.key)}
+            currentCredits={credits}
           />
         </Suspense>
       )}
