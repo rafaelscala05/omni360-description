@@ -14,6 +14,12 @@ interface AuthPageProps {
 
 type AuthMode = 'login' | 'register' | 'reset';
 
+const maskPhone = (v: string) => {
+  const d = v.replace(/\D/g, '').slice(0, 11);
+  if (d.length <= 10) return d.replace(/^(\d{2})(\d{4})(\d{0,4})/, '($1) $2-$3').trim().replace(/-$/, '');
+  return d.replace(/^(\d{2})(\d{5})(\d{0,4})/, '($1) $2-$3').trim().replace(/-$/, '');
+};
+
 function mapFirebaseError(code: string): string {
   const map: Record<string, string> = {
     'auth/user-not-found': 'Usuário não encontrado.',
@@ -70,6 +76,11 @@ export default function AuthPage({ onGoogleLogin, onEmailLogin, onEmailRegister,
       if (mode === 'login') {
         await onEmailLogin(email, password);
       } else if (mode === 'register') {
+        if (phone.replace(/\D/g, '').length < 10) {
+          setError('Informe um telefone válido com DDD.');
+          setLoading(false);
+          return;
+        }
         await onEmailRegister(email, password, phone);
       } else {
         await onPasswordReset(email);
@@ -205,10 +216,12 @@ export default function AuthPage({ onGoogleLogin, onEmailLogin, onEmailRegister,
                       <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <input
                         type="tel"
+                        inputMode="numeric"
                         required
                         value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
+                        onChange={(e) => setPhone(maskPhone(e.target.value))}
                         placeholder="(11) 91234-5678"
+                        maxLength={15}
                         className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange focus:border-transparent transition-all"
                       />
                     </div>
