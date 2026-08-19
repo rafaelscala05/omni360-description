@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle, Mail, Lock, Eye, EyeOff, ArrowLeft, Sparkles, Gift, X } from 'lucide-react';
+import { CheckCircle, Mail, Lock, Phone, Eye, EyeOff, ArrowLeft, Sparkles, Gift, X } from 'lucide-react';
 import logoAlfreds from '../../assets/brand/logo-alfreds-produtos.png';
 import { THEMES } from '../theme';
 import { resolveReferrer } from '../../services/referralService';
@@ -8,7 +8,7 @@ import { REFERRED_SIGNUP_BONUS } from '../../types/referral';
 interface AuthPageProps {
   onGoogleLogin: () => void;
   onEmailLogin: (email: string, password: string) => Promise<void>;
-  onEmailRegister: (email: string, password: string) => Promise<void>;
+  onEmailRegister: (email: string, password: string, phone: string) => Promise<void>;
   onPasswordReset: (email: string) => Promise<void>;
 }
 
@@ -31,6 +31,7 @@ function mapFirebaseError(code: string): string {
 export default function AuthPage({ onGoogleLogin, onEmailLogin, onEmailRegister, onPasswordReset }: AuthPageProps) {
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -69,7 +70,7 @@ export default function AuthPage({ onGoogleLogin, onEmailLogin, onEmailRegister,
       if (mode === 'login') {
         await onEmailLogin(email, password);
       } else if (mode === 'register') {
-        await onEmailRegister(email, password);
+        await onEmailRegister(email, password, phone);
       } else {
         await onPasswordReset(email);
         setResetSent(true);
@@ -196,6 +197,23 @@ export default function AuthPage({ onGoogleLogin, onEmailLogin, onEmailRegister,
                     />
                   </div>
                 </div>
+
+                {mode === 'register' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Telefone</label>
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="tel"
+                        required
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="(11) 91234-5678"
+                        className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange focus:border-transparent transition-all"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {mode !== 'reset' && (
                   <div>

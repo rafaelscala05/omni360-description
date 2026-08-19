@@ -250,6 +250,7 @@ export default function App() {
   } | null>(null);
   const [activeVideoJob, setActiveVideoJob] = useState<VideoJob | null>(null);
   const activeVideoJobUnsubRef = useRef<(() => void) | null>(null);
+  const pendingPhoneRef = useRef<string | null>(null);
   // Per-action credit costs loaded from the read-only Firestore doc `config/credits`.
   const [creditCosts, setCreditCosts] = useState<Record<string, number>>({});
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -375,11 +376,14 @@ export default function App() {
           if (!userSnap.exists()) {
             // New user, give some starter credits
             const initialCredits = 10;
+            const phone = pendingPhoneRef.current;
+            pendingPhoneRef.current = null;
             await setDoc(userRef, {
               email: currentUser.email,
               credits: initialCredits,
               lastSync: new Date().toISOString(),
               displayName: currentUser.displayName,
+              ...(phone ? { phone } : {}),
             });
             setCredits(initialCredits);
             trackSignUp('google');
@@ -562,7 +566,8 @@ export default function App() {
     trackLogin('email');
   };
 
-  const handleEmailRegister = async (email: string, password: string) => {
+  const handleEmailRegister = async (email: string, password: string, phone: string) => {
+    pendingPhoneRef.current = phone;
     await createUserWithEmailAndPassword(auth, email, password);
     trackLogin('email_register');
   };
