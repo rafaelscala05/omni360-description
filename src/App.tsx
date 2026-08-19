@@ -323,7 +323,7 @@ export default function App() {
   // quando o dashboard carrega vazio.
   useEffect(() => {
     if (!isAuthReady || !user || productOnboardingPromptShown || products.length !== 0) return;
-    setIsProductUrlImportOpen(true);
+    handleOpenProductUrlImport();
     setProductOnboardingPromptShown(true);
     updateDoc(doc(db, `users/${user.uid}`), { productOnboarding: { promptShown: true } }).catch((err) =>
       console.error('Erro ao marcar productOnboarding.promptShown:', err),
@@ -2062,6 +2062,16 @@ Retorne APENAS um JSON válido no seguinte formato:
     setProductUrlImportProductId(product._id);
   };
 
+  // Abre o wizard de cadastro por URL do zero — usado tanto pelo popup do
+  // primeiro produto quanto por qualquer clique posterior em "Novo Produto".
+  // Limpa o estado residual do último produto/etapa para não reabrir o
+  // wizard "no meio" de um fluxo anterior já concluído.
+  const handleOpenProductUrlImport = () => {
+    setProductUrlImportProductId(null);
+    setProductUrlImportResumeStep(null);
+    setIsProductUrlImportOpen(true);
+  };
+
   // Reusa exatamente o mesmo caminho de geração de descrição por crédito que
   // a tabela de produtos já usa (startGenerateSingle) — sem duplicar
   // ensureCredits/consumeCredit/tracking.
@@ -3094,7 +3104,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                )}
                {products.length === 0 && (
                  <button
-                   onClick={() => setIsProductUrlImportOpen(true)}
+                   onClick={handleOpenProductUrlImport}
                    className="sm:hidden mb-4 w-full shrink-0 flex items-center justify-center gap-2 px-4 py-3 bg-[#FF5B03] text-white rounded-xl shadow-md shadow-orange-200 font-bold text-sm hover:bg-[#E14E00] transition-all active:scale-95"
                  >
                    <LinkIcon className="w-4 h-4" /> Criar meu primeiro produto
@@ -3136,6 +3146,13 @@ Retorne APENAS um JSON válido no seguinte formato:
                    )}
 
                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                     <button
+                       onClick={handleOpenProductUrlImport}
+                       className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 font-bold text-xs md:text-sm text-white bg-[#FF5B03] hover:bg-[#E14E00] transition-all rounded-lg shadow-md h-9 whitespace-nowrap"
+                     >
+                       <Plus className="w-4 h-4" />
+                       <span>Novo Produto</span>
+                     </button>
                      <button
                        onClick={() => saveToCloud()}
                        disabled={isSavingToCloud || !hasUnsavedChanges || products.length === 0}
@@ -3436,7 +3453,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                                     Cole o link de um produto e deixe a IA preencher o resto para você.
                                   </p>
                                   <button
-                                    onClick={() => setIsProductUrlImportOpen(true)}
+                                    onClick={handleOpenProductUrlImport}
                                     className="px-8 py-3 bg-[#FF5B03] text-white rounded-xl shadow-lg shadow-orange-200 font-bold hover:bg-[#E14E00] transition-all hover:scale-105 active:scale-95 flex items-center gap-2 mb-4"
                                   >
                                     <LinkIcon className="w-5 h-5" /> Colar link do produto
