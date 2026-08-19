@@ -15,7 +15,7 @@
 import { adminDb } from './firebaseAdmin';
 import { recordEvent } from './crmEvents';
 import { daysBetween } from './crmStage';
-import { resolveParams, shouldSend, type TokenContext } from './crmAutomationRules';
+import { resolveParams, shouldSendWhatsApp, type TokenContext } from './crmAutomationRules';
 import { isConfigured, sendTemplate } from './whatsappProvider';
 import { CRM_STAGES, type CrmAutomation, type CrmStage, type CrmSummary } from '../src/types/crm';
 
@@ -78,7 +78,7 @@ export async function runAutomations(): Promise<RunResult> {
       for (const automation of automationsForStage) {
         if (result.sent >= status.maxPerDay) break;
 
-        const decision = shouldSend(crm, automation, { whatsapp, consent }, now);
+        const decision = shouldSendWhatsApp(crm, automation, { whatsapp, consent }, now);
         if (!decision.send) {
           result.skipped += 1;
           continue;
