@@ -623,15 +623,20 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
     const emailEnabled = body.emailEnabled === true;
     const emailSubject = String(body.emailSubject ?? '').trim();
     const emailBody = String(body.emailBody ?? '');
-    // WhatsApp exige template só se a automação está ativa (comportamento
-    // existente); e-mail exige assunto só se o canal de e-mail está ligado —
-    // os dois podem ser independentes: uma automação pode estar ativa com só
-    // WhatsApp, só e-mail, ou os dois.
-    if (active && !templateName && !emailEnabled) {
-      throw Object.assign(new Error('Ative pelo menos um canal (WhatsApp ou e-mail) para ativar a automação'), { status: 422 });
-    }
-    if (emailEnabled && !emailSubject) {
-      throw Object.assign(new Error('Escolha um assunto para ativar o e-mail'), { status: 422 });
+    // As duas validações só valem quando a automação está ativa — a tela
+    // salva cada campo assim que muda (um PUT por clique/tecla), então o
+    // admin liga "Também enviar e-mail" antes de digitar o assunto; exigir o
+    // assunto nesse momento quebraria o toggle. Só bloqueia de fato quando a
+    // régua está ativa e sairia enviando algo incompleto.
+    if (active) {
+      const whatsappReady = !!templateName;
+      const emailReady = emailEnabled && !!emailSubject;
+      if (!whatsappReady && !emailReady) {
+        throw Object.assign(new Error('Ative pelo menos um canal (WhatsApp ou e-mail) para ativar a automação'), { status: 422 });
+      }
+      if (emailEnabled && !emailSubject) {
+        throw Object.assign(new Error('Escolha um assunto para ativar o e-mail'), { status: 422 });
+      }
     }
     return {
       stage,
