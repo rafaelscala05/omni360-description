@@ -28,7 +28,7 @@ const ContentApp = lazy(() => import('./modules/content/ContentApp'));
 const OperationsApp = lazy(() => import('./modules/operations/OperationsApp'));
 import CreditPurchaseModal from './components/modals/CreditPurchaseModal';
 import { Category, Product, AttributeValue, getProductStatusFlags, ProductModalTab } from './types/models';
-import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate } from './services/productService';
+import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate, suggestProductAttributes } from './services/productService';
 import { fetchCategories, generateCategoryHierarchy, flattenHierarchy, getEffectiveAttributes, addAttributeToCategory, saveCategory } from './services/categoryService';
 import IntegrationsView from './components/integrations/IntegrationsView';
 import TutorialView from './components/tutorial/TutorialView';
@@ -54,6 +54,7 @@ import {
   trackProductEnriched,
   trackCategoryHierarchyGenerated,
   trackTemplateDownloaded,
+  trackAttributesGenerated,
 } from './analytics';
 import type { CompanyData } from './types/onboarding';
 import { registerReferralSignup } from './services/referralService';
@@ -230,6 +231,9 @@ export default function App() {
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(false);
   const [companyData, setCompanyData] = useState<CompanyData | null>(null);
   const [isOnboardingWizardOpen, setIsOnboardingWizardOpen] = useState(false);
+  const [isProductUrlImportOpen, setIsProductUrlImportOpen] = useState(false);
+  const [productUrlImportResumeStep, setProductUrlImportResumeStep] = useState<'done' | null>(null);
+  const [productUrlImportProductId, setProductUrlImportProductId] = useState<string | null>(null);
   const [onboardingBannerDismissed, setOnboardingBannerDismissed] = useState(
     () => typeof window !== 'undefined' && localStorage.getItem('onboardingBannerDismissed') === '1',
   );
@@ -2032,6 +2036,47 @@ Retorne APENAS um JSON válido no seguinte formato:
         return updated;
       });
     }
+  };
+
+  const handleProductCreatedFromOnboarding = (product: Product) => {
+    setProducts((prev) => [...prev, product]);
+    setProductUrlImportProductId(product._id);
+  };
+
+  // Reusa exatamente o mesmo caminho de geração de descrição por crédito que
+  // a tabela de produtos já usa (startGenerateSingle) — sem duplicar
+  // ensureCredits/consumeCredit/tracking.
+  const handleGenerateDescriptionForOnboarding = async (id: string) => {
+    await startGenerateSingle(id);
+  };
+
+  // Sugestão de atributos é grátis hoje (não passa por ensureCredits/consumeCredit) —
+  // mesma função extraída em productService.ts que ProductEditModal usa.
+  const handleSuggestAttributesForOnboarding = async (id: string): Promise<boolean> => {
+    const product = products.find((p) => p._id === id);
+    if (!product) return false;
+    const effectiveAttributes = product.categoryId ? getEffectiveAttributes(product.categoryId, existingCategories) : [];
+    const result = await suggestProductAttributes(product, effectiveAttributes);
+    const hasUpdates = Object.keys(result.attributes).length > 0;
+    if (hasUpdates) {
+      setProducts((prev) =>
+        prev.map((p) => (p._id === id ? { ...p, attributes: { ...(p.attributes || {}), ...result.attributes }, _isDirty: true } : p)),
+      );
+      const hasImage = !!(product._selectedImage || product['URL imagem 1']);
+      trackAttributesGenerated({ source: hasImage ? 'image' : 'text', sku: product['Código (SKU)'] as string });
+    }
+    return hasUpdates;
+  };
+
+  // Abre o ImageSearchModal já existente para o produto do wizard e lembra de
+  // reabrir o wizard (no passo "done") quando ele for fechado.
+  const handleOpenImageSearchFromOnboarding = (id: string) => {
+    const product = products.find((p) => p._id === id);
+    if (!product) return;
+    setCurrentImageSearchProduct(product);
+    setIsImageSearchModalOpen(true);
+    setProductUrlImportResumeStep('done');
+    setIsProductUrlImportOpen(false);
   };
 
   const handleGenerateMass = async () => {
@@ -4169,7 +4214,12 @@ Retorne APENAS um JSON válido no seguinte formato:
         <Suspense fallback={null}>
           <ImageSearchModal
             isOpen={isImageSearchModalOpen}
-            onClose={() => setIsImageSearchModalOpen(false)}
+            onClose={() => {
+              setIsImageSearchModalOpen(false);
+              if (productUrlImportResumeStep) {
+                setIsProductUrlImportOpen(true);
+              }
+            }}
             product={currentImageSearchProduct}
             uid={user?.uid || ''}
             onSave={handleSaveImages}
