@@ -45,6 +45,8 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
   const [sanityCategoryField, setSanityCategoryField] = useState(project.config.sanityCategoryField ?? '');
   const [sanityCategoryType, setSanityCategoryType] = useState(project.config.sanityCategoryType ?? '');
   const [sanityCategoryNameField, setSanityCategoryNameField] = useState(project.config.sanityCategoryNameField ?? '');
+  const [sanityCategoryIsArray, setSanityCategoryIsArray] = useState(project.config.sanityCategoryIsArray ?? true);
+  const [sanityImageField, setSanityImageField] = useState(project.config.sanityImageField ?? '');
   const [showSanitySchema, setShowSanitySchema] = useState(false);
   const [sanityToken, setSanityToken] = useState('');
   const [savingSanity, setSavingSanity] = useState(false);
@@ -93,12 +95,22 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
         if (corpo) setSanityBodyField(corpo);
       }
       if (!sanityCategoryField.trim()) {
-        const cat = guessField(docFields, 'referenceArray', ['categories', 'category', 'categorias', 'tags']);
-        if (cat) setSanityCategoryField(cat);
+        // Alguns schemas usam referência única (`category`), outros array
+        // (`categories`) — tenta os dois e guarda qual formato achou, porque
+        // escrever o shape errado (array num campo de ref. única, ou
+        // vice-versa) é rejeitado pelo Studio como campo desconhecido.
+        const catArray = guessField(docFields, 'referenceArray', ['categories', 'category', 'categorias', 'tags']);
+        const catSingle = !catArray ? guessField(docFields, 'reference', ['category', 'categoria', 'postcategory']) : undefined;
+        if (catArray) { setSanityCategoryField(catArray); setSanityCategoryIsArray(true); }
+        else if (catSingle) { setSanityCategoryField(catSingle); setSanityCategoryIsArray(false); }
       }
       if (!sanityCategoryNameField.trim() && catFields.length) {
         const nome = guessField(catFields, 'string', ['title', 'name', 'nome', 'titulo', 'título']);
         if (nome) setSanityCategoryNameField(nome);
+      }
+      if (!sanityImageField.trim()) {
+        const img = guessField(docFields, 'image', ['mainimage', 'heroimage', 'image', 'imagem', 'capa', 'cover']);
+        if (img) setSanityImageField(img);
       }
 
       const partes = [`tipo de artigo "${guessedDocType}"`];
@@ -160,6 +172,8 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
         sanityCategoryField: sanityCategoryField.trim(),
         sanityCategoryType: sanityCategoryType.trim(),
         sanityCategoryNameField: sanityCategoryNameField.trim(),
+        sanityCategoryIsArray,
+        sanityImageField: sanityImageField.trim(),
       });
       if (sanityToken.trim()) {
         await saveSanitySecret(uid, project.id, sanityToken.trim());
@@ -337,6 +351,9 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
                 <datalist id="sanity-cat-fields">
                   {categoryTypeFields.map((f) => <option key={f.field} value={f.field}>{f.kind}</option>)}
                 </datalist>
+                <datalist id="sanity-image-fields">
+                  {docTypeFields.filter((f) => f.kind === 'image').map((f) => <option key={f.field} value={f.field}>{f.kind}</option>)}
+                </datalist>
 
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1.5">Tipo do documento do artigo</label>
@@ -362,6 +379,17 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
                   <p className="text-xs text-slate-400 mt-1">Campo de texto rico onde o artigo é escrito. Errado aqui = artigo publica "vazio" (o frontend do cliente lê outro campo).</p>
                 </div>
                 <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Campo de imagem de capa</label>
+                  <input
+                    value={sanityImageField}
+                    onChange={(e) => setSanityImageField(e.target.value)}
+                    list="sanity-image-fields"
+                    placeholder="mainImage"
+                    className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">Campo de imagem no artigo. Vazio = publica sem imagem de capa.</p>
+                </div>
+                <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1.5">Campo de categoria no artigo</label>
                   <input
                     value={sanityCategoryField}
@@ -371,6 +399,16 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
                     className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
                   />
                   <p className="text-xs text-slate-400 mt-1">Nome do campo que guarda a referência à categoria. Vazio = publica sem vincular categoria.</p>
+                  <label className="flex items-center gap-2 mt-2 text-xs text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={sanityCategoryIsArray}
+                      onChange={(e) => setSanityCategoryIsArray(e.target.checked)}
+                      className="rounded border-slate-300"
+                    />
+                    Campo aceita várias categorias (array de referências)
+                  </label>
+                  <p className="text-xs text-slate-400 mt-1">Desmarque se o schema usa referência única (ex.: <code>category: reference</code> em vez de <code>categories: array</code>) — o shape errado também aparece como "campo desconhecido" no Studio.</p>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1.5">Tipo do documento de categoria</label>

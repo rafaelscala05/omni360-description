@@ -40,6 +40,13 @@ export interface ContentProjectConfig {
   sanityCategoryField?: string;
   sanityCategoryType?: string;
   sanityCategoryNameField?: string;
+  // Nome do campo de imagem de capa (tipo 'image') no documento de artigo.
+  // Vazio = não envia imagem de capa.
+  sanityImageField?: string;
+  // Alguns schemas usam uma referência única para categoria (ex.: `category`),
+  // outros um array (ex.: `categories`). Default true preserva o comportamento
+  // histórico (array), já publicado em produção.
+  sanityCategoryIsArray?: boolean;
   estiloImagem?: 'Realista' | 'Ilustracao' | '3D' | 'Cartoon';
   // URL do site do cliente, capturada no passo "Analisar site com IA" do
   // onboarding. Reaproveitada para disparar a Auditoria de SEO (SE Ranking).

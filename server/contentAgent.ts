@@ -919,6 +919,48 @@ async function sanityMutate(
   return bodyJson;
 }
 
+// Sanity é headless: uma imagem só aparece no documento se ela existir antes
+// como um asset (`sanity.imageAsset`) e o documento guardar uma referência a
+// ele — não dá para apontar direto para uma URL externa como no WordPress.
+async function uploadImageToSanity(
+  uid: string,
+  projectId: string,
+  articleId: string,
+  articleTitulo: string,
+  sanityProjectId: string,
+  dataset: string,
+  apiToken: string,
+  imageUrl: string,
+): Promise<string> {
+  const imgResp = await fetch(imageUrl);
+  if (!imgResp.ok) throw new Error(`Não foi possível baixar a imagem de capa: ${imgResp.status}`);
+  const buf = Buffer.from(await imgResp.arrayBuffer());
+  const mimeType = imgResp.headers.get('content-type') || 'image/png';
+
+  const apiUrl = `https://${sanityProjectId}.api.sanity.io/v2021-10-21/assets/images/${dataset}`;
+  const inicio = Date.now();
+  const resp = await fetch(apiUrl, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiToken}`, 'Content-Type': mimeType },
+    body: buf,
+  });
+  const bodyText = await resp.text();
+  let bodyJson: unknown = bodyText;
+  try { bodyJson = JSON.parse(bodyText); } catch { /* corpo não é JSON — mantém texto cru */ }
+
+  await logPublishCall(uid, projectId, {
+    destino: 'sanity', operacao: 'assets.images', alvo: apiUrl, articleId, articleTitulo,
+    requisicao: { imageUrl, mimeType }, resposta: bodyJson, status: resp.status, ok: resp.ok,
+    erro: resp.ok ? undefined : bodyText, ms: Date.now() - inicio,
+  });
+  if (!resp.ok) {
+    throw Object.assign(new Error(`Falha ao enviar imagem para o Sanity: ${resp.status} — ${bodyText}`), { status: 502 });
+  }
+  const assetId = (bodyJson as { document?: { _id?: string } }).document?._id;
+  if (!assetId) throw new Error('Sanity não retornou o _id do asset da imagem.');
+  return assetId;
+}
+
 async function loadSanityCreds(uid: string, projectId: string): Promise<{ sanityProjectId: string; dataset: string; apiToken: string }> {
   const project = await loadProject(uid, projectId);
   const { sanityProjectId, sanityDataset } = project.config;
@@ -996,6 +1038,7 @@ async function publishToSanity(uid: string, projectId: string, articleId: string
   const {
     sanityProjectId, sanityDataset, sanityBlogUrl,
     sanityDocType, sanityBodyField, sanityCategoryField, sanityCategoryType, sanityCategoryNameField,
+    sanityImageField, sanityCategoryIsArray,
   } = project.config;
   if (!sanityProjectId) {
     throw Object.assign(new Error('Project ID do Sanity não configurado'), { status: 400 });
@@ -1047,9 +1090,24 @@ async function publishToSanity(uid: string, projectId: string, articleId: string
       mutations.push({
         createIfNotExists: { _id: categoryDocId, _type: categoryType, [nameField]: clusterNome },
       });
-      doc[categoryField] = [{ _type: 'reference', _key: crypto.randomUUID(), _ref: categoryDocId }];
+      const ref = { _type: 'reference', _ref: categoryDocId };
+      // Schemas do starter usam array (`categories`); outros, referência única
+      // (`category`) — escrever array num campo de referência única também
+      // dispara "Unknown fields" no Studio, porque o shape não bate com o schema.
+      doc[categoryField] = sanityCategoryIsArray === false ? ref : [{ ...ref, _key: crypto.randomUUID() }];
     }
   }
+
+  // Imagem de capa: o Sanity não aceita URL externa direto num campo `image`
+  // — precisa subir o binário como asset primeiro e referenciar o _id dele.
+  const imageField = sanityImageField?.trim();
+  if (imageField && article.imageUrl) {
+    const assetId = await uploadImageToSanity(
+      uid, projectId, articleId, article.titulo, sanityProjectId, dataset, apiToken, article.imageUrl,
+    );
+    doc[imageField] = { _type: 'image', asset: { _type: 'reference', _ref: assetId } };
+  }
+
   mutations.push({ createOrReplace: doc });
 
   await sanityMutate(uid, projectId, articleId, article.titulo, sanityProjectId, dataset, apiToken, 'mutate', mutations);
