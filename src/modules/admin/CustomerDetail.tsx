@@ -217,6 +217,10 @@ export default function CustomerDetail() {
           onOptOutChange={(value) =>
             setCustomer((c) => (c && c.crm ? { ...c, crm: { ...c.crm, whatsappOptOut: value } } : c))
           }
+          emailOptOut={customer.crm?.emailOptOut === true}
+          onEmailOptOutChange={(value) =>
+            setCustomer((c) => (c && c.crm ? { ...c, crm: { ...c.crm, emailOptOut: value } } : c))
+          }
         />
       )}
       {tab === 'notas' && <CustomerNotes uid={uid} customerName={customer.displayName || customer.email} />}

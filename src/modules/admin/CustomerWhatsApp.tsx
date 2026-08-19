@@ -17,6 +17,7 @@ import {
   listMessages,
   listTemplates,
   sendWhatsApp,
+  setEmailOptOut,
   setOptOut,
 } from '../../services/adminService';
 import { Card, EmptyState, ErrorBanner, Spinner, formatDateTime, whatsappHref } from './ui';
@@ -28,6 +29,8 @@ export default function CustomerWhatsApp({
   consent,
   consentAt,
   onOptOutChange,
+  emailOptOut,
+  onEmailOptOutChange,
 }: {
   uid: string;
   whatsapp: string;
@@ -35,6 +38,8 @@ export default function CustomerWhatsApp({
   consent: boolean;
   consentAt: string | null;
   onOptOutChange: (value: boolean) => void;
+  emailOptOut: boolean;
+  onEmailOptOutChange: (value: boolean) => void;
 }) {
   const [status, setStatus] = useState<WhatsAppStatus | null>(null);
   const [templates, setTemplates] = useState<WhatsAppTemplateInfo[]>([]);
@@ -106,6 +111,17 @@ export default function CustomerWhatsApp({
     }
   }
 
+  async function flipEmailOptOut() {
+    const next = !emailOptOut;
+    onEmailOptOutChange(next);
+    try {
+      await setEmailOptOut(uid, next);
+    } catch (err) {
+      onEmailOptOutChange(!next);
+      setError((err as Error).message);
+    }
+  }
+
   if (loading) return <Spinner />;
 
   const wa = whatsappHref(whatsapp);
@@ -138,13 +154,27 @@ export default function CustomerWhatsApp({
             </p>
           </div>
 
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={optOut} onChange={flipOptOut} className="accent-rose-600 w-4 h-4" />
-            <span className="text-sm text-slate-600">
-              Não enviar automações
-              <span className="block text-xs text-slate-400">Bloqueia toda a régua para este cliente</span>
-            </span>
-          </label>
+          <div className="flex flex-col items-end gap-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={optOut} onChange={flipOptOut} className="accent-rose-600 w-4 h-4" />
+              <span className="text-sm text-slate-600">
+                Não enviar WhatsApp
+                <span className="block text-xs text-slate-400">Bloqueia a régua de WhatsApp para este cliente</span>
+              </span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={emailOptOut}
+                onChange={flipEmailOptOut}
+                className="accent-rose-600 w-4 h-4"
+              />
+              <span className="text-sm text-slate-600">
+                Não enviar e-mail
+                <span className="block text-xs text-slate-400">Bloqueia a régua de e-mail para este cliente</span>
+              </span>
+            </label>
+          </div>
         </div>
 
         <div className="mt-4 pt-3 border-t border-slate-100">
@@ -246,7 +276,10 @@ export default function CustomerWhatsApp({
           <ul className="mt-3 divide-y divide-slate-100">
             {messages.map((m) => (
               <li key={m.id} className="py-2.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span className="text-sm font-semibold text-slate-800">{m.templateName}</span>
+                <span className="text-xs font-bold text-slate-400 mr-1">
+                  {m.channel === 'email' ? '✉️' : '💬'}
+                </span>
+                <span className="text-sm font-semibold text-slate-800">{m.template}</span>
                 <span
                   className={`px-1.5 py-0.5 rounded text-[11px] font-bold ${
                     m.status === 'sent' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
