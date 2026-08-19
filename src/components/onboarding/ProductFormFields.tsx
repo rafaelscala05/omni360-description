@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Upload, Link as LinkIcon, ImageOff, Plus, Loader2, X } from 'lucide-react';
 import type { Category } from '../../types/models';
 
@@ -17,15 +17,29 @@ interface Props {
   onUploadImage: (file: File) => Promise<void>;
   isUploadingImage: boolean;
   onCreateCategory: (name: string) => Promise<string | null>;
+  /** Nome de categoria inferido a partir do breadcrumb da página importada (ex.: "Travesseiro"). */
+  suggestedCategoryName?: string;
 }
 
-const ProductFormFields: React.FC<Props> = ({ value, onChange, categories, onUploadImage, isUploadingImage, onCreateCategory }) => {
+const ProductFormFields: React.FC<Props> = ({ value, onChange, categories, onUploadImage, isUploadingImage, onCreateCategory, suggestedCategoryName }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [brokenImageUrl, setBrokenImageUrl] = useState<string | null>(null);
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [createCategoryError, setCreateCategoryError] = useState<string | null>(null);
+  const [dismissedSuggestion, setDismissedSuggestion] = useState(false);
+
+  // Pré-abre o formulário de criação de categoria com o nome sugerido pelo
+  // breadcrumb da página — o usuário só precisa confirmar, não digitar do
+  // zero. Só entra em ação se o usuário ainda não escolheu/criou nada e não
+  // dispensou a sugestão.
+  useEffect(() => {
+    if (!suggestedCategoryName || value.categoryId || isAddingCategory || dismissedSuggestion) return;
+    setIsAddingCategory(true);
+    setNewCategoryName(suggestedCategoryName);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestedCategoryName]);
 
   const set = (patch: Partial<ProductFormValue>) => onChange({ ...value, ...patch });
   const imageFailedToLoad = !!value.imageUrl && value.imageUrl === brokenImageUrl;
@@ -148,13 +162,16 @@ const ProductFormFields: React.FC<Props> = ({ value, onChange, categories, onUpl
               </button>
               <button
                 type="button"
-                onClick={() => { setIsAddingCategory(false); setNewCategoryName(''); setCreateCategoryError(null); }}
+                onClick={() => { setIsAddingCategory(false); setNewCategoryName(''); setCreateCategoryError(null); setDismissedSuggestion(true); }}
                 disabled={isCreatingCategory}
                 className="shrink-0 flex items-center justify-center w-10 h-10 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
+            {suggestedCategoryName && (
+              <p className="text-xs text-slate-400">Sugerida a partir da página do produto — edite se quiser.</p>
+            )}
             {createCategoryError && <p className="text-xs text-red-600">{createCategoryError}</p>}
           </div>
         ) : (

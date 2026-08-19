@@ -31,6 +31,23 @@ export interface ProductUrlImportModalProps {
 
 const emptyForm: ProductFormValue = { title: '', categoryId: '', imageUrl: '', price: '', description: '' };
 
+function normalizeForCompare(value: string): string {
+  return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+}
+
+// Tenta casar o segmento mais específico do breadcrumb extraído da página
+// (ex.: "Travesseiro" de ["Cama", "Travesseiro"]) contra o nome-folha de
+// alguma categoria já existente do usuário.
+function matchExistingCategory(breadcrumb: string[] | undefined, categories: Category[]): Category | undefined {
+  if (!breadcrumb?.length) return undefined;
+  for (let i = breadcrumb.length - 1; i >= 0; i--) {
+    const target = normalizeForCompare(breadcrumb[i]);
+    const match = categories.find((c) => normalizeForCompare(c.path[c.path.length - 1] ?? '') === target);
+    if (match) return match;
+  }
+  return undefined;
+}
+
 function buildProduct(form: ProductFormValue, categories: Category[]): Product {
   const category = categories.find((c) => c.id === form.categoryId);
   return {
@@ -59,6 +76,7 @@ const ProductUrlImportModal: React.FC<ProductUrlImportModalProps> = ({
   const [url, setUrl] = useState('');
   const [form, setForm] = useState<ProductFormValue>(emptyForm);
   const [manualReason, setManualReason] = useState<'chosen' | 'fallback' | null>(null);
+  const [suggestedCategoryName, setSuggestedCategoryName] = useState<string | undefined>(undefined);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isRunningStep, setIsRunningStep] = useState(false);
@@ -77,6 +95,7 @@ const ProductUrlImportModal: React.FC<ProductUrlImportModalProps> = ({
     } catch (e) {
       trackProductUrlImportResult({ source: 'failed' });
       setManualReason('fallback');
+      setSuggestedCategoryName(undefined);
       setForm(emptyForm);
       setStep('manual');
       return;
@@ -84,13 +103,20 @@ const ProductUrlImportModal: React.FC<ProductUrlImportModalProps> = ({
     trackProductUrlImportResult({ source: result.source });
     if (result.source === 'failed' || !result.product.title) {
       setManualReason('fallback');
+      setSuggestedCategoryName(undefined);
       setForm({ ...emptyForm, imageUrl: result.product.imageUrl ?? '' });
       setStep('manual');
       return;
     }
+    const matchedCategory = matchExistingCategory(result.product.category, categories);
+    setSuggestedCategoryName(
+      !matchedCategory && result.product.category?.length
+        ? result.product.category[result.product.category.length - 1]
+        : undefined,
+    );
     setForm({
       title: result.product.title ?? '',
-      categoryId: '',
+      categoryId: matchedCategory?.id ?? '',
       imageUrl: result.product.imageUrl ?? '',
       price: result.product.price != null ? String(result.product.price) : '',
       description: result.product.description ?? '',
@@ -192,7 +218,7 @@ const ProductUrlImportModal: React.FC<ProductUrlImportModalProps> = ({
 
       <button
         type="button"
-        onClick={() => { setManualReason('chosen'); setForm(emptyForm); setStep('manual'); }}
+        onClick={() => { setManualReason('chosen'); setSuggestedCategoryName(undefined); setForm(emptyForm); setStep('manual'); }}
         className="w-full flex items-center justify-center gap-2 py-3 text-sm font-semibold text-slate-500 hover:text-slate-700 transition-colors"
       >
         <PenLine className="w-4 h-4" /> Quero inserir manualmente meu produto
@@ -221,6 +247,7 @@ const ProductUrlImportModal: React.FC<ProductUrlImportModalProps> = ({
         onUploadImage={handleUploadImage}
         isUploadingImage={isUploadingImage}
         onCreateCategory={onCreateCategory}
+        suggestedCategoryName={isManual ? undefined : suggestedCategoryName}
       />
       {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
       {/* No mobile a CTA vira uma barra fixa fora deste fluxo (ver abaixo) — o

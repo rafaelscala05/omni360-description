@@ -6,6 +6,7 @@ export interface ScrapedProductFields {
   price?: number;
   imageUrl?: string;
   brand?: string;
+  category?: string[];
 }
 
 export interface ScrapeProductUrlResult {

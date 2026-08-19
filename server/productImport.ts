@@ -14,6 +14,7 @@ export interface ExtractedProductFields {
   price?: number;
   imageUrl?: string;
   brand?: string;
+  category?: string[];
 }
 
 function firstImage(image: unknown): string | undefined {
@@ -34,6 +35,33 @@ function parsePrice(raw: unknown): number | undefined {
   return undefined;
 }
 
+// Algumas lojas (comum em plataformas de e-commerce BR) embutem HTML cru —
+// com aspas não escapadas — dentro do valor string de "description" no
+// JSON-LD, o que quebra JSON.parse no bloco inteiro e descarta até a imagem,
+// que estava perfeitamente válida. Como fallback só usado quando o parse
+// estrito falha, extrai "image"/"name"/preço direto do texto bruto via
+// regex — não depende do documento inteiro ser JSON válido.
+function extractFromMalformedJsonLd(raw: string): ExtractedProductFields | null {
+  if (!/"@type"\s*:\s*"Product"/.test(raw)) return null;
+
+  const nameMatch = raw.match(/"name"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  const priceMatch = raw.match(/"price"\s*:\s*"?([\d.,]+)"?/);
+
+  let imageUrl: string | undefined;
+  const imageArrayMatch = raw.match(/"image"\s*:\s*\[\s*"((?:[^"\\]|\\.)*)"/);
+  const imageStringMatch = raw.match(/"image"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (imageArrayMatch) imageUrl = imageArrayMatch[1];
+  else if (imageStringMatch) imageUrl = imageStringMatch[1];
+
+  if (!nameMatch && !imageUrl) return null;
+
+  return {
+    title: nameMatch?.[1],
+    imageUrl,
+    price: priceMatch ? parsePrice(priceMatch[1]) : undefined,
+  };
+}
+
 function extractFromJsonLd($: cheerio.CheerioAPI): ExtractedProductFields | null {
   const scripts = $('script[type="application/ld+json"]').toArray();
   for (const script of scripts) {
@@ -42,6 +70,8 @@ function extractFromJsonLd($: cheerio.CheerioAPI): ExtractedProductFields | null
     try {
       parsed = JSON.parse(raw);
     } catch {
+      const recovered = extractFromMalformedJsonLd(raw);
+      if (recovered) return recovered;
       continue;
     }
     const candidates = Array.isArray(parsed) ? parsed : [parsed];
@@ -144,6 +174,104 @@ function dropEmpty(fields: ExtractedProductFields): ExtractedProductFields {
   return out;
 }
 
+// Última tentativa de achar a foto do produto quando JSON-LD e OG não
+// trouxeram nada usável: procura os seletores mais comuns de "imagem
+// principal do produto" nas plataformas de e-commerce BR.
+const PRODUCT_IMAGE_SELECTORS = [
+  'img[itemprop="image"]',
+  '.product-image img',
+  '[class*="product-image" i] img',
+  '[class*="product-photo" i] img',
+  '[class*="product-gallery" i] img',
+];
+
+function findProductImageFromDom($: cheerio.CheerioAPI): string | undefined {
+  for (const selector of PRODUCT_IMAGE_SELECTORS) {
+    const src = $(selector).first().attr('src') || $(selector).first().attr('data-src');
+    if (src) return src;
+  }
+  return undefined;
+}
+
+// Tenta identificar o caminho de categoria da página (ex.: ["Cama",
+// "Travesseiro"]) para poupar o usuário de digitar/selecionar à mão. Fonte
+// primária é o BreadcrumbList padrão schema.org; fallback são os seletores
+// de breadcrumb mais comuns no DOM. Descarta o primeiro segmento quando é
+// claramente "Home/Início" e o último quando é essencialmente o próprio
+// título do produto (o breadcrumb às vezes repete o nome do item).
+function normalizeForCompare(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+const HOME_CRUMB_PATTERN = /^(home|inicio|p[aá]gina inicial)$/i;
+
+function extractBreadcrumbFromJsonLd($: cheerio.CheerioAPI): string[] | undefined {
+  const scripts = $('script[type="application/ld+json"]').toArray();
+  for (const script of scripts) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse($(script).contents().text());
+    } catch {
+      continue;
+    }
+    const candidates = Array.isArray(parsed) ? parsed : [parsed];
+    for (const candidate of candidates) {
+      if (!candidate || typeof candidate !== 'object') continue;
+      const node = candidate as Record<string, unknown>;
+      if (node['@type'] !== 'BreadcrumbList') continue;
+      const items = node.itemListElement;
+      if (!Array.isArray(items)) continue;
+      const names = items
+        .map((item) => {
+          const it = item as Record<string, unknown>;
+          const nested = it.item as Record<string, unknown> | string | undefined;
+          if (typeof it.name === 'string') return it.name;
+          if (nested && typeof nested === 'object' && typeof nested.name === 'string') return nested.name;
+          return undefined;
+        })
+        .filter((n): n is string => !!n);
+      if (names.length) return names;
+    }
+  }
+  return undefined;
+}
+
+const BREADCRUMB_SELECTORS = [
+  '.breadcrumbs a',
+  '.breadcrumb a',
+  'nav[aria-label*="breadcrumb" i] a',
+  '[class*="breadcrumb" i] a',
+];
+
+function extractBreadcrumbFromDom($: cheerio.CheerioAPI): string[] | undefined {
+  for (const selector of BREADCRUMB_SELECTORS) {
+    const links = $(selector);
+    if (links.length < 2) continue;
+    const names = links
+      .toArray()
+      .map((el) => $(el).text().replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+    if (names.length >= 2) return names;
+  }
+  return undefined;
+}
+
+function extractCategoryPath($: cheerio.CheerioAPI, title: string | undefined): string[] | undefined {
+  const raw = extractBreadcrumbFromJsonLd($) ?? extractBreadcrumbFromDom($);
+  if (!raw || !raw.length) return undefined;
+
+  let crumbs = [...raw];
+  if (crumbs.length && HOME_CRUMB_PATTERN.test(crumbs[0])) crumbs = crumbs.slice(1);
+  if (crumbs.length > 1 && title && normalizeForCompare(crumbs[crumbs.length - 1]) === normalizeForCompare(title)) {
+    crumbs = crumbs.slice(0, -1);
+  }
+  return crumbs.length ? crumbs : undefined;
+}
+
 // Páginas frequentemente publicam og:image/JSON-LD image como caminho
 // relativo ("/img/produto.jpg"); sem resolver contra a URL da página, o
 // navegador tenta carregar a partir do domínio do próprio app e a imagem
@@ -164,7 +292,7 @@ export function parseProductFromHtml(html: string, baseUrl?: string): ExtractedP
   const fromOg = extractFromOpenGraph($);
   // JSON-LD é a fonte primária; OG só preenche o que faltou.
   const merged = dropEmpty({ ...fromOg, ...fromJsonLd });
-  const imageUrl = resolveImageUrl(merged.imageUrl, baseUrl);
+  let imageUrl = resolveImageUrl(merged.imageUrl, baseUrl);
 
   // Recusa usar a imagem se ela for reconhecidamente o logo/ícone do site
   // (favicon, <img> de header/[class*="logo"], ou Organization.logo do JSON-LD)
@@ -172,9 +300,19 @@ export function parseProductFromHtml(html: string, baseUrl?: string): ExtractedP
   // completa manualmente) do que cadastrar o produto com a marca da loja.
   const isKnownLogo = !!imageUrl && findKnownLogoUrls($, baseUrl).has(imageUrl);
   const isLogoFilename = !!imageUrl && looksLikeLogoFilename(imageUrl);
-  const safeImageUrl = isKnownLogo || isLogoFilename ? undefined : imageUrl;
+  let safeImageUrl = isKnownLogo || isLogoFilename ? undefined : imageUrl;
 
-  return { ...merged, imageUrl: safeImageUrl };
+  // JSON-LD/OG não trouxeram nada usável — tenta os seletores de galeria de
+  // produto mais comuns antes de desistir e deixar em branco.
+  if (!safeImageUrl) {
+    const domImage = resolveImageUrl(findProductImageFromDom($), baseUrl);
+    const isDomLogo = !!domImage && (findKnownLogoUrls($, baseUrl).has(domImage) || looksLikeLogoFilename(domImage));
+    if (domImage && !isDomLogo) safeImageUrl = domImage;
+  }
+
+  const category = extractCategoryPath($, merged.title);
+
+  return { ...merged, imageUrl: safeImageUrl, category };
 }
 
 // ---------------------------------------------------------------------------
