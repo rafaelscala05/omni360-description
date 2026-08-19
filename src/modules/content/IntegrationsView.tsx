@@ -311,7 +311,7 @@ const IntegrationsView: React.FC<Props> = ({ uid, project }) => {
               placeholder="https://blog.empresa.com"
               className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
             />
-            <p className="text-xs text-slate-400 mt-1">O Sanity é headless — quem publica o artigo em uma URL é o frontend do cliente, não o Sanity. Informe onde ele renderiza os posts para gerarmos o link "Ver publicado" ({'{URL do blog}'}/{'{slug}'}). Deixe em branco para linkar o painel de gestão do projeto no Sanity.</p>
+            <p className="text-xs text-slate-400 mt-1">O Sanity é headless — quem publica o artigo em uma URL é o frontend do cliente, não o Sanity. Informe onde ele renderiza os posts para gerarmos o link "Ver publicado" ({'{URL do blog}'}/conteudo/{'{slug}'}). Deixe em branco para linkar o painel de gestão do projeto no Sanity.</p>
           </div>
 
           <div className="border-t border-slate-100 pt-4">

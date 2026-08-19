@@ -1131,7 +1131,7 @@ async function publishToSanity(uid: string, projectId: string, articleId: string
   // gestão do projeto, que sempre existe — nunca para um Studio hospedado
   // "adivinhado" em {projectId}.sanity.studio, que pode não estar implantado.
   const documentUrl = sanityBlogUrl
-    ? `${sanityBlogUrl.replace(/\/+$/, '')}/${slug}`
+    ? `${sanityBlogUrl.replace(/\/+$/, '')}/conteudo/${slug}`
     : `https://www.sanity.io/manage/project/${sanityProjectId}`;
 
   await debitCreditsAdmin(uid, CREDIT_ACTIONS.contentPublish, { productName: article.titulo });
