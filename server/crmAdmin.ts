@@ -9,6 +9,7 @@ import { daysBetween, isStagnant } from './crmStage';
 import { loadAutomations, runAutomations, stageFromId } from './crmAutomation';
 import { resolveParams } from './crmAutomationRules';
 import { isConfigured, listTemplates, sendTemplate } from './whatsappProvider';
+import { isConfigured as emailIsConfigured } from './emailProvider';
 import { recordEvent } from './crmEvents';
 import {
   CRM_STAGES,
@@ -61,6 +62,7 @@ const EVENT_LABELS: Record<string, string> = {
   credit_purchase_open: 'Abriu a compra de créditos',
   credits_purchased: 'Comprou créditos',
   whatsapp_sent: 'Mensagem de WhatsApp enviada',
+  email_sent: 'E-mail enviado',
 };
 
 function describeProps(props?: Record<string, unknown>): string {
@@ -585,6 +587,15 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
     }
   });
 
+  app.get('/api/admin/email/status', async (req, res) => {
+    try {
+      await requireAdmin(req);
+      res.json(emailIsConfigured());
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
   app.get('/api/admin/whatsapp/templates', async (req, res) => {
     try {
       await requireAdmin(req);
@@ -609,8 +620,18 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
     const trigger: AutomationTrigger = body.trigger === 'entered' ? 'entered' : 'stagnant';
     const active = body.active === true;
     const templateName = String(body.templateName ?? '').trim();
-    if (active && !templateName) {
-      throw Object.assign(new Error('Escolha um template para ativar a automação'), { status: 422 });
+    const emailEnabled = body.emailEnabled === true;
+    const emailSubject = String(body.emailSubject ?? '').trim();
+    const emailBody = String(body.emailBody ?? '');
+    // WhatsApp exige template só se a automação está ativa (comportamento
+    // existente); e-mail exige assunto só se o canal de e-mail está ligado —
+    // os dois podem ser independentes: uma automação pode estar ativa com só
+    // WhatsApp, só e-mail, ou os dois.
+    if (active && !templateName && !emailEnabled) {
+      throw Object.assign(new Error('Ative pelo menos um canal (WhatsApp ou e-mail) para ativar a automação'), { status: 422 });
+    }
+    if (emailEnabled && !emailSubject) {
+      throw Object.assign(new Error('Escolha um assunto para ativar o e-mail'), { status: 422 });
     }
     return {
       stage,
@@ -620,6 +641,9 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
       templateName,
       templateLanguage: String(body.templateLanguage ?? 'pt_BR').trim() || 'pt_BR',
       bodyParams: Array.isArray(body.bodyParams) ? body.bodyParams.map((p: unknown) => String(p)) : [],
+      emailEnabled,
+      emailSubject,
+      emailBody,
     };
   }
 
@@ -756,7 +780,7 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
       try {
         const sent = await sendTemplate(whatsapp, templateName, templateLanguage, params);
         await messageRef.set({
-          stage: 'manual', trigger: 'manual', automationId: null, templateName, to: whatsapp,
+          stage: 'manual', trigger: 'manual', automationId: null, channel: 'whatsapp', template: templateName, to: whatsapp,
           status: 'sent', error: null, messageId: sent.messageId,
           sentAt: now.toISOString(), manual: true, dryRun: sent.dryRun,
         });
@@ -765,7 +789,7 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
         res.json({ ok: true, messageId: sent.messageId, dryRun: sent.dryRun });
       } catch (err) {
         await messageRef.set({
-          stage: 'manual', trigger: 'manual', automationId: null, templateName, to: whatsapp,
+          stage: 'manual', trigger: 'manual', automationId: null, channel: 'whatsapp', template: templateName, to: whatsapp,
           status: 'failed', error: (err as Error).message.slice(0, 500), messageId: null,
           sentAt: now.toISOString(), manual: true, dryRun: false,
         });
@@ -786,6 +810,22 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
       if (!crm) throw Object.assign(new Error('Cliente ainda não reconciliado'), { status: 409 });
       await ref.set({ crm: { ...crm, whatsappOptOut: optOut } }, { merge: true });
       await auditLog(admin, uid, 'optout', optOut ? 'bloqueou WhatsApp' : 'liberou WhatsApp');
+      res.json({ ok: true, optOut });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  app.post('/api/admin/customers/:uid/email/optout', async (req, res) => {
+    try {
+      const admin = await requireAdmin(req);
+      const uid = req.params.uid;
+      const optOut = req.body?.optOut === true;
+      const ref = adminDb.collection('users').doc(uid);
+      const crm = (await ref.get()).get('crm') as CrmSummary | undefined;
+      if (!crm) throw Object.assign(new Error('Cliente ainda não reconciliado'), { status: 409 });
+      await ref.set({ crm: { ...crm, emailOptOut: optOut } }, { merge: true });
+      await auditLog(admin, uid, 'optout', optOut ? 'bloqueou e-mail' : 'liberou e-mail');
       res.json({ ok: true, optOut });
     } catch (err) {
       sendError(res, err);
