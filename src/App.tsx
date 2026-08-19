@@ -3064,29 +3064,41 @@ Retorne APENAS um JSON válido no seguinte formato:
           ) : (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 h-full flex flex-col max-w-[1600px] mx-auto">
                {!onboardingCompleted && !onboardingBannerDismissed && (
-                 <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 px-4 py-3 shrink-0">
-                   <div className="flex items-center gap-2.5 min-w-0">
-                     <Gift className="w-5 h-5 text-[#FF5B03] shrink-0" />
-                     <p className="text-sm text-slate-700 truncate">
-                       <span className="font-semibold">Complete seu cadastro</span> e ganhe 30 créditos — leva menos de 2 minutos.
-                     </p>
-                   </div>
-                   <div className="flex items-center gap-2 shrink-0">
+                 <div className="relative mb-4 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-[#141311] to-[#1e3a8a] shadow-lg shadow-slate-900/10">
+                   <div className="pointer-events-none absolute -right-6 -top-10 h-32 w-32 rounded-full bg-orange-500/30 blur-3xl" />
+                   <button
+                     onClick={() => { setOnboardingBannerDismissed(true); localStorage.setItem('onboardingBannerDismissed', '1'); }}
+                     className="absolute right-3 top-3 z-10 p-1.5 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-colors"
+                     title="Dispensar"
+                   >
+                     <X className="w-4 h-4" />
+                   </button>
+                   <div className="relative flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-4 pr-12 sm:py-3.5 sm:pr-4">
+                     <div className="flex items-center gap-2.5 min-w-0">
+                       <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-white/10 shrink-0">
+                         <Gift className="w-5 h-5 text-orange-300" />
+                       </span>
+                       <p className="text-sm text-white/85 leading-snug">
+                         <span className="font-display font-bold text-white">Complete seu cadastro</span>
+                         <span className="block sm:inline sm:ml-1">e ganhe 30 créditos — leva menos de 2 minutos.</span>
+                       </p>
+                     </div>
                      <button
                        onClick={() => setIsOnboardingWizardOpen(true)}
-                       className="px-3 py-1.5 text-xs font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] rounded-lg shadow-sm transition-colors"
+                       className="w-full sm:w-auto sm:ml-auto shrink-0 px-4 py-2.5 sm:py-1.5 text-sm font-bold text-[#141311] bg-white hover:bg-orange-50 rounded-xl shadow-sm transition-colors active:scale-95"
                      >
                        Completar agora
                      </button>
-                     <button
-                       onClick={() => { setOnboardingBannerDismissed(true); localStorage.setItem('onboardingBannerDismissed', '1'); }}
-                       className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg transition-colors"
-                       title="Dispensar"
-                     >
-                       <X className="w-4 h-4" />
-                     </button>
                    </div>
                  </div>
+               )}
+               {products.length === 0 && (
+                 <button
+                   onClick={() => setIsProductUrlImportOpen(true)}
+                   className="sm:hidden mb-4 w-full shrink-0 flex items-center justify-center gap-2 px-4 py-3 bg-[#FF5B03] text-white rounded-xl shadow-md shadow-orange-200 font-bold text-sm hover:bg-[#E14E00] transition-all active:scale-95"
+                 >
+                   <LinkIcon className="w-4 h-4" /> Criar meu primeiro produto
+                 </button>
                )}
                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-5 gap-4 flex-shrink-0">
                  <div>
