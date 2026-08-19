@@ -68,6 +68,62 @@ function extractFromJsonLd($: cheerio.CheerioAPI): ExtractedProductFields | null
   return null;
 }
 
+// Lojas quase sempre expõem a própria marca em pelo menos um destes lugares:
+// favicon, um <img> dentro de header/[class*="logo"], ou o campo `logo` de um
+// nó JSON-LD Organization/WebSite. Coleta tudo isso para poder recusar usar
+// exatamente essa URL como imagem do produto — é o padrão mais comum de
+// scrape errado: a página não tem og:image específico e cai no banner/logo
+// genérico do site.
+function findKnownLogoUrls($: cheerio.CheerioAPI, baseUrl: string | undefined): Set<string> {
+  const raw = new Set<string>();
+
+  $('link[rel~="icon"], link[rel="apple-touch-icon"], link[rel="mask-icon"]').each((_, el) => {
+    const href = $(el).attr('href');
+    if (href) raw.add(href);
+  });
+
+  $('header img, [class*="logo" i] img, [id*="logo" i] img, a[class*="brand" i] img, img[class*="logo" i], img[id*="logo" i], img[alt*="logo" i]').each((_, el) => {
+    const src = $(el).attr('src') || $(el).attr('data-src');
+    if (src) raw.add(src);
+  });
+
+  const scripts = $('script[type="application/ld+json"]').toArray();
+  for (const script of scripts) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse($(script).contents().text());
+    } catch {
+      continue;
+    }
+    const candidates = Array.isArray(parsed) ? parsed : [parsed];
+    for (const candidate of candidates) {
+      if (!candidate || typeof candidate !== 'object') continue;
+      const node = candidate as Record<string, unknown>;
+      const type = node['@type'];
+      const isOrgLike = type === 'Organization' || type === 'WebSite' || (Array.isArray(type) && (type.includes('Organization') || type.includes('WebSite')));
+      if (!isOrgLike) continue;
+      const logo = firstImage(node.logo);
+      if (logo) raw.add(logo);
+    }
+  }
+
+  const resolved = new Set<string>();
+  for (const url of raw) {
+    resolved.add(resolveImageUrl(url, baseUrl) ?? url);
+  }
+  return resolved;
+}
+
+const LOGO_FILENAME_PATTERN = /logo|favicon|sprite|placeholder|no[-_]?image|default[-_]?image/i;
+
+function looksLikeLogoFilename(url: string): boolean {
+  try {
+    return LOGO_FILENAME_PATTERN.test(new URL(url).pathname);
+  } catch {
+    return LOGO_FILENAME_PATTERN.test(url);
+  }
+}
+
 function extractFromOpenGraph($: cheerio.CheerioAPI): ExtractedProductFields {
   const meta = (name: string) => $(`meta[property="${name}"]`).attr('content')?.trim();
   return {
@@ -108,7 +164,17 @@ export function parseProductFromHtml(html: string, baseUrl?: string): ExtractedP
   const fromOg = extractFromOpenGraph($);
   // JSON-LD é a fonte primária; OG só preenche o que faltou.
   const merged = dropEmpty({ ...fromOg, ...fromJsonLd });
-  return { ...merged, imageUrl: resolveImageUrl(merged.imageUrl, baseUrl) };
+  const imageUrl = resolveImageUrl(merged.imageUrl, baseUrl);
+
+  // Recusa usar a imagem se ela for reconhecidamente o logo/ícone do site
+  // (favicon, <img> de header/[class*="logo"], ou Organization.logo do JSON-LD)
+  // ou se o nome do arquivo indicar isso — melhor deixar sem imagem (usuário
+  // completa manualmente) do que cadastrar o produto com a marca da loja.
+  const isKnownLogo = !!imageUrl && findKnownLogoUrls($, baseUrl).has(imageUrl);
+  const isLogoFilename = !!imageUrl && looksLikeLogoFilename(imageUrl);
+  const safeImageUrl = isKnownLogo || isLogoFilename ? undefined : imageUrl;
+
+  return { ...merged, imageUrl: safeImageUrl };
 }
 
 // ---------------------------------------------------------------------------

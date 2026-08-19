@@ -84,5 +84,68 @@ check(
   { title: 'Boné Trucker', imageUrl: '/img/bone.jpg' },
 );
 
+// og:image igual ao <img> de header/[class*="logo"] é recusado — sintoma
+// clássico de página sem meta específico, caindo no banner genérico do site
+const logoInHeaderHtml = `<html><head>
+  <meta property="og:title" content="Camisa Polo" />
+  <meta property="og:image" content="https://loja.exemplo/cdn/marca.png" />
+</head><body>
+  <header><div class="site-logo"><img src="https://loja.exemplo/cdn/marca.png" alt="Loja Exemplo" /></div></header>
+</body></html>`;
+check(
+  'recusa og:image que é o mesmo <img> do header/logo',
+  parseProductFromHtml(logoInHeaderHtml, 'https://loja.exemplo/produtos/camisa-polo'),
+  { title: 'Camisa Polo' },
+);
+
+// og:image igual ao favicon é recusado
+const logoAsFaviconHtml = `<html><head>
+  <link rel="icon" href="/favicon-marca.png" />
+  <meta property="og:title" content="Calça Jeans" />
+  <meta property="og:image" content="https://loja.exemplo/favicon-marca.png" />
+</head><body></body></html>`;
+check(
+  'recusa og:image que é o mesmo do favicon',
+  parseProductFromHtml(logoAsFaviconHtml, 'https://loja.exemplo/produtos/calca-jeans'),
+  { title: 'Calça Jeans' },
+);
+
+// Organization.logo (JSON-LD) usado como image do produto é recusado
+const logoFromOrganizationHtml = `<html><head>
+  <script type="application/ld+json">{"@type":"Organization","name":"Loja Exemplo","logo":"https://loja.exemplo/cdn/org-logo.png"}</script>
+  <meta property="og:title" content="Jaqueta Corta-vento" />
+  <meta property="og:image" content="https://loja.exemplo/cdn/org-logo.png" />
+</head><body></body></html>`;
+check(
+  'recusa og:image igual ao Organization.logo do JSON-LD',
+  parseProductFromHtml(logoFromOrganizationHtml, 'https://loja.exemplo/produtos/jaqueta'),
+  { title: 'Jaqueta Corta-vento' },
+);
+
+// Nome de arquivo com "logo"/"favicon" é recusado mesmo sem <img>/favicon correspondente na página
+const logoFilenameHtml = `<html><head>
+  <meta property="og:title" content="Bermuda Cargo" />
+  <meta property="og:image" content="https://loja.exemplo/assets/logo-principal.svg" />
+</head><body></body></html>`;
+check(
+  'recusa imagem cujo nome de arquivo indica logo, mesmo sem markup correspondente',
+  parseProductFromHtml(logoFilenameHtml, 'https://loja.exemplo/produtos/bermuda-cargo'),
+  { title: 'Bermuda Cargo' },
+);
+
+// Imagem de produto legítima (não bate com nenhum sinal de logo) permanece intacta
+const legitProductImageHtml = `<html><head>
+  <link rel="icon" href="/favicon.ico" />
+  <meta property="og:title" content="Óculos de Sol" />
+  <meta property="og:image" content="https://loja.exemplo/produtos/oculos-sol-preto.jpg" />
+</head><body>
+  <header><img class="logo" src="/img/logo-loja.svg" alt="Loja Exemplo" /></header>
+</body></html>`;
+check(
+  'mantém imagem de produto legítima quando não coincide com nenhum sinal de logo',
+  parseProductFromHtml(legitProductImageHtml, 'https://loja.exemplo/produtos/oculos-sol'),
+  { title: 'Óculos de Sol', imageUrl: 'https://loja.exemplo/produtos/oculos-sol-preto.jpg' },
+);
+
 console.log(failures === 0 ? '\nTodas as verificações passaram.' : `\n${failures} verificação(ões) falharam.`);
 process.exit(failures === 0 ? 0 : 1);
