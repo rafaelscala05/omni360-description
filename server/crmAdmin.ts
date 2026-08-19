@@ -734,7 +734,15 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
         .collection('crm_messages')
         .get();
       const messages = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() }) as CrmMessage)
+        .map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            ...data,
+            channel: data.channel ?? 'whatsapp',
+            template: data.template ?? data.templateName ?? '',
+          } as CrmMessage;
+        })
         .sort((a, b) => (b.sentAt ?? '').localeCompare(a.sentAt ?? ''));
       res.json({ messages });
     } catch (err) {
