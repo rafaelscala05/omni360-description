@@ -88,12 +88,27 @@ function dropEmpty(fields: ExtractedProductFields): ExtractedProductFields {
   return out;
 }
 
-export function parseProductFromHtml(html: string): ExtractedProductFields {
+// Páginas frequentemente publicam og:image/JSON-LD image como caminho
+// relativo ("/img/produto.jpg"); sem resolver contra a URL da página, o
+// navegador tenta carregar a partir do domínio do próprio app e a imagem
+// nunca aparece. Falha silenciosamente (retorna a string original) para
+// nunca derrubar a extração por causa de uma URL malformada.
+function resolveImageUrl(imageUrl: string | undefined, baseUrl: string | undefined): string | undefined {
+  if (!imageUrl || !baseUrl) return imageUrl;
+  try {
+    return new URL(imageUrl, baseUrl).toString();
+  } catch {
+    return imageUrl;
+  }
+}
+
+export function parseProductFromHtml(html: string, baseUrl?: string): ExtractedProductFields {
   const $ = cheerio.load(html);
   const fromJsonLd = extractFromJsonLd($);
   const fromOg = extractFromOpenGraph($);
   // JSON-LD é a fonte primária; OG só preenche o que faltou.
-  return dropEmpty({ ...fromOg, ...fromJsonLd });
+  const merged = dropEmpty({ ...fromOg, ...fromJsonLd });
+  return { ...merged, imageUrl: resolveImageUrl(merged.imageUrl, baseUrl) };
 }
 
 // ---------------------------------------------------------------------------
@@ -220,7 +235,7 @@ export function registerProductImportRoutes(app: express.Application, deps: Prod
         return res.json({ product: {}, source: 'failed' });
       }
 
-      const structured = parseProductFromHtml(html);
+      const structured = parseProductFromHtml(html, rawUrl);
       const needsAiGaps = !structured.title || !structured.description || structured.description.length < 40;
 
       if (!needsAiGaps) {

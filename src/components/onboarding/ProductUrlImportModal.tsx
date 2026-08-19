@@ -22,6 +22,7 @@ export interface ProductUrlImportModalProps {
   onGenerateDescription: (id: string) => Promise<void>;
   onSuggestAttributes: (id: string) => Promise<boolean>;
   onOpenImageSearch: (id: string) => void;
+  onCreateCategory: (name: string) => Promise<string | null>;
   onFinish: () => void;
   descriptionCreditCost: number;
   currentCredits: number;
@@ -49,7 +50,7 @@ function buildProduct(form: ProductFormValue, categories: Category[]): Product {
 
 const ProductUrlImportModal: React.FC<ProductUrlImportModalProps> = ({
   isOpen, onClose, categories, initialStep, initialProduct,
-  onProductCreated, onGenerateDescription, onSuggestAttributes, onOpenImageSearch, onFinish,
+  onProductCreated, onGenerateDescription, onSuggestAttributes, onOpenImageSearch, onCreateCategory, onFinish,
   descriptionCreditCost, currentCredits,
 }) => {
   const [step, setStep] = useState<WizardStep>(initialStep ?? 'intro');
@@ -218,6 +219,7 @@ const ProductUrlImportModal: React.FC<ProductUrlImportModalProps> = ({
         categories={categories}
         onUploadImage={handleUploadImage}
         isUploadingImage={isUploadingImage}
+        onCreateCategory={onCreateCategory}
       />
       {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
       <button

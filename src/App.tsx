@@ -2098,6 +2098,32 @@ Retorne APENAS um JSON válido no seguinte formato:
     setIsProductUrlImportOpen(false);
   };
 
+  // Cria uma categoria de topo (sem pai) a partir do wizard de onboarding,
+  // mesmo formato usado por CategoryManager.handleSave para uma categoria raiz.
+  const handleCreateCategoryForOnboarding = async (name: string): Promise<string | null> => {
+    if (!user) return null;
+    try {
+      const saved = await saveCategory(user.uid, {
+        name,
+        slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        parentId: null,
+        level: 0,
+        path: [name],
+        pathIds: [],
+        attributes: [],
+        inheritParentAttributes: true,
+        inheritImagePrompts: true,
+        productCount: 0,
+        aiGenerated: false,
+      });
+      setExistingCategories((prev) => [...prev, saved]);
+      return saved.id;
+    } catch (e) {
+      console.error('Erro ao criar categoria do onboarding:', e);
+      return null;
+    }
+  };
+
   const handleGenerateMass = async () => {
     if (selectedIds.size === 0) return;
     
@@ -4284,6 +4310,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             onGenerateDescription={handleGenerateDescriptionForOnboarding}
             onSuggestAttributes={handleSuggestAttributesForOnboarding}
             onOpenImageSearch={handleOpenImageSearchFromOnboarding}
+            onCreateCategory={handleCreateCategoryForOnboarding}
             onFinish={() => { setIsProductUrlImportOpen(false); setProductUrlImportResumeStep(null); }}
             descriptionCreditCost={getCreditCost(CREDIT_ACTIONS.generateSeoSingle.key)}
             currentCredits={credits}

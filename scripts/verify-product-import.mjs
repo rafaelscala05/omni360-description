@@ -66,5 +66,23 @@ check('JSON-LD quebrado não derruba a extração, cai para OG', parseProductFro
 // Nenhum dado estruturado — retorna objeto vazio, nunca lança
 check('sem JSON-LD nem OG retorna vazio', parseProductFromHtml('<html><head></head><body>oi</body></html>'), {});
 
+// Imagem relativa (comum em og:image) é resolvida contra a URL da página
+const relativeImageHtml = `<html><head>
+  <meta property="og:title" content="Boné Trucker" />
+  <meta property="og:image" content="/img/bone.jpg" />
+</head><body></body></html>`;
+check(
+  'resolve og:image relativo contra a URL da página',
+  parseProductFromHtml(relativeImageHtml, 'https://loja.exemplo/produtos/bone-trucker'),
+  { title: 'Boné Trucker', imageUrl: 'https://loja.exemplo/img/bone.jpg' },
+);
+
+// Sem baseUrl, imagem relativa é devolvida como veio (sem baseUrl não há como resolver)
+check(
+  'sem baseUrl, imagem relativa não é alterada',
+  parseProductFromHtml(relativeImageHtml),
+  { title: 'Boné Trucker', imageUrl: '/img/bone.jpg' },
+);
+
 console.log(failures === 0 ? '\nTodas as verificações passaram.' : `\n${failures} verificação(ões) falharam.`);
 process.exit(failures === 0 ? 0 : 1);
