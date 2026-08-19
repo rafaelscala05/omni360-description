@@ -870,9 +870,14 @@ async function unpublishFromWordpress(uid: string, projectId: string, articleId:
   }
 }
 
-/** _id/_ref determinísticos: nada de e-mail no e-mail, evita duplicar categoria a cada publish. */
-function sanityCategoryDocId(nome: string): string {
-  return `category-${slugify(nome)}`;
+/**
+ * _id/_ref determinísticos: evita duplicar categoria a cada publish. O _type
+ * entra no _id porque é configurável (ver ContentProjectConfig) — sem isso,
+ * mudar sanityCategoryType depois de já ter publicado colide com o _id
+ * antigo (outro _type) e o Studio recusa a referência como "invalid type".
+ */
+function sanityCategoryDocId(categoryType: string, nome: string): string {
+  return `${categoryType}-${slugify(nome)}`;
 }
 
 async function sanityMutate(
@@ -1084,7 +1089,7 @@ async function publishToSanity(uid: string, projectId: string, articleId: string
     if (clusterNome) {
       const categoryType = (sanityCategoryType || 'category').trim();
       const nameField = (sanityCategoryNameField || 'title').trim();
-      const categoryDocId = sanityCategoryDocId(clusterNome);
+      const categoryDocId = sanityCategoryDocId(categoryType, clusterNome);
       // createIfNotExists: garante o doc de categoria sem sobrescrever edições
       // que o cliente já tenha feito nele direto no Studio.
       // `slug` é convenção do Sanity (não configurável aqui, como o nome do
