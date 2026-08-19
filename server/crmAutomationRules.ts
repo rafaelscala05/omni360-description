@@ -26,7 +26,7 @@ export function isWithinSendWindow(now: Date): boolean {
 }
 
 // Gatilho + atraso — sem checks de canal ou janela. Responsabilidade de
-// cada shouldSendX é chamar este depois de verificar a janela.
+// cada shouldSendX é chamar este depois de verificar a janela (isWithinSendWindow).
 function isTriggerDue(summary: CrmSummary, automation: CrmAutomation, now: Date): boolean {
   const hoursInStage = (now.getTime() - new Date(summary.stageEnteredAt).getTime()) / 3600000;
 

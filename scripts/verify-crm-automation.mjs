@@ -211,5 +211,15 @@ check(
   { send: true },
 );
 
+// --- Gatilho 'entered' com atraso (email) ---
+const emailEntered = automation({ trigger: 'entered', delayHours: 24 });
+check('entrou há 15h, atraso de 24h: não dispara (email)', shouldSendEmail(recente, emailEntered, { email: 'a@b.com', optOut: false }, meioDia), {
+  send: false,
+  reason: 'gatilho_nao_atingido',
+});
+check('entrou há 5 dias, atraso de 24h: dispara (email)', shouldSendEmail(parado, emailEntered, { email: 'a@b.com', optOut: false }, meioDia), {
+  send: true,
+});
+
 console.log(failures === 0 ? '\nTodas as verificações passaram.' : `\n${failures} verificação(ões) falharam.`);
 process.exit(failures === 0 ? 0 : 1);
