@@ -1087,8 +1087,16 @@ async function publishToSanity(uid: string, projectId: string, articleId: string
       const categoryDocId = sanityCategoryDocId(clusterNome);
       // createIfNotExists: garante o doc de categoria sem sobrescrever edições
       // que o cliente já tenha feito nele direto no Studio.
+      // `slug` é convenção do Sanity (não configurável aqui, como o nome do
+      // campo já assume em outros tipos do schema) — sem ele, páginas do
+      // frontend do cliente que buscam categoria por slug ficam quebradas.
       mutations.push({
-        createIfNotExists: { _id: categoryDocId, _type: categoryType, [nameField]: clusterNome },
+        createIfNotExists: {
+          _id: categoryDocId,
+          _type: categoryType,
+          [nameField]: clusterNome,
+          slug: { _type: 'slug', current: slugify(clusterNome) },
+        },
       });
       const ref = { _type: 'reference', _ref: categoryDocId };
       // Schemas do starter usam array (`categories`); outros, referência única
