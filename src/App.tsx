@@ -3044,7 +3044,7 @@ Retorne APENAS um JSON válido no seguinte formato:
         </header>
 
         {/* Dynamic View Content */}
-        <main className="flex-1 overflow-y-auto w-full p-6 bg-[#f7f9fb]">
+        <main className="flex-1 overflow-y-auto w-full p-6 pb-20 md:pb-6 bg-[#f7f9fb]">
           {mainView === 'categories' ? (
             <div className="animate-in fade-in h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
               <Suspense fallback={<div className="h-full flex items-center justify-center text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
@@ -3076,26 +3076,49 @@ Retorne APENAS um JSON válido no seguinte formato:
                {!onboardingCompleted && !onboardingBannerDismissed && (
                  <div className="relative mb-4 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-[#141311] to-[#1e3a8a] shadow-lg shadow-slate-900/10">
                    <div className="pointer-events-none absolute -right-6 -top-10 h-32 w-32 rounded-full bg-orange-500/30 blur-3xl" />
+
+                   {/* Mobile: badge compacto de uma linha, o card inteiro é o alvo de toque */}
+                   <button
+                     onClick={() => setIsOnboardingWizardOpen(true)}
+                     className="sm:hidden relative w-full flex items-center gap-2.5 px-3.5 py-2.5 pr-9 text-left"
+                   >
+                     <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-white/10 shrink-0">
+                       <Gift className="w-3.5 h-3.5 text-orange-300" />
+                     </span>
+                     <p className="flex-1 min-w-0 text-xs text-white/85 leading-snug truncate">
+                       <span className="font-display font-bold text-white">Ganhe 30 créditos</span> completando seu cadastro
+                     </p>
+                     <ChevronRight className="w-4 h-4 text-white/50 shrink-0" />
+                   </button>
+                   <button
+                     onClick={(e) => { e.stopPropagation(); setOnboardingBannerDismissed(true); localStorage.setItem('onboardingBannerDismissed', '1'); }}
+                     className="sm:hidden absolute right-2 top-2 z-10 p-1 text-white/60 hover:text-white transition-colors"
+                     title="Dispensar"
+                   >
+                     <X className="w-3.5 h-3.5" />
+                   </button>
+
+                   {/* Desktop/tablet: layout completo com CTA própria */}
                    <button
                      onClick={() => { setOnboardingBannerDismissed(true); localStorage.setItem('onboardingBannerDismissed', '1'); }}
-                     className="absolute right-3 top-3 z-10 p-1.5 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-colors"
+                     className="hidden sm:block absolute right-3 top-3 z-10 p-1.5 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-colors"
                      title="Dispensar"
                    >
                      <X className="w-4 h-4" />
                    </button>
-                   <div className="relative flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-4 pr-12 sm:py-3.5 sm:pr-4">
+                   <div className="hidden sm:flex relative sm:items-center gap-3 px-4 py-3.5 pr-4">
                      <div className="flex items-center gap-2.5 min-w-0">
                        <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-white/10 shrink-0">
                          <Gift className="w-5 h-5 text-orange-300" />
                        </span>
                        <p className="text-sm text-white/85 leading-snug">
                          <span className="font-display font-bold text-white">Complete seu cadastro</span>
-                         <span className="block sm:inline sm:ml-1">e ganhe 30 créditos — leva menos de 2 minutos.</span>
+                         <span className="ml-1">e ganhe 30 créditos — leva menos de 2 minutos.</span>
                        </p>
                      </div>
                      <button
                        onClick={() => setIsOnboardingWizardOpen(true)}
-                       className="w-full sm:w-auto sm:ml-auto shrink-0 px-4 py-2.5 sm:py-1.5 text-sm font-bold text-[#141311] bg-white hover:bg-orange-50 rounded-xl shadow-sm transition-colors active:scale-95"
+                       className="sm:w-auto sm:ml-auto shrink-0 px-4 py-1.5 text-sm font-bold text-[#141311] bg-white hover:bg-orange-50 rounded-xl shadow-sm transition-colors active:scale-95"
                      >
                        Completar agora
                      </button>
@@ -3419,8 +3442,8 @@ Retorne APENAS um JSON válido no seguinte formato:
                      </div>
                  </div>
 
-                 {/* Products Table Core */}
-                 <div className="flex-1 overflow-auto relative rounded-b-xl">
+                 {/* Products Table Core — desktop/tablet only, ver lista de cards abaixo para mobile */}
+                 <div className="hidden md:block flex-1 overflow-auto relative rounded-b-xl">
                      <table className="min-w-full text-left text-sm whitespace-nowrap">
                        <thead className="bg-[#f7f9fb] border-b border-slate-200 sticky top-0 z-20 shadow-sm backdrop-blur-sm bg-opacity-95">
                          <tr>
@@ -3730,6 +3753,106 @@ Retorne APENAS um JSON válido no seguinte formato:
                         }
                     </tbody>
                      </table>
+                  </div>
+
+                  {/* Lista de cards — mobile only, substitui a tabela (que exige scroll horizontal em telas pequenas) */}
+                  <div className="md:hidden flex-1 overflow-auto p-3 space-y-3">
+                    {paginatedProducts.length === 0 ? (
+                      products.length > 0 && (
+                        <p className="text-center text-sm text-slate-500 py-12">Nenhum produto corresponde aos filtros.</p>
+                      )
+                    ) : paginatedProducts.map(product => {
+                      const flags = getProductStatusFlags(product);
+                      const isGeneratingDesc = !!product._isGenerating;
+                      const isError = !!product._generationError || product._statusDescricao === 'Erro';
+                      const statusPill = (on: boolean, Icon: typeof Sparkles, label: string) => (
+                        <span
+                          key={label}
+                          title={`${label}: ${on ? 'concluído' : 'pendente'}`}
+                          className={cn(
+                            "inline-flex items-center justify-center w-6 h-6 rounded-md border",
+                            on ? "bg-orange-50 text-orange-700 border-orange-200/60" : "bg-slate-50 text-slate-300 border-slate-200/60"
+                          )}
+                        >
+                          <Icon className="w-3.5 h-3.5" />
+                        </span>
+                      );
+                      const actionBtn = (onClick: () => void, active: boolean, disabled: boolean, Icon: typeof Sparkles, label: string) => (
+                        <button
+                          onClick={onClick}
+                          disabled={disabled}
+                          className={cn(
+                            "flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl border text-[10px] font-bold uppercase tracking-wide transition-colors min-h-[44px] disabled:opacity-50",
+                            active ? "bg-orange-50 text-orange-700 border-orange-200" : "bg-white text-slate-400 border-slate-200"
+                          )}
+                        >
+                          <Icon className={cn("w-4 h-4", disabled && "animate-pulse")} />
+                          {label}
+                        </button>
+                      );
+                      return (
+                        <div key={product._id} className={cn(
+                          "bg-white border rounded-2xl shadow-sm p-3.5 flex flex-col gap-2.5",
+                          product._generationError ? "border-red-200 bg-red-50/30" : "border-slate-200"
+                        )}>
+                          <div className="flex items-start gap-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(product._id)}
+                              onChange={(e) => {
+                                const next = new Set(selectedIds);
+                                if (e.target.checked) next.add(product._id);
+                                else next.delete(product._id);
+                                setSelectedIds(next);
+                              }}
+                              className="mt-2 shrink-0 rounded border-slate-300 text-[#FF5B03] focus:ring-[#FF5B03]"
+                            />
+                            {(product._selectedImage || product['URL imagem 1']) ? (
+                              <img
+                                src={(product._selectedImage || product['URL imagem 1']!.toString())}
+                                alt=""
+                                className="w-14 h-14 rounded-xl object-contain border border-slate-200 bg-white p-1 shrink-0"
+                                onError={e => { e.currentTarget.style.display = 'none'; }}
+                              />
+                            ) : (
+                              <div className="w-14 h-14 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-center text-slate-400 shrink-0">
+                                <ImageIcon className="w-5 h-5 opacity-70" />
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <p className="font-display font-bold text-sm text-slate-900 leading-snug line-clamp-2">{product['Descrição']}</p>
+                              <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                                <span className="font-mono text-[11px] text-slate-500">{product['Código (SKU)']}</span>
+                                {product['Categoria'] && (
+                                  <>
+                                    <span className="w-0.5 h-0.5 rounded-full bg-slate-300 shrink-0" />
+                                    <span className="text-[11px] text-slate-500 truncate">{product['Categoria']}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 pl-[68px] flex-wrap">
+                            {statusPill(flags.descricaoGerada, Sparkles, 'Descrição')}
+                            {statusPill(flags.atributosGerados, Tag, 'Atributos')}
+                            {statusPill(flags.imagensGeradas, ImageIcon, 'Imagens')}
+                            {isError && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-red-600 ml-1">
+                                <AlertCircle className="w-3 h-3" /> Erro
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-4 gap-2">
+                            {actionBtn(() => handleGenerateSingle(product._id), flags.descricaoGerada, isGeneratingDesc, Sparkles, 'Descrição')}
+                            {actionBtn(() => openPreview(product, 'atributos'), flags.atributosGerados, false, Tag, 'Atributos')}
+                            {actionBtn(() => openPreview(product, 'imagem'), flags.imagensGeradas, false, ImageIcon, 'Imagem')}
+                            {actionBtn(() => openPreview(product), false, false, Eye, 'Ver')}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
 
                   {/* Pagination */}
@@ -4340,6 +4463,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             onSuggestAttributes={handleSuggestAttributesForOnboarding}
             onOpenImageSearch={handleOpenImageSearchFromOnboarding}
             onCreateCategory={handleCreateCategoryForOnboarding}
+            isFirstProduct={products.length === 0}
             onFinish={() => { setIsProductUrlImportOpen(false); setProductUrlImportResumeStep(null); }}
             descriptionCreditCost={getCreditCost(CREDIT_ACTIONS.generateSeoSingle.key)}
             currentCredits={credits}
@@ -4403,6 +4527,49 @@ Retorne APENAS um JSON válido no seguinte formato:
           </div>
         </div>
       )}
+
+      {/* Nav inferior — mobile only, atalho fixo para criar produto sem depender do menu lateral */}
+      <div className="md:hidden fixed left-0 right-0 bottom-0 z-30 bg-white border-t border-slate-200 flex items-center px-2 pt-1.5" style={{ paddingBottom: 'calc(0.375rem + env(safe-area-inset-bottom, 0px))' }}>
+        <button
+          onClick={() => setMainView('products')}
+          className={cn("flex-1 flex flex-col items-center justify-center gap-1 py-1 min-h-[44px]", mainView === 'products' ? "text-[#FF5B03]" : "text-slate-400")}
+        >
+          <Layout className="w-[19px] h-[19px]" />
+          <span className={cn("text-[10px]", mainView === 'products' ? "font-bold" : "font-medium")}>Catálogo</span>
+        </button>
+        <button
+          onClick={() => setMainView('categories')}
+          className={cn("flex-1 flex flex-col items-center justify-center gap-1 py-1 min-h-[44px]", mainView === 'categories' ? "text-[#FF5B03]" : "text-slate-400")}
+        >
+          <Folder className="w-[19px] h-[19px]" />
+          <span className={cn("text-[10px]", mainView === 'categories' ? "font-bold" : "font-medium")}>Categorias</span>
+        </button>
+
+        <div className="flex-none w-16 flex justify-center relative">
+          <button
+            onClick={handleOpenProductUrlImport}
+            className="absolute -top-[26px] w-[52px] h-[52px] rounded-full bg-[#FF5B03] border-4 border-[#f7f9fb] shadow-[0_6px_16px_rgba(255,91,3,0.4)] flex items-center justify-center text-white"
+            title="Novo Produto"
+          >
+            <Plus className="w-[22px] h-[22px]" />
+          </button>
+        </div>
+
+        <button
+          onClick={() => { setIsCreditPurchaseOpen(true); trackCreditPurchaseOpen(); }}
+          className="flex-1 flex flex-col items-center justify-center gap-1 py-1 min-h-[44px] text-slate-400"
+        >
+          <Coins className="w-[19px] h-[19px]" />
+          <span className="text-[10px] font-medium">Créditos</span>
+        </button>
+        <button
+          onClick={() => setIsSidebarOpen(true)}
+          className="flex-1 flex flex-col items-center justify-center gap-1 py-1 min-h-[44px] text-slate-400"
+        >
+          <Menu className="w-[19px] h-[19px]" />
+          <span className="text-[10px] font-medium">Menu</span>
+        </button>
+      </div>
 
     </div>
   );

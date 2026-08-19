@@ -26,6 +26,7 @@ export interface ProductUrlImportModalProps {
   onFinish: () => void;
   descriptionCreditCost: number;
   currentCredits: number;
+  isFirstProduct?: boolean;
 }
 
 const emptyForm: ProductFormValue = { title: '', categoryId: '', imageUrl: '', price: '', description: '' };
@@ -51,7 +52,7 @@ function buildProduct(form: ProductFormValue, categories: Category[]): Product {
 const ProductUrlImportModal: React.FC<ProductUrlImportModalProps> = ({
   isOpen, onClose, categories, initialStep, initialProduct,
   onProductCreated, onGenerateDescription, onSuggestAttributes, onOpenImageSearch, onCreateCategory, onFinish,
-  descriptionCreditCost, currentCredits,
+  descriptionCreditCost, currentCredits, isFirstProduct = true,
 }) => {
   const [step, setStep] = useState<WizardStep>(initialStep ?? 'intro');
   const [product, setProduct] = useState<Product | null>(initialProduct ?? null);
@@ -207,7 +208,7 @@ const ProductUrlImportModal: React.FC<ProductUrlImportModalProps> = ({
   );
 
   const renderForm = (isManual: boolean) => (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-4 sm:pb-0">
       {isManual && manualReason === 'fallback' && (
         <p className="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
           Não conseguimos ler essa página automaticamente — sem problema, preencha à mão.
@@ -222,14 +223,18 @@ const ProductUrlImportModal: React.FC<ProductUrlImportModalProps> = ({
         onCreateCategory={onCreateCategory}
       />
       {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+      {/* No mobile a CTA vira uma barra fixa fora deste fluxo (ver abaixo) — o
+          botão inline só aparece a partir do sm: para não duplicar a ação. */}
       <button
         type="button"
         onClick={handleCreateProduct}
         disabled={!isProductFormValid(form)}
-        className="w-full py-3.5 px-4 bg-[#FF5B03] text-white rounded-xl font-bold hover:bg-[#E14E00] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        className="hidden sm:block w-full py-3.5 px-4 bg-[#FF5B03] text-white rounded-xl font-bold hover:bg-[#E14E00] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
         Criar produto
       </button>
+      {/* Reserva espaço para a barra fixa mobile não cobrir o último campo ao rolar até o fim. */}
+      <div className="h-16 sm:hidden" />
     </div>
   );
 
@@ -240,7 +245,7 @@ const ProductUrlImportModal: React.FC<ProductUrlImportModalProps> = ({
           <button onClick={onClose} className="absolute right-4 top-4 p-1.5 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
             <X className="w-4 h-4" />
           </button>
-          <h2 className="font-display text-xl font-bold tracking-tight">Cadastre seu primeiro produto</h2>
+          <h2 className="font-display text-xl font-bold tracking-tight">{isFirstProduct ? 'Cadastre seu primeiro produto' : 'Novo Produto'}</h2>
           <p className="text-sm text-white/70">Cole o link ou preencha na mão — a IA cuida do resto.</p>
         </div>
 
@@ -312,6 +317,25 @@ const ProductUrlImportModal: React.FC<ProductUrlImportModalProps> = ({
           </AnimatePresence>
         </div>
       </div>
+
+      {/* CTA fixa no rodapé — mobile only. Vive fora do card animado para não
+          herdar o transform do motion.div nem o overflow-hidden do card
+          (ambos quebrariam position:fixed/sticky se ela estivesse lá dentro). */}
+      {(step === 'review' || step === 'manual') && (
+        <div
+          className="sm:hidden fixed inset-x-0 bottom-0 z-10 bg-white border-t border-slate-200 px-4 py-3"
+          style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}
+        >
+          <button
+            type="button"
+            onClick={handleCreateProduct}
+            disabled={!isProductFormValid(form)}
+            className="w-full py-3.5 px-4 bg-[#FF5B03] text-white rounded-xl font-bold hover:bg-[#E14E00] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Criar produto
+          </button>
+        </div>
+      )}
     </div>
   );
 };
