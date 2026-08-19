@@ -80,6 +80,9 @@ export interface CrmSummary {
   // Bloqueia todo envio automático de WhatsApp. Respeitar isso é exigência da
   // política da Meta, não só cortesia.
   whatsappOptOut?: boolean;
+  // Opt-out de e-mail, independente do de WhatsApp — cada canal tem sua
+  // própria trava.
+  emailOptOut?: boolean;
   updatedAt: string;
 }
 
@@ -234,6 +237,11 @@ export interface CrmAutomation {
   templateName: string;
   templateLanguage: string;
   bodyParams: string[];
+  // Canal de e-mail, mesmo trigger/delayHours do WhatsApp acima — só o
+  // conteúdo e o "ligado/desligado" são independentes.
+  emailEnabled: boolean;
+  emailSubject: string;
+  emailBody: string; // HTML; mesmos tokens de TEMPLATE_TOKENS
   updatedAt: string | null;
   updatedBy: string | null;
 }
@@ -243,9 +251,13 @@ export interface CrmMessage {
   // null para envios manuais e para mensagens antigas gravadas antes desta
   // mudança (id de documento era o nome da etapa, não de uma automação).
   automationId: string | null;
+  // Docs gravados antes deste campo existir são sempre WhatsApp — não há
+  // migração retroativa, a UI trata 'channel' ausente como 'whatsapp'.
+  channel: 'whatsapp' | 'email';
   stage: CrmStage | 'manual';
   trigger: AutomationTrigger | 'manual';
-  templateName: string;
+  // templateName (whatsapp) ou emailSubject (email) resolvido no momento do envio.
+  template: string;
   to: string;
   status: 'sent' | 'failed';
   error: string | null;
@@ -265,6 +277,13 @@ export interface WhatsAppTemplateInfo {
 }
 
 export interface WhatsAppStatus {
+  configured: boolean;
+  missing: string[];
+  dryRun: boolean;
+  maxPerDay: number;
+}
+
+export interface EmailStatus {
   configured: boolean;
   missing: string[];
   dryRun: boolean;
@@ -292,6 +311,9 @@ export function defaultAutomation(stage: CrmStage): Omit<CrmAutomation, 'id'> {
     templateName: '',
     templateLanguage: 'pt_BR',
     bodyParams: [],
+    emailEnabled: false,
+    emailSubject: '',
+    emailBody: '',
     updatedAt: null,
     updatedBy: null,
   };

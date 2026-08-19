@@ -15,12 +15,14 @@ import {
   type AutomationTrigger,
   type CrmAutomation,
   type CrmStage,
+  type EmailStatus,
   type WhatsAppStatus,
   type WhatsAppTemplateInfo,
 } from '../../types/crm';
 import {
   createAutomation,
   deleteAutomation,
+  getEmailStatus,
   getWhatsAppStatus,
   listAutomations,
   listTemplates,
@@ -31,6 +33,7 @@ import { Card, ErrorBanner, Spinner } from './ui';
 
 export default function AutomationsView() {
   const [status, setStatus] = useState<WhatsAppStatus | null>(null);
+  const [emailStatus, setEmailStatus] = useState<EmailStatus | null>(null);
   const [templates, setTemplates] = useState<WhatsAppTemplateInfo[]>([]);
   const [templatesError, setTemplatesError] = useState('');
   const [automations, setAutomations] = useState<CrmAutomation[]>();
@@ -43,8 +46,9 @@ export default function AutomationsView() {
     setLoading(true);
     setError('');
     try {
-      const [s, a] = await Promise.all([getWhatsAppStatus(), listAutomations()]);
+      const [s, es, a] = await Promise.all([getWhatsAppStatus(), getEmailStatus(), listAutomations()]);
       setStatus(s);
+      setEmailStatus(es);
       setAutomations(a.automations);
 
       // Templates só existem se o provider estiver configurado; a falha aqui não
@@ -125,7 +129,7 @@ export default function AutomationsView() {
   }
 
   if (loading) return <Spinner />;
-  if (!automations || !status) return error ? <ErrorBanner message={error} /> : null;
+  if (!automations || !status || !emailStatus) return error ? <ErrorBanner message={error} /> : null;
 
   return (
     <div className="space-y-4">
@@ -152,6 +156,29 @@ export default function AutomationsView() {
           <strong>Modo simulação ligado</strong> (<code>WHATSAPP_DRY_RUN=true</code>). Os envios são
           registrados no histórico mas nenhuma mensagem sai de verdade. Use para validar a régua antes
           de apontar para clientes reais.
+        </div>
+      )}
+
+      {emailStatus && !emailStatus.configured && (
+        <div className="px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+          <p className="font-bold">E-mail (SMTP) não configurado</p>
+          <p className="mt-1">
+            Defina no ambiente:{' '}
+            {emailStatus.missing.map((m) => (
+              <code key={m} className="mx-0.5 px-1 py-0.5 rounded bg-amber-100 text-xs">
+                {m}
+              </code>
+            ))}
+            . Você pode configurar as automações agora — o e-mail só começa a disparar quando as
+            credenciais SMTP existirem.
+          </p>
+        </div>
+      )}
+
+      {emailStatus?.dryRun && (
+        <div className="px-4 py-3 rounded-lg bg-sky-50 border border-sky-200 text-sm text-sky-800">
+          <strong>Modo simulação de e-mail ligado</strong> (<code>EMAIL_DRY_RUN=true</code>). Os envios
+          são registrados no histórico mas nenhum e-mail sai de verdade.
         </div>
       )}
 
@@ -380,6 +407,36 @@ function AutomationRow({
           )}
         </div>
       )}
+
+      <div className="mt-3 pt-3 border-t border-slate-100">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={automation.emailEnabled}
+            onChange={(e) => onChange({ emailEnabled: e.target.checked })}
+            className="accent-violet-600 w-4 h-4 shrink-0"
+          />
+          <span className="text-sm text-slate-600">Também enviar e-mail</span>
+        </label>
+
+        {automation.emailEnabled && (
+          <div className="mt-2 space-y-2">
+            <input
+              value={automation.emailSubject}
+              onChange={(e) => onChange({ emailSubject: e.target.value })}
+              placeholder="Assunto do e-mail"
+              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-sm"
+            />
+            <textarea
+              value={automation.emailBody}
+              onChange={(e) => onChange({ emailBody: e.target.value })}
+              placeholder="Corpo do e-mail (HTML). Use {{nome}}, {{empresa}} etc."
+              rows={5}
+              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-sm font-mono"
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
