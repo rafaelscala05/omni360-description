@@ -7,7 +7,7 @@ import type express from 'express';
 import { GoogleGenAI } from '@google/genai';
 import firebaseAppletConfig from '../firebase-applet-config.json';
 import { assertSafeUrl, fetchHtmlSafely } from './safeUrl';
-import { extractCatalogProductId, fetchCatalogProduct } from './mercadoLivre';
+import { extractCatalogProductId, fetchCatalogProduct, isMercadoLivreUrl } from './mercadoLivre';
 
 export interface ExtractedProductFields {
   title?: string;
@@ -431,19 +431,24 @@ export function registerProductImportRoutes(app: express.Application, deps: Prod
         throw Object.assign(new Error('URL é obrigatória'), { status: 422 });
       }
 
-      // Produto de catálogo do Mercado Livre (URL .../p/MLB<id>): busca pela
-      // API oficial em vez de raspar a página — evita de vez o desafio
-      // anti-bot deles (ver server/mercadoLivre.ts). Se não achar (produto
-      // sem catálogo, id inválido), cai pro fluxo de scrape normal abaixo.
-      const catalogId = extractCatalogProductId(rawUrl);
-      if (catalogId) {
-        const catalogProduct = await fetchCatalogProduct(catalogId).catch((e: unknown) => {
-          console.warn('product-import: busca no catálogo do Mercado Livre falhou', (e as Error).message);
-          return null;
+      // Mercado Livre: nunca raspa a página (bloqueio por reputação de IP da
+      // rede do Cloud Run, não contorna com header nenhum — ver
+      // server/safeUrl.ts). Se for produto de catálogo (URL .../p/MLB<id>),
+      // busca pela API oficial; se não achar (anúncio sem catálogo, precisa
+      // de autorização do próprio vendedor pra ler), cai direto pro
+      // preenchimento manual sem tentar scraping.
+      if (isMercadoLivreUrl(rawUrl)) {
+        const catalogId = extractCatalogProductId(rawUrl);
+        const catalogProduct = catalogId
+          ? await fetchCatalogProduct(catalogId).catch((e: unknown) => {
+              console.warn('product-import: busca no catálogo do Mercado Livre falhou', (e as Error).message);
+              return null;
+            })
+          : null;
+        return res.json({
+          product: catalogProduct?.title ? catalogProduct : {},
+          source: catalogProduct?.title ? 'structured' : 'failed',
         });
-        if (catalogProduct?.title) {
-          return res.json({ product: catalogProduct, source: 'structured' });
-        }
       }
 
       await assertSafeUrl(rawUrl);

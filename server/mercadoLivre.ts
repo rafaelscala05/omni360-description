@@ -30,10 +30,24 @@ export interface MercadoLivreProductFields {
 // um produto de catálogo de uma oferta individual — só o primeiro tem GET
 // /products/{id} acessível sem autorização de vendedor).
 const CATALOG_URL_PATTERN = /mercadoli(?:vre|bre)\.com(?:\.[a-z]{2})?\/(?:[^/]+\/)?p\/(MLB\d+)/i;
+const MERCADO_LIVRE_HOST_PATTERN = /(^|\.)mercadoli(?:vre|bre)\.com(?:\.[a-z]{2})?$/i;
 
 export function extractCatalogProductId(url: string): string | null {
   const match = url.match(CATALOG_URL_PATTERN);
   return match ? match[1] : null;
+}
+
+// Scraping o domínio do Mercado Livre nunca é confiável a partir da rede do
+// Cloud Run (bloqueio por reputação de IP, não só User-Agent — ver
+// server/safeUrl.ts). Pra qualquer URL desse domínio, o import deve usar só a
+// API oficial (fetchCatalogProduct) e, se não achar, ir direto pro
+// preenchimento manual — nunca tentar o scraper genérico.
+export function isMercadoLivreUrl(rawUrl: string): boolean {
+  try {
+    return MERCADO_LIVRE_HOST_PATTERN.test(new URL(rawUrl).hostname);
+  } catch {
+    return false;
+  }
 }
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
