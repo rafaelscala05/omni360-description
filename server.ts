@@ -22,6 +22,7 @@ import { registerTinyWebhookRoutes } from "./server/tinyWebhook";
 import { registerBlingRoutes } from "./server/blingAgent";
 import { registerBlingImportRoutes, startBlingScheduler } from "./server/blingImportWorker";
 import { registerBlingWebhookRoutes } from "./server/blingWebhook";
+import { registerMercadoLivreWebhookRoutes } from "./server/mercadoLivreWebhook";
 import { registerBlogPublic } from "./server/blogPublic";
 import { registerBlogAdminRoutes } from "./server/blogAdmin";
 import { registerMetaEventsRoutes } from "./server/metaEvents";
@@ -149,6 +150,7 @@ async function startServer() {
   registerBlingRoutes(app, { verifyFirebaseToken });
   registerBlingImportRoutes(app, { verifyFirebaseToken });
   registerBlingWebhookRoutes(app, { verifyFirebaseToken });
+  registerMercadoLivreWebhookRoutes(app);
   registerMetaEventsRoutes(app);
   registerTiktokEventsRoutes(app);
 
