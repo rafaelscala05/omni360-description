@@ -168,6 +168,21 @@ const truncateHtml = (html: string | undefined | null, maxChars = 2500): string 
   return closeEnd === -1 ? html.slice(0, maxChars) : html.slice(0, closeEnd + 1);
 };
 
+// Firestore promises (getDoc/getDocs/etc.) have no built-in timeout — under a
+// stalled connection they never resolve nor reject. Used to bound Firestore
+// calls made during app startup so the UI never hangs forever.
+async function raceTimeout(promise: Promise<unknown>, ms: number): Promise<boolean> {
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const timedOut = await Promise.race([
+    promise.then(() => false),
+    new Promise<boolean>((resolve) => {
+      timeoutId = setTimeout(() => resolve(true), ms);
+    }),
+  ]);
+  clearTimeout(timeoutId!);
+  return timedOut;
+}
+
 export default function App() {
   // State
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -307,7 +322,12 @@ export default function App() {
     async function testConnection() {
       try {
         // Try to fetch a dummy doc from server to verify connectivity
-        await getDocFromServer(doc(db, '_internal_', 'connectivity-test'));
+        const check = getDocFromServer(doc(db, '_internal_', 'connectivity-test'));
+        if (await raceTimeout(check, 15000)) {
+          console.error("Firebase connectivity check timed out after 15s");
+          setIsFirebaseUnavailable(true);
+          return;
+        }
         setIsFirebaseUnavailable(false);
       } catch (error) {
         if (error instanceof Error && (error.message.includes('unavailable') || error.message.includes('offline'))) {
@@ -371,7 +391,8 @@ export default function App() {
         analyticsSetUser(currentUser.uid, currentUser.email, currentUser.displayName);
         // Fetch credits
         const userRef = doc(db, `users/${currentUser.uid}`);
-        try {
+
+        const loadUserData = async () => {
           const userSnap = await getDoc(userRef);
           if (!userSnap.exists()) {
             // New user, give some starter credits
@@ -433,6 +454,18 @@ export default function App() {
           setExistingCategories(cats);
 
           await loadFromCloud(true, currentUser.uid);
+        };
+
+        // Firestore's getDoc/getDocs have no built-in timeout: under a stalled
+        // connection (bad network, blocked App Check/reCAPTCHA script) these
+        // promises never settle, which would leave isAuthReady stuck forever
+        // and the "Carregando Alfreds..." screen frozen. Race against a bound
+        // so startup always unblocks, even if the data ends up incomplete.
+        try {
+          if (await raceTimeout(loadUserData(), 15000)) {
+            console.error('Timed out loading user data/categories after 15s (network or App Check likely stalled)');
+            setIsFirebaseUnavailable(true);
+          }
         } catch (error) {
           console.error("Error fetching user data/categories:", error);
         }
