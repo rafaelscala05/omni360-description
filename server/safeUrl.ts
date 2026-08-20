@@ -60,27 +60,37 @@ export async function assertSafeUrl(rawUrl: string): Promise<URL> {
   return assertSafeDestination(rawUrl);
 }
 
-// Busca o HTML de uma URL já validada por assertSafeUrl, com timeout e limite
-// de tamanho. redirect: 'follow' (não 'error') é intencional — mesma escolha
-// já aceita em scanWebsite (server/contentAgent.ts): produtos reais têm
-// redirecionamentos comuns (http->https, www, slug canônico) e bloquear todos
-// tornaria o scraping inútil na prática. O DNS já foi checado no destino
-// inicial; hops de redirecionamento não são revalidados (risco aceito,
-// idêntico ao já existente em scanWebsite).
-export async function fetchHtmlSafely(
-  rawUrl: string,
-  opts?: { timeoutMs?: number; maxBytes?: number },
-): Promise<string> {
-  const url = await assertSafeUrl(rawUrl);
-  const timeoutMs = opts?.timeoutMs ?? 15000;
-  const maxBytes = opts?.maxBytes ?? 2 * 1024 * 1024;
+const DEFAULT_USER_AGENT = 'Mozilla/5.0 (compatible; AlfredBot/1.0)';
+// Vários sites (Mercado Livre incluso) liberam o crawler do Google do desafio
+// anti-bot que aplicam a qualquer outro cliente, porque dependem dele para
+// indexação/Shopping — ou seja, o mesmo conteúdo que mostram ao Googlebot já é
+// destinado a ser público. Usado só como retry, nunca como primeira tentativa.
+const GOOGLEBOT_USER_AGENT = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
+
+// Assinaturas comuns de página de desafio anti-bot (Akamai/Cloudflare/PerimeterX/
+// Incapsula/Datadome e a verificação própria do Mercado Livre). Checado tanto na
+// URL final (após redirecionamentos) quanto no corpo, porque alguns desses
+// desafios respondem 200 com HTML mínimo em vez de redirecionar.
+const BOT_CHALLENGE_URL_PATTERN = /account-verification|\/challenge(-platform)?\/|captcha|\/_Incapsula_Resource|cf_chl_|checkpoint\.|are-you-a-robot|sorry\/index/i;
+const BOT_CHALLENGE_BODY_PATTERN = /suspicious-traffic|cf-browser-verification|Attention Required! \| Cloudflare|px-captcha|Checking your browser before accessing|verifican?do sua conex[ãa]o|distil_r_blocked|_Incapsula_Resource/i;
+
+function looksLikeBotChallenge(finalUrl: string, html: string): boolean {
+  return BOT_CHALLENGE_URL_PATTERN.test(finalUrl) || BOT_CHALLENGE_BODY_PATTERN.test(html);
+}
+
+async function fetchHtmlOnce(
+  url: URL,
+  userAgent: string,
+  timeoutMs: number,
+  maxBytes: number,
+): Promise<{ html: string; finalUrl: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const resp = await fetch(url.toString(), {
       redirect: 'follow',
       signal: controller.signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AlfredBot/1.0)' },
+      headers: { 'User-Agent': userAgent },
     });
     if (!resp.ok) {
       throw Object.assign(new Error(`Não foi possível acessar a página (${resp.status})`), { status: 502 });
@@ -89,7 +99,7 @@ export async function fetchHtmlSafely(
     if (buf.byteLength > maxBytes) {
       throw Object.assign(new Error('Página muito grande.'), { status: 400 });
     }
-    return buf.toString('utf-8');
+    return { html: buf.toString('utf-8'), finalUrl: resp.url || url.toString() };
   } catch (e) {
     if ((e as Error).name === 'AbortError') {
       throw Object.assign(new Error('Tempo esgotado ao acessar a página'), { status: 504 });
@@ -97,6 +107,40 @@ export async function fetchHtmlSafely(
     throw e;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+// Busca o HTML de uma URL já validada por assertSafeUrl, com timeout e limite
+// de tamanho. redirect: 'follow' (não 'error') é intencional — mesma escolha
+// já aceita em scanWebsite (server/contentAgent.ts): produtos reais têm
+// redirecionamentos comuns (http->https, www, slug canônico) e bloquear todos
+// tornaria o scraping inútil na prática. O DNS já foi checado no destino
+// inicial; hops de redirecionamento não são revalidados (risco aceito,
+// idêntico ao já existente em scanWebsite).
+//
+// Se a primeira tentativa (identificada como AlfredBot) esbarrar num desafio
+// anti-bot, refaz UMA vez com UA de Googlebot antes de desistir — várias
+// plataformas liberam o Googlebot do desafio (ver GOOGLEBOT_USER_AGENT acima).
+export async function fetchHtmlSafely(
+  rawUrl: string,
+  opts?: { timeoutMs?: number; maxBytes?: number },
+): Promise<string> {
+  const url = await assertSafeUrl(rawUrl);
+  const timeoutMs = opts?.timeoutMs ?? 15000;
+  const maxBytes = opts?.maxBytes ?? 2 * 1024 * 1024;
+
+  const first = await fetchHtmlOnce(url, DEFAULT_USER_AGENT, timeoutMs, maxBytes);
+  if (!looksLikeBotChallenge(first.finalUrl, first.html)) {
+    return first.html;
+  }
+
+  try {
+    const retry = await fetchHtmlOnce(url, GOOGLEBOT_USER_AGENT, timeoutMs, maxBytes);
+    return retry.html;
+  } catch {
+    // Retry falhou (ex.: timeout) — devolve o que a primeira tentativa trouxe,
+    // mesmo sendo a página de desafio; quem chama já trata extração vazia.
+    return first.html;
   }
 }
 
