@@ -133,13 +133,22 @@ export async function fetchHtmlSafely(
   if (!looksLikeBotChallenge(first.finalUrl, first.html)) {
     return first.html;
   }
+  console.warn('[fetchHtmlSafely] desafio anti-bot detectado', { rawUrl, finalUrl: first.finalUrl, htmlHead: first.html.slice(0, 200) });
 
   try {
     const retry = await fetchHtmlOnce(url, GOOGLEBOT_USER_AGENT, timeoutMs, maxBytes);
+    const stillChallenged = looksLikeBotChallenge(retry.finalUrl, retry.html);
+    console.warn('[fetchHtmlSafely] resultado do retry com Googlebot UA', {
+      rawUrl,
+      finalUrl: retry.finalUrl,
+      stillChallenged,
+      htmlHead: retry.html.slice(0, 200),
+    });
     return retry.html;
-  } catch {
+  } catch (retryErr) {
     // Retry falhou (ex.: timeout) — devolve o que a primeira tentativa trouxe,
     // mesmo sendo a página de desafio; quem chama já trata extração vazia.
+    console.warn('[fetchHtmlSafely] retry com Googlebot UA lançou erro', { rawUrl, error: (retryErr as Error).message });
     return first.html;
   }
 }
