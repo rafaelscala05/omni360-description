@@ -41,6 +41,16 @@ env:
   - variable: TINY_CLIENT_SECRET
     secret: tiny-client-secret
 
+  # Mercado Livre — leitura pública de produto de catálogo (GET /products/{id})
+  # via token de app (client_credentials), sem autorização por vendedor. Usado
+  # pelo import por URL (server/productImport.ts) pra URLs no formato
+  # .../p/MLB<id>. O client_secret fica no Secret Manager
+  # (mercadolivre-client-secret), nunca em texto aqui.
+  - variable: MERCADOLIVRE_CLIENT_ID
+    value: "4101535881673673"
+  - variable: MERCADOLIVRE_CLIENT_SECRET
+    secret: mercadolivre-client-secret
+
   # CRM admin (/admin). Allowlist de bootstrap do acesso — resolve o ovo-e-galinha
   # do custom claim, que só pode ser concedido com uma service account.
   - variable: ADMIN_EMAILS
