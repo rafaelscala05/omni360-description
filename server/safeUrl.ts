@@ -118,8 +118,15 @@ async function fetchHtmlOnce(
 // inicial; hops de redirecionamento não são revalidados (risco aceito,
 // idêntico ao já existente em scanWebsite).
 //
+// Status em que vale tentar de novo com outro UA: alguns WAFs devolvem 200
+// com a página de desafio (tratado abaixo via looksLikeBotChallenge), mas
+// outros bloqueiam com um desses códigos direto — às vezes até um 404 "falso"
+// pra disfarçar que é bloqueio de bot, não página inexistente de verdade.
+const RETRIABLE_BLOCK_STATUS = new Set([403, 404, 429, 451, 503]);
+
 // Se a primeira tentativa (identificada como AlfredBot) esbarrar num desafio
-// anti-bot, refaz UMA vez com UA de Googlebot antes de desistir — várias
+// anti-bot — seja como HTML de desafio com 200, seja como um status de bloqueio
+// direto — refaz UMA vez com UA de Googlebot antes de desistir: várias
 // plataformas liberam o Googlebot do desafio (ver GOOGLEBOT_USER_AGENT acima).
 export async function fetchHtmlSafely(
   rawUrl: string,
@@ -129,23 +136,23 @@ export async function fetchHtmlSafely(
   const timeoutMs = opts?.timeoutMs ?? 15000;
   const maxBytes = opts?.maxBytes ?? 2 * 1024 * 1024;
 
-  const first = await fetchHtmlOnce(url, DEFAULT_USER_AGENT, timeoutMs, maxBytes);
-  if (!looksLikeBotChallenge(first.finalUrl, first.html)) {
-    return first.html;
+  let first: { html: string; finalUrl: string } | undefined;
+  try {
+    first = await fetchHtmlOnce(url, DEFAULT_USER_AGENT, timeoutMs, maxBytes);
+    if (!looksLikeBotChallenge(first.finalUrl, first.html)) {
+      return first.html;
+    }
+  } catch (e) {
+    const status = (e as { status?: number }).status;
+    if (!status || !RETRIABLE_BLOCK_STATUS.has(status)) throw e;
   }
 
   // Retry com UA de Googlebot: eficaz contra desafios baseados só em UA, mas
   // não contra bloqueio por reputação de IP/rede (confirmado no caso do
   // Mercado Livre — o Cloud Run cai no desafio mesmo com esse UA porque o
   // bloqueio deles também valida a origem da conexão, não só o header).
-  try {
-    const retry = await fetchHtmlOnce(url, GOOGLEBOT_USER_AGENT, timeoutMs, maxBytes);
-    return retry.html;
-  } catch {
-    // Retry falhou (ex.: timeout) — devolve o que a primeira tentativa trouxe,
-    // mesmo sendo a página de desafio; quem chama já trata extração vazia.
-    return first.html;
-  }
+  const retry = await fetchHtmlOnce(url, GOOGLEBOT_USER_AGENT, timeoutMs, maxBytes);
+  return retry.html;
 }
 
 /** Wake's image payloads want a bare base64 string plus a format enum. */
