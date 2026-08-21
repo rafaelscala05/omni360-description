@@ -59,6 +59,7 @@ import {
 } from './analytics';
 import type { CompanyData } from './types/onboarding';
 import { registerReferralSignup } from './services/referralService';
+import { openSupportChat } from './services/supportChat';
 const OnboardingWizard = lazy(() => import('./modules/onboarding/OnboardingWizard'));
 const CompanyProfile = lazy(() => import('./modules/onboarding/CompanyProfile'));
 const ReferralPage = lazy(() => import('./modules/referral/ReferralPage'));
@@ -2987,6 +2988,15 @@ Retorne APENAS um JSON válido no seguinte formato:
             <Building2 className="w-4 h-4" /> Empresa
           </button>
           <button
+            onClick={() => {
+              setIsSidebarOpen(false);
+              openSupportChat().catch((err) => console.error('[suporte] falha ao abrir o chat de ajuda', err));
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 font-medium hover:text-white hover:bg-white/5 transition-colors"
+          >
+            <HelpCircle className="w-4 h-4" /> Ajuda
+          </button>
+          <button
             onClick={() => { setIsTemplateModalOpen(true); setIsSidebarOpen(false); }}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 font-medium hover:text-white hover:bg-white/5 transition-colors"
           >
@@ -4521,7 +4531,7 @@ Retorne APENAS um JSON válido no seguinte formato:
       )}
 
       {/* Build version footer */}
-      <div className="fixed bottom-1 right-2 z-40 text-[10px] text-slate-400 pointer-events-none select-none">
+      <div className="hidden md:block fixed bottom-1 right-2 z-40 text-[10px] text-slate-400 pointer-events-none select-none">
         build {BUILD_VERSION}
       </div>
 
