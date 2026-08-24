@@ -39,6 +39,7 @@ const integrations: Integration[] = [
   {
     name: 'ERP IdWorks',
     render: () => <span className="text-porcelain font-semibold text-lg">IdWorks</span>,
+    comingSoon: true,
   },
 ];
 
