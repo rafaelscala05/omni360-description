@@ -25,7 +25,7 @@ import type {
   ArticleStage,
   ArticleSize,
 } from '../src/modules/content/types';
-import type { BlogPost, BlogPostProduct, BlogSettings } from '../src/modules/content/blog/types';
+import type { BlogPost, BlogPostProduct, BlogSettings, BlogDomainDoc } from '../src/modules/content/blog/types';
 import { slugify, uniqueSlug } from '../src/modules/content/blog/slug';
 import { markdownToHtml } from '../src/modules/content/markdown';
 import * as seRanking from './seRankingClient';
@@ -1252,11 +1252,17 @@ async function publishToBlog(uid: string, projectId: string, articleId: string):
   }, { merge: true });
 
   // URL pública: domínio verificado (se houver) ou /b/{slug} na plataforma.
+  // 'proxy' serve só sob /blog no domínio do cliente, nunca na raiz — por
+  // isso entra como um caso à parte, não como o domínio canônico.
   const domainsSnap = await adminDb.collection('blogDomains')
-    .where('uid', '==', uid).where('projectId', '==', projectId).where('verified', '==', true).limit(1).get();
-  const base = domainsSnap.empty
-    ? `${(process.env.APP_URL || '').replace(/\/+$/, '') || 'http://localhost:3000'}/b/${settings.slug}`
-    : `https://${domainsSnap.docs[0].id}`;
+    .where('uid', '==', uid).where('projectId', '==', projectId).where('verified', '==', true).get();
+  const rootDomain = domainsSnap.docs.find((d) => (d.data() as BlogDomainDoc).method !== 'proxy');
+  const proxyDomain = domainsSnap.docs.find((d) => (d.data() as BlogDomainDoc).method === 'proxy');
+  const base = rootDomain
+    ? `https://${rootDomain.id}`
+    : proxyDomain
+      ? `https://${proxyDomain.id}/blog`
+      : `${(process.env.APP_URL || '').replace(/\/+$/, '') || 'http://localhost:3000'}/b/${settings.slug}`;
   const url = `${base}/${slug}`;
 
   // Sem débito de créditos: o artigo já foi pago na produção; content_publish

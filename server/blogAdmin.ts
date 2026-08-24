@@ -123,7 +123,7 @@ export function registerBlogAdminRoutes(app: express.Application, deps: Deps): v
         } catch (err) {
           if ((err as { code?: number }).code !== 6) throw err;
           const d = (await ref.get()).data() as BlogDomainDoc | undefined;
-          if (!d || d.uid !== decoded.uid) {
+          if (!d || d.uid !== decoded.uid || d.projectId !== projectId) {
             return res.status(409).json({ error: 'Domínio já registrado por outra conta' });
           }
           if (d.method !== 'proxy') {
@@ -153,7 +153,7 @@ export function registerBlogAdminRoutes(app: express.Application, deps: Deps): v
       } catch (err) {
         if ((err as { code?: number }).code !== 6) throw err;
         const d = (await ref.get()).data() as BlogDomainDoc | undefined;
-        if (!d || d.uid !== decoded.uid) {
+        if (!d || d.uid !== decoded.uid || d.projectId !== projectId) {
           return res.status(409).json({ error: 'Domínio já registrado por outra conta' });
         }
         if (d.method === 'proxy') {

@@ -84,8 +84,15 @@ function proxyTokenCacheSet(token: string, resolved: ProxyResolved | null) {
 async function loadTenantByProxyToken(token: string): Promise<ProxyResolved | null> {
   const cached = proxyTokenCacheGet(token);
   if (cached) return cached.resolved;
+  // Não filtra por verified: a posse do token já é a autenticação (192 bits,
+  // gerado só no cadastro, nunca espelhado no BlogSettings client-side).
+  // Exigir verified aqui criava um deadlock — o próprio probe de verificação
+  // (server/blogAdmin.ts probeProxyDomain) depende de uma requisição real
+  // passar por este resolver pra setar X-Alfred-Blog, então nenhum domínio
+  // conseguiria nunca ficar verified. Filtra por method pra não casar um
+  // proxyToken órfão de um doc que trocou pra 'cname'.
   const snap = await adminDb.collection('blogDomains')
-    .where('proxyToken', '==', token).where('verified', '==', true).limit(1).get();
+    .where('proxyToken', '==', token).where('method', '==', 'proxy').limit(1).get();
   let result: ProxyResolved | null = null;
   if (!snap.empty) {
     const docSnap = snap.docs[0];
@@ -145,8 +152,11 @@ async function loadPublishedPosts(t: Tenant): Promise<BlogPost[]> {
 
 async function loadVerifiedDomain(t: Tenant): Promise<string | null> {
   const snap = await adminDb.collection('blogDomains')
-    .where('uid', '==', t.uid).where('projectId', '==', t.projectId).where('verified', '==', true).limit(1).get();
-  return snap.empty ? null : snap.docs[0].id;
+    .where('uid', '==', t.uid).where('projectId', '==', t.projectId).where('verified', '==', true).get();
+  // 'proxy' nunca serve na raiz (só sob /blog no domínio do cliente) — não é
+  // o domínio canônico que esta função busca.
+  const rootDoc = snap.docs.find((d) => (d.data() as BlogDomainDoc).method !== 'proxy');
+  return rootDoc ? rootDoc.id : null;
 }
 
 function makeCtx(
@@ -155,21 +165,25 @@ function makeCtx(
   baseUrl: string,
   req: express.Request,
   verifiedDomain: string | null,
+  isProxyDomain: boolean,
   demoQuery?: string,
 ): BlogRenderContext {
   const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
   const host = resolvedHost(req);
   // Se existe domínio customizado verificado e o request atual não veio por
   // ele, o canonical deve apontar para o domínio (fonte canônica), mesmo
-  // servindo pela URL /b/{slug} da plataforma. O domínio serve na raiz, então
-  // o prefixo de caminho do canonical fica vazio.
+  // servindo pela URL /b/{slug} da plataforma. Domínio 'cname' serve na raiz
+  // sempre (mesmo vindo de /b/{slug}), então o prefixo do canonical ignora o
+  // baseUrl da request atual. Já 'proxy' serve sob /blog no próprio domínio
+  // do cliente — nunca na raiz — então o prefixo do canonical precisa ser
+  // esse mesmo baseUrl.
   if (verifiedDomain && verifiedDomain !== host) {
     return {
       settings: t.settings,
       categories,
       baseUrl,
       canonicalBase: `https://${verifiedDomain}`,
-      canonicalPathPrefix: '',
+      canonicalPathPrefix: isProxyDomain ? baseUrl : '',
       demoQuery,
     };
   }
@@ -217,7 +231,7 @@ async function serveBlogPath(
   const usingPlaceholder = isPreview && realPosts.length === 0;
   const categories = usingPlaceholder ? PLACEHOLDER_CATEGORIES : realCategories;
   const posts = usingPlaceholder ? PLACEHOLDER_POSTS : realPosts;
-  const ctx = makeCtx(t, categories, baseUrl, req, verifiedDomain, usingPlaceholder ? 'preview=1' : undefined);
+  const ctx = makeCtx(t, categories, baseUrl, req, verifiedDomain, Boolean(domainOverride), usingPlaceholder ? 'preview=1' : undefined);
 
   if (path === '/sitemap.xml') {
     const urls = [
@@ -311,7 +325,8 @@ export function registerBlogPublic(app: express.Application): void {
     // Método 'proxy': o Host da requisição é sempre alfreds.com.br (está em
     // platformHosts), então essa checagem precisa vir ANTES do atalho de
     // platformHosts abaixo, ou o tráfego nunca chega a ser resolvido.
-    const proxyToken = req.headers['x-blog-domain-token'] as string | undefined;
+    const rawProxyToken = req.headers['x-blog-domain-token'];
+    const proxyToken = Array.isArray(rawProxyToken) ? rawProxyToken[0] : rawProxyToken;
     if (proxyToken) {
       try {
         const resolved = await loadTenantByProxyToken(proxyToken);

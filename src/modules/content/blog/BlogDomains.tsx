@@ -28,6 +28,8 @@ const cloudflareWorkerSnippet = (token: string) => `export default {
 
 const reverseProxySnippet = (token: string) => `location /blog {
   proxy_pass https://alfreds.com.br;
+  proxy_ssl_server_name on;
+  proxy_ssl_name alfreds.com.br;
   proxy_set_header Host alfreds.com.br;
   proxy_set_header X-Blog-Domain-Token "${token}";
 }`;
@@ -136,6 +138,7 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
   const handleRotateToken = async (d: string) => {
     if (!window.confirm(`Gerar um novo token para "${d}"? O token atual para de funcionar e o domínio volta a ficar pendente.`)) return;
     setLoadingToken(d);
+    setVerifyDetail((prev) => ({ ...prev, [d]: '' }));
     try {
       const result = await rotateBlogDomainToken(projectId, d);
       setInstructions({ kind: 'proxy', domain: d, proxyToken: result.proxyToken });
@@ -284,7 +287,7 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
               </button>
             </div>
             <pre className="bg-slate-900 text-slate-100 text-xs rounded-xl p-3.5 overflow-x-auto"><code>{reverseProxySnippet(instructions.proxyToken)}</code></pre>
-            <p className="text-xs text-slate-500 mt-1.5">Sintaxe de exemplo em Nginx — adapte pro seu gateway mantendo os dois headers.</p>
+            <p className="text-xs text-slate-500 mt-1.5">Sintaxe de exemplo em Nginx — adapte pro seu gateway mantendo os dois headers de request e garantindo que o header de resposta X-Alfred-Blog não seja removido (alguns API Gateways filtram headers de resposta por allowlist).</p>
           </div>
         </div>
       )}
