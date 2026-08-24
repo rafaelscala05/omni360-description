@@ -53,7 +53,7 @@ const IdworksConnector: React.FC<Props> = ({ onImported, getPushPayload, getPush
   onImportedRef.current = onImported;
 
   const [accountName, setAccountName] = useState('');
-  const [login, setLogin] = useState('');
+  const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [webhookConfig, setWebhookConfig] = useState<IdworksWebhookConfig | null>(null);
   const [pushing, setPushing] = useState(false);
@@ -95,11 +95,11 @@ const IdworksConnector: React.FC<Props> = ({ onImported, getPushPayload, getPush
     setConnecting(true);
     setError(null);
     try {
-      // Credential field names below (login/senha) are a best-effort default — the
-      // exact POST /auth/token body isn't publicly documented (spec Pendências #1).
-      // Keep these form fields in sync with whatever server/idworksAgent.ts's
-      // obtainToken ends up sending once confirmed against a real IdWorks account.
-      const res = await idworksConnect(accountName.trim(), { login: login.trim(), senha });
+      // Credentials contract (confirmed via the IdWorks OpenAPI + probing the
+      // `teste` demo account): POST /user/signin/local with { email, password },
+      // where email is the login (e-mail or CPF/CNPJ). `senha` is the plaintext
+      // password. Server maps these to the request body in idworksAgent.ts.
+      const res = await idworksConnect(accountName.trim(), { email: email.trim(), password: senha });
       if (!res.valid) setError(res.message);
       else await refreshStatus();
     } catch (e) {
@@ -223,12 +223,12 @@ const IdworksConnector: React.FC<Props> = ({ onImported, getPushPayload, getPush
               className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500" />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Login</label>
-            <input type="text" value={login} onChange={(e) => setLogin(e.target.value)} required
+            <label className="block text-xs font-semibold text-slate-600 mb-1">E-mail ou CPF/CNPJ (login)</label>
+            <input type="text" value={email} onChange={(e) => setEmail(e.target.value)} required
               className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500" />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Senha / chave de API</label>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Senha</label>
             <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} required
               className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500" />
           </div>

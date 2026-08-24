@@ -46,11 +46,21 @@ interface IdworksCredentials {
 // Isolated on purpose — the one function to fix once IdWorks confirms the
 // real POST /auth/token contract (spec "Pendências" #1).
 async function obtainToken(accountName: string, credentials: Record<string, string>): Promise<{ token: string; expiresAt: number }> {
+  // Confirmed contract (via the IdWorks OpenAPI spec + empirical probing of the
+  // `teste` demo account): POST /user/signin/local is PUBLIC (no JWT), body
+  // { email, password } (email = login/CPF/CNPJ, auto-detected), returns
+  // { success, token: JWT, body }. The help-site's "POST /auth/token" is not the
+  // real path — probing it returns the AWS gateway error "Missing Authentication
+  // Token", while the required-properties error from /user/signin/local confirms
+  // the email/password schema. `credentials` carries `email` and `password`.
   const base = `https://${accountName}.api-idworks.com.br/1.0`;
-  const res = await fetch(`${base}/auth/token`, {
+  const res = await fetch(`${base}/user/signin/local`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(credentials),
+    body: JSON.stringify({
+      email: credentials.email ?? '',
+      password: credentials.password ?? '',
+    }),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
