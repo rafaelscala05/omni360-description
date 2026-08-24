@@ -95,7 +95,9 @@ export const claimBlogSlug = (projectId: string, slug: string) =>
   callJson<{ slug: string }>(`/api/blog/projects/${projectId}/claim-slug`, 'POST', { slug });
 
 export const addBlogDomain = (projectId: string, domain: string) =>
-  callJson<{ domain: string; verificationToken: string }>(`/api/blog/projects/${projectId}/domains`, 'POST', { domain });
+  callJson<{ domain: string; cnameTarget: string; verified: boolean; detail?: string }>(
+    `/api/blog/projects/${projectId}/domains`, 'POST', { domain },
+  );
 
 export const verifyBlogDomain = (projectId: string, domain: string) =>
   callJson<{ verified: boolean; detail?: string }>(

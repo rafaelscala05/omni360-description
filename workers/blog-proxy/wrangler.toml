@@ -1,0 +1,14 @@
+name = "blog-proxy"
+main = "worker.js"
+compatibility_date = "2026-08-21"
+
+# Wildcard da zona inteira. É o único padrão que pega o tráfego dos custom
+# hostnames dos clientes — rotas de Worker casam pelo hostname que chega, e
+# blog.cliente.com.br não é um subdomínio desta zona. Os hosts da plataforma
+# são devolvidos sem reescrita dentro do próprio worker.js.
+[[routes]]
+pattern = "*/*"
+zone_name = "alfreds.com.br"
+
+# BLOG_PROXY_SECRET não fica aqui. Definir com:
+#   npx wrangler secret put BLOG_PROXY_SECRET

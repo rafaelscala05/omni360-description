@@ -31,6 +31,24 @@ env:
   - variable: CONTENT_CRON_SECRET
     secret: content-cron-secret
 
+  # URL pública do app. Sem isso, platformHosts em server/blogPublic.ts fica só
+  # com localhost e todo GET no app passa por um lookup em blogDomains.
+  - variable: APP_URL
+    value: "https://alfreds.com.br"
+  - variable: CLOUDFLARE_API_TOKEN
+    secret: cloudflare-api-token
+  # Zone ID não é credencial — é identificador, aparece na URL do painel.
+  # Mantê-lo como value evita mais um secret para gerenciar.
+  - variable: CLOUDFLARE_ZONE_ID
+    value: "cd8799c110fe373686b14919fc725870"
+  - variable: CLOUDFLARE_SAAS_CNAME_TARGET
+    value: "blogs.alfreds.com.br"
+  # Segredo compartilhado com o Worker. Enquanto vazio, X-Forwarded-Host é
+  # aceito de qualquer origem (comportamento antigo) — preencher junto com o
+  # deploy do Worker, nunca antes, ou os domínios de cliente param de resolver.
+  - variable: BLOG_PROXY_SECRET
+    secret: blog-proxy-secret
+
   # Tiny ERP (Olist) — API v3, OAuth2. O client_secret NÃO fica aqui; o campo
   # `secret:` referencia o nome do secret no Secret Manager (tiny-client-secret).
   - variable: TINY_CLIENT_ID

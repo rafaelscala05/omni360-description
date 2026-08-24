@@ -32,7 +32,16 @@ interface Tenant { uid: string; projectId: string; settings: BlogSettings; }
 // contexto de renderização e na resolução de domínio customizado, para
 // evitar colisão de cache entre tenants atrás de um mesmo proxy reverso.
 function resolvedHost(req: express.Request): string {
-  const raw = (req.headers['x-forwarded-host'] as string) || req.headers.host || '';
+  // BLOG_PROXY_SECRET, quando configurado, restringe X-Forwarded-Host ao proxy
+  // conhecido (o Worker da Cloudflare, que injeta o mesmo segredo). Sem isso
+  // qualquer um chama o hosted.app forjando o header e escolhe o tenant que
+  // quiser. Não configurado, o comportamento antigo continua valendo — é o que
+  // mantém funcionando o proxy reverso em /blog montado pelo próprio cliente,
+  // que não tem como conhecer o segredo.
+  const secret = process.env.BLOG_PROXY_SECRET;
+  const trusted = !secret || req.headers['x-blog-proxy-secret'] === secret;
+  const forwarded = trusted ? (req.headers['x-forwarded-host'] as string) : '';
+  const raw = forwarded || req.headers.host || '';
   return raw.split(',')[0].trim().toLowerCase();
 }
 

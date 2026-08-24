@@ -228,7 +228,12 @@ export interface BlogCategory {
 export interface BlogDomainDoc {
   uid: string;
   projectId: string;
+  // Espelha o status do custom hostname na Cloudflare — quem de fato decide se
+  // o request chega. Só `true` com hostname e certificado ativos.
   verified: boolean;
-  verificationToken: string;
+  cloudflareHostnameId?: string;
+  // Legado: TXT _alfred-verify, usado antes da borda na Cloudflare provar a
+  // posse. Mantido só para não quebrar docs antigos; nada mais lê.
+  verificationToken?: string;
   createdAt: string;
 }

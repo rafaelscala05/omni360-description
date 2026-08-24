@@ -13,14 +13,13 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
   const [domain, setDomain] = useState('');
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [instructions, setInstructions] = useState<{ domain: string; verificationToken: string } | null>(null);
+  const [instructions, setInstructions] = useState<{ domain: string; cnameTarget: string; detail?: string } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [verifying, setVerifying] = useState<string | null>(null);
   const [verifyDetail, setVerifyDetail] = useState<Record<string, string>>({});
   const [removingDomain, setRemovingDomain] = useState<string | null>(null);
 
   const verifiedDomains = settings.verifiedDomains ?? [];
-  const platformHost = window.location.host;
 
   const handleAdd = async () => {
     const trimmed = domain.trim().toLowerCase();
@@ -54,6 +53,12 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
       if (result.verified) {
         await saveBlogSettings(uid, projectId, { verifiedDomains: Array.from(new Set([...verifiedDomains, d])) });
       } else {
+        // `verified` espelha o estado atual na borda, então pode voltar a ser
+        // falso (certificado expirado, CNAME removido). Tira da lista para a
+        // UI não continuar mostrando "Verificado" num domínio que parou de servir.
+        if (verifiedDomains.includes(d)) {
+          await saveBlogSettings(uid, projectId, { verifiedDomains: verifiedDomains.filter((x) => x !== d) });
+        }
         setVerifyDetail((prev) => ({ ...prev, [d]: result.detail || 'Verificação pendente. Confira o DNS e tente novamente.' }));
       }
     } catch (e) {
@@ -103,52 +108,34 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
       {instructions && (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
           <h3 className="font-semibold text-slate-900 mb-1">Configuração de DNS para {instructions.domain}</h3>
-          <p className="text-sm text-slate-500 mb-4">Configure os registros abaixo no seu provedor de DNS e depois clique em "Verificar".</p>
+          <p className="text-sm text-slate-500 mb-4">
+            Crie o registro abaixo no seu provedor de DNS e depois clique em "Verificar". É o único
+            registro necessário.
+          </p>
 
-          <div className="space-y-3">
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
-              <p className="text-xs font-semibold text-slate-500 mb-1">1. Registro CNAME</p>
-              <div className="flex items-center justify-between gap-2">
-                <code className="text-sm text-slate-800 break-all">{instructions.domain} → {platformHost}</code>
-                <button
-                  onClick={() => handleCopy(platformHost, 'cname')}
-                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-md shrink-0"
-                  title="Copiar"
-                >
-                  {copied === 'cname' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
-              <p className="text-xs font-semibold text-slate-500 mb-1">2. Registro TXT (verificação)</p>
-              <p className="text-sm text-slate-800 mb-1">Nome: <code>_alfred-verify.{instructions.domain}</code></p>
-              <div className="flex items-center justify-between gap-2">
-                <code className="text-sm text-slate-800 break-all">{instructions.verificationToken}</code>
-                <button
-                  onClick={() => handleCopy(instructions.verificationToken, 'txt')}
-                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-md shrink-0"
-                  title="Copiar"
-                >
-                  {copied === 'txt' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
-              <p className="text-xs font-semibold text-slate-500 mb-1.5">3. Alternativa: proxy reverso em /blog</p>
-              <p className="text-xs text-slate-500 mb-2">
-                Caso prefira manter o domínio principal apontando para o seu servidor, configure um proxy reverso para o
-                caminho <code>/blog</code> apontando para a plataforma. Exemplo com nginx:
-              </p>
-              <pre className="text-xs text-slate-700 bg-white border border-slate-200 rounded-lg p-2.5 overflow-x-auto">
-{`location /blog {
-  proxy_pass https://${platformHost};
-  proxy_set_header X-Forwarded-Host $host;
-}`}
-              </pre>
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+            <p className="text-xs font-semibold text-slate-500 mb-2">Registro CNAME</p>
+            <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1.5 text-sm">
+              <span className="text-xs text-slate-400">Nome</span>
+              <code className="text-slate-800 break-all">{instructions.domain}</code>
+              <span />
+              <span className="text-xs text-slate-400">Valor</span>
+              <code className="text-slate-800 break-all">{instructions.cnameTarget}</code>
+              <button
+                onClick={() => handleCopy(instructions.cnameTarget, 'cname')}
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-md shrink-0"
+                title="Copiar"
+              >
+                {copied === 'cname' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+              </button>
             </div>
           </div>
+
+          <p className="text-xs text-slate-500 mt-3">
+            O certificado HTTPS é emitido automaticamente, mas só depois que o CNAME estiver no ar —
+            costuma levar alguns minutos. Se já existir um registro A ou CNAME com esse mesmo nome,
+            remova antes, senão a emissão fica travada.
+          </p>
         </div>
       )}
 
