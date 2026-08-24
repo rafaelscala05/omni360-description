@@ -6,6 +6,8 @@ import type { WakeNormalizedProduct, WakePushProduct } from '../../services/wake
 import type { TinyPushProduct } from '../../services/tinyService';
 import BlingConnector, { type BlingPushFields, type BlingPushCandidate } from './BlingConnector';
 import type { BlingPushProduct, BlingPushResult } from '../../services/blingService';
+import IdworksConnector, { type IdworksPushFields, type IdworksPushCandidate } from './IdworksConnector';
+import type { IdworksPushProduct, IdworksPushResult } from '../../services/idworksService';
 
 interface Props {
   onImport: (produtos: WakeNormalizedProduct[]) => Promise<void>;
@@ -17,9 +19,13 @@ interface Props {
   getBlingPushPayload: (campos: BlingPushFields) => Promise<BlingPushProduct[]>;
   getBlingPushCandidates: (campos: BlingPushFields) => BlingPushCandidate[];
   onBlingPushed: (results: BlingPushResult[]) => void;
+  onIdworksImported: () => void;
+  getIdworksPushPayload: (campos: IdworksPushFields) => Promise<IdworksPushProduct[]>;
+  getIdworksPushCandidates: (campos: IdworksPushFields) => IdworksPushCandidate[];
+  onIdworksPushed: (results: IdworksPushResult[]) => void;
 }
 
-const IntegrationsView: React.FC<Props> = ({ onImport, getPushPayload, onTinyImported, getTinyPushPayload, tinyPushCandidateCount, onBlingImported, getBlingPushPayload, getBlingPushCandidates, onBlingPushed }) => {
+const IntegrationsView: React.FC<Props> = ({ onImport, getPushPayload, onTinyImported, getTinyPushPayload, tinyPushCandidateCount, onBlingImported, getBlingPushPayload, getBlingPushCandidates, onBlingPushed, onIdworksImported, getIdworksPushPayload, getIdworksPushCandidates, onIdworksPushed }) => {
   return (
     <div className="max-w-3xl mx-auto px-4 md:px-6 py-6 space-y-6">
       <div className="flex items-center gap-3">
@@ -77,6 +83,22 @@ const IntegrationsView: React.FC<Props> = ({ onImport, getPushPayload, onTinyImp
         </header>
         <div className="px-5 py-5">
           <BlingConnector onImported={onBlingImported} getPushPayload={getBlingPushPayload} getPushCandidates={getBlingPushCandidates} onPushed={onBlingPushed} />
+        </div>
+      </section>
+
+      {/* ERP IdWorks */}
+      <section className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+        <header className="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
+          <div className="bg-slate-900 p-2 rounded-lg">
+            <Database className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-slate-800">ERP IdWorks</h3>
+            <p className="text-xs text-slate-500">Importe produtos e envie dados enriquecidos.</p>
+          </div>
+        </header>
+        <div className="px-5 py-5">
+          <IdworksConnector onImported={onIdworksImported} getPushPayload={getIdworksPushPayload} getPushCandidates={getIdworksPushCandidates} onPushed={onIdworksPushed} />
         </div>
       </section>
     </div>

@@ -38,6 +38,8 @@ import type { WakeNormalizedProduct, WakePushProduct } from './services/wakeServ
 import type { TinyPushProduct } from './services/tinyService';
 import { type BlingPushFields } from './components/integrations/BlingConnector';
 import type { BlingPushProduct, BlingPushResult } from './services/blingService';
+import { type IdworksPushFields } from './components/integrations/IdworksConnector';
+import type { IdworksPushProduct, IdworksPushResult } from './services/idworksService';
 import { fetchAndProcessImage } from './utils/imageUtils';
 import { generateGrounded, parseJsonResponse } from './services/aiService';
 import { CREDIT_ACTIONS, resolveCreditCost, type CreditAction } from './credits';
@@ -1887,6 +1889,89 @@ export default function App() {
     if (n > 0) await batch.commit().catch((e) => console.warn('Falha ao salvar _blingPushed:', e));
   };
 
+  // --- IdWorks push (mirrors the Bling helpers; same group-signature logic) ---
+  const idworksSelectedProducts = (source: Product[]): Product[] => {
+    const fromIdworks = source.filter((p) => p._idworksProductId);
+    return selectedIds.size > 0 ? fromIdworks.filter((p) => selectedIds.has(p._id)) : fromIdworks;
+  };
+
+  const changedIdworksGroups = (p: Product, campos: IdworksPushFields): Record<TinyGroupKey, boolean> => {
+    const gen = tinyGenerated(p);
+    const out = { descricao: false, seo: false, fiscal: false, imagens: false };
+    (['descricao', 'seo', 'fiscal', 'imagens'] as const).forEach((g) => {
+      if (!campos[g] || !gen[g]) return;
+      const { sig } = tinyGroup[g](p);
+      out[g] = sig !== p._idworksPushed?.[g];
+    });
+    return out;
+  };
+
+  const getIdworksPushCandidates = (campos: IdworksPushFields) => {
+    const out: { id: string; sku: string; nome: string; changed: Record<TinyGroupKey, boolean> }[] = [];
+    for (const p of idworksSelectedProducts(products)) {
+      const ch = changedIdworksGroups(p, campos);
+      if (ch.descricao || ch.seo || ch.fiscal || ch.imagens) {
+        out.push({ id: p._idworksProductId!, sku: p['Código (SKU)'] || '', nome: p['Descrição'] || p['Título SEO'] || '', changed: ch });
+      }
+    }
+    return out;
+  };
+
+  const buildIdworksPushPayload = async (campos: IdworksPushFields): Promise<IdworksPushProduct[]> => {
+    const out: IdworksPushProduct[] = [];
+    for (const p of idworksSelectedProducts(productsRef.current)) {
+      const ch = changedIdworksGroups(p, campos);
+      if (!(ch.descricao || ch.seo || ch.fiscal || ch.imagens)) continue;
+      out.push({
+        idworksId: p._idworksProductId!,
+        sku: p['Código (SKU)'],
+        descricaoHtml: p['Descrição complementar'],
+        seoTitle: p['Título SEO'],
+        seoDescription: p['Descrição SEO'],
+        seoKeywords: p['Palavras chave SEO'],
+        ncm: p['NCM (Classificação fiscal)'],
+        cest: p['CEST'],
+        pesoLiquido: tinyToNum(p['Peso líquido (Kg)']),
+        pesoBruto: tinyToNum(p['Peso bruto (Kg)']),
+        largura: tinyToNum(p['Largura embalagem']),
+        altura: tinyToNum(p['Altura Embalagem']),
+        comprimento: tinyToNum(p['Comprimento embalagem']),
+        imagens: ch.imagens ? collectTinyImages(p) : undefined,
+        campos: ch,
+      });
+    }
+    return out;
+  };
+
+  const handleIdworksPushed = async (results: IdworksPushResult[]) => {
+    if (!user) return;
+    const byId = new Map(results.map((r) => [r.idworksId, r]));
+    const touched: Product[] = [];
+    const next = productsRef.current.map((p) => {
+      const r = p._idworksProductId ? byId.get(p._idworksProductId) : undefined;
+      if (!r) return p;
+      const pushed = { ...(p._idworksPushed ?? {}) };
+      let upd = false;
+      (['descricao', 'seo', 'fiscal', 'imagens'] as const).forEach((g) => {
+        if (r.steps[g] === 'ok') { pushed[g] = tinyGroup[g](p).sig; upd = true; }
+      });
+      if (!upd) return p;
+      const np = { ...p, _idworksPushed: pushed };
+      touched.push(np);
+      return np;
+    });
+    if (!touched.length) return;
+    productsRef.current = next;
+    setProducts(next);
+    let batch = writeBatch(db);
+    let n = 0;
+    for (const p of touched) {
+      batch.set(doc(db, `users/${user.uid}/products/${p._id}`), { _idworksPushed: p._idworksPushed }, { merge: true });
+      if (++n >= 400) { await batch.commit(); batch = writeBatch(db); n = 0; }
+    }
+    if (n > 0) await batch.commit().catch((e) => console.warn('Falha ao salvar _idworksPushed:', e));
+  };
+
   const handleSaveImages =(productId: string, selectedImage: string, ambientImages: string[], tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number }) => {
     setProducts(prev => {
       const updated = [...prev];
@@ -3103,7 +3188,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           ) : mainView === 'history' ? (
             renderHistoryView()
           ) : mainView === 'integrations' ? (
-            <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} onTinyImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getTinyPushPayload={buildTinyPushPayload} tinyPushCandidateCount={tinySelectedProducts(products).length} onBlingImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getBlingPushPayload={buildBlingPushPayload} getBlingPushCandidates={getBlingPushCandidates} onBlingPushed={handleBlingPushed} />
+            <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} onTinyImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getTinyPushPayload={buildTinyPushPayload} tinyPushCandidateCount={tinySelectedProducts(products).length} onBlingImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getBlingPushPayload={buildBlingPushPayload} getBlingPushCandidates={getBlingPushCandidates} onBlingPushed={handleBlingPushed} onIdworksImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getIdworksPushPayload={buildIdworksPushPayload} getIdworksPushCandidates={getIdworksPushCandidates} onIdworksPushed={handleIdworksPushed} />
           ) : mainView === 'tutorial' ? (
             <TutorialView onFinish={() => setMainView('products')} />
           ) : mainView === 'referral' ? (

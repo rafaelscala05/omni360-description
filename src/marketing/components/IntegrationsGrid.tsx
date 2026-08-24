@@ -36,6 +36,10 @@ const integrations: Integration[] = [
     name: 'ERP Bling',
     render: () => <span className="text-porcelain font-semibold text-lg">Bling</span>,
   },
+  {
+    name: 'ERP IdWorks',
+    render: () => <span className="text-porcelain font-semibold text-lg">IdWorks</span>,
+  },
 ];
 
 export default function IntegrationsGrid() {
