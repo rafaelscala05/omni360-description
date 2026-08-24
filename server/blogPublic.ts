@@ -61,6 +61,42 @@ function domainCacheSet(host: string, tenant: Tenant | null) {
   domainCache.set(host, { tenant, expires: Date.now() + DOMAIN_CACHE_TTL_MS });
 }
 
+// Cache de resolução por token (método 'proxy'), mesmo padrão do domainCache
+// acima — token não muda o suficiente pra justificar um índice dedicado, só
+// bounds de Firestore reads.
+interface ProxyResolved { tenant: Tenant; domain: string; }
+const proxyTokenCache = new Map<string, { resolved: ProxyResolved | null; expires: number }>();
+
+function proxyTokenCacheGet(token: string): { resolved: ProxyResolved | null } | undefined {
+  const hit = proxyTokenCache.get(token);
+  if (hit && hit.expires > Date.now()) return hit;
+  proxyTokenCache.delete(token);
+  return undefined;
+}
+function proxyTokenCacheSet(token: string, resolved: ProxyResolved | null) {
+  if (proxyTokenCache.size > 500) proxyTokenCache.clear();
+  proxyTokenCache.set(token, { resolved, expires: Date.now() + DOMAIN_CACHE_TTL_MS });
+}
+
+// Resolve o tenant pelo token do header X-Blog-Domain-Token — nunca pelo Host,
+// que pra tráfego 'proxy' vale sempre alfreds.com.br (único jeito do App
+// Hosting aceitar a requisição vinda de um gateway externo).
+async function loadTenantByProxyToken(token: string): Promise<ProxyResolved | null> {
+  const cached = proxyTokenCacheGet(token);
+  if (cached) return cached.resolved;
+  const snap = await adminDb.collection('blogDomains')
+    .where('proxyToken', '==', token).where('verified', '==', true).limit(1).get();
+  let result: ProxyResolved | null = null;
+  if (!snap.empty) {
+    const docSnap = snap.docs[0];
+    const d = docSnap.data() as BlogDomainDoc;
+    const tenant = await loadTenant(d.uid, d.projectId);
+    if (tenant) result = { tenant, domain: docSnap.id };
+  }
+  proxyTokenCacheSet(token, result);
+  return result;
+}
+
 function blogRef(t: { uid: string; projectId: string }) {
   return adminDb.collection('users').doc(t.uid).collection('contentProjects').doc(t.projectId);
 }
@@ -148,8 +184,12 @@ async function serveBlogPath(
   baseUrl: string,
   req: express.Request,
   res: express.Response,
+  domainOverride?: string,
 ): Promise<void> {
-  const cacheKey = `${resolvedHost(req)}|${baseUrl}|${path}|${req.query.page ?? ''}`;
+  // domainOverride vem do método 'proxy': o Host real da requisição é sempre
+  // alfreds.com.br ali, então cai no resolvedHost(req) normal quebraria a
+  // cache key (colidiria entre domínios de clientes diferentes).
+  const cacheKey = `${domainOverride ?? resolvedHost(req)}|${baseUrl}|${path}|${req.query.page ?? ''}`;
   // ?preview=1 (aba Aparência do admin) ignora e não alimenta o cache, para
   // o dono ver as mudanças de tema imediatamente.
   const isPreview = req.query.preview === '1';
@@ -166,7 +206,11 @@ async function serveBlogPath(
       .send(body);
   };
 
-  const [realCategories, realPosts, verifiedDomain] = await Promise.all([loadCategories(t), loadPublishedPosts(t), loadVerifiedDomain(t)]);
+  const [realCategories, realPosts, verifiedDomain] = await Promise.all([
+    loadCategories(t),
+    loadPublishedPosts(t),
+    domainOverride ? Promise.resolve(domainOverride) : loadVerifiedDomain(t),
+  ]);
   // Sem posts publicados, o preview (?preview=1, usado pelo iframe da aba
   // Aparência) mostra conteúdo fictício para o usuário ver como home,
   // categoria e artigo ficam no template escolhido — nunca em requests reais.
@@ -261,10 +305,31 @@ export function registerBlogPublic(app: express.Application): void {
 
   app.use(async (req, res, next) => {
     if (req.method !== 'GET') return next();
+    // Evita capturar assets/API por engano.
+    if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/')) return next();
+
+    // Método 'proxy': o Host da requisição é sempre alfreds.com.br (está em
+    // platformHosts), então essa checagem precisa vir ANTES do atalho de
+    // platformHosts abaixo, ou o tráfego nunca chega a ser resolvido.
+    const proxyToken = req.headers['x-blog-domain-token'] as string | undefined;
+    if (proxyToken) {
+      try {
+        const resolved = await loadTenantByProxyToken(proxyToken);
+        if (resolved) {
+          res.setHeader('X-Alfred-Blog', 'proxy-ok');
+          const isProxyPrefix = req.path === '/blog' || req.path.startsWith('/blog/');
+          const path = isProxyPrefix ? req.path.slice('/blog'.length) || '/' : req.path;
+          await serveBlogPath(resolved.tenant, path, '/blog', req, res, resolved.domain);
+          return;
+        }
+      } catch (err) {
+        console.error('blog proxy token error:', err);
+        // cai pro fluxo normal abaixo — token ruim não deve derrubar a plataforma
+      }
+    }
+
     const host = resolvedHost(req);
     if (!host || platformHosts.has(host)) return next();
-    // Evita capturar assets/API por engano em hosts desconhecidos.
-    if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/')) return next();
     try {
       let tenant: Tenant | null;
       const cached = domainCacheGet(host);
