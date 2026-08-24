@@ -7,7 +7,7 @@ import {
 import { auth, db } from '../firebase';
 import type { BlogSettings, BlogPost, BlogCategory } from '../modules/content/blog/types';
 
-async function callJson<T>(url: string, method: 'POST' | 'DELETE', body?: unknown): Promise<T> {
+async function callJson<T>(url: string, method: 'GET' | 'POST' | 'DELETE', body?: unknown): Promise<T> {
   const user = auth.currentUser;
   if (!user) throw new Error('Não autenticado');
   const token = await user.getIdToken();
@@ -94,9 +94,22 @@ export async function deleteBlogCategory(uid: string, projectId: string, catId: 
 export const claimBlogSlug = (projectId: string, slug: string) =>
   callJson<{ slug: string }>(`/api/blog/projects/${projectId}/claim-slug`, 'POST', { slug });
 
-export const addBlogDomain = (projectId: string, domain: string) =>
-  callJson<{ domain: string; cnameTarget: string; verified: boolean; detail?: string }>(
-    `/api/blog/projects/${projectId}/domains`, 'POST', { domain },
+type CnameDomainResult = { domain: string; method: 'cname'; cnameTarget: string; verified: boolean; detail?: string };
+type ProxyDomainResult = { domain: string; method: 'proxy'; proxyToken: string; verified?: boolean };
+
+export const addBlogDomain = (projectId: string, domain: string, method: 'cname' | 'proxy' = 'cname') =>
+  callJson<CnameDomainResult | ProxyDomainResult>(
+    `/api/blog/projects/${projectId}/domains`, 'POST', { domain, method },
+  );
+
+export const getBlogDomain = (projectId: string, domain: string) =>
+  callJson<CnameDomainResult | ProxyDomainResult>(
+    `/api/blog/projects/${projectId}/domains/${encodeURIComponent(domain)}`, 'GET',
+  );
+
+export const rotateBlogDomainToken = (projectId: string, domain: string) =>
+  callJson<ProxyDomainResult>(
+    `/api/blog/projects/${projectId}/domains/${encodeURIComponent(domain)}/rotate-token`, 'POST',
   );
 
 export const verifyBlogDomain = (projectId: string, domain: string) =>
