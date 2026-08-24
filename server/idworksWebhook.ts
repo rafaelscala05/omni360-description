@@ -16,14 +16,12 @@ import { upsertProduct } from './idworksImportWorker';
 const EVENT_REF = (dedupKey: string) => adminDb.collection('idworks_webhook_events').doc(dedupKey);
 const PRODUCTS = (uid: string) => adminDb.collection('users').doc(uid).collection('products');
 
-// The exact JSON field names IdWorks sends are not shown anywhere in the
-// public docs (only described in prose: "Topic, AccountName,
-// ModificationTimestamp, and resource identifiers with relative URLs"). This
-// function is the single place to fix once a real webhook payload is
-// captured (spec "Pendências" #2) — it tries the documented field names and
-// a couple of plausible casings, and fails loudly (400) if none match, so a
-// wrong guess surfaces immediately in the logs instead of silently no-op'ing.
-function parseWebhookEnvelope(body: any): { topic: string; idSku: string | null; modifiedAt: string | null } {
+// Confirmed contract (via the IdWorks OpenAPI schema WebhookLogListItem.PostData):
+// the JSON IdWorks POSTs includes at minimum `Topic`, `AccountName`, the resource
+// identifier (`IDSku`, `IDOrder`, ...) and a relative detail URL. The `Topic`/`IDSku`
+// names below match that schema; `ModificationTimestamp` comes from the UI doc prose.
+// Exported so the verification harness can assert against this documented shape.
+export function parseWebhookEnvelope(body: any): { topic: string; idSku: string | null; modifiedAt: string | null } {
   const topic = body?.Topic ?? body?.topic ?? '';
   const idSku = body?.IDSku ?? body?.idSku ?? body?.Id ?? body?.ResourceId ?? body?.id ?? null;
   const modifiedAt = body?.ModificationTimestamp ?? body?.modificationTimestamp ?? null;

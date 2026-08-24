@@ -302,5 +302,36 @@ check('desc one field changed → steps.descricao = ok', resultDescOneField.step
 check('desc one field → body.EcommerceDescription setado', resultDescOneField.body.EcommerceDescription, 'Desc nova');
 check('desc one field → body.EcommerceDescriptionShort ausente', resultDescOneField.body.EcommerceDescriptionShort, undefined);
 
+// --- parseWebhookEnvelope tests (server/idworksWebhook.ts) ---
+// The IdWorks OpenAPI schema WebhookLogListItem.PostData documents the webhook payload as
+// carrying at minimum `Topic`, `AccountName`, the resource id `IDSku`, and a relative detail
+// URL. Feed the parser the exact documented shape and confirm it extracts topic + idSku.
+
+import { parseWebhookEnvelope } from '../server/idworksWebhook.ts';
+
+// Documented-envelope fixture (a SkuPost).
+const skuPostEnvelope = {
+  Topic: 'SkuPost',
+  AccountName: 'teste',
+  IDSku: 1234,
+  IDSkuURL: 'sku/1234',
+  ModificationTimestamp: '2026-08-24T10:00:00Z',
+};
+const parsedSkuPost = parseWebhookEnvelope(skuPostEnvelope);
+check('envelope SkuPost → topic = SkuPost', parsedSkuPost.topic, 'SkuPost');
+check('envelope SkuPost → idSku = "1234"', parsedSkuPost.idSku, '1234');
+check('envelope SkuPost → modifiedAt presente', parsedSkuPost.modifiedAt, '2026-08-24T10:00:00Z');
+
+// Envelope for a non-SKU resource (OrderStatus) — idSku should be null, topic still read.
+const orderEnvelope = { Topic: 'OrderStatus', AccountName: 'teste', IDOrder: 99, IDOrderURL: 'orders/99' };
+const parsedOrder = parseWebhookEnvelope(orderEnvelope);
+check('envelope OrderStatus → topic = OrderStatus', parsedOrder.topic, 'OrderStatus');
+check('envelope OrderStatus → idSku = null (não é SKU)', parsedOrder.idSku, null);
+
+// Missing/empty body → no throw, idSku null.
+const parsedEmpty = parseWebhookEnvelope({});
+check('envelope vazio → topic = ""', parsedEmpty.topic, '');
+check('envelope vazio → idSku = null', parsedEmpty.idSku, null);
+
 console.log(failures === 0 ? '\nTodas as verificações passaram.' : `\n${failures} verificação(ões) falharam.`);
 process.exit(failures === 0 ? 0 : 1);
