@@ -182,6 +182,7 @@ export interface BlogSettings {
   appearance?: BlogAppearance; // ausente = preset do template (effectiveAppearance)
   customDomains: string[];    // espelho de blogDomains para exibição na UI
   verifiedDomains?: string[]; // subconjunto de customDomains já verificados (exibição)
+  proxyDomains?: string[];    // subconjunto de customDomains registrado com method 'proxy' (exibição)
   createdAt: string;
   updatedAt: string;
 }
@@ -228,10 +229,22 @@ export interface BlogCategory {
 export interface BlogDomainDoc {
   uid: string;
   projectId: string;
+  // 'cname': domínio (ou subdomínio) inteiro delegado ao Alfred via Cloudflare
+  // for SaaS (server/cloudflareSaas.ts). 'proxy': só o caminho /blog é
+  // encaminhado por um gateway externo (Worker Route na zona do próprio
+  // cliente, reverse proxy no cPanel, API Gateway de terceiro), autenticado
+  // por proxyToken. Ausente nos docs criados antes deste campo = 'cname'.
+  method?: 'cname' | 'proxy';
   // Espelha o status do custom hostname na Cloudflare — quem de fato decide se
-  // o request chega. Só `true` com hostname e certificado ativos.
+  // o request chega. Só `true` com hostname e certificado ativos. Método
+  // 'proxy': setado pela sondagem HTTP em server/blogAdmin.ts em vez da
+  // Cloudflare.
   verified: boolean;
   cloudflareHostnameId?: string;
+  // Método 'proxy': segredo gerado no cadastro, único por domínio. O gateway
+  // externo manda em X-Blog-Domain-Token; server/blogPublic.ts resolve o
+  // tenant por ele em vez de por Host/X-Forwarded-Host.
+  proxyToken?: string;
   // Legado: TXT _alfred-verify, usado antes da borda na Cloudflare provar a
   // posse. Mantido só para não quebrar docs antigos; nada mais lê.
   verificationToken?: string;
