@@ -339,7 +339,7 @@ export function registerIdworksImportRoutes(app: express.Express, { verifyFireba
 
   // Cloud Scheduler backstop — never gated by a user token.
   app.post('/api/idworks/cron/tick', async (req, res) => {
-    if (!CRON_SECRET || req.headers['x-cron-secret'] !== CRON_SECRET) {
+    if (!CRON_SECRET || req.headers['x-idworks-cron-secret'] !== CRON_SECRET) {
       return res.status(403).json({ message: 'Forbidden' });
     }
     await tick().catch((e) => console.warn('[idworks] cron tick falhou:', e?.message));
