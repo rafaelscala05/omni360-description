@@ -158,6 +158,11 @@ export interface Product {
   _blingPushed?: { descricao?: string; seo?: string; fiscal?: string; imagens?: string };
   _blingDeleted?: boolean;        // marcado true em product.deleted (doc preservado)
 
+  // IdWorks integration
+  _idworksProductId?: string;    // id do SKU na IdWorks — chave de merge
+  _idworksPushed?: { descricao?: string; seo?: string; fiscal?: string; imagens?: string };
+  _idworksDeleted?: boolean;      // marcado true em evento de exclusão (doc preservado)
+
   // Modulo 1 / 3
   categoryId?: string; // FK to actual Category
   categoryPath?: string[]; // cache of path

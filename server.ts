@@ -22,6 +22,9 @@ import { registerTinyWebhookRoutes } from "./server/tinyWebhook";
 import { registerBlingRoutes } from "./server/blingAgent";
 import { registerBlingImportRoutes, startBlingScheduler } from "./server/blingImportWorker";
 import { registerBlingWebhookRoutes } from "./server/blingWebhook";
+import { registerIdworksRoutes } from "./server/idworksAgent";
+import { registerIdworksImportRoutes, startIdworksScheduler } from "./server/idworksImportWorker";
+import { registerIdworksWebhookRoutes } from "./server/idworksWebhook";
 import { registerMercadoLivreWebhookRoutes } from "./server/mercadoLivreWebhook";
 import { registerBlogPublic } from "./server/blogPublic";
 import { registerBlogAdminRoutes } from "./server/blogAdmin";
@@ -150,6 +153,9 @@ async function startServer() {
   registerBlingRoutes(app, { verifyFirebaseToken });
   registerBlingImportRoutes(app, { verifyFirebaseToken });
   registerBlingWebhookRoutes(app, { verifyFirebaseToken });
+  registerIdworksRoutes(app, { verifyFirebaseToken });
+  registerIdworksImportRoutes(app, { verifyFirebaseToken });
+  registerIdworksWebhookRoutes(app, { verifyFirebaseToken });
   registerMercadoLivreWebhookRoutes(app);
   registerMetaEventsRoutes(app);
   registerTiktokEventsRoutes(app);
@@ -519,6 +525,10 @@ async function startServer() {
   // Bling background import/sync worker (production also backed by Cloud Scheduler
   // hitting /api/bling/cron/tick).
   startBlingScheduler();
+
+  // IdWorks background import/sync worker (production also backed by Cloud Scheduler
+  // hitting /api/idworks/cron/tick).
+  startIdworksScheduler();
 
   // CRM: reconcilia os marcos da jornada a partir do estado do Firestore.
   startCrmScheduler();
