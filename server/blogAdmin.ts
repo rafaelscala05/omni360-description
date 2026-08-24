@@ -9,6 +9,7 @@
 import type express from 'express';
 import { randomBytes } from 'crypto';
 import { adminDb } from './firebaseAdmin';
+import { assertSafeUrl } from './safeUrl';
 import { slugify } from '../src/modules/content/blog/slug';
 import type { BlogDomainDoc } from '../src/modules/content/blog/types';
 import {
@@ -48,7 +49,8 @@ async function probeProxyDomain(domain: string, token: string): Promise<{ verifi
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
-    const resp = await fetch(`https://${domain}/blog/`, {
+    const url = await assertSafeUrl(`https://${domain}/blog/`);
+    const resp = await fetch(url.toString(), {
       headers: { 'X-Blog-Domain-Token': token },
       signal: controller.signal,
     });
@@ -124,6 +126,9 @@ export function registerBlogAdminRoutes(app: express.Application, deps: Deps): v
           if (!d || d.uid !== decoded.uid) {
             return res.status(409).json({ error: 'Domínio já registrado por outra conta' });
           }
+          if (d.method !== 'proxy') {
+            return res.status(409).json({ error: 'Domínio já registrado com outro método de conexão. Remova o domínio antes de trocar de método.' });
+          }
           // Já é dele: devolve o token existente — reenviar o form não pode
           // invalidar uma config que o cliente já aplicou no gateway dele.
           return res.json({ domain, method: 'proxy', proxyToken: d.proxyToken });
@@ -150,6 +155,9 @@ export function registerBlogAdminRoutes(app: express.Application, deps: Deps): v
         const d = (await ref.get()).data() as BlogDomainDoc | undefined;
         if (!d || d.uid !== decoded.uid) {
           return res.status(409).json({ error: 'Domínio já registrado por outra conta' });
+        }
+        if (d.method === 'proxy') {
+          return res.status(409).json({ error: 'Domínio já registrado com outro método de conexão. Remova o domínio antes de trocar de método.' });
         }
         // Já é dele: se o hostname existe na borda, devolve o estado atual em
         // vez de recriar. Se não existe, o doc é resto de uma tentativa que
