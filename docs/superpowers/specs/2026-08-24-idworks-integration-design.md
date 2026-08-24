@@ -223,19 +223,24 @@ integração por causa delas**: construir tudo o que já está 100% confirmado v
 (`/sku`, `/sku/{id}`, `/sku/image/{id}`) e isolar os pontos incertos atrás de funções
 pequenas, fáceis de ajustar assim que houver uma conta de teste real.
 
-1. **Corpo exato de `POST /auth/token`** — não documentado no OpenAPI, no Postman
-   collection nem nos artigos de ajuda verificados. Testado empiricamente contra a
-   conta demo pública (`teste.api-idworks.com.br`): retornou
-   `{"error":"Missing Authentication Token"}` (erro genérico de API Gateway), não um
-   erro de validação de campos — não dá pra inferir o schema a partir disso.
-   `idworksAgent.ts` isola essa chamada em uma função só (`obtainToken(accountName,
-   credentials)`), com a forma de `credentials` como um tipo aberto
-   (`Record<string, string>`) fácil de ajustar.
-2. **Formato exato do payload do webhook** — a doc da UI descreve os campos em prosa
-   (`Topic`, `AccountName`, `ModificationTimestamp`, "identificadores do recurso com
-   URLs relativas") mas não mostra um JSON de exemplo. `idworksWebhook.ts` isola o
-   parsing em `parseWebhookEnvelope(body)`, e o dedup usa os campos citados na prosa
-   (ajustável).
+1. **Contrato de autenticação — RESOLVIDO (confirmado via OpenAPI + probe empírico).**
+   A doc do help-site diz "POST /auth/token", mas esse não é o caminho real (probe
+   retorna o erro genérico de API Gateway "Missing Authentication Token"). O contrato
+   real está na spec OpenAPI: **`POST /user/signin/local`** é público (sem JWT), corpo
+   `{ email, password }` (email = login/e-mail ou CPF/CNPJ, formato auto-detectado; há
+   `mfacode`/`expireinhour` opcionais) e retorna `{ success: true, token: JWT, body }`.
+   Validado empiricamente contra a conta demo `teste`: corpo vazio → 400
+   `[object has missing required properties (["email","password"])]`; credenciais erradas
+   → 403 `[Forbidden] - Verificar usuário, senha e subdomínio (url)`. Implementado em
+   `obtainToken` (`server/idworksAgent.ts`) com `credentials = { email, password }`.
+2. **Formato do payload do webhook — RESOLVIDO via schema `WebhookLogListItem.PostData`.**
+   A spec OpenAPI documenta o corpo que a IdWorks envia: `PostData` (JSON serializado)
+   inclui **no mínimo `Topic`, `AccountName` e o identificador do recurso (`IDSku`,
+   `IDOrder`, etc.), além de uma URL relativa para detalhe**. Isso confirma os campos
+   que `parseWebhookEnvelope` (`server/idworksWebhook.ts`) tenta ler (`Topic`, `IDSku`);
+   `ModificationTimestamp` aparece na prosa da doc de UI. O dedup usa
+   `hash(topic:idSku:modifiedAt)`. Fica a confirmar, se necessário, a URL relativa de
+   detalhe (hoje o handler busca `GET /sku/{idsku}` diretamente).
 3. **Nomes técnicos completos dos tópicos de produto** — só `SkuPost` é citado
    explicitamente; a lista completa (criação/edição/exclusão/preço/fornecedor/código de
    barras/variação) precisa ser confirmada olhando `GET /webhook` (histórico de
