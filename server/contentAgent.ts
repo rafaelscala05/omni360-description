@@ -10,6 +10,7 @@
 import type express from 'express';
 import crypto from 'crypto';
 import * as cheerio from 'cheerio';
+import sharp from 'sharp';
 import { GoogleGenAI } from '@google/genai';
 import { adminDb, adminStorage } from './firebaseAdmin';
 import { CREDIT_ACTIONS, resolveCreditCost, type CreditAction } from '../src/credits';
@@ -132,10 +133,13 @@ async function generateGrounded(prompt: string, options: GenOptions = {}): Promi
   return resp.text ?? '';
 }
 
-// Generates a cover image, returns raw base64 (no data: prefix). When
-// referenceImage is given, sends it as an inlineData part alongside the
+// Generates a cover image, returns raw base64 PNG cropped to COVER_IMAGE_ASPECT_RATIO
+// (the model doesn't reliably honor the aspect ratio requested in the prompt).
+// When referenceImage is given, sends it as an inlineData part alongside the
 // prompt so the model anchors the new image on it (image-to-image), same
 // multi-part pattern as generateImage() in src/services/aiService.ts.
+const COVER_IMAGE_ASPECT_RATIO = 16 / 9;
+
 async function generateImageBase64(
   prompt: string,
   referenceImage?: { mimeType: string; data: string },
@@ -154,10 +158,35 @@ async function generateImageBase64(
   for (const candidate of resp.candidates ?? []) {
     for (const part of candidate.content?.parts ?? []) {
       const data = (part as { inlineData?: { data?: string } }).inlineData?.data;
-      if (data) return data;
+      if (data) return cropToAspectRatio(Buffer.from(data, 'base64'), COVER_IMAGE_ASPECT_RATIO);
     }
   }
   throw new Error('O modelo não retornou uma imagem.');
+}
+
+// Center-crops an image buffer to the given w/h ratio via sharp, returns base64 PNG.
+async function cropToAspectRatio(buffer: Buffer, ratio: number): Promise<string> {
+  const meta = await sharp(buffer).metadata();
+  const srcW = meta.width ?? 0;
+  const srcH = meta.height ?? 0;
+  if (!srcW || !srcH) return buffer.toString('base64');
+
+  const srcRatio = srcW / srcH;
+  let cropW = srcW;
+  let cropH = srcH;
+  if (srcRatio > ratio) {
+    cropW = Math.round(srcH * ratio);
+  } else {
+    cropH = Math.round(srcW / ratio);
+  }
+  const left = Math.round((srcW - cropW) / 2);
+  const top = Math.round((srcH - cropH) / 2);
+
+  const cropped = await sharp(buffer)
+    .extract({ left, top, width: cropW, height: cropH })
+    .png()
+    .toBuffer();
+  return cropped.toString('base64');
 }
 
 // Persists a base64 image to Firebase Storage and returns a permanent download
@@ -618,7 +647,7 @@ async function runArticlePipeline(
         `Imagem de capa para um artigo de blog sobre "${article.titulo}".`,
         `Contexto: ${articleFinal.slice(0, 400)}.`,
         `Estilo visual: ${estiloLabel}. Composição limpa, elementos simbólicos do tema, sem texto e sem rostos hiperrealistas.`,
-        `Marca: ${project.config.nomeEmpresa}. Formato 16:9, alta resolução.`,
+        'Não inclua nome de empresa, marca, logotipo ou qualquer texto/escrita na imagem. Formato paisagem 16:9, alta resolução.',
       ].join(' ');
       const base64 = await generateImageBase64(imgPrompt);
       imageUrl = await saveImage(base64, uid, articleId);
@@ -677,7 +706,7 @@ async function regenerateArticleImage(
     `Imagem de capa para um artigo de blog sobre "${article.titulo}".`,
     `Contexto: ${(article.articleFinal ?? article.articleDraft ?? '').slice(0, 400)}.`,
     `Estilo visual: ${estiloLabel}. Composição limpa, elementos simbólicos do tema, sem texto e sem rostos hiperrealistas.`,
-    `Marca: ${project.config.nomeEmpresa}. Formato 16:9, alta resolução.`,
+    'Não inclua nome de empresa, marca, logotipo ou qualquer texto/escrita na imagem. Formato paisagem 16:9, alta resolução.',
   ];
 
   let referenceImage: { mimeType: string; data: string } | undefined;
