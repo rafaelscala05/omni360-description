@@ -1195,7 +1195,11 @@ async function unpublishFromSanity(uid: string, projectId: string, articleId: st
 // Congela os produtos vinculados ao artigo num snapshot leve (mesmo espírito
 // de coverImageUrl/title: cópia, não referência viva — o post publicado
 // continua exibindo a vitrine mesmo que o produto seja depois editado/removido).
-async function snapshotLinkedProducts(uid: string, produtosVinculados: string[] | undefined): Promise<BlogPostProduct[]> {
+async function snapshotLinkedProducts(
+  uid: string,
+  produtosVinculados: string[] | undefined,
+  produtosLinks: Record<string, string> | undefined,
+): Promise<BlogPostProduct[]> {
   if (!produtosVinculados?.length) return [];
   const ids = new Set(produtosVinculados);
   const snap = await adminDb.collection('users').doc(uid).collection('products').get();
@@ -1210,11 +1214,13 @@ async function snapshotLinkedProducts(uid: string, produtosVinculados: string[] 
     const rawPrice = data['Preço promocional'] ?? data['Preço'];
     const preco = typeof rawPrice === 'number' ? rawPrice
       : typeof rawPrice === 'string' && rawPrice.trim() ? Number(rawPrice.replace(',', '.')) : undefined;
+    const url = produtosLinks?.[id]?.trim();
     out.push({
       id,
       nome,
       ...(selectedImage || firstImage ? { imagemPrincipal: selectedImage || firstImage } : {}),
       ...(preco != null && !Number.isNaN(preco) ? { preco } : {}),
+      ...(url ? { url } : {}),
     });
   }
   return out;
@@ -1259,7 +1265,7 @@ async function publishToBlog(uid: string, projectId: string, articleId: string):
   const htmlBody = markdownToHtml(article.articleFinal);
   const excerpt = (article.metaDescription || htmlBody.replace(/<[^>]+>/g, ' '))
     .replace(/\s+/g, ' ').trim().slice(0, 200);
-  const products = await snapshotLinkedProducts(uid, article.produtosVinculados);
+  const products = await snapshotLinkedProducts(uid, article.produtosVinculados, article.produtosLinks);
 
   await postRef.set({
     title: article.titulo,

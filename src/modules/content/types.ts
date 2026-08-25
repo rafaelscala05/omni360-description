@@ -215,6 +215,7 @@ export interface CalendarArticle {
   scheduledDate: string; // ISO date (YYYY-MM-DD)
   scheduledTime?: string;        // "HH:MM" — hora de publicação
   produtosVinculados?: string[]; // IDs de Product._id vinculados (artigos antigos podem ter texto livre até serem re-vinculados)
+  produtosLinks?: Record<string, string>; // id do produto -> URL da página do produto (não há URL pública nativa nesta plataforma)
   tamanho?: ArticleSize;
   responsavel?: string; // opcional: nome exibido como autor ao publicar no blog nativo
   // Ordem manual (drag-and-drop) na tela de Produção. Independente de

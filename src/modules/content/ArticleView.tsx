@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import TurndownService from 'turndown';
-import { X, Check, RefreshCw, Globe, ExternalLink, EyeOff, Play, Pencil, Eye, Code, Wand2, Image as ImageIcon, Upload, Trash2, User } from 'lucide-react';
+import { X, Check, RefreshCw, Globe, ExternalLink, EyeOff, Play, Pencil, Eye, Code, Wand2, Image as ImageIcon, Upload, Trash2, User, ShoppingBag } from 'lucide-react';
 import type { CalendarArticle, ArticleSize } from './types';
 import {
   updateArticle,
@@ -75,6 +75,7 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
   const [titleDraft, setTitleDraft] = useState(article.titulo);
   const [allProducts, setAllProducts] = useState<LinkableProduct[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>(article.produtosVinculados ?? []);
+  const [produtosLinks, setProdutosLinks] = useState<Record<string, string>>(article.produtosLinks ?? {});
   const [showImprovePrompt, setShowImprovePrompt] = useState(false);
   const [improvementPrompt, setImprovementPrompt] = useState('');
   const [productImageChoice, setProductImageChoice] = useState<string>('');
@@ -87,15 +88,26 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
 
   const linkedProducts = useMemo(
     () =>
-      selectedProductIds.map(
-        (id) => allProducts.find((p) => p.id === id) ?? { id, nome: id, sku: '', imagemPrincipal: undefined },
-      ),
-    [selectedProductIds, allProducts],
+      selectedProductIds.map((id) => ({
+        ...(allProducts.find((p) => p.id === id) ?? { id, nome: id, sku: '', imagemPrincipal: undefined }),
+        url: produtosLinks[id],
+      })),
+    [selectedProductIds, allProducts, produtosLinks],
   );
 
   const saveProdutos = (ids: string[]) => {
     setSelectedProductIds(ids);
     run('produtos', () => updateArticle(uid, projectId, article.id, { produtosVinculados: ids }));
+  };
+  // Digitar a URL dispara onChange a cada tecla — debounce para não gravar no
+  // Firestore a cada caractere (diferente de saveProdutos, que só muda por clique).
+  const produtosLinksSaveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveProdutosLinks = (novosLinks: Record<string, string>) => {
+    setProdutosLinks(novosLinks);
+    if (produtosLinksSaveTimer.current) clearTimeout(produtosLinksSaveTimer.current);
+    produtosLinksSaveTimer.current = setTimeout(() => {
+      run('produtos-links', () => updateArticle(uid, projectId, article.id, { produtosLinks: novosLinks }));
+    }, 600);
   };
   const [destino, setDestino] = useState<'nativo' | 'integracao'>('integracao');
   // O artigo é sempre salvo em Markdown (`edited`). "Visualizar" é a aba padrão,
@@ -360,8 +372,61 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
           {/* Produtos vinculados card */}
           <div className="border border-slate-200 rounded-xl p-4 space-y-2">
             <h3 className="text-sm font-semibold text-slate-700">Produtos vinculados</h3>
-            <ProductLinkPicker products={allProducts} selectedIds={selectedProductIds} onChange={saveProdutos} />
+            <p className="text-xs text-slate-400">
+              Cole o link da página de cada produto — ele aparece clicável na vitrine ao lado do artigo.
+            </p>
+            <ProductLinkPicker
+              products={allProducts}
+              selectedIds={selectedProductIds}
+              onChange={saveProdutos}
+              links={produtosLinks}
+              onLinksChange={saveProdutosLinks}
+            />
           </div>
+
+          {/* Vitrine de produtos no artigo — sticky: acompanha a rolagem do
+              conteúdo, que costuma ser bem mais longo que a coluna lateral. */}
+          {linkedProducts.length > 0 && (
+            <div className="lg:sticky lg:top-5 border border-slate-200 rounded-xl p-4 space-y-3 bg-gradient-to-b from-orange-50/60 to-white">
+              <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
+                <ShoppingBag className="w-3.5 h-3.5 text-[#FF5B03]" /> Produtos no artigo
+              </h3>
+              <p className="text-xs text-slate-400 -mt-2">Como a vitrine aparece para quem lê o artigo publicado.</p>
+              <div className="space-y-2">
+                {linkedProducts.map((p) =>
+                  p.url ? (
+                    <a
+                      key={p.id}
+                      href={p.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="group flex items-center gap-2.5 p-2 bg-white border border-slate-200 rounded-lg hover:border-[#FF5B03] hover:shadow-sm transition"
+                    >
+                      {p.imagemPrincipal ? (
+                        <img src={p.imagemPrincipal} alt="" className="w-10 h-10 rounded-md object-cover shrink-0" />
+                      ) : (
+                        <span className="w-10 h-10 rounded-md bg-slate-200 shrink-0" />
+                      )}
+                      <span className="flex-1 min-w-0 text-xs font-medium text-slate-700 truncate group-hover:text-[#FF5B03]">
+                        {p.nome}
+                      </span>
+                      <ExternalLink className="w-3.5 h-3.5 text-slate-300 group-hover:text-[#FF5B03] shrink-0" />
+                    </a>
+                  ) : (
+                    <div key={p.id} className="flex items-center gap-2.5 p-2 bg-white border border-dashed border-slate-200 rounded-lg opacity-70">
+                      {p.imagemPrincipal ? (
+                        <img src={p.imagemPrincipal} alt="" className="w-10 h-10 rounded-md object-cover shrink-0" />
+                      ) : (
+                        <span className="w-10 h-10 rounded-md bg-slate-200 shrink-0" />
+                      )}
+                      <span className="flex-1 min-w-0 text-xs font-medium text-slate-600 truncate">{p.nome}</span>
+                      <span className="text-[10px] text-slate-400 shrink-0">sem link</span>
+                    </div>
+                  ),
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Responsável card */}
           <div className="border border-slate-200 rounded-xl p-4 space-y-2">

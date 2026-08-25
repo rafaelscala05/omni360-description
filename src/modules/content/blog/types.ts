@@ -197,6 +197,7 @@ export interface BlogPostProduct {
   nome: string;
   imagemPrincipal?: string;
   preco?: number;
+  url?: string; // link do produto informado pelo usuário ao vincular (não há URL pública nativa nesta plataforma)
 }
 
 export interface BlogPost {
