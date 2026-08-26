@@ -81,6 +81,7 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
   const [productImageChoice, setProductImageChoice] = useState<string>('');
   const [responsavel, setResponsavel] = useState(article.responsavel ?? '');
   const [deleting, setDeleting] = useState(false);
+  const [imageLightbox, setImageLightbox] = useState(false);
 
   useEffect(() => {
     listProductsForLinking(uid).then(setAllProducts).catch(() => setAllProducts([]));
@@ -269,7 +270,23 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
           <div className="border border-slate-200 rounded-xl p-4 space-y-3">
             <h3 className="text-sm font-semibold text-slate-700">Imagem de capa</h3>
             {article.imageUrl ? (
-              <img src={article.imageUrl} alt="Capa" className="w-full aspect-video object-cover rounded-lg border border-slate-200" />
+              <button
+                type="button"
+                onClick={() => setImageLightbox(true)}
+                className="block w-full group relative"
+                title="Ampliar imagem"
+              >
+                <img
+                  src={article.imageUrl}
+                  alt="Capa"
+                  className="w-full aspect-video object-cover rounded-lg border border-slate-200 cursor-zoom-in transition group-hover:brightness-90"
+                />
+                <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                  <span className="p-2 bg-black/50 rounded-full">
+                    <Eye className="w-4 h-4 text-white" />
+                  </span>
+                </span>
+              </button>
             ) : (
               <div className="w-full aspect-video flex items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-slate-400 text-xs">
                 Nenhuma imagem ainda
@@ -562,6 +579,28 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
             </button>
           )}
       </div>
+
+      {imageLightbox && article.imageUrl && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-6"
+          onClick={() => setImageLightbox(false)}
+        >
+          <button
+            type="button"
+            onClick={() => setImageLightbox(false)}
+            title="Fechar"
+            className="absolute top-4 right-4 p-2 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-lg"
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <img
+            src={article.imageUrl}
+            alt="Capa"
+            className="max-w-full max-h-full rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 };
