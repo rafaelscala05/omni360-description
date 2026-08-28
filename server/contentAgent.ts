@@ -229,7 +229,7 @@ interface DebitMeta {
   userName?: string;
 }
 
-async function debitCreditsAdmin(uid: string, action: CreditAction, meta: DebitMeta = {}): Promise<number> {
+export async function debitCreditsAdmin(uid: string, action: CreditAction, meta: DebitMeta = {}): Promise<number> {
   const costs = await getCreditCosts();
   const cost = resolveCreditCost(costs, action.key);
   const userRef = adminDb.collection('users').doc(uid);
@@ -371,7 +371,7 @@ function normalizeIntent(v: unknown): ClusterKeyword['intencao'] {
 // brand-new domain with little/no organic footprint yet.
 const MIN_DOMAIN_POOL_SIZE = 5;
 
-async function generateClusters(uid: string, project: ContentProject): Promise<ContentCluster[]> {
+export async function generateClusters(uid: string, project: ContentProject): Promise<ContentCluster[]> {
   const store = await loadStoreContext(uid);
   const audit = await getLatestFinishedAudit(uid, project.id);
   const auditSummary = audit ? auditSummaryText(audit) : null;
@@ -478,7 +478,7 @@ function toIsoDate(d: Date): string {
   return d.toISOString().split('T')[0];
 }
 
-async function generateCalendar(uid: string, project: ContentProject): Promise<CalendarArticle[]> {
+export async function generateCalendar(uid: string, project: ContentProject): Promise<CalendarArticle[]> {
   const clustersSnap = await projectRef(uid, project.id).collection('clusters').get();
   const clusters = clustersSnap.docs
     .map((d) => ({ id: d.id, ...(d.data() as Omit<ContentCluster, 'id'>) }))

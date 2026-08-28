@@ -18,4 +18,11 @@ for (const name of expectedReadTools) {
   assert.strictEqual(def.inputSchema.type, 'object', `${name}: schema inválido`);
 }
 
-console.log(`OK: verify-content-agent-tools (${expectedReadTools.length} ferramentas de leitura)`);
+const expectedWriteTools = ['content.projeto.criar', 'content.clusters.gerar', 'content.calendario.gerar'];
+for (const name of expectedWriteTools) {
+  const def = tools.find((t) => t.name === name);
+  assert.ok(def, `ferramenta ausente: ${name}`);
+  assert.strictEqual(def.mode, 'write', `${name} deveria ser write`);
+}
+
+console.log(`OK: verify-content-agent-tools (${expectedReadTools.length} leitura, ${expectedWriteTools.length} escrita)`);
