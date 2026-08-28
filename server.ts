@@ -36,7 +36,7 @@ import { registerProductImportRoutes } from "./server/productImport";
 import { recordEvent, registerCrmEventRoutes } from "./server/crmEvents";
 import { registerCrmAdminRoutes } from "./server/crmAdmin";
 import { registerOperationsRoutes } from "./server/agent/routes";
-import { registerCopilotRuntime } from "./server/copilotRuntime";
+import { registerContentAgentChatRoutes } from "./server/agent/contentAgentChat";
 import { startCrmScheduler } from "./server/crmReconcile";
 import { startAutomationScheduler } from "./server/crmAutomation";
 
@@ -138,12 +138,6 @@ async function startServer() {
   const app = express();
   const PORT = parseInt(process.env.PORT || '3000', 10);
 
-  // Agente de Conteúdo conversacional (CopilotKit -> LangGraph.js). Precisa ir
-  // ANTES do express.json() global abaixo: o handler v2 do CopilotKit consome
-  // o corpo da requisição como stream fetch-native (Readable -> Request), e
-  // express.json() já teria drenado esse stream para req.body se viesse primeiro.
-  registerCopilotRuntime(app);
-
   // Increase payload limit for base64 images
   app.use(express.json({ limit: '50mb', verify: (req, _res, buf) => { (req as any).rawBody = buf; } }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -178,6 +172,10 @@ async function startServer() {
 
   // Agente Operacional (chat que opera Wake/Tiny com aprovação por ação).
   registerOperationsRoutes(app, { verifyFirebaseToken });
+
+  // Agente de Conteúdo conversacional (LangGraph.js nativo via SSE + Firestore,
+  // mesmo padrão do Agente Operacional acima — ver server/agent/contentAgentChat.ts).
+  registerContentAgentChatRoutes(app, { verifyFirebaseToken });
 
   // Blog nativo (CMS) — serving público SSR. Precisa vir antes do Vite/static
   // para que /b/{slug} e domínios customizados não caiam no SPA.

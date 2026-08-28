@@ -157,67 +157,119 @@ Firestore, sem chamada ao Gemini.
 
 ## Agente conversacional (chat)
 
-O Agente de Conteúdo pode ser operado por chat (CopilotKit + LangGraph.js),
-além da UI de botões já descrita acima. Ver
+O Agente de Conteúdo pode ser operado por chat (LangGraph.js + uma ponte
+REST+SSE própria), além da UI de botões já descrita acima. Ver
 `docs/superpowers/specs/2026-08-28-content-agent-chat-copilotkit-langgraph-design.md`
-para o design completo, e
+para o design original e
 `docs/superpowers/plans/2026-08-28-content-agent-chat-copilotkit-langgraph.md`
-para o histórico de implementação (inclui vários achados só descobertos
-testando ao vivo contra o LangGraph.js e o Firestore — a versão v2 real do
-CopilotKit difere bastante da documentação pública mais comum).
+para o histórico de implementação — ambos escritos quando a camada de UI
+ainda era CopilotKit; **o front-end e a ponte com o app principal foram
+reescritos depois** para remover essa dependência (ver nota no topo de cada
+documento). O grafo LangGraph.js, o registry de ferramentas e o checkpointer
+do Firestore não mudaram nessa reescrita.
 
 **Onde fica cada coisa:**
 
-- Ferramentas: `server/agent/tools/content.ts` (leitura + escrita: onboarding,
-  clusters, calendário, produção de artigo, publicar/despublicar, conectar
-  credencial) e `server/agent/tools/contentSeo.ts` (auditoria de SEO) — cascas
-  finas sobre as funções que já existem em `contentAgent.ts`/`seoAgent.ts`,
-  registradas no mesmo registry do Agente Operacional (`server/agent/
+- Ferramentas: **41 no total (14 leitura, 27 escrita)**, paridade completa com
+  o que a UI de botões faz — `server/agent/tools/content.ts` (onboarding,
+  listar projetos, clusters CRUD, calendário/artigos CRUD, produtos para
+  vincular, projeto CRUD, produção de artigo, publicar/despublicar, conectar
+  credencial),
+  `server/agent/tools/contentSeo.ts` (auditoria de SEO) e
+  `server/agent/tools/contentBlog.ts` (blog nativo: config, posts,
+  categorias). As tools de geração/pipeline por IA são cascas finas sobre
+  `contentAgent.ts`/`seoAgent.ts`; as de CRUD (clusters/calendário/artigos/
+  projeto/blog) escrevem direto no Firestore via Admin SDK, nos mesmos
+  documentos que `src/services/{content,blog}Service.ts` escrevem do
+  cliente — o agente e a UI de botões operam sobre o mesmo estado. Fora do
+  escopo por ora: gestão de domínio customizado do blog (claim-slug, CNAME/
+  proxy via Cloudflare) — vive em rotas inline em `server/blogAdmin.ts`, não
+  em funções exportadas reaproveitáveis, e envolve verificação DNS
+  assíncrona externa; extrair isso com segurança é um trabalho à parte.
+  Todas registradas no mesmo registry do Agente Operacional (`server/agent/
   registry.ts`), só com `provider: 'content'`.
 - Orquestração: `server/agent/contentGraph.ts` — um `StateGraph` do
   LangGraph.js, rodando como **serviço próprio** (não embutido no processo
-  Express principal — a integração do CopilotKit fala com o LangGraph via
-  HTTP), empacotado por `Dockerfile.contentAgent`.
-- Ponte com o frontend: `server/copilotRuntime.ts` expõe `/api/copilotkit`
-  no app principal (montada **antes** do `express.json()` global — o handler
-  do CopilotKit precisa do corpo da requisição como stream cru) e verifica o
-  token Firebase, injetando o `uid` verificado em
-  `forwardedProps.config.configurable` — o modelo nunca decide de quem é a
-  sessão.
+  Express principal), empacotado por `Dockerfile.contentAgent` (dev via
+  `npm run dev:content-agent`, porta 8123).
+- Ponte com o frontend: `server/agent/contentAgentChat.ts` expõe
+  `/api/content-agent/*` no app principal — REST simples (`express.json()`
+  de boas, sem tratamento especial de body) + SSE hand-rolado, no mesmo
+  molde do Agente Operacional (`server/agent/routes.ts`). Verifica o token
+  Firebase e chama o servidor LangGraph.js nativamente
+  (`POST /threads/{id}/runs/stream` com `stream_mode: ["messages-tuple",
+  "values"]`), traduzindo o stream em eventos SSE (`delta`/`leitura`/`acao`/
+  `resultado`/`fim`) e em documentos Firestore legíveis
+  (`users/{uid}/content_agent_threads/{id}/messages`,
+  `users/{uid}/content_agent_actions`) que o frontend consome via
+  `onSnapshot` — o modelo nunca decide de quem é a sessão, o `uid` verificado
+  vai direto em `config.configurable`.
 - Aprovação: `users/{uid}/agent_settings` (`server/agent/agentSettings.ts`)
   guarda o modo `ask`/`auto` (global + por ferramenta). Publicar, despublicar
   e conectar credencial são travas fixas — sempre pedem aprovação, ignorando
   o modo automático. O mecanismo em si é o `interrupt()` do LangGraph.js
   (não o `agent_actions` do Operacional) — persistido por um checkpointer
   próprio no Firestore (`server/agent/firestoreCheckpointer.ts`, já que não
-  existe um checkpointer oficial do LangGraph.js para Firestore).
-- Frontend: `src/modules/content/chat/ContentCopilotProvider.tsx` monta o
-  `CopilotKit`/`CopilotSidebar` (`@copilotkit/react-core/v2`) no workspace de
-  Conteúdo; um único `useInterrupt` cobre qualquer ferramenta que pause,
-  decidindo por `preview.ferramenta` se renderiza o cartão de aprovação
-  genérico (`ApprovalCard.tsx`) ou o formulário de credencial
-  (`CredentialForm.tsx`, que grava direto no Firestore — a senha/token nunca
-  vira argumento de tool call nem trafega pelo `/api/copilotkit`).
+  existe um checkpointer oficial do LangGraph.js para Firestore). A ponte
+  reivindica a ação numa transação do Firestore antes de mandar o resume
+  (`claimAction()` em `contentAgentChat.ts`) para um duplo clique/duas abas
+  não conseguirem resolver o mesmo `interrupt()` duas vezes.
+- Frontend: `src/modules/content/chat/ContentAgentPanel.tsx` é um painel
+  docado (substitui o antigo `CopilotSidebar`) montado no workspace de
+  Conteúdo, com `ContentChatThread.tsx`/`ContentActionCard.tsx`/
+  `ContentComposer.tsx` e o client `src/services/contentAgentChatService.ts`.
+  `ContentActionCard` decide por `action.tool` se renderiza o cartão de
+  aprovação genérico ou o formulário de credencial (`CredentialForm.tsx`, que
+  grava direto no Firestore — a senha/token nunca vira argumento de tool call
+  nem trafega pela ponte). Uma única conversa persistente por usuário nesta
+  entrega (sem troca de thread na UI, ao contrário do Agente Operacional).
+  `ContentAgentPanel` recebe `projeto`/`articleId` de `ContentApp.tsx` (o que
+  está aberto no workspace) e manda como `WorkspaceContext` em toda mensagem/
+  ação; `contentAgentChat.ts` repassa isso como `config.configurable.contexto`
+  pro grafo, que injeta no system prompt a cada chamada (`buildSystemPrompt`
+  em `contentGraph.ts`) — o modelo usa o projeto aberto por padrão em vez de
+  perguntar o ID (que a UI nunca mostra ao usuário). Quando não há projeto
+  aberto, ou o usuário menciona outro pelo nome, `content.projetos.listar`
+  deixa o modelo resolver nome → ID sozinho.
 
 **Fora de escopo desta entrega** (specs futuros): migrar o Agente Operacional
 para este mesmo motor LangGraph.js (ele continua no loop de function-calling
-próprio, `server/agent/loop.ts`), e mover a geração do Agente de Produto para
-o servidor. As duas superfícies de chat (Operacional e Conteúdo) coexistem
-por enquanto, sem unificação.
+próprio, `server/agent/loop.ts`), mover a geração do Agente de Produto para
+o servidor, e um seletor de conversas na UI do Agente de Conteúdo. As duas
+superfícies de chat (Operacional e Conteúdo) coexistem por enquanto, sem
+unificação.
 
 **Verificação:** sem suíte automatizada (padrão do projeto) — `scripts/
 verify-content-langchain-adapter.mjs`, `verify-content-approval-settings.mjs`
 e `verify-content-agent-tools.mjs` cobrem a lógica pura (branching de
 aprovação, catálogo de ferramentas). O mecanismo de ponta a ponta (grafo real
-+ Firestore + Vertex AI) foi validado ao vivo nesta sessão, direto contra a
-API do LangGraph.js (sem depender do CopilotKit) para cada categoria de
-ferramenta — leitura, escrita com aprovação, escrita em modo automático,
-trava fixa de aprovação, e o formulário de credencial — incluindo o
-checkpointer do Firestore isoladamente (put/getTuple/putWrites/list/
-deleteThread). **Não foi validado nesta sessão** (ambiente sem os recursos
-necessários, listado para quem for revisar antes do merge):
++ Firestore + Vertex AI + ponte REST/SSE) foi validado ao vivo direto contra
+a API do `/api/content-agent/*` do app principal para cada categoria de
+fluxo — resposta simples, chamada de ferramenta de leitura, interrupt de
+escrita com aprovação, execução após aprovação, rejeição, dupla-execução
+bloqueada pelo `claimAction()`, criação/listagem/exclusão de thread, e (nas
+41 ferramentas de `content`) listar clusters, criar cluster manual via
+interrupt/aprovação, e atualizar a config do blog nativo com objeto aninhado
+(`colors`) — além do checkpointer do Firestore isoladamente (put/getTuple/
+putWrites/list/deleteThread).
+
+**Pegadinha real encontrada e corrigida nesse teste ao vivo:** um schema de
+ferramenta com `type: 'object'` sem `properties` explícitas vira, na
+conversão pra Zod (`jsonSchemaPropertyToZod` em `registry.ts`), um objeto
+aberto (`z.record`) — o Vertex AI recusa isso com HTTP 400 na chamada
+inteira do modelo, não só quando aquela ferramenta é usada, porque o
+catálogo inteiro é vinculado de uma vez (`toLangChainTools`). Toda mensagem
+na conversa quebrava silenciosamente até o fix: a conversão agora respeita
+`properties` aninhadas recursivamente quando declaradas no JSON Schema.
+Qualquer ferramenta nova com um argumento `type: 'object'` PRECISA declarar
+`properties` explícitas (ver `content.blog.config.atualizar` em
+`contentBlog.ts` para o padrão) — nunca deixar um objeto aberto.
+
+**Não foi validado** (ambiente sem os recursos necessários, listado para
+quem for revisar antes do merge):
 - Um clique-a-clique completo pela UI real do navegador (login, abrir o
-  workspace de Conteúdo, ver a sidebar do chat, aprovar um card de verdade).
+  workspace de Conteúdo, abrir o painel do chat, aprovar um card de verdade)
+  — a extensão do Chrome não estava conectada no ambiente desta sessão.
 - As ferramentas que debitam créditos de um usuário real (`content.clusters.
   gerar`, `.calendario.gerar`, `.artigo.produzir`, `.seo.auditoria.gerar`) —
   testadas só na lógica de schema/registro, não executadas de ponta a ponta
@@ -229,8 +281,8 @@ necessários, listado para quem for revisar antes do merge):
 ### Deploy
 
 O grafo LangGraph.js roda como um **serviço Cloud Run separado** do app
-principal (não dá pra rodar embutido no mesmo processo Express — a
-integração `@copilotkit/runtime` fala com o LangGraph via HTTP, não em
+principal (não dá pra rodar embutido no mesmo processo Express — a ponte em
+`server/agent/contentAgentChat.ts` fala com o LangGraph via HTTP, não em
 processo). `Dockerfile.contentAgent` empacota o mesmo código-fonte do
 repositório (a lógica das ferramentas de chat mora em `server/agent/tools/
 content.ts`/`contentSeo.ts`, reaproveitando as funções de `contentAgent.ts`/

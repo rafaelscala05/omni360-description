@@ -17,6 +17,10 @@ const ALWAYS_ASK_TOOLS: readonly string[] = [
   'content.artigo.publicar',
   'content.artigo.despublicar',
   'content.credencial.conectar',
+  // Apaga o projeto inteiro em cascata (clusters, calendário, blog, credenciais
+  // conectadas): irreversível e alto raio de impacto, diferente das outras
+  // exclusões (cluster/artigo/post/categoria), que seguem o modo configurado.
+  'content.projeto.excluir',
 ];
 
 export function resolveApprovalMode(settings: AgentSettings, toolName: string): 'ask' | 'auto' {

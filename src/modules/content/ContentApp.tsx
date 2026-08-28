@@ -16,7 +16,7 @@ import CompanyProfile from './CompanyProfile';
 import CompanyManager from './CompanyManager';
 import IntegrationsView from './IntegrationsView';
 import BlogView from './blog/BlogView';
-import { ContentCopilotProvider } from './chat/ContentCopilotProvider';
+import { ContentAgentPanel } from './chat/ContentAgentPanel';
 
 interface Props {
   user: User;
@@ -42,11 +42,6 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
   const [pendingClusterId, setPendingClusterId] = useState<string | null>(null);
   const [clusters, setClusters] = useState<ContentCluster[]>([]);
   const [openArticleId, setOpenArticleId] = useState<string | null>(null);
-  const [authToken, setAuthToken] = useState('');
-
-  useEffect(() => {
-    user.getIdToken().then(setAuthToken);
-  }, [user]);
 
   useEffect(() =>
     listenProjects(uid, (list) => {
@@ -82,7 +77,11 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
   );
 
   return (
-    <ContentCopilotProvider uid={uid} project={selected} articleId={openArticleId} authToken={authToken}>
+    <ContentAgentPanel
+      uid={uid}
+      projeto={selected ? { id: selected.id, nomeEmpresa: selected.config.nomeEmpresa } : null}
+      articleId={openArticleId}
+    >
     <div className="h-screen bg-[#f7f9fb] flex font-sans overflow-hidden">
       {isSidebarOpen && (
         <div onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-30 md:hidden" />
@@ -241,7 +240,7 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
         <CompanyManager uid={uid} projects={projects} onClose={() => setManagingCompanies(false)} />
       )}
     </div>
-    </ContentCopilotProvider>
+    </ContentAgentPanel>
   );
 };
 

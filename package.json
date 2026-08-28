@@ -4,19 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "postinstall": "node scripts/fix-fast-json-patch.mjs",
     "dev": "tsx server.ts",
     "start": "NODE_ENV=production node dist/server.js",
     "build": "vite build && esbuild server.ts --bundle --platform=node --packages=external --outfile=dist/server.js --format=esm",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "dev:content-agent": "langgraph dev --host localhost --port 8123"
+    "dev:content-agent": "langgraphjs dev --host localhost --port 8123"
   },
   "dependencies": {
-    "@copilotkit/react-core": "^1.69.3",
-    "@copilotkit/react-ui": "^1.69.3",
-    "@copilotkit/runtime": "^1.69.3",
     "@google-cloud/text-to-speech": "^6.4.1",
     "@google/genai": "^1.29.0",
     "@langchain/core": "^1.2.9",

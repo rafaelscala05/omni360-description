@@ -104,7 +104,17 @@ function jsonSchemaPropertyToZod(prop: unknown): z.ZodTypeAny {
   } else if (p.type === 'boolean') {
     base = z.boolean();
   } else if (p.type === 'object') {
-    base = z.record(z.string(), z.unknown());
+    // Testado ao vivo: um objeto aberto (z.record) vira, na conversão pro
+    // formato de function declaration do Vertex AI, um schema sem
+    // `properties` — a API recusa com HTTP 400 em TODA a chamada do modelo
+    // (não só quando essa ferramenta é usada), porque o catálogo inteiro é
+    // vinculado de uma vez. Quando o JSON Schema já define `properties`
+    // aninhadas, respeita-as recursivamente; só cai pro objeto aberto quando
+    // não há nada declarado (não deveria acontecer em nenhuma ferramenta
+    // registrada, mas evita quebrar tudo se acontecer).
+    base = p.properties && typeof p.properties === 'object'
+      ? jsonSchemaToZod(p as unknown as ToolSchema)
+      : z.record(z.string(), z.unknown());
   } else {
     base = z.string();
   }

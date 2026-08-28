@@ -7,10 +7,14 @@
 // node_modules/@langchain/langgraph-checkpoint/dist/memory.js), só trocando
 // os dois objetos em memória por documentos no Firestore.
 //
-// Estrutura: users/{uid}/agent_threads/{threadId}/checkpoints/{checkpointId},
-// com uma subcoleção `writes/{taskId}__{writeIdx}` por checkpoint — mesmo
-// prefixo `agent_threads` já usado pelo Operacional, para manter as
-// conversas dos dois agentes num lugar previsível.
+// Estrutura: users/{uid}/content_agent_threads/{threadId}/checkpoints/{checkpointId},
+// com uma subcoleção `writes/{taskId}__{writeIdx}` por checkpoint. Prefixo
+// PRÓPRIO (`content_agent_threads`, não `agent_threads`) — o Operacional já
+// usa `agent_threads` para docs de mensagem legíveis; misturar os dois
+// namespaces faria um checkpoint (blob base64, opaco) aparecer no mesmo
+// lugar que uma mensagem de chat de verdade. `content_agent_threads/
+// {threadId}` também guarda uma subcoleção `messages` (legível, para a UI —
+// ver server/agent/contentAgentChat.ts), irmã de `checkpoints`.
 import {
   BaseCheckpointSaver,
   WRITES_IDX_MAP,
@@ -45,15 +49,19 @@ function requireThreadId(config: RunnableConfig): string {
   return threadId;
 }
 
+export function contentThreadRef(uid: string, threadId: string) {
+  return adminDb.collection('users').doc(uid).collection('content_agent_threads').doc(threadId);
+}
+
 function checkpointsRef(uid: string, threadId: string) {
-  return adminDb.collection('users').doc(uid).collection('agent_threads').doc(threadId).collection('checkpoints');
+  return contentThreadRef(uid, threadId).collection('checkpoints');
 }
 
 // Coleção raiz minúscula: threadId -> uid. Único propósito é permitir
 // deleteThread(threadId) (que não recebe uid) sem precisar de uma
 // collectionGroup query nem de um índice novo — ver o comentário em put().
 function threadOwnerRef(threadId: string) {
-  return adminDb.collection('agent_thread_owners').doc(threadId);
+  return adminDb.collection('content_agent_thread_owners').doc(threadId);
 }
 
 interface CheckpointDoc {

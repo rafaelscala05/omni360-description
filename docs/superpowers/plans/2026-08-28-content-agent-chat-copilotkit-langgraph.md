@@ -1,5 +1,13 @@
 # Agente de Conteúdo Conversacional (CopilotKit + LangGraph) Implementation Plan
 
+> **Nota (2026-08-28, mesmo dia):** depois de todas as tasks abaixo
+> implementadas e testadas, a camada de UI/ponte com CopilotKit (Tasks
+> 2/13/14) foi substituída por um cliente REST+SSE próprio, no mesmo padrão
+> do Agente Operacional — ver `CONTENT_MODULE.md` § "Agente conversacional
+> (chat)" para a arquitetura atual e `server/agent/contentAgentChat.ts`. As
+> demais tasks (grafo, ferramentas, checkpointer, onboarding por chat)
+> permanecem válidas como estão.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let the Agente de Conteúdo be operated by chat — onboarding, clusters, calendário, produção/publicação de artigos, auditoria de SEO — via CopilotKit no frontend e um grafo LangGraph.js no backend, com aprovação humana antes de qualquer escrita relevante.
