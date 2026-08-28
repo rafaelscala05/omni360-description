@@ -1,6 +1,17 @@
-FROM langchain/langgraphjs-api:20
-ADD . /deps/content-agent-chat
-ENV LANGSERVE_GRAPHS='{"content_agent":"./server/agent/contentGraph.ts:graph"}'
-WORKDIR /deps/content-agent-chat
+# Servidor standalone do grafo do Agente de Conteúdo (server/agent/
+# contentAgentServer.ts) — NÃO a imagem `langchain/langgraphjs-api`. Achado
+# ao vivo: essa imagem sobe o Core API completo da LangGraph Platform, que
+# exige Postgres+Redis próprios em produção (falha com "KeyError: Config
+# 'REDIS_URI' is missing"), mesmo o grafo já tendo um checkpointer Firestore
+# dedicado (server/agent/firestoreCheckpointer.ts) — infra duplicada e cara
+# pra um requisito já resolvido. Este servidor implementa só os dois
+# endpoints que a ponte (server/agent/contentAgentChat.ts) realmente usa,
+# direto sobre `graph.stream()`.
+FROM node:20-slim
+WORKDIR /app
+COPY package.json package-lock.json ./
 RUN npm ci
-RUN (test ! -f /api/langgraph_api/js/build.mts && echo "Prebuild script not found, skipping") || tsx /api/langgraph_api/js/build.mts
+COPY . .
+ENV NODE_ENV=production
+EXPOSE 8080
+CMD ["npx", "tsx", "server/agent/contentAgentServer.ts"]

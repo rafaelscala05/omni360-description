@@ -281,50 +281,89 @@ quem for revisar antes do merge):
 ### Deploy
 
 O grafo LangGraph.js roda como um **serviço Cloud Run separado** do app
-principal (não dá pra rodar embutido no mesmo processo Express — a ponte em
-`server/agent/contentAgentChat.ts` fala com o LangGraph via HTTP, não em
-processo). `Dockerfile.contentAgent` empacota o mesmo código-fonte do
-repositório (a lógica das ferramentas de chat mora em `server/agent/tools/
-content.ts`/`contentSeo.ts`, reaproveitando as funções de `contentAgent.ts`/
-`seoAgent.ts` — nenhum código duplicado), só com outro entrypoint
-(`server/agent/contentGraph.ts:graph`, registrado em `langgraph.json`).
+principal — não embutido no mesmo processo Express, e **não** a imagem
+`langchain/langgraphjs-api` do `langgraph-cli build`. Achado ao vivo
+(2026-08-28, primeiro deploy real): essa imagem sobe o Core API completo da
+LangGraph Platform, que exige Postgres+Redis próprios em produção (crash na
+inicialização, `KeyError: Config 'REDIS_URI' is missing`) — infra duplicada e
+cara pra um requisito que o checkpointer Firestore
+(`server/agent/firestoreCheckpointer.ts`) já resolve. O artefato de deploy
+real é `server/agent/contentAgentServer.ts`: um servidor Express fino que
+implementa só os dois endpoints que a ponte (`server/agent/
+contentAgentChat.ts`) usa (`POST /threads`, `POST /threads/{id}/runs/
+stream`), direto sobre `graph.stream()` — sem fila de runs, sem TTL de
+threads, sem nada do resto do Core API (não faz falta: threads/mensagens já
+vivem no Firestore via a ponte). `Dockerfile.contentAgent` empacota esse
+servidor (`node:20-slim` + `npx tsx`, mesmo código-fonte do repositório,
+reaproveitando as funções de `contentAgent.ts`/`seoAgent.ts` sem duplicar
+nada). `langgraph.json` continua existindo só pro `npm run dev:content-agent`
+local (`langgraphjs dev`, que usa SQLite/memória embutido — sem o requisito
+de Postgres/Redis, por isso nunca pegou esse problema em dev).
 
-1. **Buildar a imagem:**
+**Achado ao vivo nº 2 (serialização):** o stream nativo do LangGraph.js entrega
+instâncias de `BaseMessage` (LangChain), que têm `type`/`content`/
+`tool_call_id`/`name` como campos de instância simples — MAS `JSON.stringify`
+não serializa esses campos direto: `BaseMessage` estende `Serializable`, que
+define `toJSON()` pro formato próprio do LangChain (`{lc:1,
+type:"constructor", kwargs}`). `contentAgentServer.ts` tem um `flattenMessage`
+que lê os campos direto do objeto antes de mandar pro SSE — sem isso, o JSON
+que `contentAgentChat.ts` recebe não bate com o que ele espera
+(`chunk.type`/`chunk.content` no nível raiz) e todo o parsing quebra
+silenciosamente.
+
+**Achado ao vivo nº 3 (auth serviço-a-serviço):** `content-agent-graph` roda
+com `--no-allow-unauthenticated` (o grafo confia cegamente no `uid` que chega
+em `config.configurable` — quem verifica o token Firebase é a ponte, antes de
+chamar; público, qualquer um passaria um `uid` alheio e operaria em nome de
+outro usuário). `contentAgentChat.ts` autentica via ID token de curta duração
+do metadata server do Cloud Run (`getIdToken`/`authHeaders`, mecanismo padrão
+de serviço-para-serviço no GCP — sem lib nova) com `aud` = URL do serviço;
+fora do Cloud Run (dev local) o metadata server não responde, cai no catch e
+segue sem header, igual antes.
+
+1. **Buildar a imagem** (para `linux/amd64` — testado em Apple Silicon: um
+   build nativo sem `--platform` gera uma imagem `arm64` que o Cloud Run
+   rejeita com `exec format error`):
    ```bash
-   npx @langchain/langgraph-cli build -t content-agent-graph
+   docker buildx build --platform linux/amd64 -f Dockerfile.contentAgent -t content-agent-graph --load .
    ```
-   (requer Docker rodando localmente; não validado nesta sessão de
-   desenvolvimento por falta de um daemon Docker ativo no ambiente — rodar
-   antes do merge.)
 
-2. **Publicar no Artifact Registry e criar o serviço Cloud Run:**
+2. **Publicar no Artifact Registry e criar/atualizar o serviço Cloud Run:**
    ```bash
-   docker tag content-agent-graph gcr.io/<PROJECT_ID>/content-agent-graph
-   docker push gcr.io/<PROJECT_ID>/content-agent-graph
+   gcloud artifacts repositories create content-agent --repository-format=docker --location=<REGIAO> --project=<PROJECT_ID>  # uma vez só
+   gcloud auth configure-docker <REGIAO>-docker.pkg.dev
+   docker tag content-agent-graph <REGIAO>-docker.pkg.dev/<PROJECT_ID>/content-agent/content-agent-graph
+   docker push <REGIAO>-docker.pkg.dev/<PROJECT_ID>/content-agent/content-agent-graph
    gcloud run deploy content-agent-graph \
-     --image gcr.io/<PROJECT_ID>/content-agent-graph \
+     --image <REGIAO>-docker.pkg.dev/<PROJECT_ID>/content-agent/content-agent-graph \
      --region <REGIAO> \
+     --service-account <MESMA CONTA DE SERVIÇO DO APP PRINCIPAL> \
      --set-env-vars VERTEX_PROJECT_ID=<PROJECT_ID>,VERTEX_LOCATION=<REGIAO> \
      --no-allow-unauthenticated
    ```
-   O serviço precisa das mesmas credenciais Admin do Firebase que o app
-   principal (ADC via identidade da conta de serviço do Cloud Run — mesmo
-   mecanismo de `server/firebaseAdmin.ts`), mais `VERTEX_PROJECT_ID`/
-   `VERTEX_LOCATION`. `--no-allow-unauthenticated`: só o app principal deve
-   conseguir chamá-lo — configurar IAM (`roles/run.invoker`) para a conta de
-   serviço do serviço principal, não deixar público.
+   Rodar com a **mesma conta de serviço do app principal** (não a padrão do
+   Compute) — já sabemos que ela tem as permissões certas de Firestore/Vertex
+   AI, porque o app principal já funciona com ela.
 
-3. **Apontar o app principal pro novo serviço:** configurar
-   `CONTENT_AGENT_LANGGRAPH_URL` (em `apphosting.yaml`/Secret Manager, mesmo
-   padrão das outras variáveis) com a URL do serviço Cloud Run criado.
+3. **Dar permissão pro app principal chamar o serviço:**
+   ```bash
+   gcloud run services add-iam-policy-binding content-agent-graph \
+     --region <REGIAO> --member="serviceAccount:<CONTA DE SERVIÇO DO APP PRINCIPAL>" --role="roles/run.invoker"
+   ```
+
+4. **Apontar o app principal pro novo serviço:** `CONTENT_AGENT_LANGGRAPH_URL`
+   em `apphosting.yaml` com a URL do serviço Cloud Run criado, depois commit +
+   push (redeploy do App Hosting).
+
+**Verificado ao vivo direto contra o serviço implantado** (não só localmente):
+leitura (`content.projetos.listar`), escrita com aprovação (`content.
+projeto.criar` — interrupt pausa, `__interrupt__` no formato certo), e resume
+**sobrevivendo a um restart completo do processo do servidor** entre a pausa
+e a aprovação (prova viva do motivo de existir um checkpointer Firestore —
+o cenário exato de Cloud Run escalando a zero entre a pergunta e a resposta
+do usuário).
 
 ## Pendências / melhorias futuras
-
-- Dockerfile.contentAgent foi gerado e ajustado (`.dockerignore` adicionado
-  pra não vazar `.env`/`node_modules`/`.git` pra dentro da imagem), mas o
-  build/run local não foi validado nesta sessão por falta de um daemon
-  Docker ativo no ambiente de desenvolvimento — validar antes do primeiro
-  deploy.
 
 - Mover o segredo do WordPress para o Secret Manager (hoje em Firestore, com
   leitura bloqueada ao cliente).

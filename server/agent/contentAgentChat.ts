@@ -146,10 +146,42 @@ async function resolveAction(uid: string, actionId: string, patch: Partial<Conte
 // Cliente HTTP do servidor LangGraph.js
 // ---------------------------------------------------------------------------
 
+// content-agent-graph roda com --no-allow-unauthenticated (o grafo confia
+// cegamente no uid que chega em config.configurable — quem verifica o token
+// Firebase é esta ponte, antes de chamar; então o serviço não pode ficar
+// público, senão qualquer um passa um uid alheio). Autenticação
+// serviço-a-serviço padrão do Cloud Run: um ID token de curta duração via
+// metadata server, com `aud` = URL do serviço de destino. Fora do Cloud Run
+// (dev local, `langgraph dev` sem IAM) o metadata server não responde — cai
+// no catch e segue sem header, igual antes.
+let cachedIdToken: { token: string; exp: number } | null = null;
+async function getIdToken(audience: string): Promise<string | null> {
+  if (cachedIdToken && cachedIdToken.exp > Date.now()) return cachedIdToken.token;
+  try {
+    const res = await fetch(
+      `http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=${encodeURIComponent(audience)}`,
+      { headers: { 'Metadata-Flavor': 'Google' } },
+    );
+    if (!res.ok) return null;
+    const token = await res.text();
+    // Token do metadata server dura ~1h — 50min de cache é conservador o
+    // bastante pra nunca mandar um expirado.
+    cachedIdToken = { token, exp: Date.now() + 50 * 60_000 };
+    return token;
+  } catch {
+    return null;
+  }
+}
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await getIdToken(CONTENT_AGENT_URL);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function ensureLangGraphThread(threadId: string): Promise<void> {
   const res = await fetch(`${CONTENT_AGENT_URL}/threads`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
     body: JSON.stringify({ thread_id: threadId }),
   });
   // 409 = a thread já existe no LangGraph — tudo bem, só usamos ela.
@@ -189,7 +221,7 @@ async function streamRun(
 ): Promise<RunResult> {
   const res = await fetch(`${CONTENT_AGENT_URL}/threads/${threadId}/runs/stream`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
     body: JSON.stringify({
       assistant_id: GRAPH_ID,
       config: { configurable: { uid, ...(contexto ? { contexto } : {}) } },

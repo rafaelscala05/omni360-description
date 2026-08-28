@@ -31,6 +31,15 @@ env:
   - variable: CONTENT_CRON_SECRET
     secret: content-cron-secret
 
+  # Agente de Conteúdo conversacional — serviço Cloud Run próprio que roda o
+  # grafo LangGraph.js (server/agent/contentAgentServer.ts, Dockerfile.
+  # contentAgent). Sem authOptions aqui: a ponte (server/agent/
+  # contentAgentChat.ts) autentica via ID token do metadata server do Cloud
+  # Run — precisa que este serviço tenha roles/run.invoker no
+  # content-agent-graph.
+  - variable: CONTENT_AGENT_LANGGRAPH_URL
+    value: "https://content-agent-graph-859506037089.us-east4.run.app"
+
   # URL pública do app. Sem isso, platformHosts em server/blogPublic.ts fica só
   # com localhost e todo GET no app passa por um lookup em blogDomains.
   - variable: APP_URL
