@@ -789,7 +789,7 @@ function markdownToPortableText(md: string): object[] {
   return blocks;
 }
 
-async function publishToWordpress(uid: string, projectId: string, articleId: string): Promise<string> {
+export async function publishToWordpress(uid: string, projectId: string, articleId: string): Promise<string> {
   const project = await loadProject(uid, projectId);
   const { wordpressUrl, wordpressUser } = project.config;
   if (!wordpressUrl || !wordpressUser) {
@@ -1067,7 +1067,7 @@ export async function detectSanityFields(uid: string, projectId: string, type: s
     .map((field) => ({ field, kind: inferSanityFieldKind(doc[field]) }));
 }
 
-async function publishToSanity(uid: string, projectId: string, articleId: string): Promise<string> {
+export async function publishToSanity(uid: string, projectId: string, articleId: string): Promise<string> {
   const project = await loadProject(uid, projectId);
   const {
     sanityProjectId, sanityDataset, sanityBlogUrl,
@@ -1228,7 +1228,7 @@ async function snapshotLinkedProducts(
 
 // Fase 5 — publicação no Blog nativo (CMS da plataforma).
 // Copia o artigo final para blogPosts como published e retorna a URL pública.
-async function publishToBlog(uid: string, projectId: string, articleId: string): Promise<string> {
+export async function publishToBlog(uid: string, projectId: string, articleId: string): Promise<string> {
   const settingsSnap = await projectRef(uid, projectId).collection('blog').doc('settings').get();
   if (!settingsSnap.exists || !(settingsSnap.data() as BlogSettings).enabled) {
     throw Object.assign(new Error('Blog nativo não está configurado/habilitado para este projeto'), { status: 400 });
@@ -1325,7 +1325,7 @@ async function unpublishFromBlog(uid: string, projectId: string, articleId: stri
 // mais no ar). O destino é lido de publishDestination; artigos publicados
 // antes dessa feature não têm o campo, então cai na mesma prioridade do
 // publish (sanity > wordpress > blog nativo) usada quando nenhum destino é informado.
-async function unpublishArticle(uid: string, projectId: string, articleId: string): Promise<void> {
+export async function unpublishArticle(uid: string, projectId: string, articleId: string): Promise<void> {
   const artRef = projectRef(uid, projectId).collection('calendar').doc(articleId);
   const snap = await artRef.get();
   if (!snap.exists) throw Object.assign(new Error('Artigo não encontrado'), { status: 404 });

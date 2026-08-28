@@ -19,6 +19,10 @@ import {
   debitCreditsAdmin,
   runArticlePipeline,
   regenerateArticleImage,
+  publishToBlog,
+  publishToSanity,
+  publishToWordpress,
+  unpublishArticle,
 } from '../../contentAgent';
 import type { ContentProjectConfig } from '../../../src/modules/content/types';
 
@@ -257,5 +261,69 @@ registerTool({
       mode: p.mode, improvementPrompt: p.improvementPrompt, baseProductImageUrl: p.baseProductImageUrl,
     });
     return { imageUrl };
+  },
+});
+
+registerTool({
+  name: 'content.artigo.publicar',
+  provider: 'content',
+  mode: 'write',
+  description: 'Publica um artigo revisado — no blog nativo, no WordPress ou no Sanity, conforme configurado no projeto (ou "destination" explícito). Torna o conteúdo público. Sempre pede aprovação, mesmo com o modo automático ligado para outras ferramentas.',
+  schema: {
+    type: 'object',
+    properties: {
+      projectId: { type: 'string' },
+      articleId: { type: 'string' },
+      destination: { type: 'string', enum: ['blog', 'wordpress', 'sanity'] },
+    },
+    required: ['projectId', 'articleId'],
+  },
+  preview: async (_ctx: ToolCtx, args: Record<string, unknown>) => makePreview({
+    resumo: `Publicar este artigo${args.destination ? ` em ${args.destination}` : ''}. Isso torna o conteúdo público.`,
+    alvo: requireStr(args, 'articleId'),
+    campos: [{ campo: 'status', antes: 'rascunho', depois: 'publicado', mudou: true }],
+    avisos: ['Ação pública e visível para terceiros — confira o artigo antes de aprovar.'],
+    payload: args,
+  }),
+  execute: async (ctx: ToolCtx, _args, preview) => {
+    const { projectId, articleId, destination } = preview.payload as {
+      projectId: string; articleId: string; destination?: 'blog' | 'wordpress' | 'sanity';
+    };
+    let url: string;
+    if (destination === 'blog') url = await publishToBlog(ctx.uid, projectId, articleId);
+    else if (destination === 'sanity') url = await publishToSanity(ctx.uid, projectId, articleId);
+    else if (destination === 'wordpress') url = await publishToWordpress(ctx.uid, projectId, articleId);
+    else {
+      const project = await loadProject(ctx.uid, projectId);
+      url = project.config.sanityProjectId
+        ? await publishToSanity(ctx.uid, projectId, articleId)
+        : project.config.wordpressUrl
+          ? await publishToWordpress(ctx.uid, projectId, articleId)
+          : await publishToBlog(ctx.uid, projectId, articleId);
+    }
+    return { url };
+  },
+});
+
+registerTool({
+  name: 'content.artigo.despublicar',
+  provider: 'content',
+  mode: 'write',
+  description: 'Remove um artigo publicado do ar (blog nativo, WordPress ou Sanity). Sempre pede aprovação.',
+  schema: {
+    type: 'object',
+    properties: { projectId: { type: 'string' }, articleId: { type: 'string' } },
+    required: ['projectId', 'articleId'],
+  },
+  preview: async (_ctx: ToolCtx, args: Record<string, unknown>) => makePreview({
+    resumo: 'Despublicar este artigo (remove do ar).',
+    alvo: requireStr(args, 'articleId'),
+    campos: [{ campo: 'status', antes: 'publicado', depois: 'despublicado', mudou: true }],
+    payload: args,
+  }),
+  execute: async (ctx: ToolCtx, _args, preview) => {
+    const { projectId, articleId } = preview.payload as { projectId: string; articleId: string };
+    await unpublishArticle(ctx.uid, projectId, articleId);
+    return { ok: true };
   },
 });
