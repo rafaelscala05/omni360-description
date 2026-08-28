@@ -8,7 +8,7 @@
 import type { ToolDef, ToolProvider, ToolSchema, ToolCtx } from './types';
 import { tool } from '@langchain/core/tools';
 import type { DynamicStructuredTool } from '@langchain/core/tools';
-import { interrupt } from '@langchain/langgraph';
+import { interrupt, isGraphInterrupt } from '@langchain/langgraph';
 import * as z from 'zod';
 import { resolveApprovalMode, type AgentSettings } from './agentSettings';
 
@@ -85,11 +85,40 @@ export function _resetRegistry(): void {
 
 // LangChain tools exigem um schema Zod; o registry guarda JSON Schema puro
 // (para ser reaproveitável pelo Gemini function-calling e, no futuro, MCP).
-// z.object({}).passthrough() aceita qualquer shape e deixa a validação de
-// obrigatoriedade para dentro do tool (mesmo que requireStr() já faz hoje) —
-// evita duplicar a definição do schema em dois formatos.
-function jsonSchemaToZodPassthrough(_schema: ToolSchema) {
-  return z.object({}).passthrough();
+// Testado ao vivo: um z.object({}).passthrough() vazio esconde os nomes e
+// tipos dos campos do modelo — sem ver o schema real, ele inventa nomes
+// (ex.: "nome_empresa" em vez de "nomeEmpresa") e as ferramentas falham por
+// "parâmetro obrigatório ausente". Por isso a conversão abaixo é real, campo
+// a campo, e não um passthrough.
+function jsonSchemaPropertyToZod(prop: unknown): z.ZodTypeAny {
+  const p = (prop ?? {}) as Record<string, unknown>;
+  const description = typeof p.description === 'string' ? p.description : undefined;
+
+  let base: z.ZodTypeAny;
+  if (Array.isArray(p.enum) && p.enum.every((v) => typeof v === 'string')) {
+    base = z.enum(p.enum as [string, ...string[]]);
+  } else if (p.type === 'array') {
+    base = z.array(jsonSchemaPropertyToZod(p.items));
+  } else if (p.type === 'number' || p.type === 'integer') {
+    base = z.number();
+  } else if (p.type === 'boolean') {
+    base = z.boolean();
+  } else if (p.type === 'object') {
+    base = z.record(z.string(), z.unknown());
+  } else {
+    base = z.string();
+  }
+  return description ? base.describe(description) : base;
+}
+
+function jsonSchemaToZod(schema: ToolSchema) {
+  const required = new Set(schema.required ?? []);
+  const shape: Record<string, z.ZodTypeAny> = {};
+  for (const [key, prop] of Object.entries(schema.properties ?? {})) {
+    const field = jsonSchemaPropertyToZod(prop);
+    shape[key] = required.has(key) ? field : field.optional();
+  }
+  return z.object(shape);
 }
 
 /**
@@ -135,6 +164,12 @@ export function toLangChainTools(
           if (!decisao?.aprovado) return 'Ação cancelada pelo usuário.';
           return await def.execute!(ctx, args, preview);
         } catch (err) {
+          // interrupt() propaga suspendendo a execução via uma exceção
+          // especial (GraphInterrupt) que o runtime do LangGraph precisa
+          // enxergar subir — testado ao vivo: sem este re-throw, o catch
+          // genérico abaixo a transforma em "Erro ao executar..." e a
+          // aprovação nunca pausa o grafo de verdade.
+          if (isGraphInterrupt(err)) throw err;
           const e = err as { status?: number; message?: string };
           return `Erro ao executar ${def.name}: ${e.message ?? 'erro desconhecido'}`;
         }
@@ -144,7 +179,7 @@ export function toLangChainTools(
         description: def.mode === 'write'
           ? `${def.description}\n[ESCRITA] Esta ação será apresentada ao usuário para aprovação antes de rodar.`
           : def.description,
-        schema: jsonSchemaToZodPassthrough(def.schema),
+        schema: jsonSchemaToZod(def.schema),
       },
     ),
   );

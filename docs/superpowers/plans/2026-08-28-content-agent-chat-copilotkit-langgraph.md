@@ -482,11 +482,33 @@ export type ToolProvider = 'wake' | 'tiny' | 'docs' | 'content';
 
 - [ ] **Step 2: Escrever o adaptador `toLangChainTools()`**
 
+Dois bugs reais só apareceram testando ao vivo contra o servidor LangGraph.js
+(Task 10 antecipou a validação) — corrigidos aqui direto, já que são parte
+do mesmo mecanismo:
+
+1. **Um `z.object({}).passthrough()` vazio esconde os campos do modelo.**
+   A ideia original era deixar `requireStr()`/`preview()` validarem
+   obrigatoriedade, mas sem nomes/tipos de campo no schema Zod que o
+   LangChain manda pro Gemini, o modelo **inventa** nomes de parâmetro (na
+   prática: chamou `content.projeto.criar` com `nome_empresa` em vez de
+   `nomeEmpresa`, e a ferramenta falhou com "parâmetro obrigatório
+   ausente"). A correção converte o JSON Schema de verdade, campo a campo.
+2. **`interrupt()` propaga lançando uma exceção especial (`GraphInterrupt`)
+   que o runtime do LangGraph precisa ver subir** — um `try/catch` genérico
+   ao redor da chamada a captura como se fosse um erro qualquer,
+   transformando toda pausa de aprovação em `"Erro ao executar ..."` em vez
+   de realmente pausar o grafo (breaking change silencioso: o teste ao vivo
+   mostrou o `tool` respondendo com o payload do interrupt serializado como
+   erro, e o modelo simplesmente desistindo). A correção reconhece o erro
+   via `isGraphInterrupt()` (exportado por `@langchain/langgraph`) e o
+   relança antes de cair no catch genérico.
+
 ```typescript
 // server/agent/registry.ts — adicionar ao final do arquivo, depois de toGeminiDeclarations()
 import { tool } from '@langchain/core/tools';
-import { interrupt } from '@langchain/langgraph';
+import { interrupt, isGraphInterrupt } from '@langchain/langgraph';
 import type { DynamicStructuredTool } from '@langchain/core/tools';
+import * as z from 'zod';
 import { resolveApprovalMode, type AgentSettings } from './agentSettings';
 import type { ToolCtx } from './types';
 
@@ -533,6 +555,12 @@ export function toLangChainTools(
           if (!decisao?.aprovado) return 'Ação cancelada pelo usuário.';
           return await def.execute!(ctx, args, preview);
         } catch (err) {
+          // interrupt() propaga suspendendo a execução via uma exceção
+          // especial (GraphInterrupt) que o runtime do LangGraph precisa
+          // enxergar subir — sem este re-throw, o catch genérico abaixo a
+          // transforma em "Erro ao executar..." e a aprovação nunca pausa
+          // o grafo de verdade (confirmado ao vivo).
+          if (isGraphInterrupt(err)) throw err;
           const e = err as { status?: number; message?: string };
           return `Erro ao executar ${def.name}: ${e.message ?? 'erro desconhecido'}`;
         }
@@ -542,7 +570,7 @@ export function toLangChainTools(
         description: def.mode === 'write'
           ? `${def.description}\n[ESCRITA] Esta ação será apresentada ao usuário para aprovação antes de rodar.`
           : def.description,
-        schema: jsonSchemaToZodPassthrough(def.schema),
+        schema: jsonSchemaToZod(def.schema),
       },
     ),
   );
@@ -550,16 +578,38 @@ export function toLangChainTools(
 
 // LangChain tools exigem um schema Zod; o registry guarda JSON Schema puro
 // (para ser reaproveitável pelo Gemini function-calling e, no futuro, MCP).
-// z.object({}).passthrough() aceita qualquer shape e deixa a validação de
-// obrigatoriedade para dentro do tool (mesmo que requireStr() já faz hoje) —
-// evita duplicar a definição do schema em dois formatos.
-import * as z from 'zod';
-function jsonSchemaToZodPassthrough(_schema: ToolSchema) {
-  return z.object({}).passthrough();
+// Conversão real, campo a campo — ver o porquê no parágrafo acima.
+function jsonSchemaPropertyToZod(prop: unknown): z.ZodTypeAny {
+  const p = (prop ?? {}) as Record<string, unknown>;
+  const description = typeof p.description === 'string' ? p.description : undefined;
+
+  let base: z.ZodTypeAny;
+  if (Array.isArray(p.enum) && p.enum.every((v) => typeof v === 'string')) {
+    base = z.enum(p.enum as [string, ...string[]]);
+  } else if (p.type === 'array') {
+    base = z.array(jsonSchemaPropertyToZod(p.items));
+  } else if (p.type === 'number' || p.type === 'integer') {
+    base = z.number();
+  } else if (p.type === 'boolean') {
+    base = z.boolean();
+  } else if (p.type === 'object') {
+    base = z.record(z.string(), z.unknown());
+  } else {
+    base = z.string();
+  }
+  return description ? base.describe(description) : base;
+}
+
+function jsonSchemaToZod(schema: ToolSchema) {
+  const required = new Set(schema.required ?? []);
+  const shape: Record<string, z.ZodTypeAny> = {};
+  for (const [key, prop] of Object.entries(schema.properties ?? {})) {
+    const field = jsonSchemaPropertyToZod(prop);
+    shape[key] = required.has(key) ? field : field.optional();
+  }
+  return z.object(shape);
 }
 ```
-
-**Nota de calibração:** `z.object({}).passthrough()` é deliberadamente permissivo — o registry já valida obrigatoriedade dentro de cada `read`/`preview` (ver `requireStr()` em `preview.ts`). Se, ao testar, o LangGraph/CopilotKit exigir um schema mais estrito para o modelo gerar argumentos corretos, trocar por uma conversão real JSON-Schema→Zod (ex.: pacote `zod-from-json-schema`) nesta mesma função, sem mudar a assinatura.
 
 - [ ] **Step 3: Script de verificação (lógica pura de branching, sem precisar do LangGraph rodando)**
 
@@ -1467,10 +1517,25 @@ export const graph = new StateGraph(MessagesAnnotation)
 
 **Nota de calibração:** `buildTools()` reconstrói as ferramentas do LangChain a cada chamada de nó porque `uid`/`settings` só existem em tempo de execução (por request) — confirmar, ao testar, se o `ToolNode` do LangGraph.js aceita receber `config` para repassar ao construtor de tools dessa forma, ou se a versão instalada exige que as tools sejam vinculadas de outro jeito (ex.: closures fixadas fora do grafo, com `uid` vindo de `state` em vez de `config`). Se precisar mudar, o ponto de ajuste é só `buildTools()`/`toolsNode()` — o resto do grafo não muda.
 
-- [ ] **Step 2: Remover o `dev:content-agent` de brinquedo e confirmar que o grafo real sobe**
+- [ ] **Step 2: Confirmar que o grafo real sobe e roda uma ferramenta de leitura e uma de escrita de verdade**
 
 Run: `npm run dev:content-agent`
-Expected: sobe sem erro de compilação — confirma que todos os imports de `agent/tools/content.ts`/`contentSeo.ts` resolvem corretamente a partir do novo caminho.
+Expected: sobe sem erro de compilação.
+
+Testado ao vivo (sem CopilotKit no meio, direto contra a API do LangGraph —
+mesmo padrão da Task 1/2): criar uma thread (`POST /threads`) e rodar
+(`POST /threads/{id}/runs/wait`) com `config.configurable.uid` fixo e uma
+mensagem como "liste os artigos reutilizáveis do meu projeto" — o modelo
+chamou `content.artigos.reutilizaveis.listar` e respondeu corretamente. Em
+seguida, uma mensagem pedindo para criar um projeto acionou
+`content.projeto.criar` com os nomes de campo certos
+(`nomeEmpresa`/`descricao`/...), pausou em `interrupt()` com o preview
+esperado, e — resumindo com `{"command": {"resume": {"aprovado": true}}}`
+— executou de verdade e gravou o documento em
+`users/{uid}/contentProjects/{id}` no Firestore (confirmado lendo o
+documento diretamente depois). Foi esse teste que revelou os dois bugs
+corrigidos na Task 3 (schema Zod vazio e `interrupt()` capturado pelo
+try/catch) — refletidos no código acima.
 
 - [ ] **Step 3: Commit**
 
