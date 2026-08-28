@@ -100,24 +100,87 @@ git commit -m "feat(content-agent): scaffold LangGraph.js dev server with echo g
 
 ## Task 2: Round-trip de aprovação ponta a ponta (CopilotKit + interrupt de brinquedo)
 
-Este é o passo de maior risco técnico do plano: provar que um `interrupt()` do grafo de brinquedo realmente aparece no frontend via `useCopilotAction`/`renderAndWaitForResponse` e que `respond()` retoma o grafo, antes de investir em construir o catálogo real de ferramentas.
+Este é o passo de maior risco técnico do plano — e o passo onde a API real do
+CopilotKit instalado (`1.69.3`) se revelou **v2**, bem diferente da v1
+documentada publicamente e usada para redigir a primeira versão deste plano.
+Correções abaixo já refletem o que foi validado de verdade, em quatro
+camadas: (1) `interrupt()`/`Command({resume})` cru via API HTTP do LangGraph
+(`/threads/{id}/runs/wait`); (2) o evento AG-UI que isso produz, capturado
+direto do `@copilotkit/runtime/langgraph`'s `LangGraphAgent.runAgent()`; (3)
+leitura do código-fonte compilado de `@ag-ui/langgraph` e do
+`useInterrupt` de `@copilotkit/react-core/v2`; (4) o round-trip HTTP completo
+através da própria rota Express, com um usuário de teste real (Identity
+Toolkit REST, sem precisar de service account) confirmando a injeção do
+`uid` verificado no servidor.
+
+**Achado principal:** a integração `@copilotkit/runtime/langgraph`'s
+`LangGraphAgent`/`LangGraphHttpAgent` traduz um `interrupt()` do LangGraph.js
+num evento **`CUSTOM` chamado `"on_interrupt"`**, com `value` sendo o payload
+passado para `interrupt()` serializado em JSON-string. No frontend, o hook
+dedicado pra isso é `useInterrupt` (`@copilotkit/react-core/v2`) — não
+`useCopilotAction`/`renderAndWaitForResponse` (API v1) nem `useHumanInTheLoop`
+(esse é para ferramentas que rodam inteiramente no cliente, casado por nome —
+diferente do nosso caso, que é uma ferramenta do grafo pausando). O `resolve()`
+de `useInterrupt` já sabe reenviar `forwardedProps.command.resume` sozinho —
+não precisa ser implementado à mão.
+
+**Achado secundário (bug de tooling, não do nosso código):**
+`@ag-ui/client` (dependência transitiva do CopilotKit) traz `fast-json-patch`,
+que publica um `index.ts` órfão ao lado do `index.js` real. Sob `tsx` (usado
+por `npm run dev`), esse arquivo órfão é resolvido no lugar do `index.js` e
+quebra com `MODULE_NOT_FOUND` (seu próprio `require('./src/core')` não existe
+no pacote publicado) — `npm run build` não é afetado (usa esbuild, que resolve
+`package.json#main` corretamente). Corrigido com um `postinstall` que renomeia
+o arquivo órfão (ver Step 1).
 
 **Files:**
+- Create: `scripts/fix-fast-json-patch.mjs`
+- Modify: `package.json` (script `postinstall` + `dev:content-agent` já existente)
 - Create: `server/copilotRuntime.ts`
 - Modify: `server.ts`
 - Modify: `server/agent/contentGraph.ts`
 - Create: `src/modules/content/chat/ContentChatDebug.tsx`
-- Modify: `package.json`
 
 **Interfaces:**
-- Consumes: `graph` de `server/agent/contentGraph.ts` (Task 1).
-- Produces: `registerCopilotRuntime(app: express.Application, deps: { verifyFirebaseToken: typeof verifyFirebaseToken }): void`, montada em `/api/copilotkit` — mesmo formato de dependência dos demais `register*Routes` já chamados em `server.ts` (ex.: `registerContentRoutes(app, { verifyFirebaseToken })`).
+- Consumes: `graph` de `server/agent/contentGraph.ts` (Task 1); `adminAuth` de `server/firebaseAdmin.ts`.
+- Produces: `registerCopilotRuntime(app: express.Application): void`, montada em `/api/copilotkit` **antes** do `express.json()` global (precisa do corpo cru como stream fetch-native — ver Step 4).
 
-- [ ] **Step 1: Instalar as dependências do CopilotKit**
+- [ ] **Step 1: Instalar as dependências do CopilotKit e corrigir o `fast-json-patch` órfão**
 
 ```bash
 npm install @copilotkit/runtime @copilotkit/react-core @copilotkit/react-ui
 ```
+
+```javascript
+// scripts/fix-fast-json-patch.mjs
+//
+// fast-json-patch@3.1.1 (dependência transitiva de @ag-ui/client, que vem do
+// CopilotKit) publica um `index.ts` órfão ao lado do `index.js` real. Sob tsx
+// (usado por `npm run dev`), esse arquivo órfão é resolvido no lugar do
+// `index.js` e quebra com MODULE_NOT_FOUND (seu `require('./src/core')`
+// próprio não existe no pacote publicado). `npm run build` não é afetado
+// (esbuild resolve `package.json#main` corretamente) — é um problema só do
+// dev server via tsx. Renomear é inofensivo: nada importa
+// `fast-json-patch/index.ts` diretamente, só o especificador nu
+// `fast-json-patch`, que passa a resolver `index.js` assim que `index.ts`
+// não está mais lá pra ofuscar.
+import { existsSync, renameSync } from 'node:fs';
+
+const path = 'node_modules/fast-json-patch/index.ts';
+if (existsSync(path)) {
+  renameSync(path, `${path}.bak`);
+  console.log(`[fix-fast-json-patch] renamed ${path} -> ${path}.bak`);
+}
+```
+
+No bloco `"scripts"` de `package.json`, adicionar (antes de `"dev"`):
+
+```json
+"postinstall": "node scripts/fix-fast-json-patch.mjs",
+```
+
+Run: `node scripts/fix-fast-json-patch.mjs`
+Expected: imprime a linha de rename (ou nada, se já corrigido — idempotente).
 
 - [ ] **Step 2: Adicionar um tool de brinquedo que interrompe o grafo**
 
@@ -130,7 +193,7 @@ Substituir o conteúdo de `server/agent/contentGraph.ts`:
 // interrupt() — só para validar o round-trip de aprovação ponta a ponta antes
 // de construir o catálogo real (Task 10 substitui isto).
 
-import { StateGraph, START, END, MessagesAnnotation, interrupt, Command } from '@langchain/langgraph';
+import { StateGraph, START, END, MessagesAnnotation, interrupt } from '@langchain/langgraph';
 import { ToolNode } from '@langchain/langgraph/prebuilt';
 import { tool } from '@langchain/core/tools';
 import { ChatVertexAI } from '@langchain/google-vertexai';
@@ -138,13 +201,13 @@ import * as z from 'zod';
 
 const toyWriteTool = tool(
   async ({ mensagem }: { mensagem: string }) => {
-    const aprovado = interrupt({
+    const decisao = interrupt({
       resumo: `Confirma o envio: "${mensagem}"?`,
       alvo: 'brinquedo',
       campos: [],
       avisos: [],
-    });
-    if (!aprovado) return 'Ação cancelada pelo usuário.';
+    }) as { aprovado: boolean };
+    if (!decisao?.aprovado) return 'Ação cancelada pelo usuário.';
     return `Mensagem enviada: ${mensagem}`;
   },
   {
@@ -154,10 +217,13 @@ const toyWriteTool = tool(
   },
 );
 
+// Nota: "project" NÃO é um campo direto de ChatVertexAIInput — o id do
+// projeto GCP entra via authOptions.projectId (google-auth-library). Só
+// "location" é campo de topo.
 const model = new ChatVertexAI({
   model: 'gemini-2.5-flash',
-  project: process.env.VERTEX_PROJECT_ID,
   location: process.env.VERTEX_LOCATION || 'us-central1',
+  authOptions: { projectId: process.env.VERTEX_PROJECT_ID },
 }).bindTools([toyWriteTool]);
 
 async function callModel(state: typeof MessagesAnnotation.State) {
@@ -179,114 +245,216 @@ export const graph = new StateGraph(MessagesAnnotation)
   .compile();
 ```
 
-- [ ] **Step 3: Montar o runtime do CopilotKit no Express**
+**Nota de ambiente:** se `ChatVertexAI` retornar HTTP 403, confira se
+`VERTEX_PROJECT_ID` no `.env` é um projeto GCP onde as credenciais ADC locais
+(`gcloud auth application-default login`) têm permissão de Vertex AI — em
+dev, o projeto do Firebase (`firebase-applet-config.json#projectId`) costuma
+funcionar mesmo quando um `VERTEX_PROJECT_ID` de produção não funciona
+localmente.
+
+- [ ] **Step 3: Montar o runtime do CopilotKit no Express (API v2 real, confirmada contra o pacote instalado)**
+
+A API pública documentada para LangGraph (`CopilotRuntime`/`copilotRuntimeNodeHttpEndpoint` do pacote raiz, com um `serviceAdapter` tipo `GoogleGenerativeAIAdapter`) é a **v1, obsoleta**. A versão instalada (`@copilotkit/runtime@1.69.3`) usa uma API v2 completamente diferente — confirmada lendo `node_modules/@copilotkit/runtime/skills/runtime/references/*.md` (o próprio pacote publica esses guias) e o código-fonte compilado. Nela: `CopilotRuntime`/`createCopilotRuntimeHandler` vêm de `@copilotkit/runtime/v2`; `LangGraphAgent`/`LangGraphHttpAgent` continuam vindo de `@copilotkit/runtime/langgraph` (apesar de um `@deprecated` na JSDoc — os guias v2 do próprio pacote recomendam exatamente esse import, então é o caminho certo); não existe mais `serviceAdapter` obrigatório de fallback; o handler fala fetch nativo (`Request`/`Response`), não Express, e precisa de uma ponte manual documentada pelo próprio pacote.
 
 ```typescript
 // server/copilotRuntime.ts
+//
+// Ponte entre o Express principal e o servidor LangGraph.js do Agente de
+// Conteúdo. @copilotkit/runtime v2 fala fetch (Request/Response) nativo, não
+// Express — a delegação abaixo é o padrão documentado pelo próprio pacote
+// (node_modules/@copilotkit/runtime/skills/runtime/references/setup-endpoint.md)
+// para expor um handler fetch-native dentro de uma rota Express, com streaming
+// via SSE preservado (sem bufferizar o corpo da resposta).
 import type express from 'express';
-import {
-  CopilotRuntime,
-  GoogleGenerativeAIAdapter,
-  LangGraphHttpAgent,
-  copilotRuntimeNodeHttpEndpoint,
-} from '@copilotkit/runtime';
+import { Readable } from 'node:stream';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
+import { CopilotRuntime, createCopilotRuntimeHandler } from '@copilotkit/runtime/v2';
+import { LangGraphAgent } from '@copilotkit/runtime/langgraph';
+import { adminAuth } from './firebaseAdmin';
 
-interface CopilotDeps {
-  verifyFirebaseToken(req: express.Request): Promise<{ uid: string }>;
-}
-
-// URL do servidor LangGraph.js (Task 1/12). Em dev, o `langgraph dev` da Task 1.
 const CONTENT_AGENT_URL = process.env.CONTENT_AGENT_LANGGRAPH_URL || 'http://localhost:8123';
+const BASE_PATH = '/api/copilotkit';
 
-export function registerCopilotRuntime(app: express.Application, deps: CopilotDeps): void {
-  app.use('/api/copilotkit', async (req, res, next) => {
-    // Mesma verificação de token que todo outro endpoint autenticado do app;
-    // o uid resolvido aqui é o que os tools do grafo recebem via `properties`.
-    const decoded = await deps.verifyFirebaseToken(req).catch(() => null);
-    if (!decoded) return res.status(401).json({ error: 'Não autenticado' });
+export function registerCopilotRuntime(app: express.Application): void {
+  const runtime = new CopilotRuntime({
+    agents: {
+      content_agent: new LangGraphAgent({
+        deploymentUrl: CONTENT_AGENT_URL,
+        graphId: 'content_agent',
+      }),
+    },
+  });
 
-    const runtime = new CopilotRuntime({
-      agents: {
-        content_agent: new LangGraphHttpAgent({ url: `${CONTENT_AGENT_URL}/` }),
+  const handler = createCopilotRuntimeHandler({
+    runtime,
+    basePath: BASE_PATH,
+    hooks: {
+      // Verifica o token Firebase e substitui qualquer uid que o cliente
+      // tenha mandado por um valor confiável, resolvido no servidor — nunca
+      // confiamos em uid vindo do navegador. O uid verificado entra em
+      // forwardedProps.config.configurable, que o SDK do LangGraph.js
+      // repassa como config.configurable do grafo (confirmado lendo
+      // node_modules/@ag-ui/langgraph/dist/index.mjs:prepareStream, e por
+      // teste ao vivo: o uid injetado aqui apareceu no RUN_STARTED echoado
+      // pelo próprio LangGraph).
+      onBeforeHandler: async ({ route, request }) => {
+        if (route.method !== 'agent/run') return;
+
+        const auth = request.headers.get('authorization') ?? '';
+        const token = auth.replace(/^Bearer\s+/i, '');
+        if (!token) throw new Response('Não autenticado', { status: 401 });
+        const decoded = await adminAuth.verifyIdToken(token).catch(() => null);
+        if (!decoded) throw new Response('Não autenticado', { status: 401 });
+
+        const body = await request.clone().json().catch(() => ({}) as Record<string, unknown>);
+        const forwardedProps = (body.forwardedProps ?? {}) as Record<string, unknown>;
+        const config = (forwardedProps.config ?? {}) as Record<string, unknown>;
+        const configurable = (config.configurable ?? {}) as Record<string, unknown>;
+
+        body.forwardedProps = {
+          ...forwardedProps,
+          config: { ...config, configurable: { ...configurable, uid: decoded.uid } },
+        };
+
+        return new Request(request.url, {
+          method: request.method,
+          headers: request.headers,
+          body: JSON.stringify(body),
+        });
       },
-    });
-    // Serviço de fallback exigido pelo construtor do CopilotRuntime; não é o
-    // modelo que conduz a conversa (isso é o grafo, via Vertex AI) — só cobre
-    // rotas do CopilotKit que não passam pelo agente registrado.
-    const serviceAdapter = new GoogleGenerativeAIAdapter({ apiKey: process.env.GEMINI_API_KEY ?? '' });
+      onError: async ({ error, route }) => {
+        console.error('[copilotkit]', route?.method, error);
+      },
+    },
+  });
 
-    const handler = copilotRuntimeNodeHttpEndpoint({
-      endpoint: '/api/copilotkit',
-      runtime,
-      serviceAdapter,
-    });
-    return handler(req, res, next);
+  app.all(`${BASE_PATH}/*`, async (req, res) => {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const webReq = new Request(url, {
+      method: req.method,
+      headers: req.headers as Record<string, string>,
+      body: ['GET', 'HEAD'].includes(req.method ?? 'GET') ? undefined : (req as unknown as BodyInit),
+      duplex: 'half',
+    } as RequestInit & { duplex: 'half' });
+
+    const webRes = await handler(webReq);
+    res.status(webRes.status);
+    webRes.headers.forEach((v, k) => res.setHeader(k, v));
+    if (webRes.body) {
+      Readable.fromWeb(webRes.body as unknown as WebReadableStream).pipe(res);
+    } else {
+      res.end();
+    }
   });
 }
 ```
 
-**Nota de calibração:** confirmar contra a versão instalada de `@copilotkit/runtime` se `GoogleGenerativeAIAdapter` e `LangGraphHttpAgent` são exportados diretamente do pacote raiz ou de um subcaminho (`@copilotkit/runtime/langgraph`) — a documentação atual mostra os dois padrões. Se o import direto falhar, ajustar para o subcaminho.
+- [ ] **Step 4: Registrar a rota em `server.ts` — ANTES do `express.json()` global**
 
-- [ ] **Step 4: Registrar a rota em `server.ts`**
-
-Junto das outras chamadas `register*Routes(app, { verifyFirebaseToken })` (perto da linha 145):
+`registerCopilotRuntime` precisa do corpo da requisição como stream cru
+(`body: req` acima) para reconstruir um `Request` fetch-nativo. Se
+`express.json()` rodar primeiro, ele já drena esse stream para `req.body`, e
+o `Request` reconstruído chega vazio no handler do CopilotKit. Por isso a
+rota é registrada **antes** do body-parser global, não junto dos outros
+`register*Routes` (que ficam depois e dependem de `req.body` parseado):
 
 ```typescript
-import { registerCopilotRuntime } from './server/copilotRuntime';
-// ...
-registerCopilotRuntime(app, { verifyFirebaseToken });
+// server.ts — import no topo, junto dos outros register*
+import { registerCopilotRuntime } from "./server/copilotRuntime";
+
+// server.ts — dentro de startServer(), ANTES de app.use(express.json(...))
+const app = express();
+const PORT = parseInt(process.env.PORT || '3000', 10);
+
+registerCopilotRuntime(app);
+
+app.use(express.json({ limit: '50mb', verify: (req, _res, buf) => { (req as any).rawBody = buf; } }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// ... registerContentRoutes(app, { verifyFirebaseToken }) e demais, sem mudança
 ```
 
-- [ ] **Step 5: Harness de debug no frontend**
+- [ ] **Step 5: Harness de debug no frontend (API v2: `useInterrupt`, não `useCopilotAction`)**
+
+Achado (lendo `node_modules/@copilotkit/react-core/dist/copilotkit-*.mjs` e
+`node_modules/@copilotkit/react-core/skills/react-core/references/*.md`):
+todos os componentes de chat (`CopilotKit`, `CopilotChat`, `CopilotSidebar`,
+`CopilotPopup`) vivem em `@copilotkit/react-core/v2` — `@copilotkit/react-ui`
+é só a v1 legada, seu `/v2` é apenas CSS. Para reagir a um `interrupt()` do
+LangGraph, o hook certo é `useInterrupt` (não `useCopilotAction` nem
+`useHumanInTheLoop`, que é para ferramentas que rodam no cliente, casadas por
+nome — diferente do nosso caso). `useInterrupt`'s `resolve(payload)` já sabe
+reenviar `forwardedProps.command.resume` sozinho.
 
 ```tsx
 // src/modules/content/chat/ContentChatDebug.tsx
 //
 // Página temporária só para validar o round-trip de aprovação. Removida/
 // substituída na Task 13 pela integração real no ContentApp.
-import { CopilotKit, useCopilotAction } from '@copilotkit/react-core';
-import { CopilotChat } from '@copilotkit/react-ui';
-import '@copilotkit/react-ui/styles.css';
+import { CopilotKit, CopilotChat, useInterrupt } from '@copilotkit/react-core/v2';
+import '@copilotkit/react-core/v2/styles.css';
+
+interface ToyInterruptPayload {
+  resumo?: string;
+  alvo?: string;
+}
 
 function ToyApproval() {
-  useCopilotAction({
-    name: 'toy_write',
-    renderAndWaitForResponse: ({ args, status, respond }) => {
-      if (status === 'complete') return <p>Concluído.</p>;
+  useInterrupt({
+    agentId: 'content_agent',
+    render: ({ event, resolve }) => {
+      const payload: ToyInterruptPayload = event?.value ? JSON.parse(event.value as string) : {};
       return (
-        <div className="border rounded-lg p-3">
-          <p>{(args as { resumo?: string }).resumo ?? 'Aprovar ação?'}</p>
-          <button onClick={() => respond?.(true)}>Aprovar</button>
-          <button onClick={() => respond?.(false)}>Rejeitar</button>
+        <div className="border rounded-lg p-3 space-y-2">
+          <p>{payload.resumo ?? 'Aprovar ação?'}</p>
+          <div className="flex gap-2">
+            <button onClick={() => resolve({ aprovado: true })}>Aprovar</button>
+            <button onClick={() => resolve({ aprovado: false })}>Rejeitar</button>
+          </div>
         </div>
       );
     },
   });
-  return <CopilotChat labels={{ title: 'Debug', initial: 'Peça para enviar uma mensagem de teste.' }} />;
+  return null;
 }
 
-export default function ContentChatDebug() {
+export default function ContentChatDebug({ authToken }: { authToken: string }) {
   return (
-    <CopilotKit runtimeUrl="/api/copilotkit" agent="content_agent">
+    <CopilotKit runtimeUrl="/api/copilotkit" agent="content_agent" headers={{ Authorization: `Bearer ${authToken}` }}>
       <ToyApproval />
+      <CopilotChat agentId="content_agent" />
     </CopilotKit>
   );
 }
 ```
 
-- [ ] **Step 6: Verificação manual do round-trip**
+Note que a prop do provider `<CopilotKit>` é `agent` (não `agentId` — só
+`useInterrupt`/`useAgent`/`<CopilotChat>` usam `agentId`); `tsc --noEmit`
+pega esse tipo de erro na hora.
 
-Run: `npm run dev:content-agent` (terminal 1), `npm run dev` (terminal 2), montar `ContentChatDebug` numa rota temporária acessível (ex.: renderizar direto em `src/main.tsx` por trás de uma flag, ou uma rota `/debug-chat` — reverter depois do teste).
+- [ ] **Step 6: Verificação do mecanismo**
 
-Passos: pedir no chat "manda a mensagem 'oi' pro teste" → o card de aprovação deve aparecer com o resumo → clicar Aprovar → confirmar que a resposta final do assistente contém "Mensagem enviada: oi". Repetir clicando Rejeitar e confirmar "Ação cancelada pelo usuário."
+O round-trip completo foi validado em 4 camadas independentes durante o
+desenvolvimento deste plano (documentado acima), incluindo uma chamada HTTP
+real e autenticada contra `/api/copilotkit/agent/content_agent/run` com um
+usuário de teste descartável (criado via `identitytoolkit.googleapis.com`
+REST, sem precisar de service account), confirmando que o `uid` verificado
+no servidor chega ao `config.configurable` do grafo. Ao reexecutar esta task
+numa sessão nova, validar pelo menos manualmente pelo navegador:
 
-Expected: os dois caminhos (aprovar/rejeitar) completam sem erro no console do navegador nem no terminal do `langgraph dev`.
+Run: `npm run dev:content-agent` (terminal 1), `npm run dev` (terminal 2).
+Logar no app com um usuário de teste, montar `ContentChatDebug` numa rota
+temporária acessível (passando o ID token do usuário logado, obtido via
+`user.getIdToken()`), pedir no chat "manda a mensagem 'oi' pro teste".
+
+Expected: o card de aprovação aparece com o resumo → Aprovar → a resposta
+final do assistente contém "Mensagem enviada: oi". Repetir com Rejeitar e
+confirmar "Ação cancelada pelo usuário."
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add server/copilotRuntime.ts server.ts server/agent/contentGraph.ts src/modules/content/chat/ContentChatDebug.tsx package.json package-lock.json
-git commit -m "feat(content-agent): validate CopilotKit + LangGraph interrupt approval round-trip"
+git add scripts/fix-fast-json-patch.mjs server/copilotRuntime.ts server.ts server/agent/contentGraph.ts src/modules/content/chat/ContentChatDebug.tsx package.json package-lock.json
+git commit -m "feat(content-agent): validate CopilotKit v2 + LangGraph interrupt approval round-trip"
 ```
 
 ---
@@ -1267,8 +1435,8 @@ async function callModel(
   const tools = buildTools(config);
   const model = new ChatVertexAI({
     model: 'gemini-2.5-flash',
-    project: process.env.VERTEX_PROJECT_ID,
     location: process.env.VERTEX_LOCATION || 'us-central1',
+    authOptions: { projectId: process.env.VERTEX_PROJECT_ID },
   }).bindTools(tools);
 
   const response = await model.invoke([{ role: 'system', content: SYSTEM_PROMPT }, ...state.messages]);
@@ -1431,15 +1599,15 @@ git commit -m "feat(content-agent): package LangGraph.js server as its own deplo
 - Remove: `src/modules/content/chat/ContentChatDebug.tsx` (harness da Task 2, substituído por esta task)
 
 **Interfaces:**
-- Consumes: `ActionPreview` — mesmo shape de `server/agent/types.ts` (`resumo`, `alvo`, `campos: PreviewField[]`, `avisos`), agora recebido como payload do `interrupt()` (Task 3/10) via `args` do `useCopilotAction`.
-- Produces: `<ContentCopilotProvider projectId={string | null} articleId={string | null}>{children}</ContentCopilotProvider>`, montado em `ContentApp.tsx`.
+- Consumes: o payload do `interrupt()` (Task 3/10) — chega como `event.value` (string JSON) no `render` de `useInterrupt` (`@copilotkit/react-core/v2`; ver achado da Task 2 — não é `useCopilotAction`/`renderAndWaitForResponse`, API v1).
+- Produces: `<ContentCopilotProvider project={ContentProject | null} articleId={string | null} authToken={string}>{children}</ContentCopilotProvider>`, montado em `ContentApp.tsx`.
 
 - [ ] **Step 1: Cartão de aprovação genérico**
 
 ```tsx
 // src/modules/content/chat/ApprovalCard.tsx
 interface PreviewField { campo: string; antes: unknown; depois: unknown; mudou: boolean }
-interface ApprovalArgs {
+export interface ApprovalPreview {
   ferramenta?: string;
   resumo?: string;
   alvo?: string;
@@ -1448,22 +1616,19 @@ interface ApprovalArgs {
 }
 
 export function ApprovalCard({
-  args, status, respond,
+  preview, onDecide,
 }: {
-  args: ApprovalArgs;
-  status: 'inProgress' | 'executing' | 'complete';
-  respond?: (value: { aprovado: boolean }) => void;
+  preview: ApprovalPreview;
+  onDecide: (aprovado: boolean) => void;
 }) {
-  if (status === 'complete') return <p className="text-sm text-slate-500">Concluído.</p>;
-
   return (
     <div className="border border-orange/30 bg-orange/5 rounded-xl p-4 space-y-3">
-      <p className="font-medium text-ink">{args.resumo ?? 'Confirmar ação?'}</p>
-      {args.alvo && <p className="text-xs text-slate-500">Alvo: {args.alvo}</p>}
-      {!!args.campos?.length && (
+      <p className="font-medium text-ink">{preview.resumo ?? 'Confirmar ação?'}</p>
+      {preview.alvo && <p className="text-xs text-slate-500">Alvo: {preview.alvo}</p>}
+      {!!preview.campos?.length && (
         <table className="w-full text-xs">
           <tbody>
-            {args.campos.map((c) => (
+            {preview.campos.map((c) => (
               <tr key={c.campo} className={c.mudou ? 'font-medium' : 'text-slate-400'}>
                 <td className="pr-2">{c.campo}</td>
                 <td className="pr-2">{String(c.antes ?? '—')}</td>
@@ -1473,17 +1638,17 @@ export function ApprovalCard({
           </tbody>
         </table>
       )}
-      {args.avisos?.map((a, i) => <p key={i} className="text-xs text-amber-600">⚠ {a}</p>)}
+      {preview.avisos?.map((a, i) => <p key={i} className="text-xs text-amber-600">⚠ {a}</p>)}
       <div className="flex gap-2 pt-1">
         <button
           className="bg-orange text-white text-sm font-bold rounded-lg px-3 py-1.5"
-          onClick={() => respond?.({ aprovado: true })}
+          onClick={() => onDecide(true)}
         >
           Aprovar
         </button>
         <button
           className="border border-ink/20 text-ink text-sm rounded-lg px-3 py-1.5"
-          onClick={() => respond?.({ aprovado: false })}
+          onClick={() => onDecide(false)}
         >
           Rejeitar
         </button>
@@ -1495,37 +1660,39 @@ export function ApprovalCard({
 
 - [ ] **Step 2: Provider do CopilotKit ciente do workspace**
 
+Achados da Task 2 aplicados aqui: `CopilotKit`/`CopilotSidebar` vêm de
+`@copilotkit/react-core/v2` (não `@copilotkit/react-ui`, que é só v1); o
+equivalente de `useCopilotReadable` na v2 é `useAgentContext`; e a aprovação
+usa `useInterrupt`, um único registro cobrindo qualquer ferramenta do grafo
+que pause (o roteamento por nome já acontece dentro do grafo — o frontend só
+precisa saber renderizar o preview genérico).
+
 ```tsx
 // src/modules/content/chat/ContentCopilotProvider.tsx
-import { CopilotKit, useCopilotAction, useCopilotReadable } from '@copilotkit/react-core';
-import { CopilotSidebar } from '@copilotkit/react-ui';
-import '@copilotkit/react-ui/styles.css';
-import { ApprovalCard } from './ApprovalCard';
+import { CopilotKit, CopilotSidebar, useAgentContext, useInterrupt } from '@copilotkit/react-core/v2';
+import '@copilotkit/react-core/v2/styles.css';
+import { ApprovalCard, type ApprovalPreview } from './ApprovalCard';
 import type { ContentProject } from '../types';
 
 function ContentAgentBridge({
   project, articleId, children,
 }: { project: ContentProject | null; articleId: string | null; children: React.ReactNode }) {
-  useCopilotReadable({
+  useAgentContext({
     description: 'Projeto de conteúdo atualmente aberto no workspace',
     value: project ? { id: project.id, nomeEmpresa: project.config.nomeEmpresa } : null,
   });
-  useCopilotReadable({ description: 'Artigo em foco no workspace, se houver', value: articleId });
+  useAgentContext({ description: 'Artigo em foco no workspace, se houver', value: articleId });
 
-  // Um único handler cobre qualquer ferramenta que pausou o grafo — o card
-  // renderiza o preview que veio no payload do interrupt(), independente do
-  // nome da ferramenta (ver server/agent/registry.ts:toLangChainTools).
-  useCopilotAction({
-    name: '*',
-    renderAndWaitForResponse: ({ args, status, respond }) => (
-      <ApprovalCard args={args} status={status} respond={respond} />
-    ),
+  useInterrupt({
+    agentId: 'content_agent',
+    render: ({ event, resolve }) => {
+      const preview: ApprovalPreview = event?.value ? JSON.parse(event.value as string) : {};
+      return <ApprovalCard preview={preview} onDecide={(aprovado) => resolve({ aprovado })} />;
+    },
   });
 
   return (
-    <CopilotSidebar
-      labels={{ title: 'Agente de Conteúdo', initial: 'Como posso ajudar com seu conteúdo hoje?' }}
-    >
+    <CopilotSidebar agentId="content_agent">
       {children}
     </CopilotSidebar>
   );
@@ -1547,7 +1714,16 @@ export function ContentCopilotProvider({
 }
 ```
 
-**Nota de calibração:** confirmar contra a versão instalada de `@copilotkit/react-core` (1) se `useCopilotAction({ name: '*' })` realmente casa com qualquer ferramenta pendente ou se é preciso registrar uma ação por nome de ferramenta; e (2) o nome exato da prop de headers customizados no `<CopilotKit>` (`headers` vs. `authConfig_c.authHeaders`, ver pesquisa da Task 2). Se `'*'` não funcionar, a alternativa é gerar dinamicamente um `useCopilotAction` por nome de ferramenta a partir de `describeTools(['content'])` exposto por um endpoint leve (`GET /api/copilotkit/tools`, análogo ao já existente `GET /api/agent/tools` do Operacional).
+**Nota de calibração:** `useInterrupt`'s `render` recebe `{event, interrupt,
+interrupts, result, resolve, cancel}` — no nosso fluxo (evento `CUSTOM
+on_interrupt`, não o formato "standard" mais novo do AG-UI), `interrupt`/
+`interrupts` vêm vazios e o payload real está em `event.value` como string
+JSON (confirmado lendo `node_modules/@copilotkit/react-core/dist/
+copilotkit-*.mjs`, função `useInterrupt`/`toLegacyEvent`). Se uma versão
+futura do pacote migrar nosso caso para o formato "standard", o payload passa
+a vir em `interrupt.value` já parseado — ajustar o `render` para checar os
+dois casos (`interrupt ?? JSON.parse(event.value)`) se o teste manual do
+Step 5 mostrar `interrupt` preenchido.
 
 - [ ] **Step 3: Montar no `ContentApp.tsx`**
 
@@ -1578,7 +1754,7 @@ Reverter qualquer rota/flag temporária adicionada na Task 2, Step 6 para montá
 
 - [ ] **Step 5: Verificação manual**
 
-Run: `npm run dev:content-agent` + `npm run dev`. Abrir o workspace de Conteúdo, confirmar que a sidebar do chat aparece, que perguntar "qual projeto eu tenho aberto?" responde com o nome certo (prova que `useCopilotReadable` chegou ao modelo), e repetir o teste de aprovar/rejeitar da Task 2 Step 6 agora usando `content.clusters.gerar` de verdade.
+Run: `npm run dev:content-agent` + `npm run dev`. Abrir o workspace de Conteúdo, confirmar que a sidebar do chat aparece, que perguntar "qual projeto eu tenho aberto?" responde com o nome certo (prova que `useAgentContext` chegou ao modelo), e repetir o teste de aprovar/rejeitar da Task 2 Step 6 agora usando `content.clusters.gerar` de verdade.
 
 - [ ] **Step 6: Commit**
 
@@ -1653,29 +1829,63 @@ export function CredentialForm({
 }
 ```
 
-Esse valor **nunca** vira argumento de tool call nem trafega pelo `/api/copilotkit` — o `onDone(ok)` só informa o resultado (booleano) de volta pro fluxo do chat, se for chamado a partir de um `useCopilotAction` de frontend (ver Step 3).
+Esse valor **nunca** vira argumento de tool call nem trafega pelo `/api/copilotkit` — o `onDone(ok)` só informa o resultado (booleano) de volta pro fluxo do chat, via `respond()` do `useHumanInTheLoop` (ver Step 3; API v2 — `useCopilotAction`/`renderAndWaitForResponse` é v1 e não existe no pacote instalado).
 
-- [ ] **Step 3: Expor como ação de frontend (não backend) no `ContentCopilotProvider`**
+- [ ] **Step 3: Expor como ferramenta de frontend no `ContentCopilotProvider`**
+
+`useHumanInTheLoop` (`@copilotkit/react-core/v2`) é o hook certo aqui — ao
+contrário de `useInterrupt` (Task 13, para ferramentas do **grafo** que
+pausam via `interrupt()`), esta é uma ferramenta que **só existe no
+cliente**: o modelo a chama, o navegador mostra o formulário, e `respond()`
+resolve a chamada sem nunca passar pelo servidor LangGraph.
 
 ```tsx
 // acrescentar a ContentAgentBridge em src/modules/content/chat/ContentCopilotProvider.tsx
+import { useHumanInTheLoop } from '@copilotkit/react-core/v2';
+import { z } from 'zod';
 import { CredentialForm } from './CredentialForm';
 
-useCopilotAction({
+useHumanInTheLoop({
   name: 'content.credencial.conectar',
-  description: 'Abre o formulário para o usuário conectar WordPress ou Sanity. Nunca peça a senha/token por texto — sempre chame esta ação.',
-  parameters: [{ name: 'provider', type: 'string', enum: ['wordpress', 'sanity'], required: true }],
-  renderAndWaitForResponse: ({ args, respond }) => (
-    <CredentialForm
-      provider={(args as { provider: 'wordpress' | 'sanity' }).provider}
-      projectId={project?.id ?? ''}
-      onDone={(ok) => respond?.({ conectado: ok })}
-    />
-  ),
+  description: 'Abre o formulário para o usuário conectar WordPress ou Sanity. Nunca peça a senha/token por texto — sempre chame esta ferramenta.',
+  parameters: z.object({ provider: z.enum(['wordpress', 'sanity']) }),
+  render: ({ args, status, respond }) => {
+    if (status !== 'executing' || !respond) return <p className="text-sm text-slate-500">Aguardando…</p>;
+    return (
+      <CredentialForm
+        provider={args.provider}
+        projectId={project?.id ?? ''}
+        onDone={(ok) => respond({ conectado: ok })}
+      />
+    );
+  },
 });
 ```
 
-Isso é uma **ação de frontend** (`useCopilotAction` sem contraparte no registry do servidor) — o modelo só sabe que a ferramenta `content.credencial.conectar` existe e quando chamá-la (o `SYSTEM_PROMPT` da Task 10 já instrui isso), mas a execução inteira acontece no navegador, sem round-trip pelo grafo além de receber `{ conectado: true|false }` de volta.
+**Nota de calibração/dependência com a Task 10:** ferramentas registradas via
+`useHumanInTheLoop`/`useFrontendTool` no cliente chegam ao runtime como
+`RunAgentInput.tools` (AG-UI as repassa automaticamente) — mas o nó `agent`
+de `contentGraph.ts` (Task 10) hoje só vincula ao modelo as ferramentas de
+`toLangChainTools(['content'], ctx, settings)` (as do registry do servidor).
+Para o modelo enxergar `content.credencial.conectar`, `callModel()` precisa
+também vincular as ferramentas vindas de `config`/`state` (o campo exato —
+`state.tools` vs. algo em `config.configurable` — depende de como o
+`LangGraphAgent` do lado do runtime empacota `RunAgentInput.tools` no envio
+ao LangGraph; confirmar isso é o primeiro passo desta task, inspecionando o
+`RUN_STARTED`/`on_chain_start` recebido no servidor LangGraph com uma
+ferramenta de frontend registrada, do mesmo jeito que a Task 2 investigou
+`forwardedProps`). Ajustar `model.bindTools([...registryTools, ...clientTools])` em `callModel()` conforme o que for encontrado.
+
+- [ ] **Step 3b: Verificar onde as ferramentas de frontend chegam no grafo**
+
+Run: com `npm run dev:content-agent` e `npm run dev` rodando e o
+`useHumanInTheLoop` acima montado, pedir no chat "conecta o WordPress desse
+projeto" e observar os logs do `langgraph dev` (ou adicionar um
+`console.log(JSON.stringify(state))` temporário no início de `callModel`).
+
+Expected: encontrar `content.credencial.conectar` em algum campo do
+input/state recebido pelo nó `agent` — esse é o campo a ler em
+`callModel()` para compor a lista final de tools do `bindTools(...)`.
 
 - [ ] **Step 4: Verificação manual**
 
