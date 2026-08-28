@@ -1550,6 +1550,12 @@ git commit -m "feat(content-agent): wire the real content tool catalog into the 
 
 O LangGraph.js não tem um checkpointer oficial para Firestore (só Postgres/SQLite/MongoDB/Redis) — sem persistência, uma aprovação pendente se perde se o servidor reiniciar entre a pergunta e a resposta do usuário (relevante em Cloud Run, que escala a zero). Esta task escreve o adaptador.
 
+Três achados ao vivo mudaram o desenho em relação à ideia original:
+
+1. **`npm run dev:content-agent` não é um jeito válido de testar persistência.** O CLI (`@langchain/langgraph-cli dev`) importa seu próprio checkpointer (`@langchain/langgraph-api/dist/storage/checkpoint.mjs`, um `InMemorySaver` com um arquivo local `.langgraphjs_api.checkpointer.json`) e o usa pra **qualquer** grafo que ele sirva — o `checkpointer` passado em `.compile({ checkpointer })` do seu próprio grafo é ignorado nesse modo. É um recurso de conveniência do CLI (persistir threads entre reinícios do `langgraph dev` local para a Studio UI), não o comportamento de produção. A verificação real desta task não pode ser "reinicie o `langgraph dev` e veja se persiste" — é chamar os métodos do `FirestoreCheckpointSaver` diretamente (Step 4).
+2. **Qualquer `orderBy`/`where` combinado nas coleções novas deste projeto pede um índice do Firestore que não existe** (confirmado ao vivo: até um `orderBy(FieldPath.documentId())` sozinho, sem nenhum `where`, foi recusado com `FAILED_PRECONDITION`). Criar esse índice é uma mudança de infra de produção (`firebase deploy --only firestore:indexes`) que não faz sentido rodar por baixo dos panos numa sessão de desenvolvimento. A implementação evita index inteiramente: busca a coleção sem `orderBy`/`where` e ordena/filtra em JavaScript — aceitável porque o volume de checkpoints por thread é uma conversa inteira, não uma coleção grande.
+3. **`deleteThread(threadId)` não recebe `uid`**, e uma `collectionGroup` query filtrando por `FieldPath.documentId() === threadId` exige o **caminho completo** do documento (que já exigiria saber o `uid` — o problema original) — e qualquer outro filtro de `collectionGroup` neste banco também pediu índice novo. A solução: uma coleção raiz de um campo só, `agent_thread_owners/{threadId} -> { uid }`, escrita em `put()` e lida em `deleteThread()` — sem nenhuma collectionGroup query, sem índice.
+
 **Files:**
 - Create: `server/agent/firestoreCheckpointer.ts`
 - Modify: `server/agent/contentGraph.ts`
@@ -1559,31 +1565,250 @@ O LangGraph.js não tem um checkpointer oficial para Firestore (só Postgres/SQL
 
 - [ ] **Step 1: Extrair a interface exata da versão instalada**
 
-Run: `npm ls @langchain/langgraph-checkpoint` (deve já estar instalada como dependência transitiva de `@langchain/langgraph` — se não aparecer, `npm install @langchain/langgraph-checkpoint`).
-Run: `find node_modules/@langchain/langgraph-checkpoint/dist -name "*.d.ts" | xargs grep -l "class BaseCheckpointSaver"`
-Abrir o arquivo encontrado e anotar: os quatro métodos abstratos/obrigatórios (`getTuple`, `list`, `put`, `putWrites`) com seus parâmetros e tipos de retorno exatos, e a forma de `Checkpoint`, `CheckpointMetadata`, `CheckpointTuple`, `PendingWrite`, `RunnableConfig["configurable"]["thread_id"]`. A documentação pública só descreve os métodos em prosa — o `.d.ts` instalado é a fonte de verdade para assinatura exata.
+`npm ls @langchain/langgraph-checkpoint` já mostra `1.1.5` instalada como dependência transitiva de `@langchain/langgraph`. A interface exata (lida em `node_modules/@langchain/langgraph-checkpoint/dist/base.d.ts`):
+
+```typescript
+declare abstract class BaseCheckpointSaver<V extends string | number = number> {
+  serde: SerializerProtocol; // default: new JsonPlusSerializer() — não precisa passar nada no super()
+  abstract getTuple(config: RunnableConfig): Promise<CheckpointTuple | undefined>;
+  abstract list(config: RunnableConfig, options?: CheckpointListOptions): AsyncGenerator<CheckpointTuple>;
+  abstract put(config: RunnableConfig, checkpoint: Checkpoint, metadata: CheckpointMetadata, newVersions: ChannelVersions): Promise<RunnableConfig>;
+  abstract putWrites(config: RunnableConfig, writes: PendingWrite[], taskId: string): Promise<void>;
+  abstract deleteThread(threadId: string): Promise<void>; // não estava no desenho original — é abstrato, precisa implementar
+}
+```
+
+`SerializerProtocol` (`serde/base.d.ts`): `dumpsTyped(data): Promise<[string, Uint8Array]>` / `loadsTyped(type, data): Promise<any>`. A referência mais útil não é a doc pública, é a implementação de `MemorySaver` no mesmo pacote (`dist/memory.js`) — mostra exatamente como usar `this.serde`, `WRITES_IDX_MAP`, `copyCheckpoint`, `getCheckpointId` (todos exportados por `@langchain/langgraph-checkpoint`) para cada método, e foi a base direta do código abaixo.
 
 - [ ] **Step 2: Implementar `FirestoreCheckpointSaver`**
 
-Estrutura de dados: um documento por checkpoint em
-`users/{uid}/agent_threads/{threadId}/checkpoints/{checkpointId}` (mesmo prefixo `agent_threads` já usado pelo Operacional, para manter as conversas dos dois agentes num lugar previsível) — `uid` extraído de `config.configurable.uid` (o mesmo valor que `contentGraph.ts` já espera), `threadId` de `config.configurable.thread_id`.
+```typescript
+// server/agent/firestoreCheckpointer.ts
+//
+// Checkpointer do LangGraph.js sobre o Firestore. A lógica de leitura/
+// escrita espelha a implementação de referência do próprio pacote
+// (MemorySaver, em node_modules/@langchain/langgraph-checkpoint/dist/memory.js),
+// só trocando os dois objetos em memória por documentos no Firestore.
+//
+// Estrutura: users/{uid}/agent_threads/{threadId}/checkpoints/{checkpointId},
+// com uma subcoleção `writes/{taskId}__{writeIdx}` por checkpoint — mesmo
+// prefixo `agent_threads` já usado pelo Operacional.
+import {
+  BaseCheckpointSaver,
+  WRITES_IDX_MAP,
+  copyCheckpoint,
+  getCheckpointId,
+  type Checkpoint,
+  type CheckpointMetadata,
+  type CheckpointTuple,
+  type CheckpointListOptions,
+  type PendingWrite,
+} from '@langchain/langgraph-checkpoint';
+import type { RunnableConfig } from '@langchain/core/runnables';
+import { adminDb } from '../firebaseAdmin';
 
-Implementar os métodos com as assinaturas exatas anotadas no Step 1:
-- `getTuple(config)`: busca o checkpoint mais recente (ou o `checkpoint_id` específico se `config.configurable.checkpoint_id` vier preenchido) na subcoleção, desserializa com `this.serde` (ou equivalente encontrado no Step 1) e retorna o `CheckpointTuple`.
-- `put(config, checkpoint, metadata)`: serializa e grava um novo doc na subcoleção, com `checkpoint_id` crescente (usar `Date.now()` + um contador, ou o próprio id gerado pelo LangGraph se ele vier em `checkpoint.id`).
-- `putWrites(config, writes, taskId)`: grava os writes pendentes associados ao checkpoint atual (subcoleção irmã, ex. `.../checkpoints/{checkpointId}/writes/{idx}`).
-- `list(config, options)`: itera os checkpoints da thread em ordem decrescente, respeitando `options.limit`/`options.before` se existirem na assinatura encontrada.
+function toBase64(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString('base64');
+}
 
-Usar `adminDb` (de `server/firebaseAdmin.ts`, mesmo import que `contentAgent.ts` já usa) para todo acesso ao Firestore.
+function fromBase64(str: string): Uint8Array {
+  return new Uint8Array(Buffer.from(str, 'base64'));
+}
+
+function requireUid(config: RunnableConfig): string {
+  const uid = config.configurable?.uid as string | undefined;
+  if (!uid) throw new Error('FirestoreCheckpointSaver: uid ausente em config.configurable.');
+  return uid;
+}
+
+function requireThreadId(config: RunnableConfig): string {
+  const threadId = config.configurable?.thread_id as string | undefined;
+  if (!threadId) throw new Error('FirestoreCheckpointSaver: thread_id ausente em config.configurable.');
+  return threadId;
+}
+
+function checkpointsRef(uid: string, threadId: string) {
+  return adminDb.collection('users').doc(uid).collection('agent_threads').doc(threadId).collection('checkpoints');
+}
+
+// Coleção raiz minúscula: threadId -> uid. Único propósito é permitir
+// deleteThread(threadId) (que não recebe uid) sem precisar de uma
+// collectionGroup query nem de um índice novo — ver o achado 3 acima.
+function threadOwnerRef(threadId: string) {
+  return adminDb.collection('agent_thread_owners').doc(threadId);
+}
+
+interface CheckpointDoc {
+  ns: string;
+  checkpoint: string;
+  metadata: string;
+  parentCheckpointId: string | null;
+  createdAt: string;
+}
+
+export class FirestoreCheckpointSaver extends BaseCheckpointSaver {
+  private async loadPendingWrites(
+    ref: FirebaseFirestore.DocumentReference,
+  ): Promise<[string, string, unknown][]> {
+    const snap = await ref.collection('writes').get();
+    return Promise.all(
+      snap.docs.map(async (w) => {
+        const data = w.data() as { taskId: string; channel: string; value: string };
+        return [data.taskId, data.channel, await this.serde.loadsTyped('json', fromBase64(data.value))] as [
+          string,
+          string,
+          unknown,
+        ];
+      }),
+    );
+  }
+
+  private async toTuple(
+    uid: string,
+    threadId: string,
+    checkpointId: string,
+    data: CheckpointDoc,
+    ref: FirebaseFirestore.DocumentReference,
+  ): Promise<CheckpointTuple> {
+    const checkpoint = (await this.serde.loadsTyped('json', fromBase64(data.checkpoint))) as Checkpoint;
+    const metadata = (await this.serde.loadsTyped('json', fromBase64(data.metadata))) as CheckpointMetadata;
+    const pendingWrites = await this.loadPendingWrites(ref);
+
+    const tuple: CheckpointTuple = {
+      config: { configurable: { uid, thread_id: threadId, checkpoint_ns: data.ns, checkpoint_id: checkpointId } },
+      checkpoint,
+      metadata,
+      pendingWrites,
+    };
+    if (data.parentCheckpointId) {
+      tuple.parentConfig = {
+        configurable: { uid, thread_id: threadId, checkpoint_ns: data.ns, checkpoint_id: data.parentCheckpointId },
+      };
+    }
+    return tuple;
+  }
+
+  async getTuple(config: RunnableConfig): Promise<CheckpointTuple | undefined> {
+    const uid = requireUid(config);
+    const threadId = requireThreadId(config);
+    const checkpointNs = (config.configurable?.checkpoint_ns as string) ?? '';
+    const checkpointId = getCheckpointId(config);
+    const collection = checkpointsRef(uid, threadId);
+
+    if (checkpointId) {
+      const snap = await collection.doc(checkpointId).get();
+      if (!snap.exists) return undefined;
+      return this.toTuple(uid, threadId, checkpointId, snap.data() as CheckpointDoc, snap.ref);
+    }
+
+    // Busca a coleção inteira sem orderBy/where e ordena em memória — ver
+    // achado 2 acima (índice inexistente, não faz sentido criar aqui).
+    const snap = await collection.get();
+    const doc = snap.docs
+      .filter((d) => ((d.data() as CheckpointDoc).ns ?? '') === checkpointNs)
+      .sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))[0];
+    if (!doc) return undefined;
+    return this.toTuple(uid, threadId, doc.id, doc.data() as CheckpointDoc, doc.ref);
+  }
+
+  async *list(config: RunnableConfig, options?: CheckpointListOptions): AsyncGenerator<CheckpointTuple> {
+    const uid = requireUid(config);
+    const threadId = requireThreadId(config);
+    const checkpointNs = config.configurable?.checkpoint_ns as string | undefined;
+    const beforeId = options?.before?.configurable?.checkpoint_id as string | undefined;
+
+    const snap = await checkpointsRef(uid, threadId).get();
+    let docs = snap.docs.slice().sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+    if (checkpointNs !== undefined) docs = docs.filter((d) => ((d.data() as CheckpointDoc).ns ?? '') === checkpointNs);
+    if (beforeId) docs = docs.filter((d) => d.id < beforeId);
+
+    let count = 0;
+    for (const doc of docs) {
+      if (options?.limit !== undefined && count >= options.limit) break;
+      const data = doc.data() as CheckpointDoc;
+      const metadata = (await this.serde.loadsTyped('json', fromBase64(data.metadata))) as CheckpointMetadata;
+      if (options?.filter && !Object.entries(options.filter).every(([k, v]) => (metadata as Record<string, unknown>)[k] === v)) {
+        continue;
+      }
+      count += 1;
+      yield this.toTuple(uid, threadId, doc.id, data, doc.ref);
+    }
+  }
+
+  async put(config: RunnableConfig, checkpoint: Checkpoint, metadata: CheckpointMetadata): Promise<RunnableConfig> {
+    const uid = requireUid(config);
+    const threadId = requireThreadId(config);
+    const checkpointNs = (config.configurable?.checkpoint_ns as string) ?? '';
+    const prepared = copyCheckpoint(checkpoint);
+
+    const [[, checkpointBytes], [, metadataBytes]] = await Promise.all([
+      this.serde.dumpsTyped(prepared),
+      this.serde.dumpsTyped(metadata),
+    ]);
+
+    const doc: CheckpointDoc = {
+      ns: checkpointNs,
+      checkpoint: toBase64(checkpointBytes),
+      metadata: toBase64(metadataBytes),
+      parentCheckpointId: (config.configurable?.checkpoint_id as string) ?? null,
+      createdAt: new Date().toISOString(),
+    };
+    await Promise.all([
+      checkpointsRef(uid, threadId).doc(checkpoint.id).set(doc),
+      threadOwnerRef(threadId).set({ uid }, { merge: true }),
+    ]);
+
+    return { configurable: { uid, thread_id: threadId, checkpoint_ns: checkpointNs, checkpoint_id: checkpoint.id } };
+  }
+
+  async putWrites(config: RunnableConfig, writes: PendingWrite[], taskId: string): Promise<void> {
+    const uid = requireUid(config);
+    const threadId = requireThreadId(config);
+    const checkpointId = config.configurable?.checkpoint_id as string | undefined;
+    if (!checkpointId) throw new Error('FirestoreCheckpointSaver.putWrites: checkpoint_id ausente em config.configurable.');
+
+    const writesRef = checkpointsRef(uid, threadId).doc(checkpointId).collection('writes');
+    await Promise.all(
+      writes.map(async ([channel, value], idx) => {
+        const writeIdx = WRITES_IDX_MAP[channel] ?? idx;
+        const docId = `${taskId}__${writeIdx}`;
+        // Espelha o MemorySaver: índices "especiais" (negativos, ex. erros)
+        // nunca são sobrescritos por uma escrita concorrente do mesmo slot.
+        if (writeIdx >= 0) {
+          const existing = await writesRef.doc(docId).get();
+          if (existing.exists) return;
+        }
+        const [, bytes] = await this.serde.dumpsTyped(value);
+        await writesRef.doc(docId).set({ taskId, channel, value: toBase64(bytes) });
+      }),
+    );
+  }
+
+  // Ver achado 3 acima — resolve o dono via agent_thread_owners em vez de
+  // uma collectionGroup query. Threads não são deletadas por nenhum fluxo do
+  // Agente de Conteúdo hoje; implementado para satisfazer o contrato abstrato.
+  async deleteThread(threadId: string): Promise<void> {
+    const ownerSnap = await threadOwnerRef(threadId).get();
+    if (!ownerSnap.exists) return;
+    const { uid } = ownerSnap.data() as { uid: string };
+
+    const checkpointsSnap = await checkpointsRef(uid, threadId).get();
+    for (const checkpointDoc of checkpointsSnap.docs) {
+      const writesSnap = await checkpointDoc.ref.collection('writes').get();
+      await Promise.all(writesSnap.docs.map((w) => w.ref.delete()));
+      await checkpointDoc.ref.delete();
+    }
+    await threadOwnerRef(threadId).delete();
+  }
+}
+```
 
 - [ ] **Step 3: Wirar no grafo**
 
 ```typescript
-// server/agent/contentGraph.ts — no final, trocar
-// export const graph = new StateGraph(...).compile();
-// por:
+// server/agent/contentGraph.ts
 import { FirestoreCheckpointSaver } from './firestoreCheckpointer';
-
+// ...
 export const graph = new StateGraph(MessagesAnnotation)
   .addNode('agent', callModel)
   .addNode('tools', toolsNode)
@@ -1593,11 +1818,14 @@ export const graph = new StateGraph(MessagesAnnotation)
   .compile({ checkpointer: new FirestoreCheckpointSaver() });
 ```
 
-- [ ] **Step 4: Verificação manual de persistência entre reinícios**
+- [ ] **Step 4: Verificar diretamente (não dá pra confiar no `langgraph dev` pro checkpointer — ver achado 1)**
 
-Run: `npm run dev:content-agent` — pedir no chat de debug (Task 2) para rodar uma ferramenta de escrita real (ex.: `content.clusters.gerar` com um `projectId` de teste), até o card de aprovação aparecer. **Sem responder ainda**, matar o processo do `langgraph dev` (Ctrl+C) e subir de novo. Aprovar o card. Confirmar em `users/{uid}/agent_threads/{threadId}/checkpoints` no console do Firestore que os docs existem, e que o fluxo completa mesmo depois do restart.
+Escrever um script chamando os métodos do `FirestoreCheckpointSaver` direto, sem passar pelo `langgraph dev`: `put()` de um checkpoint + `getTuple()` (com e sem `checkpoint_id` explícito) devolvendo o mesmo conteúdo; `putWrites()` seguido de `getTuple()` mostrando o pending write; um segundo `put()` com `parentCheckpointId` e `list()` devolvendo os dois em ordem decrescente (mais novo primeiro), respeitando `limit`; `deleteThread()` apagando tudo, confirmado por um `getTuple()` final retornando `undefined`. Rodar contra um `uid`/`threadId` de teste descartáveis e limpar os documentos no final do script.
 
-Expected: a aprovação resolve corretamente mesmo com o processo tendo reiniciado no meio — prova que o estado não dependia de memória do processo.
+Run: `npx tsx <script-de-verificação>`
+Expected: passa sem lançar, e a limpeza final confirma que `deleteThread` realmente apagou tudo.
+
+Separadamente, `npm run dev:content-agent` deve continuar subindo sem erro — confirma que o `compile({ checkpointer })` não quebra a inicialização do grafo, mesmo que o CLI de dev não exercite esse checkpointer.
 
 - [ ] **Step 5: Commit**
 

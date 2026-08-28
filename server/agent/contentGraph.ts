@@ -12,6 +12,7 @@ import { ChatVertexAI } from '@langchain/google-vertexai';
 import { toLangChainTools } from '../agent/registry';
 import { DEFAULT_AGENT_SETTINGS, type AgentSettings } from '../agent/agentSettings';
 import type { ToolCtx } from '../agent/types';
+import { FirestoreCheckpointSaver } from './firestoreCheckpointer';
 
 const SYSTEM_PROMPT = [
   'Você é o Agente de Conteúdo do Alfreds — cuida da criação e publicação de',
@@ -67,4 +68,4 @@ export const graph = new StateGraph(MessagesAnnotation)
   .addEdge(START, 'agent')
   .addConditionalEdges('agent', shouldContinue, ['tools', END])
   .addEdge('tools', 'agent')
-  .compile();
+  .compile({ checkpointer: new FirestoreCheckpointSaver() });
