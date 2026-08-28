@@ -30,7 +30,7 @@ async function getCreditCosts(): Promise<Record<string, number>> {
   }
 }
 
-async function debitCreditsAdmin(uid: string, action: CreditAction, productName: string): Promise<void> {
+export async function debitCreditsAdmin(uid: string, action: CreditAction, productName: string): Promise<void> {
   const costs = await getCreditCosts();
   const cost = resolveCreditCost(costs, action.key);
   const userRef = adminDb.collection('users').doc(uid);
@@ -63,7 +63,7 @@ function projectRef(uid: string, projectId: string) {
   return adminDb.collection('users').doc(uid).collection('contentProjects').doc(projectId);
 }
 
-async function loadProject(uid: string, projectId: string): Promise<ContentProject> {
+export async function loadProject(uid: string, projectId: string): Promise<ContentProject> {
   const snap = await projectRef(uid, projectId).get();
   if (!snap.exists) throw Object.assign(new Error('Projeto não encontrado'), { status: 404 });
   return { id: snap.id, ...(snap.data() as Omit<ContentProject, 'id'>) };
@@ -199,7 +199,7 @@ function mapCrawlStatus(raw: seRanking.SeRankingAuditRawStatus): 'processing' | 
 // resolves within this call) independently of each other.
 // ---------------------------------------------------------------------------
 
-async function triggerAudit(uid: string, project: ContentProject): Promise<SeoAudit> {
+export async function triggerAudit(uid: string, project: ContentProject): Promise<SeoAudit> {
   const domain = (project.config.siteUrl || '').trim();
   if (!domain) {
     throw Object.assign(new Error('Configure a URL do site do cliente antes de rodar a auditoria.'), { status: 400 });
@@ -229,7 +229,7 @@ async function triggerAudit(uid: string, project: ContentProject): Promise<SeoAu
 
 // Polls the crawl only — Domain Analysis is already resolved by triggerAudit,
 // so this never touches domain* fields.
-async function refreshAudit(uid: string, projectId: string, auditDocId: string): Promise<SeoAudit> {
+export async function refreshAudit(uid: string, projectId: string, auditDocId: string): Promise<SeoAudit> {
   const current = await loadAudit(uid, projectId, auditDocId);
   if (current.crawlStatus !== 'processing') return current;
 
@@ -275,7 +275,7 @@ async function refreshAudit(uid: string, projectId: string, auditDocId: string):
 // record, regardless of what SE Ranking keeps doing server-side (we simply
 // stop waiting on/caring about that result). Domain Analysis is unaffected —
 // it either already finished or failed independently.
-async function cancelAudit(uid: string, projectId: string, auditDocId: string): Promise<SeoAudit> {
+export async function cancelAudit(uid: string, projectId: string, auditDocId: string): Promise<SeoAudit> {
   const current = await loadAudit(uid, projectId, auditDocId);
   if (current.crawlStatus !== 'processing') return current;
 

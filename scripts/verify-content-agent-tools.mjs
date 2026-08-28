@@ -1,5 +1,6 @@
 import assert from 'node:assert';
 import '../server/agent/tools/content.ts';
+import '../server/agent/tools/contentSeo.ts';
 import { describeTools } from '../server/agent/registry.ts';
 import { resolveApprovalMode } from '../server/agent/agentSettings.ts';
 
@@ -27,6 +28,9 @@ const expectedWriteTools = [
   'content.artigo.imagem.regenerar',
   'content.artigo.publicar',
   'content.artigo.despublicar',
+  'content.seo.auditoria.gerar',
+  'content.seo.auditoria.atualizar',
+  'content.seo.auditoria.cancelar',
 ];
 for (const name of expectedWriteTools) {
   const def = tools.find((t) => t.name === name);
