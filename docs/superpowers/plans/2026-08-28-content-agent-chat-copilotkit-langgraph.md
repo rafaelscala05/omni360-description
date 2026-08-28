@@ -33,14 +33,14 @@
 **Interfaces:**
 - Produces: `graph` exportado de `server/agent/contentGraph.ts` — um `CompiledStateGraph` do LangGraph.js, o entry point que `langgraph.json` referencia.
 
-- [ ] **Step 1: Instalar as dependências do LangGraph.js**
+- [x] **Step 1: Instalar as dependências do LangGraph.js**
 
 ```bash
 npm install @langchain/langgraph @langchain/core zod
 npm install -D @langchain/langgraph-cli
 ```
 
-- [ ] **Step 2: Criar o grafo de brinquedo**
+- [x] **Step 2: Criar o grafo de brinquedo**
 
 ```typescript
 // server/agent/contentGraph.ts
@@ -64,7 +64,7 @@ export const graph = new StateGraph(MessagesAnnotation)
   .compile();
 ```
 
-- [ ] **Step 3: Criar `langgraph.json` na raiz do repo**
+- [x] **Step 3: Criar `langgraph.json` na raiz do repo**
 
 ```json
 {
@@ -76,7 +76,7 @@ export const graph = new StateGraph(MessagesAnnotation)
 }
 ```
 
-- [ ] **Step 4: Adicionar o script de dev do grafo ao `package.json`**
+- [x] **Step 4: Adicionar o script de dev do grafo ao `package.json`**
 
 No bloco `"scripts"` de `package.json`, adicionar:
 
@@ -84,12 +84,12 @@ No bloco `"scripts"` de `package.json`, adicionar:
 "dev:content-agent": "langgraph dev --host localhost --port 8123"
 ```
 
-- [ ] **Step 5: Rodar e verificar manualmente**
+- [x] **Step 5: Rodar e verificar manualmente**
 
 Run: `npm run dev:content-agent`
 Expected: o CLI sobe em `http://localhost:8123`, sem erros de compilação do `contentGraph.ts`. Abrir `http://localhost:8123/docs` (ou o endereço que o CLI imprimir) deve responder — confirma que o servidor está de pé antes de conectar o CopilotKit na próxima task.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add langgraph.json server/agent/contentGraph.ts package.json package-lock.json
@@ -145,7 +145,7 @@ o arquivo órfão (ver Step 1).
 - Consumes: `graph` de `server/agent/contentGraph.ts` (Task 1); `adminAuth` de `server/firebaseAdmin.ts`.
 - Produces: `registerCopilotRuntime(app: express.Application): void`, montada em `/api/copilotkit` **antes** do `express.json()` global (precisa do corpo cru como stream fetch-native — ver Step 4).
 
-- [ ] **Step 1: Instalar as dependências do CopilotKit e corrigir o `fast-json-patch` órfão**
+- [x] **Step 1: Instalar as dependências do CopilotKit e corrigir o `fast-json-patch` órfão**
 
 ```bash
 npm install @copilotkit/runtime @copilotkit/react-core @copilotkit/react-ui
@@ -182,7 +182,7 @@ No bloco `"scripts"` de `package.json`, adicionar (antes de `"dev"`):
 Run: `node scripts/fix-fast-json-patch.mjs`
 Expected: imprime a linha de rename (ou nada, se já corrigido — idempotente).
 
-- [ ] **Step 2: Adicionar um tool de brinquedo que interrompe o grafo**
+- [x] **Step 2: Adicionar um tool de brinquedo que interrompe o grafo**
 
 Substituir o conteúdo de `server/agent/contentGraph.ts`:
 
@@ -252,7 +252,7 @@ dev, o projeto do Firebase (`firebase-applet-config.json#projectId`) costuma
 funcionar mesmo quando um `VERTEX_PROJECT_ID` de produção não funciona
 localmente.
 
-- [ ] **Step 3: Montar o runtime do CopilotKit no Express (API v2 real, confirmada contra o pacote instalado)**
+- [x] **Step 3: Montar o runtime do CopilotKit no Express (API v2 real, confirmada contra o pacote instalado)**
 
 A API pública documentada para LangGraph (`CopilotRuntime`/`copilotRuntimeNodeHttpEndpoint` do pacote raiz, com um `serviceAdapter` tipo `GoogleGenerativeAIAdapter`) é a **v1, obsoleta**. A versão instalada (`@copilotkit/runtime@1.69.3`) usa uma API v2 completamente diferente — confirmada lendo `node_modules/@copilotkit/runtime/skills/runtime/references/*.md` (o próprio pacote publica esses guias) e o código-fonte compilado. Nela: `CopilotRuntime`/`createCopilotRuntimeHandler` vêm de `@copilotkit/runtime/v2`; `LangGraphAgent`/`LangGraphHttpAgent` continuam vindo de `@copilotkit/runtime/langgraph` (apesar de um `@deprecated` na JSDoc — os guias v2 do próprio pacote recomendam exatamente esse import, então é o caminho certo); não existe mais `serviceAdapter` obrigatório de fallback; o handler fala fetch nativo (`Request`/`Response`), não Express, e precisa de uma ponte manual documentada pelo próprio pacote.
 
@@ -349,7 +349,7 @@ export function registerCopilotRuntime(app: express.Application): void {
 }
 ```
 
-- [ ] **Step 4: Registrar a rota em `server.ts` — ANTES do `express.json()` global**
+- [x] **Step 4: Registrar a rota em `server.ts` — ANTES do `express.json()` global**
 
 `registerCopilotRuntime` precisa do corpo da requisição como stream cru
 (`body: req` acima) para reconstruir um `Request` fetch-nativo. Se
@@ -373,7 +373,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 // ... registerContentRoutes(app, { verifyFirebaseToken }) e demais, sem mudança
 ```
 
-- [ ] **Step 5: Harness de debug no frontend (API v2: `useInterrupt`, não `useCopilotAction`)**
+- [x] **Step 5: Harness de debug no frontend (API v2: `useInterrupt`, não `useCopilotAction`)**
 
 Achado (lendo `node_modules/@copilotkit/react-core/dist/copilotkit-*.mjs` e
 `node_modules/@copilotkit/react-core/skills/react-core/references/*.md`):
@@ -431,7 +431,7 @@ Note que a prop do provider `<CopilotKit>` é `agent` (não `agentId` — só
 `useInterrupt`/`useAgent`/`<CopilotChat>` usam `agentId`); `tsc --noEmit`
 pega esse tipo de erro na hora.
 
-- [ ] **Step 6: Verificação do mecanismo**
+- [x] **Step 6: Verificação do mecanismo**
 
 O round-trip completo foi validado em 4 camadas independentes durante o
 desenvolvimento deste plano (documentado acima), incluindo uma chamada HTTP
@@ -450,7 +450,7 @@ Expected: o card de aprovação aparece com o resumo → Aprovar → a resposta
 final do assistente contém "Mensagem enviada: oi". Repetir com Rejeitar e
 confirmar "Ação cancelada pelo usuário."
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add scripts/fix-fast-json-patch.mjs server/copilotRuntime.ts server.ts server/agent/contentGraph.ts src/modules/content/chat/ContentChatDebug.tsx package.json package-lock.json
@@ -473,14 +473,14 @@ git commit -m "feat(content-agent): validate CopilotKit v2 + LangGraph interrupt
 - Consumes: `ToolDef<A>`, `ToolCtx`, `listTools()` de `server/agent/registry.ts`/`types.ts` (já existentes); `resolveApprovalMode(settings: AgentSettings, toolName: string): 'ask' | 'auto'` de `server/agent/agentSettings.ts` (Task 4).
 - Produces: `toLangChainTools(providers: ToolProvider[], ctx: ToolCtx, settings: AgentSettings): DynamicStructuredTool[]` em `server/agent/registry.ts` — consumida pela Task 10 (grafo real).
 
-- [ ] **Step 1: Extender `ToolProvider`**
+- [x] **Step 1: Extender `ToolProvider`**
 
 ```typescript
 // server/agent/types.ts:17
 export type ToolProvider = 'wake' | 'tiny' | 'docs' | 'content';
 ```
 
-- [ ] **Step 2: Escrever o adaptador `toLangChainTools()`**
+- [x] **Step 2: Escrever o adaptador `toLangChainTools()`**
 
 Dois bugs reais só apareceram testando ao vivo contra o servidor LangGraph.js
 (Task 10 antecipou a validação) — corrigidos aqui direto, já que são parte
@@ -611,7 +611,7 @@ function jsonSchemaToZod(schema: ToolSchema) {
 }
 ```
 
-- [ ] **Step 3: Script de verificação (lógica pura de branching, sem precisar do LangGraph rodando)**
+- [x] **Step 3: Script de verificação (lógica pura de branching, sem precisar do LangGraph rodando)**
 
 ```javascript
 // scripts/verify-content-agent-tools.mjs seria o lugar natural, mas o
@@ -654,12 +654,12 @@ assert.strictEqual(
 console.log('OK: verify-content-langchain-adapter');
 ```
 
-- [ ] **Step 4: Rodar e confirmar**
+- [x] **Step 4: Rodar e confirmar**
 
 Run: `npx tsx scripts/verify-content-langchain-adapter.mjs`
 Expected: `OK: verify-content-langchain-adapter`, sem asserção falhando.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/agent/types.ts server/agent/registry.ts scripts/verify-content-langchain-adapter.mjs package.json package-lock.json
@@ -677,7 +677,7 @@ git commit -m "feat(agent): add toLangChainTools() adapter with approval-mode br
 **Interfaces:**
 - Produces: `AgentSettings` (type), `resolveApprovalMode(settings: AgentSettings, toolName: string): 'ask' | 'auto'`, `ALWAYS_ASK_TOOLS: readonly string[]` — consumidos pela Task 3.
 
-- [ ] **Step 1: Escrever o módulo**
+- [x] **Step 1: Escrever o módulo**
 
 ```typescript
 // server/agent/agentSettings.ts
@@ -707,7 +707,7 @@ export function resolveApprovalMode(settings: AgentSettings, toolName: string): 
 }
 ```
 
-- [ ] **Step 2: Script de verificação**
+- [x] **Step 2: Script de verificação**
 
 ```javascript
 // scripts/verify-content-approval-settings.mjs
@@ -734,14 +734,14 @@ assert.strictEqual(
 console.log('OK: verify-content-approval-settings');
 ```
 
-- [ ] **Step 3: Rodar e confirmar que falha antes de existir o módulo, depois passa**
+- [x] **Step 3: Rodar e confirmar que falha antes de existir o módulo, depois passa**
 
 Run (antes do Step 1 existir, para registrar o comportamento esperado de falha): `npx tsx scripts/verify-content-approval-settings.mjs`
 Expected antes do Step 1: `Cannot find module '../server/agent/agentSettings.ts'`.
 Run depois do Step 1: mesmo comando.
 Expected: `OK: verify-content-approval-settings`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add server/agent/agentSettings.ts scripts/verify-content-approval-settings.mjs
@@ -761,7 +761,7 @@ git commit -m "feat(agent): add per-tool approval mode settings (ask/auto) with 
 - Consumes: `scanWebsite(url: string): Promise<ScannedConfig>`, `getReusableArticles(uid: string): Promise<Array<{id, titulo, articleFinal}>>`, `detectSanityTypes(uid, projectId): Promise<Array<{type, count}>>`, `detectSanityFields(uid, projectId, type): Promise<Array<{field, kind}>>`, `loadProject(uid, projectId): Promise<ContentProject>`, `projectRef(uid, projectId)` (todos de `server/contentAgent.ts`, depois de exportados).
 - Produces: 5 `registerTool()` com `provider: 'content'`, `mode: 'read'` em `server/agent/tools/content.ts` — o arquivo é reaproveitado (crescido) nas Tasks 6-9.
 
-- [ ] **Step 1: Exportar as funções necessárias em `server/contentAgent.ts`**
+- [x] **Step 1: Exportar as funções necessárias em `server/contentAgent.ts`**
 
 Trocar as declarações (sem mudar corpo/assinatura):
 - linha 263: `function projectRef` → `export function projectRef`
@@ -771,7 +771,7 @@ Trocar as declarações (sem mudar corpo/assinatura):
 - linha 1061: `async function detectSanityFields` → `export async function detectSanityFields`
 - linha 1364: `async function getReusableArticles` → `export async function getReusableArticles`
 
-- [ ] **Step 2: Criar os tools de leitura**
+- [x] **Step 2: Criar os tools de leitura**
 
 ```typescript
 // server/agent/tools/content.ts
@@ -864,7 +864,7 @@ registerTool({
 });
 ```
 
-- [ ] **Step 3: Registrar o import do novo arquivo de tools**
+- [x] **Step 3: Registrar o import do novo arquivo de tools**
 
 Em algum ponto de bootstrap do servidor que já importa `server/agent/tools/wake.ts`/`tiny.ts`/`discovery.ts` só para disparar o `registerTool()` de cada um (checar `server/agent/routes.ts` ou `server.ts` para achar onde isso acontece hoje), adicionar:
 
@@ -872,7 +872,7 @@ Em algum ponto de bootstrap do servidor que já importa `server/agent/tools/wake
 import './agent/tools/content';
 ```
 
-- [ ] **Step 4: Script de verificação — schema válido e leitura registrada**
+- [x] **Step 4: Script de verificação — schema válido e leitura registrada**
 
 ```javascript
 // scripts/verify-content-agent-tools.mjs
@@ -899,12 +899,12 @@ for (const name of expectedReadTools) {
 console.log(`OK: verify-content-agent-tools (${expectedReadTools.length} ferramentas de leitura)`);
 ```
 
-- [ ] **Step 5: Rodar e confirmar**
+- [x] **Step 5: Rodar e confirmar**
 
 Run: `npx tsx scripts/verify-content-agent-tools.mjs`
 Expected: `OK: verify-content-agent-tools (5 ferramentas de leitura)`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add server/contentAgent.ts server/agent/tools/content.ts scripts/verify-content-agent-tools.mjs
@@ -924,14 +924,14 @@ git commit -m "feat(content-agent): register read-only chat tools (scan site, re
 - Consumes: `generateClusters(uid, project): Promise<ContentCluster[]>`, `generateCalendar(uid, project): Promise<CalendarArticle[]>`, `debitCreditsAdmin(uid, action: CreditAction, meta?): Promise<number>`, `CREDIT_ACTIONS` (já importado em `contentAgent.ts` de `../src/credits`), `ContentProjectConfig` (de `src/modules/content/types.ts`).
 - Produces: `content.projeto.criar`, `content.clusters.gerar`, `content.calendario.gerar` (todos `mode: 'write'`, `provider: 'content'`).
 
-- [ ] **Step 1: Exportar as funções necessárias**
+- [x] **Step 1: Exportar as funções necessárias**
 
 Em `server/contentAgent.ts`:
 - linha 232: `async function debitCreditsAdmin` → `export async function debitCreditsAdmin`
 - linha 374: `async function generateClusters` → `export async function generateClusters`
 - linha 481: `async function generateCalendar` → `export async function generateCalendar`
 
-- [ ] **Step 2: Adicionar os três tools de escrita a `server/agent/tools/content.ts`**
+- [x] **Step 2: Adicionar os três tools de escrita a `server/agent/tools/content.ts`**
 
 ```typescript
 // acrescentar aos imports do topo de server/agent/tools/content.ts
@@ -1054,7 +1054,7 @@ registerTool({
 });
 ```
 
-- [ ] **Step 3: Estender o script de verificação**
+- [x] **Step 3: Estender o script de verificação**
 
 Em `scripts/verify-content-agent-tools.mjs`, adicionar:
 
@@ -1069,12 +1069,12 @@ for (const name of expectedWriteTools) {
 
 (atualizar a linha final `console.log` para refletir a contagem combinada de leitura + escrita).
 
-- [ ] **Step 4: Rodar e confirmar**
+- [x] **Step 4: Rodar e confirmar**
 
 Run: `npx tsx scripts/verify-content-agent-tools.mjs`
 Expected: saída OK, sem asserção falhando.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/contentAgent.ts server/agent/tools/content.ts scripts/verify-content-agent-tools.mjs
@@ -1094,13 +1094,13 @@ git commit -m "feat(content-agent): add onboarding, clusters, and calendar write
 - Consumes: `runArticlePipeline(uid, projectId, articleId): Promise<void>`, `regenerateArticleImage(uid, projectId, articleId, opts: {mode: 'improve'|'fromProduct', improvementPrompt?, baseProductImageUrl?}): Promise<string>`.
 - Produces: `content.artigo.produzir`, `content.artigo.imagem.regenerar`.
 
-- [ ] **Step 1: Exportar as funções**
+- [x] **Step 1: Exportar as funções**
 
 Em `server/contentAgent.ts`:
 - linha 567: `async function runArticlePipeline` → `export async function runArticlePipeline`
 - linha 687: `async function regenerateArticleImage` → `export async function regenerateArticleImage`
 
-- [ ] **Step 2: Adicionar os tools**
+- [x] **Step 2: Adicionar os tools**
 
 ```typescript
 // acrescentar aos imports de server/agent/tools/content.ts
@@ -1166,14 +1166,14 @@ registerTool({
 });
 ```
 
-- [ ] **Step 3: Estender o script de verificação e rodar**
+- [x] **Step 3: Estender o script de verificação e rodar**
 
 Adicionar `'content.artigo.produzir'` e `'content.artigo.imagem.regenerar'` à lista `expectedWriteTools` de `scripts/verify-content-agent-tools.mjs`.
 
 Run: `npx tsx scripts/verify-content-agent-tools.mjs`
 Expected: OK.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add server/contentAgent.ts server/agent/tools/content.ts scripts/verify-content-agent-tools.mjs
@@ -1193,7 +1193,7 @@ git commit -m "feat(content-agent): add article production and image regeneratio
 - Consumes: `publishToBlog(uid, projectId, articleId): Promise<string>`, `publishToSanity(uid, projectId, articleId): Promise<string>`, `publishToWordpress(uid, projectId, articleId): Promise<string>`, `unpublishArticle(uid, projectId, articleId): Promise<void>`.
 - Produces: `content.artigo.publicar`, `content.artigo.despublicar` — ambos já cobertos por `ALWAYS_ASK_TOOLS` (Task 4), então não precisam de lógica extra de aprovação aqui.
 
-- [ ] **Step 1: Exportar as funções**
+- [x] **Step 1: Exportar as funções**
 
 Em `server/contentAgent.ts`:
 - linha 792: `async function publishToWordpress` → `export async function publishToWordpress`
@@ -1201,7 +1201,7 @@ Em `server/contentAgent.ts`:
 - linha 1231: `async function publishToBlog` → `export async function publishToBlog`
 - linha 1328: `async function unpublishArticle` → `export async function unpublishArticle`
 
-- [ ] **Step 2: Adicionar os tools**
+- [x] **Step 2: Adicionar os tools**
 
 ```typescript
 // acrescentar aos imports de server/agent/tools/content.ts
@@ -1272,7 +1272,7 @@ registerTool({
 });
 ```
 
-- [ ] **Step 3: Estender o script de verificação, incluindo a checagem da trava fixa**
+- [x] **Step 3: Estender o script de verificação, incluindo a checagem da trava fixa**
 
 ```javascript
 // acrescentar a scripts/verify-content-agent-tools.mjs
@@ -1288,12 +1288,12 @@ for (const name of ['content.artigo.publicar', 'content.artigo.despublicar']) {
 }
 ```
 
-- [ ] **Step 4: Rodar e confirmar**
+- [x] **Step 4: Rodar e confirmar**
 
 Run: `npx tsx scripts/verify-content-agent-tools.mjs`
 Expected: OK.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/contentAgent.ts server/agent/tools/content.ts scripts/verify-content-agent-tools.mjs
@@ -1313,7 +1313,7 @@ git commit -m "feat(content-agent): add publish/unpublish write tools with hard-
 - Consumes: `triggerAudit(uid, project): Promise<SeoAudit>`, `refreshAudit(uid, projectId, auditId): Promise<SeoAudit>`, `cancelAudit(uid, projectId, auditId): Promise<SeoAudit>`, `loadProject(uid, projectId): Promise<ContentProject>` (todos de `server/seoAgent.ts` — módulo com sua própria cópia dessas funções, não as de `contentAgent.ts`).
 - Produces: `content.seo.auditoria.gerar`, `content.seo.auditoria.atualizar`, `content.seo.auditoria.cancelar`.
 
-- [ ] **Step 1: Exportar as funções em `server/seoAgent.ts`**
+- [x] **Step 1: Exportar as funções em `server/seoAgent.ts`**
 
 - linha 66: `async function loadProject` → `export async function loadProject`
 - linha 202: `async function triggerAudit` → `export async function triggerAudit`
@@ -1322,7 +1322,7 @@ git commit -m "feat(content-agent): add publish/unpublish write tools with hard-
 
 **Atenção:** `server/seoAgent.ts` já importa `CREDIT_ACTIONS`/`resolveCreditCost`/`adminDb` — os tools abaixo reaproveitam a `debitCreditsAdmin` local desse arquivo (assinatura `(uid, action, productName: string)`, diferente da de `contentAgent.ts`), então **também precisa** exportá-la (linha 33: `async function debitCreditsAdmin` → `export async function debitCreditsAdmin`).
 
-- [ ] **Step 2: Criar `server/agent/tools/contentSeo.ts`**
+- [x] **Step 2: Criar `server/agent/tools/contentSeo.ts`**
 
 ```typescript
 // server/agent/tools/contentSeo.ts
@@ -1405,20 +1405,20 @@ registerTool({
 });
 ```
 
-- [ ] **Step 3: Registrar o import junto do de `content.ts` (mesmo ponto de bootstrap da Task 5, Step 3)**
+- [x] **Step 3: Registrar o import junto do de `content.ts` (mesmo ponto de bootstrap da Task 5, Step 3)**
 
 ```typescript
 import './agent/tools/contentSeo';
 ```
 
-- [ ] **Step 4: Estender o script de verificação e rodar**
+- [x] **Step 4: Estender o script de verificação e rodar**
 
 Adicionar `import '../server/agent/tools/contentSeo.ts';` e as 3 ferramentas SEO à lista `expectedWriteTools` de `scripts/verify-content-agent-tools.mjs`.
 
 Run: `npx tsx scripts/verify-content-agent-tools.mjs`
 Expected: OK, agora contando 5 leitura + 8 escrita = 13 ferramentas `content`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/seoAgent.ts server/agent/tools/contentSeo.ts scripts/verify-content-agent-tools.mjs
@@ -1436,7 +1436,7 @@ git commit -m "feat(content-agent): add SEO audit write tools"
 - Consumes: `toLangChainTools()` (Task 3), `listTools()`/tools registrados nas Tasks 5-9, `AgentSettings`/`resolveApprovalMode` (Task 4).
 - Produces: `graph` real, exportado (mesmo nome/formato consumido por `langgraph.json` desde a Task 1 — nenhuma outra task precisa mudar por causa desta).
 
-- [ ] **Step 1: Carregar as ferramentas de conteúdo antes de montar o grafo**
+- [x] **Step 1: Carregar as ferramentas de conteúdo antes de montar o grafo**
 
 ```typescript
 // server/agent/contentGraph.ts
@@ -1517,7 +1517,7 @@ export const graph = new StateGraph(MessagesAnnotation)
 
 **Nota de calibração:** `buildTools()` reconstrói as ferramentas do LangChain a cada chamada de nó porque `uid`/`settings` só existem em tempo de execução (por request) — confirmar, ao testar, se o `ToolNode` do LangGraph.js aceita receber `config` para repassar ao construtor de tools dessa forma, ou se a versão instalada exige que as tools sejam vinculadas de outro jeito (ex.: closures fixadas fora do grafo, com `uid` vindo de `state` em vez de `config`). Se precisar mudar, o ponto de ajuste é só `buildTools()`/`toolsNode()` — o resto do grafo não muda.
 
-- [ ] **Step 2: Confirmar que o grafo real sobe e roda uma ferramenta de leitura e uma de escrita de verdade**
+- [x] **Step 2: Confirmar que o grafo real sobe e roda uma ferramenta de leitura e uma de escrita de verdade**
 
 Run: `npm run dev:content-agent`
 Expected: sobe sem erro de compilação.
@@ -1537,7 +1537,7 @@ documento diretamente depois). Foi esse teste que revelou os dois bugs
 corrigidos na Task 3 (schema Zod vazio e `interrupt()` capturado pelo
 try/catch) — refletidos no código acima.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add server/agent/contentGraph.ts
@@ -1563,7 +1563,7 @@ Três achados ao vivo mudaram o desenho em relação à ideia original:
 **Interfaces:**
 - Produces: `FirestoreCheckpointSaver` (classe que estende `BaseCheckpointSaver`), consumida por `contentGraph.ts` em `.compile({ checkpointer })`.
 
-- [ ] **Step 1: Extrair a interface exata da versão instalada**
+- [x] **Step 1: Extrair a interface exata da versão instalada**
 
 `npm ls @langchain/langgraph-checkpoint` já mostra `1.1.5` instalada como dependência transitiva de `@langchain/langgraph`. A interface exata (lida em `node_modules/@langchain/langgraph-checkpoint/dist/base.d.ts`):
 
@@ -1580,7 +1580,7 @@ declare abstract class BaseCheckpointSaver<V extends string | number = number> {
 
 `SerializerProtocol` (`serde/base.d.ts`): `dumpsTyped(data): Promise<[string, Uint8Array]>` / `loadsTyped(type, data): Promise<any>`. A referência mais útil não é a doc pública, é a implementação de `MemorySaver` no mesmo pacote (`dist/memory.js`) — mostra exatamente como usar `this.serde`, `WRITES_IDX_MAP`, `copyCheckpoint`, `getCheckpointId` (todos exportados por `@langchain/langgraph-checkpoint`) para cada método, e foi a base direta do código abaixo.
 
-- [ ] **Step 2: Implementar `FirestoreCheckpointSaver`**
+- [x] **Step 2: Implementar `FirestoreCheckpointSaver`**
 
 ```typescript
 // server/agent/firestoreCheckpointer.ts
@@ -1803,7 +1803,7 @@ export class FirestoreCheckpointSaver extends BaseCheckpointSaver {
 }
 ```
 
-- [ ] **Step 3: Wirar no grafo**
+- [x] **Step 3: Wirar no grafo**
 
 ```typescript
 // server/agent/contentGraph.ts
@@ -1818,7 +1818,7 @@ export const graph = new StateGraph(MessagesAnnotation)
   .compile({ checkpointer: new FirestoreCheckpointSaver() });
 ```
 
-- [ ] **Step 4: Verificar diretamente (não dá pra confiar no `langgraph dev` pro checkpointer — ver achado 1)**
+- [x] **Step 4: Verificar diretamente (não dá pra confiar no `langgraph dev` pro checkpointer — ver achado 1)**
 
 Escrever um script chamando os métodos do `FirestoreCheckpointSaver` direto, sem passar pelo `langgraph dev`: `put()` de um checkpoint + `getTuple()` (com e sem `checkpoint_id` explícito) devolvendo o mesmo conteúdo; `putWrites()` seguido de `getTuple()` mostrando o pending write; um segundo `put()` com `parentCheckpointId` e `list()` devolvendo os dois em ordem decrescente (mais novo primeiro), respeitando `limit`; `deleteThread()` apagando tudo, confirmado por um `getTuple()` final retornando `undefined`. Rodar contra um `uid`/`threadId` de teste descartáveis e limpar os documentos no final do script.
 
@@ -1827,7 +1827,7 @@ Expected: passa sem lançar, e a limpeza final confirma que `deleteThread` realm
 
 Separadamente, `npm run dev:content-agent` deve continuar subindo sem erro — confirma que o `compile({ checkpointer })` não quebra a inicialização do grafo, mesmo que o CLI de dev não exercite esse checkpointer.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/agent/firestoreCheckpointer.ts server/agent/contentGraph.ts
@@ -1846,13 +1846,13 @@ git commit -m "feat(content-agent): add Firestore-backed LangGraph checkpointer 
 
 **Interfaces:** nenhuma nova — esta task só empacota o que as Tasks 1-11 já produziram.
 
-- [ ] **Step 1: Gerar o Dockerfile base do CLI**
+- [x] **Step 1: Gerar o Dockerfile base do CLI**
 
 Run: `npx @langchain/langgraph-cli dockerfile Dockerfile.contentAgent`
 
 O arquivo gerado já faz `ADD . /deps/<nome-do-diretório>` — copia a árvore inteira do repositório, não só os caminhos que `langgraph.json` referencia diretamente. Isso já resolve sozinho a preocupação original de "o serviço precisa do resto do `server/`" — nenhum ajuste de `COPY`/`ADD` é necessário.
 
-- [ ] **Step 2: Adicionar `.dockerignore` (achado ao vivo — o Dockerfile gerado não vem com um)**
+- [x] **Step 2: Adicionar `.dockerignore` (achado ao vivo — o Dockerfile gerado não vem com um)**
 
 Sem isso, `ADD .` copia `node_modules/`, `.git/` e, mais grave, `.env` (com segredos reais) pra dentro da imagem:
 
@@ -1879,7 +1879,7 @@ ds-bundle/
 .superpowers/
 ```
 
-- [ ] **Step 3: Variáveis de ambiente do novo serviço**
+- [x] **Step 3: Variáveis de ambiente do novo serviço**
 
 Adicionar a `.env.example` (perto de `VERTEX_LOCATION`):
 
@@ -1893,7 +1893,7 @@ CONTENT_AGENT_LANGGRAPH_URL=http://localhost:8123
 
 O serviço do Dockerfile.contentAgent precisa das mesmas credenciais Admin do Firebase que `server/firebaseAdmin.ts` já exige do app principal (ADC/service account), mais `VERTEX_PROJECT_ID`/`VERTEX_LOCATION` (já usados por `contentAgent.ts`) — nenhuma variável nova além de `CONTENT_AGENT_LANGGRAPH_URL`, que é exclusiva do app principal (aponta para onde o serviço novo escuta).
 
-- [ ] **Step 4: Buildar a imagem localmente e validar**
+- [ ] **Step 4: Buildar a imagem localmente e validar** (não executado — Docker Desktop sem daemon ativo nesta sessão, ver nota abaixo)
 
 Run: `npx @langchain/langgraph-cli build -t content-agent-graph`
 Expected: build conclui sem erro.
@@ -1903,11 +1903,11 @@ Expected: mesmo comportamento manual da Task 2/Task 10 (o servidor responde em `
 
 **Nota:** não validado nesta sessão — o Docker Desktop deste ambiente não tinha o daemon rodando (`docker info` falhou com "no such file or directory" no socket). Rodar este passo manualmente antes do merge/primeiro deploy.
 
-- [ ] **Step 5: Documentar o deploy em produção**
+- [x] **Step 5: Documentar o deploy em produção**
 
 Seção nova em `CONTENT_MODULE.md` ("Agente conversacional (chat)") com os passos de build + `gcloud run deploy` (imagem privada, `--no-allow-unauthenticated`, IAM `roles/run.invoker` só para a conta de serviço do app principal) e onde configurar `CONTENT_AGENT_LANGGRAPH_URL` do serviço principal apontando pra URL do novo serviço Cloud Run.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add Dockerfile.contentAgent .dockerignore .env.example CONTENT_MODULE.md
@@ -1928,7 +1928,7 @@ git commit -m "feat(content-agent): package LangGraph.js server as its own deplo
 - Consumes: o payload do `interrupt()` (Task 3/10) — chega como `event.value` (string JSON) no `render` de `useInterrupt` (`@copilotkit/react-core/v2`; ver achado da Task 2 — não é `useCopilotAction`/`renderAndWaitForResponse`, API v1).
 - Produces: `<ContentCopilotProvider project={ContentProject | null} articleId={string | null} authToken={string}>{children}</ContentCopilotProvider>`, montado em `ContentApp.tsx`.
 
-- [ ] **Step 1: Cartão de aprovação genérico**
+- [x] **Step 1: Cartão de aprovação genérico**
 
 ```tsx
 // src/modules/content/chat/ApprovalCard.tsx
@@ -1984,7 +1984,7 @@ export function ApprovalCard({
 }
 ```
 
-- [ ] **Step 2: Provider do CopilotKit ciente do workspace**
+- [x] **Step 2: Provider do CopilotKit ciente do workspace**
 
 Achados da Task 2 aplicados aqui: `CopilotKit`/`CopilotSidebar` vêm de
 `@copilotkit/react-core/v2` (não `@copilotkit/react-ui`, que é só v1); o
@@ -2057,7 +2057,7 @@ a vir em `interrupt.value` já parseado — ajustar o `render` para checar os
 dois casos (`interrupt ?? JSON.parse(event.value)`) se o teste manual do
 Step 5 mostrar `interrupt` preenchido.
 
-- [ ] **Step 3: Montar no `ContentApp.tsx`**
+- [x] **Step 3: Montar no `ContentApp.tsx`**
 
 Em `src/modules/content/ContentApp.tsx`, importar e envolver o retorno do componente (por volta da linha 78, `return (<div className="h-screen ...">`):
 
@@ -2076,7 +2076,7 @@ return (
 );
 ```
 
-- [ ] **Step 4: Remover o harness de debug**
+- [x] **Step 4: Remover o harness de debug**
 
 ```bash
 git rm src/modules/content/chat/ContentChatDebug.tsx
@@ -2084,11 +2084,11 @@ git rm src/modules/content/chat/ContentChatDebug.tsx
 
 Reverter qualquer rota/flag temporária adicionada na Task 2, Step 6 para montá-lo.
 
-- [ ] **Step 5: Verificação manual**
+- [ ] **Step 5: Verificação manual** (clique-a-clique pelo navegador não executado nesta sessão — ver nota da Task 15)
 
 Run: `npm run dev:content-agent` + `npm run dev`. Abrir o workspace de Conteúdo, confirmar que a sidebar do chat aparece, que perguntar "qual projeto eu tenho aberto?" responde com o nome certo (prova que `useAgentContext` chegou ao modelo), e repetir o teste de aprovar/rejeitar da Task 2 Step 6 agora usando `content.clusters.gerar` de verdade.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/modules/content/chat/ApprovalCard.tsx src/modules/content/chat/ContentCopilotProvider.tsx src/modules/content/ContentApp.tsx
@@ -2126,7 +2126,7 @@ mecanismo de "como o formulário aparece" mudou.
 **Interfaces:**
 - Consumes: `saveWordpressSecret(uid, projectId, appPassword): Promise<void>` / `saveSanitySecret(uid, projectId, apiToken): Promise<void>` (já existem em `src/services/contentService.ts:225,234` — nomes batem exatamente com o que o spec previu).
 
-- [ ] **Step 1: Confirmar as funções existentes de salvar credencial**
+- [x] **Step 1: Confirmar as funções existentes de salvar credencial**
 
 ```bash
 grep -n "secrets').doc('wordpress')\|secrets').doc('sanity')" src/services/contentService.ts
@@ -2134,7 +2134,7 @@ grep -n "secrets').doc('wordpress')\|secrets').doc('sanity')" src/services/conte
 
 Confirma `saveWordpressSecret(uid: string, projectId: string, appPassword: string)` e `saveSanitySecret(uid: string, projectId: string, apiToken: string)` — usar essas direto, sem duplicar o caminho de escrita.
 
-- [ ] **Step 2: Nova ferramenta de servidor**
+- [x] **Step 2: Nova ferramenta de servidor**
 
 ```typescript
 // acrescentar a server/agent/tools/content.ts, depois de content.artigo.despublicar
@@ -2164,7 +2164,7 @@ registerTool({
 
 Em `server/agent/agentSettings.ts`, adicionar `'content.credencial.conectar'` a `ALWAYS_ASK_TOOLS` — não existe "auto" possível pra uma ferramenta que exige preencher um formulário.
 
-- [ ] **Step 3: Ecoar os argumentos originais no payload do `interrupt()`**
+- [x] **Step 3: Ecoar os argumentos originais no payload do `interrupt()`**
 
 O formulário precisa saber `provider`/`projectId` — que já são os argumentos da chamada, mas o payload do `interrupt()` (`server/agent/registry.ts`) só mandava `resumo`/`alvo`/`campos`/`avisos`. Acrescentar `args`:
 
@@ -2180,7 +2180,7 @@ const decisao = interrupt({
 }) as { aprovado: boolean };
 ```
 
-- [ ] **Step 4: Formulário Generative UI**
+- [x] **Step 4: Formulário Generative UI**
 
 ```tsx
 // src/modules/content/chat/CredentialForm.tsx
@@ -2232,7 +2232,7 @@ export function CredentialForm({
 
 Esse valor **nunca** vira argumento de tool call nem trafega pelo `/api/copilotkit` — `handleSave` grava direto no Firestore (mesmo caminho da tela de configurações) antes de chamar `onDone`.
 
-- [ ] **Step 5: Dispatch por `preview.ferramenta` no `useInterrupt` já existente**
+- [x] **Step 5: Dispatch por `preview.ferramenta` no `useInterrupt` já existente**
 
 Não é um hook novo — é um `if` a mais dentro do `render` de `useInterrupt` que a Task 13 já criou em `ContentAgentBridge` (`src/modules/content/chat/ContentCopilotProvider.tsx`):
 
@@ -2263,13 +2263,13 @@ useInterrupt({
 
 `ApprovalPreview` (`ApprovalCard.tsx`) precisa do campo novo: `args?: Record<string, unknown>`. `ContentAgentBridge`/`ContentCopilotProvider` precisam de um `uid: string` a mais nas props (repassado desde `ContentApp.tsx`, que já tem `uid = user.uid`), pro `CredentialForm` gravar no doc certo.
 
-- [ ] **Step 6: Verificação — testado ao vivo direto contra o LangGraph, sem passar pelo CopilotKit**
+- [x] **Step 6: Verificação — testado ao vivo direto contra o LangGraph, sem passar pelo CopilotKit**
 
 Mesmo padrão da Task 10: criar uma thread, rodar com "conecta o wordpress do projeto abc123" → confirmar que o `__interrupt__` retornado tem `ferramenta: "content.credencial.conectar"` e `args: {provider: "wordpress", projectId: "abc123"}` → resumir com `{"command":{"resume":{"aprovado":true}}}` → confirmar que a mensagem final do assistente reflete `{"conectado":true}`.
 
 Fluxo completo de onboarding pela UI (não testado nesta sessão — ver Task 13 sobre a lacuna de teste interativo no navegador): pedir no chat "cria um projeto pro site tal.com.br" → `content.site.escanear` roda (sem aprovação) → modelo propõe os campos → aprova `content.projeto.criar` → pedir "conecta o WordPress desse projeto" → confirmar que aparece o formulário (não um pedido de senha em texto) → preencher e salvar → confirmar no Firestore que `secrets/wordpress` foi escrito e que o campo continua ilegível para o cliente.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add server/agent/tools/content.ts server/agent/agentSettings.ts server/agent/registry.ts scripts/verify-content-agent-tools.mjs src/modules/content/chat/CredentialForm.tsx src/modules/content/chat/ContentCopilotProvider.tsx
@@ -2284,7 +2284,7 @@ git commit -m "feat(content-agent): add out-of-model credential tool for WordPre
 - Modify: `CONTENT_MODULE.md`
 - Modify: `CLAUDE.md`
 
-- [ ] **Step 1: Rodar todos os scripts de verificação juntos**
+- [x] **Step 1: Rodar todos os scripts de verificação juntos**
 
 Run:
 ```bash
@@ -2294,28 +2294,35 @@ npx tsx scripts/verify-content-agent-tools.mjs
 ```
 Expected: os três imprimem `OK: ...`, nenhum erro.
 
-- [ ] **Step 2: Checklist manual completo (dev)**
+- [x] **Step 2: Checklist manual completo**
 
-Com `npm run dev:content-agent` e `npm run dev` rodando, no workspace de Conteúdo:
+O que já foi validado ao vivo durante a execução deste plano (direto contra a API do LangGraph.js, sem depender do navegador/CopilotKit — mesmo padrão usado nas Tasks 2/10/14):
 
-1. Onboarding: escanear site → criar projeto → conectar WordPress via formulário.
-2. `content.clusters.gerar` com aprovação (modo `ask`) — aprovar.
-3. Trocar o `agent_settings` do usuário de teste para `approvalMode: 'auto'` direto no Firestore, pedir `content.calendario.gerar` de novo e confirmar que roda **sem** card de aprovação.
-4. Pedir para produzir um artigo (`content.artigo.produzir`) e acompanhar até completar.
-5. Pedir para publicar o artigo — confirmar que o card de aprovação aparece **mesmo com `approvalMode: 'auto'`** (trava fixa da Task 4/8).
-6. Despublicar o mesmo artigo — mesma confirmação de trava fixa.
-7. Rodar uma auditoria de SEO e verificar o resultado.
-8. Confirmar que pedir para "rodar o cron" ou qualquer coisa equivalente ao scheduler autônomo não tem ferramenta correspondente — o modelo deve responder que não tem essa capacidade.
+1. ✅ Ferramenta de leitura (`content.artigos.reutilizaveis.listar`) executando de ponta a ponta.
+2. ✅ Ferramenta de escrita com aprovação (`content.projeto.criar`): preview → `interrupt()` → aprovar → `execute()` → documento real gravado no Firestore (confirmado lendo o doc depois).
+3. ✅ Trava fixa de aprovação (`content.artigo.publicar`/`.despublicar`/`.credencial.conectar` sempre `ask`, mesmo com `approvalMode: 'auto'`) — coberta pelo `resolveApprovalMode()` (`scripts/verify-content-approval-settings.mjs`/`verify-content-langchain-adapter.mjs`) e pelo teste ao vivo do `content.credencial.conectar`.
+4. ✅ `content.credencial.conectar`: interrupt carrega `ferramenta`/`args` corretos; resume completa com `{"conectado":true}`.
+5. ✅ Checkpointer do Firestore isolado (`put`/`getTuple`/`putWrites`/`list`/`deleteThread`), sem depender do `langgraph dev` (que troca o checkpointer por baixo dos panos — ver Task 11).
+6. ✅ `POST /api/content/cron/tick` confirmado como nunca registrado no registry — não existe ferramenta correspondente pro modelo chamar.
 
-- [ ] **Step 3: Atualizar `CONTENT_MODULE.md`**
+**Não verificado nesta sessão** (listado explicitamente, não varrido para debaixo do tapete):
+
+- Um clique-a-clique completo pela UI real do navegador (login, sidebar do chat aparecendo, aprovar um card de verdade) — precisaria de um fluxo de auth completo pela UI, fora do escopo prático desta sessão (ver nota da Task 13).
+- `content.clusters.gerar`, `.calendario.gerar`, `.artigo.produzir`, `.seo.auditoria.gerar` de ponta a ponta — todas debitam créditos de um usuário real (`debitCreditsAdmin` falha com "Usuário não encontrado" pra um uid de teste sem doc em `users/{uid}`), e `.artigo.produzir` em particular dispara o pipeline completo de 5 etapas com custo real de API — rodar isso sem pedir requer gastar créditos/quota de um usuário de verdade, o que não é uma decisão pra tomar sozinho.
+- Trocar `agent_settings.approvalMode` para `'auto'` e confirmar que uma ferramenta comum roda sem card — coberto pela lógica pura (`resolveApprovalMode`), não pelo fluxo real do chat.
+- `docker build`/`docker run` do `Dockerfile.contentAgent` (Task 12 — sem daemon Docker ativo no ambiente).
+
+Recomendação para quem revisar antes do merge: rodar o checklist acima com um usuário de teste real (com créditos) pela UI, e o build Docker localmente.
+
+- [x] **Step 3: Atualizar `CONTENT_MODULE.md`**
 
 Adicionar uma seção "Agente conversacional (chat)" resumindo: onde vivem os tools (`server/agent/tools/content.ts`, `contentSeo.ts`), onde vive o grafo (`server/agent/contentGraph.ts`, serviço próprio via `Dockerfile.contentAgent`), o mecanismo de aprovação (`agent_settings`, trava fixa de publicar/despublicar), e o link para o spec (`docs/superpowers/specs/2026-08-28-content-agent-chat-copilotkit-langgraph-design.md`).
 
-- [ ] **Step 4: Atualizar `CLAUDE.md`**
+- [x] **Step 4: Atualizar `CLAUDE.md`**
 
 No bloco do "Agente Operacional" (ou logo abaixo dele), adicionar um parágrafo equivalente descrevendo o Agente de Conteúdo conversacional: provider `content` no mesmo registry, orquestrado por um servidor LangGraph.js separado, com o mesmo invariante de aprovação (agora via `interrupt()`/checkpointer no Firestore em vez de `agent_actions`), e apontar que o Operacional continua no loop antigo — a unificação dos dois é trabalho futuro.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add CONTENT_MODULE.md CLAUDE.md

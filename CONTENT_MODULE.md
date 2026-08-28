@@ -160,7 +160,71 @@ Firestore, sem chamada ao Gemini.
 O Agente de Conteúdo pode ser operado por chat (CopilotKit + LangGraph.js),
 além da UI de botões já descrita acima. Ver
 `docs/superpowers/specs/2026-08-28-content-agent-chat-copilotkit-langgraph-design.md`
-para o design completo.
+para o design completo, e
+`docs/superpowers/plans/2026-08-28-content-agent-chat-copilotkit-langgraph.md`
+para o histórico de implementação (inclui vários achados só descobertos
+testando ao vivo contra o LangGraph.js e o Firestore — a versão v2 real do
+CopilotKit difere bastante da documentação pública mais comum).
+
+**Onde fica cada coisa:**
+
+- Ferramentas: `server/agent/tools/content.ts` (leitura + escrita: onboarding,
+  clusters, calendário, produção de artigo, publicar/despublicar, conectar
+  credencial) e `server/agent/tools/contentSeo.ts` (auditoria de SEO) — cascas
+  finas sobre as funções que já existem em `contentAgent.ts`/`seoAgent.ts`,
+  registradas no mesmo registry do Agente Operacional (`server/agent/
+  registry.ts`), só com `provider: 'content'`.
+- Orquestração: `server/agent/contentGraph.ts` — um `StateGraph` do
+  LangGraph.js, rodando como **serviço próprio** (não embutido no processo
+  Express principal — a integração do CopilotKit fala com o LangGraph via
+  HTTP), empacotado por `Dockerfile.contentAgent`.
+- Ponte com o frontend: `server/copilotRuntime.ts` expõe `/api/copilotkit`
+  no app principal (montada **antes** do `express.json()` global — o handler
+  do CopilotKit precisa do corpo da requisição como stream cru) e verifica o
+  token Firebase, injetando o `uid` verificado em
+  `forwardedProps.config.configurable` — o modelo nunca decide de quem é a
+  sessão.
+- Aprovação: `users/{uid}/agent_settings` (`server/agent/agentSettings.ts`)
+  guarda o modo `ask`/`auto` (global + por ferramenta). Publicar, despublicar
+  e conectar credencial são travas fixas — sempre pedem aprovação, ignorando
+  o modo automático. O mecanismo em si é o `interrupt()` do LangGraph.js
+  (não o `agent_actions` do Operacional) — persistido por um checkpointer
+  próprio no Firestore (`server/agent/firestoreCheckpointer.ts`, já que não
+  existe um checkpointer oficial do LangGraph.js para Firestore).
+- Frontend: `src/modules/content/chat/ContentCopilotProvider.tsx` monta o
+  `CopilotKit`/`CopilotSidebar` (`@copilotkit/react-core/v2`) no workspace de
+  Conteúdo; um único `useInterrupt` cobre qualquer ferramenta que pause,
+  decidindo por `preview.ferramenta` se renderiza o cartão de aprovação
+  genérico (`ApprovalCard.tsx`) ou o formulário de credencial
+  (`CredentialForm.tsx`, que grava direto no Firestore — a senha/token nunca
+  vira argumento de tool call nem trafega pelo `/api/copilotkit`).
+
+**Fora de escopo desta entrega** (specs futuros): migrar o Agente Operacional
+para este mesmo motor LangGraph.js (ele continua no loop de function-calling
+próprio, `server/agent/loop.ts`), e mover a geração do Agente de Produto para
+o servidor. As duas superfícies de chat (Operacional e Conteúdo) coexistem
+por enquanto, sem unificação.
+
+**Verificação:** sem suíte automatizada (padrão do projeto) — `scripts/
+verify-content-langchain-adapter.mjs`, `verify-content-approval-settings.mjs`
+e `verify-content-agent-tools.mjs` cobrem a lógica pura (branching de
+aprovação, catálogo de ferramentas). O mecanismo de ponta a ponta (grafo real
++ Firestore + Vertex AI) foi validado ao vivo nesta sessão, direto contra a
+API do LangGraph.js (sem depender do CopilotKit) para cada categoria de
+ferramenta — leitura, escrita com aprovação, escrita em modo automático,
+trava fixa de aprovação, e o formulário de credencial — incluindo o
+checkpointer do Firestore isoladamente (put/getTuple/putWrites/list/
+deleteThread). **Não foi validado nesta sessão** (ambiente sem os recursos
+necessários, listado para quem for revisar antes do merge):
+- Um clique-a-clique completo pela UI real do navegador (login, abrir o
+  workspace de Conteúdo, ver a sidebar do chat, aprovar um card de verdade).
+- As ferramentas que debitam créditos de um usuário real (`content.clusters.
+  gerar`, `.calendario.gerar`, `.artigo.produzir`, `.seo.auditoria.gerar`) —
+  testadas só na lógica de schema/registro, não executadas de ponta a ponta
+  (exigem um usuário com créditos de verdade; `content.artigo.produzir` em
+  particular chama o pipeline completo de 5 etapas, com custo real de API).
+- `docker build`/`docker run` do `Dockerfile.contentAgent` (Docker Desktop
+  sem daemon ativo no ambiente desta sessão).
 
 ### Deploy
 
