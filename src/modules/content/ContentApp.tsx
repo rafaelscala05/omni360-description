@@ -16,6 +16,7 @@ import CompanyProfile from './CompanyProfile';
 import CompanyManager from './CompanyManager';
 import IntegrationsView from './IntegrationsView';
 import BlogView from './blog/BlogView';
+import { ContentCopilotProvider } from './chat/ContentCopilotProvider';
 
 interface Props {
   user: User;
@@ -41,6 +42,11 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
   const [pendingClusterId, setPendingClusterId] = useState<string | null>(null);
   const [clusters, setClusters] = useState<ContentCluster[]>([]);
   const [openArticleId, setOpenArticleId] = useState<string | null>(null);
+  const [authToken, setAuthToken] = useState('');
+
+  useEffect(() => {
+    user.getIdToken().then(setAuthToken);
+  }, [user]);
 
   useEffect(() =>
     listenProjects(uid, (list) => {
@@ -76,6 +82,7 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
   );
 
   return (
+    <ContentCopilotProvider project={selected} articleId={openArticleId} authToken={authToken}>
     <div className="h-screen bg-[#f7f9fb] flex font-sans overflow-hidden">
       {isSidebarOpen && (
         <div onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-30 md:hidden" />
@@ -234,6 +241,7 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
         <CompanyManager uid={uid} projects={projects} onClose={() => setManagingCompanies(false)} />
       )}
     </div>
+    </ContentCopilotProvider>
   );
 };
 

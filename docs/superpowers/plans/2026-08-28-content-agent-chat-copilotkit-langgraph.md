@@ -2017,10 +2017,16 @@ function ContentAgentBridge({
     },
   });
 
+  // Achado ao vivo (tsc pegou na hora): CopilotSidebar NÃO é um wrapper de
+  // conteúdo — seu `children` é tipado para customizar slots internos do
+  // chat (CopilotSidebarProps estende CopilotChatProps, cujo `children` é
+  // uma função de slot, não ReactNode). Ele se renderiza sozinho como um
+  // painel docado; por isso entra como irmão do app, não como pai.
   return (
-    <CopilotSidebar agentId="content_agent">
+    <>
       {children}
-    </CopilotSidebar>
+      <CopilotSidebar agentId="content_agent" />
+    </>
   );
 }
 
