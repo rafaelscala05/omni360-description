@@ -564,7 +564,7 @@ export async function generateCalendar(uid: string, project: ContentProject): Pr
 // Fase 4 — Article production pipeline (5 stages)
 // ---------------------------------------------------------------------------
 
-async function runArticlePipeline(
+export async function runArticlePipeline(
   uid: string,
   projectId: string,
   articleId: string,
@@ -684,7 +684,7 @@ async function fetchImageAsBase64(rawUrl: string): Promise<{ mimeType: string; d
   return { mimeType, data: buf.toString('base64') };
 }
 
-async function regenerateArticleImage(
+export async function regenerateArticleImage(
   uid: string,
   projectId: string,
   articleId: string,

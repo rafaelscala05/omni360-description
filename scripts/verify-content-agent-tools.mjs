@@ -18,7 +18,13 @@ for (const name of expectedReadTools) {
   assert.strictEqual(def.inputSchema.type, 'object', `${name}: schema inválido`);
 }
 
-const expectedWriteTools = ['content.projeto.criar', 'content.clusters.gerar', 'content.calendario.gerar'];
+const expectedWriteTools = [
+  'content.projeto.criar',
+  'content.clusters.gerar',
+  'content.calendario.gerar',
+  'content.artigo.produzir',
+  'content.artigo.imagem.regenerar',
+];
 for (const name of expectedWriteTools) {
   const def = tools.find((t) => t.name === name);
   assert.ok(def, `ferramenta ausente: ${name}`);

@@ -17,6 +17,8 @@ import {
   generateClusters,
   generateCalendar,
   debitCreditsAdmin,
+  runArticlePipeline,
+  regenerateArticleImage,
 } from '../../contentAgent';
 import type { ContentProjectConfig } from '../../../src/modules/content/types';
 
@@ -196,5 +198,64 @@ registerTool({
     const project = await loadProject(ctx.uid, projectId);
     await debitCreditsAdmin(ctx.uid, CREDIT_ACTIONS.contentCalendar, { productName: project.config.nomeEmpresa });
     return { calendar: await generateCalendar(ctx.uid, project) };
+  },
+});
+
+registerTool({
+  name: 'content.artigo.produzir',
+  provider: 'content',
+  mode: 'write',
+  description: 'Roda o pipeline completo de produção de um artigo já agendado no calendário: pesquisa → outline → rascunho → imagem → revisão. Custa créditos e pode levar alguns minutos.',
+  schema: {
+    type: 'object',
+    properties: { projectId: { type: 'string' }, articleId: { type: 'string' } },
+    required: ['projectId', 'articleId'],
+  },
+  preview: async (_ctx: ToolCtx, args: Record<string, unknown>) => makePreview({
+    resumo: 'Produzir este artigo agora (pipeline de 5 etapas: pesquisa, outline, rascunho, imagem, revisão).',
+    alvo: requireStr(args, 'articleId'),
+    campos: [],
+    criacao: true,
+    payload: { projectId: args.projectId, articleId: args.articleId },
+  }),
+  execute: async (ctx: ToolCtx, _args, preview) => {
+    const { projectId, articleId } = preview.payload as { projectId: string; articleId: string };
+    await runArticlePipeline(ctx.uid, projectId, articleId);
+    return { ok: true };
+  },
+});
+
+registerTool({
+  name: 'content.artigo.imagem.regenerar',
+  provider: 'content',
+  mode: 'write',
+  description: 'Regenera a imagem de capa de um artigo — "improve" melhora a imagem atual com uma instrução, "fromProduct" gera a partir da imagem de um produto vinculado.',
+  schema: {
+    type: 'object',
+    properties: {
+      projectId: { type: 'string' },
+      articleId: { type: 'string' },
+      mode: { type: 'string', enum: ['improve', 'fromProduct'] },
+      improvementPrompt: { type: 'string' },
+      baseProductImageUrl: { type: 'string' },
+    },
+    required: ['projectId', 'articleId', 'mode'],
+  },
+  preview: async (_ctx: ToolCtx, args: Record<string, unknown>) => makePreview({
+    resumo: `Regenerar a imagem de capa (modo: ${requireStr(args, 'mode')}).`,
+    alvo: requireStr(args, 'articleId'),
+    campos: [],
+    criacao: true,
+    payload: args,
+  }),
+  execute: async (ctx: ToolCtx, _args, preview) => {
+    const p = preview.payload as {
+      projectId: string; articleId: string; mode: 'improve' | 'fromProduct';
+      improvementPrompt?: string; baseProductImageUrl?: string;
+    };
+    const imageUrl = await regenerateArticleImage(ctx.uid, p.projectId, p.articleId, {
+      mode: p.mode, improvementPrompt: p.improvementPrompt, baseProductImageUrl: p.baseProductImageUrl,
+    });
+    return { imageUrl };
   },
 });
