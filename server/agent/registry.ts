@@ -5,7 +5,12 @@
 // Gemini FunctionDeclarations; a future server/agent/mcp.ts maps the same list
 // to MCP tools/list and tools/call without touching a single tool definition.
 
-import type { ToolDef, ToolProvider, ToolSchema } from './types';
+import type { ToolDef, ToolProvider, ToolSchema, ToolCtx } from './types';
+import { tool } from '@langchain/core/tools';
+import type { DynamicStructuredTool } from '@langchain/core/tools';
+import { interrupt } from '@langchain/langgraph';
+import * as z from 'zod';
+import { resolveApprovalMode, type AgentSettings } from './agentSettings';
 
 const tools = new Map<string, ToolDef<any>>();
 
@@ -76,4 +81,71 @@ export function toGeminiDeclarations(providers: ToolProvider[]): GeminiFunctionD
 /** Test seam — lets the verify script build an isolated registry. */
 export function _resetRegistry(): void {
   tools.clear();
+}
+
+// LangChain tools exigem um schema Zod; o registry guarda JSON Schema puro
+// (para ser reaproveitável pelo Gemini function-calling e, no futuro, MCP).
+// z.object({}).passthrough() aceita qualquer shape e deixa a validação de
+// obrigatoriedade para dentro do tool (mesmo que requireStr() já faz hoje) —
+// evita duplicar a definição do schema em dois formatos.
+function jsonSchemaToZodPassthrough(_schema: ToolSchema) {
+  return z.object({}).passthrough();
+}
+
+/**
+ * Converte o registry em ferramentas do LangChain/LangGraph. Ferramentas de
+ * leitura chamam `.read()` direto. Ferramentas de escrita sempre chamam
+ * `.preview()`; a partir daí, ou seguem para `.execute()` (modo automático
+ * para aquele tool) ou pausam o grafo com `interrupt()` até a aprovação — o
+ * mesmo invariante do loop do Operacional, só que via LangGraph em vez de
+ * `agent_actions`.
+ */
+export function toLangChainTools(
+  providers: ToolProvider[],
+  ctx: ToolCtx,
+  settings: AgentSettings,
+): DynamicStructuredTool[] {
+  return listTools(providers).map((def) =>
+    tool(
+      // Erros de qualquer ferramenta (read/preview/execute) viram texto de
+      // retorno em vez de exceção — uma exceção aqui derrubaria o nó do grafo
+      // inteiro; devolver o erro como resultado deixa o modelo explicar ao
+      // usuário e tentar de novo, mesmo espírito de sendError() nas rotas
+      // HTTP existentes, sem ter uma resposta HTTP no meio.
+      async (args: Record<string, unknown>) => {
+        try {
+          if (def.mode === 'read') {
+            return await def.read!(ctx, args);
+          }
+
+          const preview = await def.preview!(ctx, args);
+          const mode = resolveApprovalMode(settings, def.name);
+          if (mode === 'auto') {
+            return await def.execute!(ctx, args, preview);
+          }
+
+          const decisao = interrupt({
+            ferramenta: def.name,
+            resumo: preview.resumo,
+            alvo: preview.alvo,
+            campos: preview.campos,
+            avisos: preview.avisos,
+          }) as { aprovado: boolean };
+
+          if (!decisao?.aprovado) return 'Ação cancelada pelo usuário.';
+          return await def.execute!(ctx, args, preview);
+        } catch (err) {
+          const e = err as { status?: number; message?: string };
+          return `Erro ao executar ${def.name}: ${e.message ?? 'erro desconhecido'}`;
+        }
+      },
+      {
+        name: def.name,
+        description: def.mode === 'write'
+          ? `${def.description}\n[ESCRITA] Esta ação será apresentada ao usuário para aprovação antes de rodar.`
+          : def.description,
+        schema: jsonSchemaToZodPassthrough(def.schema),
+      },
+    ),
+  );
 }
