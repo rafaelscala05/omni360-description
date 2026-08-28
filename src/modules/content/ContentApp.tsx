@@ -82,7 +82,7 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
   );
 
   return (
-    <ContentCopilotProvider project={selected} articleId={openArticleId} authToken={authToken}>
+    <ContentCopilotProvider uid={uid} project={selected} articleId={openArticleId} authToken={authToken}>
     <div className="h-screen bg-[#f7f9fb] flex font-sans overflow-hidden">
       {isSidebarOpen && (
         <div onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-30 md:hidden" />

@@ -159,6 +159,11 @@ export function toLangChainTools(
             alvo: preview.alvo,
             campos: preview.campos,
             avisos: preview.avisos,
+            // Argumentos originais da chamada — dá pro frontend renderizar UI
+            // específica por ferramenta (ex.: content.credencial.conectar
+            // usa args.provider/args.projectId pra saber qual formulário
+            // mostrar) sem precisar inventar um novo campo por caso de uso.
+            args,
           }) as { aprovado: boolean };
 
           if (!decisao?.aprovado) return 'Ação cancelada pelo usuário.';

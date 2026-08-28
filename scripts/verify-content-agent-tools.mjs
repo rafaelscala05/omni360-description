@@ -31,6 +31,7 @@ const expectedWriteTools = [
   'content.seo.auditoria.gerar',
   'content.seo.auditoria.atualizar',
   'content.seo.auditoria.cancelar',
+  'content.credencial.conectar',
 ];
 for (const name of expectedWriteTools) {
   const def = tools.find((t) => t.name === name);
@@ -38,7 +39,7 @@ for (const name of expectedWriteTools) {
   assert.strictEqual(def.mode, 'write', `${name} deveria ser write`);
 }
 
-for (const name of ['content.artigo.publicar', 'content.artigo.despublicar']) {
+for (const name of ['content.artigo.publicar', 'content.artigo.despublicar', 'content.credencial.conectar']) {
   assert.strictEqual(
     resolveApprovalMode({ approvalMode: 'auto' }, name),
     'ask',

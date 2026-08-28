@@ -11,10 +11,12 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = { approvalMode: 'ask' };
 
 // Trava estrutural: nada aqui muda o comportamento dessas ferramentas, não
 // importa o que o usuário configurou. Publicar expõe conteúdo publicamente;
-// não é uma ação que aceita "rodar sem perguntar".
+// conectar credencial exige preencher um formulário — nenhuma das duas
+// aceita "rodar sem perguntar".
 const ALWAYS_ASK_TOOLS: readonly string[] = [
   'content.artigo.publicar',
   'content.artigo.despublicar',
+  'content.credencial.conectar',
 ];
 
 export function resolveApprovalMode(settings: AgentSettings, toolName: string): 'ask' | 'auto' {

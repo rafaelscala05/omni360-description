@@ -327,3 +327,37 @@ registerTool({
     return { ok: true };
   },
 });
+
+// Onboarding, parte 2: conectar WordPress/Sanity. Precisa ser uma ferramenta
+// de SERVIDOR (não uma ferramenta de frontend via useHumanInTheLoop) —
+// testado lendo o código-fonte de @ag-ui/langgraph: o adaptador desestrutura
+// `tools` de RunAgentInput mas nunca o repassa para o payload enviado ao
+// LangGraph, então ferramentas registradas só no cliente nunca chegam a
+// aparecer pro modelo. Por isso esta ferramenta existe no registry e usa o
+// mesmo mecanismo de interrupt()/aprovação das outras — mas o `execute()`
+// dela não faz nada com a credencial: o valor real é gravado direto pelo
+// formulário no cliente (src/modules/content/chat/CredentialForm.tsx, via
+// saveWordpressSecret/saveSanitySecret) ANTES do interrupt ser resolvido.
+// A senha/token nunca vira argumento de tool call nem passa pelo servidor.
+registerTool({
+  name: 'content.credencial.conectar',
+  provider: 'content',
+  mode: 'write',
+  description: 'Abre o formulário para o usuário conectar WordPress ou Sanity a um projeto. Nunca peça a senha/token de aplicativo por texto — sempre chame esta ferramenta e espere o usuário preencher o formulário.',
+  schema: {
+    type: 'object',
+    properties: {
+      projectId: { type: 'string' },
+      provider: { type: 'string', enum: ['wordpress', 'sanity'] },
+    },
+    required: ['projectId', 'provider'],
+  },
+  preview: async (_ctx: ToolCtx, args: Record<string, unknown>) => makePreview({
+    resumo: `Conectar ${requireStr(args, 'provider')} a este projeto.`,
+    alvo: requireStr(args, 'projectId'),
+    campos: [],
+    criacao: true, // não é uma edição com antes/depois — evita o aviso automático de "no-op"
+    payload: args,
+  }),
+  execute: async () => ({ conectado: true }),
+});

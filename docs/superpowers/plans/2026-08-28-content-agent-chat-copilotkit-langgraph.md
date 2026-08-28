@@ -2099,29 +2099,97 @@ git commit -m "feat(content-agent): wire CopilotKit chat sidebar with generic ap
 
 ## Task 14: Frontend — formulário de credencial (fora do modelo)
 
+**Achado ao vivo que muda o desenho desta task por completo:** o plano
+original supunha `useHumanInTheLoop`/`useFrontendTool` (ferramentas
+registradas só no **cliente**) — mas lendo o código-fonte compilado de
+`@ag-ui/langgraph` (`node_modules/@ag-ui/langgraph/dist/index.mjs`,
+`prepareStream`), o adaptador desestrutura `tools` de `RunAgentInput` e
+**nunca o repassa** no payload enviado ao LangGraph. Ferramentas de frontend
+simplesmente não chegam a existir pro modelo quando o agente é um grafo
+LangGraph.js — diferente do que a doc de `useHumanInTheLoop` sugere para
+outros tipos de agente. A solução: `content.credencial.conectar` vira uma
+ferramenta de **servidor**, no mesmo registry e usando o mesmo `interrupt()`
+das outras (Task 3) — só que o `execute()` dela não faz nada com a
+credencial. O valor real é gravado direto no Firestore pelo formulário no
+cliente **antes** do interrupt ser resolvido, exatamente como o desenho
+original pretendia (a senha/token nunca vira argumento de tool call) — só o
+mecanismo de "como o formulário aparece" mudou.
+
 **Files:**
+- Modify: `server/agent/tools/content.ts` (nova ferramenta `content.credencial.conectar`)
+- Modify: `server/agent/agentSettings.ts` (trava fixa de aprovação, mesma razão de publicar/despublicar)
+- Modify: `scripts/verify-content-agent-tools.mjs`
 - Create: `src/modules/content/chat/CredentialForm.tsx`
-- Modify: `src/modules/content/chat/ContentCopilotProvider.tsx`
+- Modify: `src/modules/content/chat/ContentCopilotProvider.tsx` (dispatch por `preview.ferramenta` dentro do `useInterrupt` já existente da Task 13 — sem hook novo)
+- Modify: `server/agent/registry.ts` (o payload do `interrupt()` passa a incluir `args`, os argumentos originais da chamada — é como o formulário sabe `provider`/`projectId`)
 
 **Interfaces:**
-- Consumes: o mesmo caminho de escrita Firestore que `secrets/wordpress`/`secrets/sanity` já usam hoje na tela de configurações (checar `src/modules/content/IntegrationsView.tsx` para reaproveitar a função de salvar exata, em vez de duplicar).
+- Consumes: `saveWordpressSecret(uid, projectId, appPassword): Promise<void>` / `saveSanitySecret(uid, projectId, apiToken): Promise<void>` (já existem em `src/services/contentService.ts:225,234` — nomes batem exatamente com o que o spec previu).
 
-- [ ] **Step 1: Localizar a função existente de salvar credencial**
+- [ ] **Step 1: Confirmar as funções existentes de salvar credencial**
 
-Run: `grep -n "secrets').doc('wordpress')\|secrets').doc('sanity')" src/modules/content/IntegrationsView.tsx src/services/contentService.ts`
+```bash
+grep -n "secrets').doc('wordpress')\|secrets').doc('sanity')" src/services/contentService.ts
+```
 
-Usar a função encontrada (ex.: algo como `saveWordpressSecret(uid, projectId, appPassword)` em `contentService.ts`) em vez de escrever um novo caminho de gravação no Firestore — o objetivo é reaproveitar exatamente o mecanismo que já preserva a regra "leitura bloqueada ao cliente", não recriar um paralelo.
+Confirma `saveWordpressSecret(uid: string, projectId: string, appPassword: string)` e `saveSanitySecret(uid: string, projectId: string, apiToken: string)` — usar essas direto, sem duplicar o caminho de escrita.
 
-- [ ] **Step 2: Formulário Generative UI**
+- [ ] **Step 2: Nova ferramenta de servidor**
+
+```typescript
+// acrescentar a server/agent/tools/content.ts, depois de content.artigo.despublicar
+registerTool({
+  name: 'content.credencial.conectar',
+  provider: 'content',
+  mode: 'write',
+  description: 'Abre o formulário para o usuário conectar WordPress ou Sanity a um projeto. Nunca peça a senha/token de aplicativo por texto — sempre chame esta ferramenta e espere o usuário preencher o formulário.',
+  schema: {
+    type: 'object',
+    properties: {
+      projectId: { type: 'string' },
+      provider: { type: 'string', enum: ['wordpress', 'sanity'] },
+    },
+    required: ['projectId', 'provider'],
+  },
+  preview: async (_ctx: ToolCtx, args: Record<string, unknown>) => makePreview({
+    resumo: `Conectar ${requireStr(args, 'provider')} a este projeto.`,
+    alvo: requireStr(args, 'projectId'),
+    campos: [],
+    criacao: true, // evita o aviso automático de "no-op" de makePreview() — não é uma edição com antes/depois
+    payload: args,
+  }),
+  execute: async () => ({ conectado: true }),
+});
+```
+
+Em `server/agent/agentSettings.ts`, adicionar `'content.credencial.conectar'` a `ALWAYS_ASK_TOOLS` — não existe "auto" possível pra uma ferramenta que exige preencher um formulário.
+
+- [ ] **Step 3: Ecoar os argumentos originais no payload do `interrupt()`**
+
+O formulário precisa saber `provider`/`projectId` — que já são os argumentos da chamada, mas o payload do `interrupt()` (`server/agent/registry.ts`) só mandava `resumo`/`alvo`/`campos`/`avisos`. Acrescentar `args`:
+
+```typescript
+// server/agent/registry.ts, dentro de toLangChainTools()
+const decisao = interrupt({
+  ferramenta: def.name,
+  resumo: preview.resumo,
+  alvo: preview.alvo,
+  campos: preview.campos,
+  avisos: preview.avisos,
+  args, // dá pro frontend renderizar UI específica por ferramenta sem inventar um campo novo por caso de uso
+}) as { aprovado: boolean };
+```
+
+- [ ] **Step 4: Formulário Generative UI**
 
 ```tsx
 // src/modules/content/chat/CredentialForm.tsx
 import { useState } from 'react';
-// import { saveWordpressSecret, saveSanitySecret } from '../../../services/contentService'; // ajustar ao nome real encontrado no Step 1
+import { saveWordpressSecret, saveSanitySecret } from '../../../services/contentService';
 
 export function CredentialForm({
-  provider, projectId, onDone,
-}: { provider: 'wordpress' | 'sanity'; projectId: string; onDone: (ok: boolean) => void }) {
+  uid, provider, projectId, onDone,
+}: { uid: string; provider: 'wordpress' | 'sanity'; projectId: string; onDone: (ok: boolean) => void }) {
   const [value, setValue] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -2130,7 +2198,8 @@ export function CredentialForm({
   const handleSave = async () => {
     setSaving(true);
     try {
-      // await (provider === 'wordpress' ? saveWordpressSecret : saveSanitySecret)(projectId, value);
+      if (provider === 'wordpress') await saveWordpressSecret(uid, projectId, value);
+      else await saveSanitySecret(uid, projectId, value);
       onDone(true);
     } catch {
       onDone(false);
@@ -2161,73 +2230,50 @@ export function CredentialForm({
 }
 ```
 
-Esse valor **nunca** vira argumento de tool call nem trafega pelo `/api/copilotkit` — o `onDone(ok)` só informa o resultado (booleano) de volta pro fluxo do chat, via `respond()` do `useHumanInTheLoop` (ver Step 3; API v2 — `useCopilotAction`/`renderAndWaitForResponse` é v1 e não existe no pacote instalado).
+Esse valor **nunca** vira argumento de tool call nem trafega pelo `/api/copilotkit` — `handleSave` grava direto no Firestore (mesmo caminho da tela de configurações) antes de chamar `onDone`.
 
-- [ ] **Step 3: Expor como ferramenta de frontend no `ContentCopilotProvider`**
+- [ ] **Step 5: Dispatch por `preview.ferramenta` no `useInterrupt` já existente**
 
-`useHumanInTheLoop` (`@copilotkit/react-core/v2`) é o hook certo aqui — ao
-contrário de `useInterrupt` (Task 13, para ferramentas do **grafo** que
-pausam via `interrupt()`), esta é uma ferramenta que **só existe no
-cliente**: o modelo a chama, o navegador mostra o formulário, e `respond()`
-resolve a chamada sem nunca passar pelo servidor LangGraph.
+Não é um hook novo — é um `if` a mais dentro do `render` de `useInterrupt` que a Task 13 já criou em `ContentAgentBridge` (`src/modules/content/chat/ContentCopilotProvider.tsx`):
 
 ```tsx
-// acrescentar a ContentAgentBridge em src/modules/content/chat/ContentCopilotProvider.tsx
-import { useHumanInTheLoop } from '@copilotkit/react-core/v2';
-import { z } from 'zod';
 import { CredentialForm } from './CredentialForm';
-
-useHumanInTheLoop({
-  name: 'content.credencial.conectar',
-  description: 'Abre o formulário para o usuário conectar WordPress ou Sanity. Nunca peça a senha/token por texto — sempre chame esta ferramenta.',
-  parameters: z.object({ provider: z.enum(['wordpress', 'sanity']) }),
-  render: ({ args, status, respond }) => {
-    if (status !== 'executing' || !respond) return <p className="text-sm text-slate-500">Aguardando…</p>;
-    return (
-      <CredentialForm
-        provider={args.provider}
-        projectId={project?.id ?? ''}
-        onDone={(ok) => respond({ conectado: ok })}
-      />
-    );
+// ...
+useInterrupt({
+  agentId: 'content_agent',
+  render: ({ event, resolve }) => {
+    const preview: ApprovalPreview = event?.value ? JSON.parse(event.value as string) : {};
+    if (preview.ferramenta === 'content.credencial.conectar') {
+      const args = preview.args as { provider?: 'wordpress' | 'sanity'; projectId?: string } | undefined;
+      if (args?.provider && args?.projectId) {
+        return (
+          <CredentialForm
+            uid={uid}
+            provider={args.provider}
+            projectId={args.projectId}
+            onDone={(ok) => resolve({ aprovado: ok })}
+          />
+        );
+      }
+    }
+    return <ApprovalCard preview={preview} onDecide={(aprovado) => resolve({ aprovado })} />;
   },
 });
 ```
 
-**Nota de calibração/dependência com a Task 10:** ferramentas registradas via
-`useHumanInTheLoop`/`useFrontendTool` no cliente chegam ao runtime como
-`RunAgentInput.tools` (AG-UI as repassa automaticamente) — mas o nó `agent`
-de `contentGraph.ts` (Task 10) hoje só vincula ao modelo as ferramentas de
-`toLangChainTools(['content'], ctx, settings)` (as do registry do servidor).
-Para o modelo enxergar `content.credencial.conectar`, `callModel()` precisa
-também vincular as ferramentas vindas de `config`/`state` (o campo exato —
-`state.tools` vs. algo em `config.configurable` — depende de como o
-`LangGraphAgent` do lado do runtime empacota `RunAgentInput.tools` no envio
-ao LangGraph; confirmar isso é o primeiro passo desta task, inspecionando o
-`RUN_STARTED`/`on_chain_start` recebido no servidor LangGraph com uma
-ferramenta de frontend registrada, do mesmo jeito que a Task 2 investigou
-`forwardedProps`). Ajustar `model.bindTools([...registryTools, ...clientTools])` em `callModel()` conforme o que for encontrado.
+`ApprovalPreview` (`ApprovalCard.tsx`) precisa do campo novo: `args?: Record<string, unknown>`. `ContentAgentBridge`/`ContentCopilotProvider` precisam de um `uid: string` a mais nas props (repassado desde `ContentApp.tsx`, que já tem `uid = user.uid`), pro `CredentialForm` gravar no doc certo.
 
-- [ ] **Step 3b: Verificar onde as ferramentas de frontend chegam no grafo**
+- [ ] **Step 6: Verificação — testado ao vivo direto contra o LangGraph, sem passar pelo CopilotKit**
 
-Run: com `npm run dev:content-agent` e `npm run dev` rodando e o
-`useHumanInTheLoop` acima montado, pedir no chat "conecta o WordPress desse
-projeto" e observar os logs do `langgraph dev` (ou adicionar um
-`console.log(JSON.stringify(state))` temporário no início de `callModel`).
+Mesmo padrão da Task 10: criar uma thread, rodar com "conecta o wordpress do projeto abc123" → confirmar que o `__interrupt__` retornado tem `ferramenta: "content.credencial.conectar"` e `args: {provider: "wordpress", projectId: "abc123"}` → resumir com `{"command":{"resume":{"aprovado":true}}}` → confirmar que a mensagem final do assistente reflete `{"conectado":true}`.
 
-Expected: encontrar `content.credencial.conectar` em algum campo do
-input/state recebido pelo nó `agent` — esse é o campo a ler em
-`callModel()` para compor a lista final de tools do `bindTools(...)`.
+Fluxo completo de onboarding pela UI (não testado nesta sessão — ver Task 13 sobre a lacuna de teste interativo no navegador): pedir no chat "cria um projeto pro site tal.com.br" → `content.site.escanear` roda (sem aprovação) → modelo propõe os campos → aprova `content.projeto.criar` → pedir "conecta o WordPress desse projeto" → confirmar que aparece o formulário (não um pedido de senha em texto) → preencher e salvar → confirmar no Firestore que `secrets/wordpress` foi escrito e que o campo continua ilegível para o cliente.
 
-- [ ] **Step 4: Verificação manual**
-
-Fluxo completo de onboarding: pedir no chat "cria um projeto pro site tal.com.br" → `content.site.escanear` roda (sem aprovação) → modelo propõe os campos → aprova `content.projeto.criar` → pedir "conecta o WordPress desse projeto" → confirmar que aparece o formulário (não um pedido de senha em texto) → preencher e salvar → confirmar no Firestore que `secrets/wordpress` foi escrito e que o campo continua ilegível para o cliente (tentar ler via console do navegador deve falhar pela regra existente).
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add src/modules/content/chat/CredentialForm.tsx src/modules/content/chat/ContentCopilotProvider.tsx
-git commit -m "feat(content-agent): add out-of-model credential form for WordPress/Sanity onboarding"
+git add server/agent/tools/content.ts server/agent/agentSettings.ts server/agent/registry.ts scripts/verify-content-agent-tools.mjs src/modules/content/chat/CredentialForm.tsx src/modules/content/chat/ContentCopilotProvider.tsx
+git commit -m "feat(content-agent): add out-of-model credential tool for WordPress/Sanity onboarding"
 ```
 
 ---

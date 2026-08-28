@@ -5,6 +5,7 @@ export interface ApprovalPreview {
   alvo?: string;
   campos?: PreviewField[];
   avisos?: string[];
+  args?: Record<string, unknown>;
 }
 
 export function ApprovalCard({
