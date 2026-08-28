@@ -22,3 +22,6 @@ ds-bundle/
 .design-sync/node_modules
 .superpowers/
 .worktrees/
+
+# LangGraph API
+.langgraph_api

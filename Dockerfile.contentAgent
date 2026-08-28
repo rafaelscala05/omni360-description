@@ -1,0 +1,6 @@
+FROM langchain/langgraphjs-api:20
+ADD . /deps/content-agent-chat
+ENV LANGSERVE_GRAPHS='{"content_agent":"./server/agent/contentGraph.ts:graph"}'
+WORKDIR /deps/content-agent-chat
+RUN npm ci
+RUN (test ! -f /api/langgraph_api/js/build.mts && echo "Prebuild script not found, skipping") || tsx /api/langgraph_api/js/build.mts

@@ -229,7 +229,7 @@ interface DebitMeta {
   userName?: string;
 }
 
-async function debitCreditsAdmin(uid: string, action: CreditAction, meta: DebitMeta = {}): Promise<number> {
+export async function debitCreditsAdmin(uid: string, action: CreditAction, meta: DebitMeta = {}): Promise<number> {
   const costs = await getCreditCosts();
   const cost = resolveCreditCost(costs, action.key);
   const userRef = adminDb.collection('users').doc(uid);
@@ -260,11 +260,11 @@ async function debitCreditsAdmin(uid: string, action: CreditAction, meta: DebitM
 // Firestore helpers
 // ---------------------------------------------------------------------------
 
-function projectRef(uid: string, projectId: string) {
+export function projectRef(uid: string, projectId: string) {
   return adminDb.collection('users').doc(uid).collection('contentProjects').doc(projectId);
 }
 
-async function loadProject(uid: string, projectId: string): Promise<ContentProject> {
+export async function loadProject(uid: string, projectId: string): Promise<ContentProject> {
   const snap = await projectRef(uid, projectId).get();
   if (!snap.exists) throw Object.assign(new Error('Projeto não encontrado'), { status: 404 });
   return { id: snap.id, ...(snap.data() as Omit<ContentProject, 'id'>) };
@@ -310,7 +310,7 @@ export interface ScannedConfig {
 
 // Fetches a website, extracts readable text, and asks the AI to infer the
 // company profile so the onboarding form can be pre-filled.
-async function scanWebsite(rawUrl: string): Promise<ScannedConfig> {
+export async function scanWebsite(rawUrl: string): Promise<ScannedConfig> {
   const url = await assertSafeUrl(rawUrl);
   const html = await fetchHtmlSafely(rawUrl);
 
@@ -371,7 +371,7 @@ function normalizeIntent(v: unknown): ClusterKeyword['intencao'] {
 // brand-new domain with little/no organic footprint yet.
 const MIN_DOMAIN_POOL_SIZE = 5;
 
-async function generateClusters(uid: string, project: ContentProject): Promise<ContentCluster[]> {
+export async function generateClusters(uid: string, project: ContentProject): Promise<ContentCluster[]> {
   const store = await loadStoreContext(uid);
   const audit = await getLatestFinishedAudit(uid, project.id);
   const auditSummary = audit ? auditSummaryText(audit) : null;
@@ -478,7 +478,7 @@ function toIsoDate(d: Date): string {
   return d.toISOString().split('T')[0];
 }
 
-async function generateCalendar(uid: string, project: ContentProject): Promise<CalendarArticle[]> {
+export async function generateCalendar(uid: string, project: ContentProject): Promise<CalendarArticle[]> {
   const clustersSnap = await projectRef(uid, project.id).collection('clusters').get();
   const clusters = clustersSnap.docs
     .map((d) => ({ id: d.id, ...(d.data() as Omit<ContentCluster, 'id'>) }))
@@ -564,7 +564,7 @@ async function generateCalendar(uid: string, project: ContentProject): Promise<C
 // Fase 4 — Article production pipeline (5 stages)
 // ---------------------------------------------------------------------------
 
-async function runArticlePipeline(
+export async function runArticlePipeline(
   uid: string,
   projectId: string,
   articleId: string,
@@ -684,7 +684,7 @@ async function fetchImageAsBase64(rawUrl: string): Promise<{ mimeType: string; d
   return { mimeType, data: buf.toString('base64') };
 }
 
-async function regenerateArticleImage(
+export async function regenerateArticleImage(
   uid: string,
   projectId: string,
   articleId: string,
@@ -789,7 +789,7 @@ function markdownToPortableText(md: string): object[] {
   return blocks;
 }
 
-async function publishToWordpress(uid: string, projectId: string, articleId: string): Promise<string> {
+export async function publishToWordpress(uid: string, projectId: string, articleId: string): Promise<string> {
   const project = await loadProject(uid, projectId);
   const { wordpressUrl, wordpressUser } = project.config;
   if (!wordpressUrl || !wordpressUser) {
@@ -1021,7 +1021,7 @@ async function sanityQuery<T>(
 // Descobre os _type existentes no dataset amostrando documentos (não depende de
 // `sanity schema deploy`, que a maioria dos projetos nunca roda — funciona com
 // qualquer dataset acessível pelo token). Tipos internos do Sanity são excluídos.
-async function detectSanityTypes(uid: string, projectId: string): Promise<Array<{ type: string; count: number }>> {
+export async function detectSanityTypes(uid: string, projectId: string): Promise<Array<{ type: string; count: number }>> {
   const { sanityProjectId, dataset, apiToken } = await loadSanityCreds(uid, projectId);
   const types = await sanityQuery<string[]>(sanityProjectId, dataset, apiToken, '*[0...1000]._type');
   const counts = new Map<string, number>();
@@ -1058,7 +1058,7 @@ function inferSanityFieldKind(value: unknown): SanityFieldKind {
 // "palpite" de natureza (texto rico, referência(s), string...) — é isso que
 // deixa a UI sugerir qual campo é o corpo do artigo e qual é a categoria, em
 // vez do usuário precisar abrir o Studio pra ler o schema.
-async function detectSanityFields(uid: string, projectId: string, type: string): Promise<Array<{ field: string; kind: SanityFieldKind }>> {
+export async function detectSanityFields(uid: string, projectId: string, type: string): Promise<Array<{ field: string; kind: SanityFieldKind }>> {
   const { sanityProjectId, dataset, apiToken } = await loadSanityCreds(uid, projectId);
   const doc = await sanityQuery<Record<string, unknown> | null>(sanityProjectId, dataset, apiToken, '*[_type == $type][0]', { type });
   if (!doc) return [];
@@ -1067,7 +1067,7 @@ async function detectSanityFields(uid: string, projectId: string, type: string):
     .map((field) => ({ field, kind: inferSanityFieldKind(doc[field]) }));
 }
 
-async function publishToSanity(uid: string, projectId: string, articleId: string): Promise<string> {
+export async function publishToSanity(uid: string, projectId: string, articleId: string): Promise<string> {
   const project = await loadProject(uid, projectId);
   const {
     sanityProjectId, sanityDataset, sanityBlogUrl,
@@ -1228,7 +1228,7 @@ async function snapshotLinkedProducts(
 
 // Fase 5 — publicação no Blog nativo (CMS da plataforma).
 // Copia o artigo final para blogPosts como published e retorna a URL pública.
-async function publishToBlog(uid: string, projectId: string, articleId: string): Promise<string> {
+export async function publishToBlog(uid: string, projectId: string, articleId: string): Promise<string> {
   const settingsSnap = await projectRef(uid, projectId).collection('blog').doc('settings').get();
   if (!settingsSnap.exists || !(settingsSnap.data() as BlogSettings).enabled) {
     throw Object.assign(new Error('Blog nativo não está configurado/habilitado para este projeto'), { status: 400 });
@@ -1325,7 +1325,7 @@ async function unpublishFromBlog(uid: string, projectId: string, articleId: stri
 // mais no ar). O destino é lido de publishDestination; artigos publicados
 // antes dessa feature não têm o campo, então cai na mesma prioridade do
 // publish (sanity > wordpress > blog nativo) usada quando nenhum destino é informado.
-async function unpublishArticle(uid: string, projectId: string, articleId: string): Promise<void> {
+export async function unpublishArticle(uid: string, projectId: string, articleId: string): Promise<void> {
   const artRef = projectRef(uid, projectId).collection('calendar').doc(articleId);
   const snap = await artRef.get();
   if (!snap.exists) throw Object.assign(new Error('Artigo não encontrado'), { status: 404 });
@@ -1361,7 +1361,7 @@ async function unpublishArticle(uid: string, projectId: string, articleId: strin
 // Approved/published articles the Product agent can reuse in descriptions
 // (cross-module data share: Produto usa conteúdo gerado). Scoped to the user's
 // own projects (no global collectionGroup).
-async function getReusableArticles(uid: string): Promise<Array<{ id: string; titulo: string; articleFinal: string }>> {
+export async function getReusableArticles(uid: string): Promise<Array<{ id: string; titulo: string; articleFinal: string }>> {
   const projectsSnap = await adminDb.collection('users').doc(uid).collection('contentProjects').get();
   const out: Array<{ id: string; titulo: string; articleFinal: string }> = [];
   for (const proj of projectsSnap.docs) {

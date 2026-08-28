@@ -16,6 +16,7 @@ import CompanyProfile from './CompanyProfile';
 import CompanyManager from './CompanyManager';
 import IntegrationsView from './IntegrationsView';
 import BlogView from './blog/BlogView';
+import { ContentAgentPanel } from './chat/ContentAgentPanel';
 
 interface Props {
   user: User;
@@ -76,6 +77,11 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
   );
 
   return (
+    <ContentAgentPanel
+      uid={uid}
+      projeto={selected ? { id: selected.id, nomeEmpresa: selected.config.nomeEmpresa } : null}
+      articleId={openArticleId}
+    >
     <div className="h-screen bg-[#f7f9fb] flex font-sans overflow-hidden">
       {isSidebarOpen && (
         <div onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-30 md:hidden" />
@@ -234,6 +240,7 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
         <CompanyManager uid={uid} projects={projects} onClose={() => setManagingCompanies(false)} />
       )}
     </div>
+    </ContentAgentPanel>
   );
 };
 

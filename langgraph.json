@@ -1,0 +1,7 @@
+{
+  "graphs": {
+    "content_agent": "./server/agent/contentGraph.ts:graph"
+  },
+  "node_version": "20",
+  "env": ".env"
+}

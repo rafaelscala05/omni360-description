@@ -36,6 +36,7 @@ import { registerProductImportRoutes } from "./server/productImport";
 import { recordEvent, registerCrmEventRoutes } from "./server/crmEvents";
 import { registerCrmAdminRoutes } from "./server/crmAdmin";
 import { registerOperationsRoutes } from "./server/agent/routes";
+import { registerContentAgentChatRoutes } from "./server/agent/contentAgentChat";
 import { startCrmScheduler } from "./server/crmReconcile";
 import { startAutomationScheduler } from "./server/crmAutomation";
 
@@ -171,6 +172,10 @@ async function startServer() {
 
   // Agente Operacional (chat que opera Wake/Tiny com aprovação por ação).
   registerOperationsRoutes(app, { verifyFirebaseToken });
+
+  // Agente de Conteúdo conversacional (LangGraph.js nativo via SSE + Firestore,
+  // mesmo padrão do Agente Operacional acima — ver server/agent/contentAgentChat.ts).
+  registerContentAgentChatRoutes(app, { verifyFirebaseToken });
 
   // Blog nativo (CMS) — serving público SSR. Precisa vir antes do Vite/static
   // para que /b/{slug} e domínios customizados não caiam no SPA.

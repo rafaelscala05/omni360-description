@@ -1,5 +1,13 @@
 # Agente de Conteúdo conversacional (CopilotKit + LangGraph) — Design
 
+> **Nota (2026-08-28, mesmo dia):** depois desta entrega implementada e
+> testada, a camada de UI/ponte com CopilotKit foi substituída por um
+> cliente REST+SSE próprio, no mesmo padrão do Agente Operacional — ver
+> `CONTENT_MODULE.md` § "Agente conversacional (chat)" para a arquitetura
+> atual. O orquestrador (LangGraph.js), o registry de ferramentas e o
+> checkpointer do Firestore descritos abaixo não mudaram; só as seções sobre
+> CopilotKit (frontend, `/api/copilotkit`) estão desatualizadas.
+
 **Data:** 2026-08-28
 **Status:** Aprovado para plano de implementação
 **Autor:** Rafael + Claude

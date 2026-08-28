@@ -208,6 +208,26 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Agente de Conteúdo conversacional (LangGraph.js + ponte REST/SSE em
+      // server/agent/contentAgentChat.ts). Mesmo motivo do Agente Operacional
+      // acima: o dono só lê, toda escrita passa pelo servidor (Admin SDK),
+      // que também é quem grava os checkpoints do LangGraph nesta mesma
+      // subcoleção de thread — o cliente nunca acessa `checkpoints` porque
+      // não há regra permitindo, então fica bloqueada por padrão.
+      match /content_agent_threads/{threadId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+
+        match /messages/{messageId} {
+          allow read: if isOwner(userId);
+          allow write: if false;
+        }
+      }
+      match /content_agent_actions/{actionId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+
       match /settings/{settingId} {
         allow read: if isOwner(userId);
         allow write: if isOwner(userId);
