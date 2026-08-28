@@ -1840,29 +1840,60 @@ git commit -m "feat(content-agent): add Firestore-backed LangGraph checkpointer 
 
 **Files:**
 - Create: `Dockerfile.contentAgent`
-- Modify: `server/copilotRuntime.ts` (já lê `CONTENT_AGENT_LANGGRAPH_URL`, ver Task 2 — aqui só confirma/documenta o valor de produção)
+- Create: `.dockerignore`
 - Modify: `.env.example`
+- Modify: `CONTENT_MODULE.md`
 
 **Interfaces:** nenhuma nova — esta task só empacota o que as Tasks 1-11 já produziram.
 
-- [ ] **Step 1: Gerar o Dockerfile base do CLI e adaptar**
+- [ ] **Step 1: Gerar o Dockerfile base do CLI**
 
 Run: `npx @langchain/langgraph-cli dockerfile Dockerfile.contentAgent`
 
-Abrir o arquivo gerado e confirmar que ele copia `server/`, `src/modules/content/types.ts`, `src/credits.ts` e demais caminhos que `server/agent/contentGraph.ts` importa (transitivamente, todo `server/*.ts` que `contentAgent.ts`/`seoAgent.ts` tocam) — o Dockerfile gerado por padrão só espelha o que `langgraph.json` referencia diretamente; ajustar o `COPY` para incluir a árvore inteira do repo (mais simples e seguro do que listar cada import) já que este serviço roda do mesmo código-fonte do app principal, só com outro entrypoint.
+O arquivo gerado já faz `ADD . /deps/<nome-do-diretório>` — copia a árvore inteira do repositório, não só os caminhos que `langgraph.json` referencia diretamente. Isso já resolve sozinho a preocupação original de "o serviço precisa do resto do `server/`" — nenhum ajuste de `COPY`/`ADD` é necessário.
 
-- [ ] **Step 2: Variáveis de ambiente do novo serviço**
+- [ ] **Step 2: Adicionar `.dockerignore` (achado ao vivo — o Dockerfile gerado não vem com um)**
 
-Adicionar a `.env.example`:
+Sem isso, `ADD .` copia `node_modules/`, `.git/` e, mais grave, `.env` (com segredos reais) pra dentro da imagem:
 
 ```
-# Agente de Conteúdo conversacional — serviço LangGraph.js separado
+# .dockerignore
+node_modules/
+.git/
+dist/
+build/
+coverage/
+uploads/
+.env*
+!.env.example
+*-key.json
+users-export.json
+firestore-export/
+.langgraph_api/
+.langgraphjs_api.checkpointer.json
+.worktrees/
+.claude/
+.ds-sync/
+ds-bundle/
+.design-sync/
+.superpowers/
+```
+
+- [ ] **Step 3: Variáveis de ambiente do novo serviço**
+
+Adicionar a `.env.example` (perto de `VERTEX_LOCATION`):
+
+```
+# CONTENT_AGENT_LANGGRAPH_URL: URL do servidor LangGraph.js do Agente de
+# Conteúdo conversacional (Dockerfile.contentAgent, serviço Cloud Run próprio
+# em produção). Consumida só pelo app principal (server/copilotRuntime.ts)
+# para encaminhar o /api/copilotkit até o grafo.
 CONTENT_AGENT_LANGGRAPH_URL=http://localhost:8123
 ```
 
 O serviço do Dockerfile.contentAgent precisa das mesmas credenciais Admin do Firebase que `server/firebaseAdmin.ts` já exige do app principal (ADC/service account), mais `VERTEX_PROJECT_ID`/`VERTEX_LOCATION` (já usados por `contentAgent.ts`) — nenhuma variável nova além de `CONTENT_AGENT_LANGGRAPH_URL`, que é exclusiva do app principal (aponta para onde o serviço novo escuta).
 
-- [ ] **Step 3: Buildar a imagem localmente e validar**
+- [ ] **Step 4: Buildar a imagem localmente e validar**
 
 Run: `npx @langchain/langgraph-cli build -t content-agent-graph`
 Expected: build conclui sem erro.
@@ -1870,14 +1901,16 @@ Expected: build conclui sem erro.
 Run: `docker run -p 8123:8123 --env-file .env content-agent-graph`
 Expected: mesmo comportamento manual da Task 2/Task 10 (o servidor responde em `:8123`), agora rodando containerizado.
 
-- [ ] **Step 4: Documentar o deploy em produção**
+**Nota:** não validado nesta sessão — o Docker Desktop deste ambiente não tinha o daemon rodando (`docker info` falhou com "no such file or directory" no socket). Rodar este passo manualmente antes do merge/primeiro deploy.
 
-Adicionar ao `CONTENT_MODULE.md` (seção nova, "Agente conversacional") as instruções de deploy do serviço no Cloud Run — mesmo padrão de `gcloud run deploy` que o restante do projeto já usa para o app principal, apontando `CONTENT_AGENT_LANGGRAPH_URL` do serviço principal para a URL do novo serviço Cloud Run.
+- [ ] **Step 5: Documentar o deploy em produção**
 
-- [ ] **Step 5: Commit**
+Seção nova em `CONTENT_MODULE.md` ("Agente conversacional (chat)") com os passos de build + `gcloud run deploy` (imagem privada, `--no-allow-unauthenticated`, IAM `roles/run.invoker` só para a conta de serviço do app principal) e onde configurar `CONTENT_AGENT_LANGGRAPH_URL` do serviço principal apontando pra URL do novo serviço Cloud Run.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add Dockerfile.contentAgent .env.example CONTENT_MODULE.md
+git add Dockerfile.contentAgent .dockerignore .env.example CONTENT_MODULE.md
 git commit -m "feat(content-agent): package LangGraph.js server as its own deployable service"
 ```
 

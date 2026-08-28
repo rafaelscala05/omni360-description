@@ -155,7 +155,60 @@ Firestore, sem chamada ao Gemini.
    domínio customizado à instância — a aplicação em si só decide o roteamento
    por `Host`/`X-Forwarded-Host`, não provisiona certificado.
 
+## Agente conversacional (chat)
+
+O Agente de Conteúdo pode ser operado por chat (CopilotKit + LangGraph.js),
+além da UI de botões já descrita acima. Ver
+`docs/superpowers/specs/2026-08-28-content-agent-chat-copilotkit-langgraph-design.md`
+para o design completo.
+
+### Deploy
+
+O grafo LangGraph.js roda como um **serviço Cloud Run separado** do app
+principal (não dá pra rodar embutido no mesmo processo Express — a
+integração `@copilotkit/runtime` fala com o LangGraph via HTTP, não em
+processo). `Dockerfile.contentAgent` empacota o mesmo código-fonte do
+repositório (a lógica das ferramentas de chat mora em `server/agent/tools/
+content.ts`/`contentSeo.ts`, reaproveitando as funções de `contentAgent.ts`/
+`seoAgent.ts` — nenhum código duplicado), só com outro entrypoint
+(`server/agent/contentGraph.ts:graph`, registrado em `langgraph.json`).
+
+1. **Buildar a imagem:**
+   ```bash
+   npx @langchain/langgraph-cli build -t content-agent-graph
+   ```
+   (requer Docker rodando localmente; não validado nesta sessão de
+   desenvolvimento por falta de um daemon Docker ativo no ambiente — rodar
+   antes do merge.)
+
+2. **Publicar no Artifact Registry e criar o serviço Cloud Run:**
+   ```bash
+   docker tag content-agent-graph gcr.io/<PROJECT_ID>/content-agent-graph
+   docker push gcr.io/<PROJECT_ID>/content-agent-graph
+   gcloud run deploy content-agent-graph \
+     --image gcr.io/<PROJECT_ID>/content-agent-graph \
+     --region <REGIAO> \
+     --set-env-vars VERTEX_PROJECT_ID=<PROJECT_ID>,VERTEX_LOCATION=<REGIAO> \
+     --no-allow-unauthenticated
+   ```
+   O serviço precisa das mesmas credenciais Admin do Firebase que o app
+   principal (ADC via identidade da conta de serviço do Cloud Run — mesmo
+   mecanismo de `server/firebaseAdmin.ts`), mais `VERTEX_PROJECT_ID`/
+   `VERTEX_LOCATION`. `--no-allow-unauthenticated`: só o app principal deve
+   conseguir chamá-lo — configurar IAM (`roles/run.invoker`) para a conta de
+   serviço do serviço principal, não deixar público.
+
+3. **Apontar o app principal pro novo serviço:** configurar
+   `CONTENT_AGENT_LANGGRAPH_URL` (em `apphosting.yaml`/Secret Manager, mesmo
+   padrão das outras variáveis) com a URL do serviço Cloud Run criado.
+
 ## Pendências / melhorias futuras
+
+- Dockerfile.contentAgent foi gerado e ajustado (`.dockerignore` adicionado
+  pra não vazar `.env`/`node_modules`/`.git` pra dentro da imagem), mas o
+  build/run local não foi validado nesta sessão por falta de um daemon
+  Docker ativo no ambiente de desenvolvimento — validar antes do primeiro
+  deploy.
 
 - Mover o segredo do WordPress para o Secret Manager (hoje em Firestore, com
   leitura bloqueada ao cliente).

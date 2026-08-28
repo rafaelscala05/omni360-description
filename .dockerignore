@@ -1,0 +1,22 @@
+# O Dockerfile.contentAgent (server LangGraph.js do Agente de Conteúdo) faz
+# `ADD . /deps/...` — sem isto, node_modules/.git/.env (com segredos reais)
+# seriam copiados pra dentro da imagem.
+node_modules/
+.git/
+dist/
+build/
+coverage/
+uploads/
+.env*
+!.env.example
+*-key.json
+users-export.json
+firestore-export/
+.langgraph_api/
+.langgraphjs_api.checkpointer.json
+.worktrees/
+.claude/
+.ds-sync/
+ds-bundle/
+.design-sync/
+.superpowers/
