@@ -1,9 +1,10 @@
-// Transport-agnostic tool registry — the "MCP" of the operational agent.
+// Transport-agnostic tool registry — the "MCP" of the unified agent.
 //
 // Tools register themselves here at import time. Consumers ask for the subset
 // they're allowed to see and convert it to their own wire format. Today that's
-// Gemini FunctionDeclarations; a future server/agent/mcp.ts maps the same list
-// to MCP tools/list and tools/call without touching a single tool definition.
+// LangChain/LangGraph tools (toLangChainTools, below); a future
+// server/agent/mcp.ts maps the same list to MCP tools/list and tools/call
+// without touching a single tool definition.
 
 import type { ToolDef, ToolProvider, ToolSchema, ToolCtx } from './types';
 import { tool } from '@langchain/core/tools';
@@ -54,28 +55,6 @@ export function describeTools(providers: ToolProvider[]) {
     mode: t.mode,
     description: t.description,
     inputSchema: t.schema,
-  }));
-}
-
-interface GeminiFunctionDeclaration {
-  name: string;
-  description: string;
-  parametersJsonSchema: ToolSchema;
-}
-
-/**
- * Gemini wire format. The write-mode marker is appended to the description so
- * the model knows the call will pause for human approval instead of returning a
- * result immediately — without it, models tend to re-call the tool thinking it
- * failed.
- */
-export function toGeminiDeclarations(providers: ToolProvider[]): GeminiFunctionDeclaration[] {
-  return listTools(providers).map((t) => ({
-    name: t.name,
-    description: t.mode === 'write'
-      ? `${t.description}\n[ESCRITA] Esta ação altera dados reais e será apresentada ao usuário para aprovação antes de rodar. Chame uma vez e aguarde o resultado.`
-      : t.description,
-    parametersJsonSchema: t.schema,
   }));
 }
 

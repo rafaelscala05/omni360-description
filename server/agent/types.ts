@@ -1,10 +1,11 @@
-// Shared types for the Agente Operacional (operational agent) module.
+// Shared types for the unified agent module (Content + Operations).
 //
 // The central idea is that a tool is declared once, in a transport-agnostic
-// shape, and every consumer derives from it: today the Gemini function-calling
-// loop (server/agent/loop.ts), tomorrow an MCP server (tools/list + tools/call).
-// Nothing here imports express, @google/genai or firebase — keep it that way so
-// the registry stays portable.
+// shape, and every consumer derives from it: today LangChain/LangGraph tools
+// (server/agent/contentGraph.ts via registry.ts's toLangChainTools), tomorrow
+// an MCP server (tools/list + tools/call). Nothing here imports express,
+// @google/genai or firebase — keep it that way so the registry stays
+// portable.
 
 /** Minimal JSON Schema subset we accept for tool parameters. */
 export interface ToolSchema {
