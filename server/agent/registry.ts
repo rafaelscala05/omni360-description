@@ -11,6 +11,7 @@ import type { DynamicStructuredTool } from '@langchain/core/tools';
 import { interrupt, isGraphInterrupt } from '@langchain/langgraph';
 import * as z from 'zod';
 import { resolveApprovalMode, type AgentSettings } from './agentSettings';
+import { runApprovedWrite } from './execution';
 
 const tools = new Map<string, ToolDef<any>>();
 
@@ -160,7 +161,7 @@ export function toLangChainTools(
           const preview = await def.preview!(ctx, args);
           const mode = resolveApprovalMode(settings, def.name);
           if (mode === 'auto') {
-            return await def.execute!(ctx, args, preview);
+            return await runApprovedWrite(ctx, def, args, preview);
           }
 
           const decisao = interrupt({
@@ -177,7 +178,7 @@ export function toLangChainTools(
           }) as { aprovado: boolean };
 
           if (!decisao?.aprovado) return 'Ação cancelada pelo usuário.';
-          return await def.execute!(ctx, args, preview);
+          return await runApprovedWrite(ctx, def, args, preview);
         } catch (err) {
           // interrupt() propaga suspendendo a execução via uma exceção
           // especial (GraphInterrupt) que o runtime do LangGraph precisa

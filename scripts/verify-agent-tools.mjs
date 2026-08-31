@@ -2,6 +2,8 @@
 // Firestore e não chama Wake/Tiny. Rodar com: npx tsx scripts/verify-agent-tools.mjs
 import { buildFieldDiff, isNoop, makePreview, sameValue, requireStr } from '../server/agent/preview.ts';
 import { registerTool, getTool, listTools, describeTools, toGeminiDeclarations, _resetRegistry } from '../server/agent/registry.ts';
+import { creditActionsFor } from '../server/agent/execution.ts';
+import { CREDIT_ACTIONS } from '../src/credits.ts';
 
 let failures = 0;
 function check(label, actual, expected) {
@@ -144,6 +146,39 @@ const descrito = describeTools(['wake']);
 check('describeTools expõe modo e schema', Object.keys(descrito[0]).sort(), ['description', 'inputSchema', 'mode', 'name', 'provider']);
 check('describeTools não vaza as funções', descrito[0].execute, undefined);
 check('lista sai ordenada por nome', descrito.map((t) => t.name), ['wake.teste.escrever', 'wake.teste.ler']);
+
+// --- execution: creditActionsFor -------------------------------------------
+
+check(
+  'wake write tools debitam agentAction',
+  creditActionsFor({ name: 'wake.banner.criar', provider: 'wake', mode: 'write' }),
+  [CREDIT_ACTIONS.agentAction],
+);
+check(
+  'tiny write tools debitam agentAction',
+  creditActionsFor({ name: 'tiny.produto.atualizar', provider: 'tiny', mode: 'write' }),
+  [CREDIT_ACTIONS.agentAction],
+);
+check(
+  'content.clusters.gerar debita clusters + keyword research',
+  creditActionsFor({ name: 'content.clusters.gerar', provider: 'content', mode: 'write' }),
+  [CREDIT_ACTIONS.contentClusters, CREDIT_ACTIONS.seoKeywordResearch],
+);
+check(
+  'content.calendario.gerar debita calendar',
+  creditActionsFor({ name: 'content.calendario.gerar', provider: 'content', mode: 'write' }),
+  [CREDIT_ACTIONS.contentCalendar],
+);
+check(
+  'content.seo.auditoria.gerar debita seo audit',
+  creditActionsFor({ name: 'content.seo.auditoria.gerar', provider: 'content', mode: 'write' }),
+  [CREDIT_ACTIONS.seoAudit],
+);
+check(
+  'ferramenta de conteúdo sem mapeamento não debita nada aqui (debita mais fundo, fora deste helper)',
+  creditActionsFor({ name: 'content.artigo.publicar', provider: 'content', mode: 'write' }),
+  [],
+);
 
 console.log(failures === 0 ? '\nTodas as verificações passaram.' : `\n${failures} verificação(ões) falharam.`);
 process.exit(failures === 0 ? 0 : 1);

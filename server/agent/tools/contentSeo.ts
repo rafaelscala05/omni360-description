@@ -4,8 +4,7 @@
 import { registerTool } from '../registry';
 import { makePreview, requireStr } from '../preview';
 import type { ToolCtx } from '../types';
-import { CREDIT_ACTIONS } from '../../../src/credits';
-import { triggerAudit, refreshAudit, cancelAudit, loadProject, debitCreditsAdmin } from '../../seoAgent';
+import { triggerAudit, refreshAudit, cancelAudit, loadProject } from '../../seoAgent';
 
 registerTool({
   name: 'content.seo.auditoria.gerar',
@@ -26,7 +25,6 @@ registerTool({
   execute: async (ctx: ToolCtx, _args, preview) => {
     const projectId = String((preview.payload as Record<string, unknown>).projectId);
     const project = await loadProject(ctx.uid, projectId);
-    await debitCreditsAdmin(ctx.uid, CREDIT_ACTIONS.seoAudit, project.config.nomeEmpresa);
     return { audit: await triggerAudit(ctx.uid, project) };
   },
 });
