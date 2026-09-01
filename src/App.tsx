@@ -2,6 +2,7 @@ import React, { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'rea
 import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, Link as LinkIcon, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3, Plug, GraduationCap, Gift, Building2, Zap } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import logoAlfreds from './assets/brand/logo-alfreds-produtos.png';
+import AgentHomeScreen from './modules/agent/AgentHomeScreen';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import MarketingLayout from './marketing/MarketingLayout';
 import HomePage from './marketing/pages/HomePage';
@@ -26,7 +27,6 @@ const CategoryManager = lazy(() => import('./components/categories/CategoryManag
 const CategoryImportModal = lazy(() => import('./components/modals/CategoryImportModal'));
 const ProductEditModal = lazy(() => import('./components/modals/ProductEditModal'));
 const ContentApp = lazy(() => import('./modules/content/ContentApp'));
-const OperationsApp = lazy(() => import('./modules/operations/OperationsApp'));
 import CreditPurchaseModal from './components/modals/CreditPurchaseModal';
 import { Category, Product, AttributeValue, getProductStatusFlags, ProductModalTab } from './types/models';
 import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate, suggestProductAttributes } from './services/productService';
@@ -189,15 +189,20 @@ async function raceTimeout(promise: Promise<unknown>, ms: number): Promise<boole
 export default function App() {
   // State
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  // Rail colapsada por padrão — a tela Início (chat) é o ponto de entrada
+  // agora, e a sidebar não deve competir por espaço com ela. Afeta só
+  // desktop (md:); no mobile a sidebar já era um overlay controlado por
+  // isSidebarOpen, sem conceito de "colapsada".
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [products, setProducts] = useState<Product[]>([]);
   // Mirror of products for deterministic merges during multi-page Wake imports.
   const productsRef = useRef<Product[]>([]);
   useEffect(() => { productsRef.current = products; }, [products]);
   const [originalHeaders, setOriginalHeaders] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [mainView, setMainView] = useState<'products' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company'>('products');
+  const [mainView, setMainView] = useState<'home' | 'products' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company'>('home');
   // Top-level workspace: the Product agent (this App) or the Content agency module.
-  const [workspace, setWorkspace] = useState<'product' | 'content' | 'operations'>('product');
+  const [workspace, setWorkspace] = useState<'product' | 'content'>('product');
   const [exportModel, setExportModel] = useState<'standard' | 'tinyerp'>('standard');
   const [existingCategories, setExistingCategories] = useState<Category[]>([]);
   const [showCategoryImport, setShowCategoryImport] = useState(false);
@@ -2867,20 +2872,6 @@ Retorne APENAS um JSON válido no seguinte formato:
     </div>
   );
 
-  if (user && workspace === 'operations') {
-    return (
-      <Suspense fallback={<div className="h-screen flex items-center justify-center bg-[#f7f9fb] text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
-        <OperationsApp
-          user={user}
-          credits={credits}
-          onSwitchToProduct={() => setWorkspace('product')}
-          onBuyCredits={() => setIsCreditPurchaseOpen(true)}
-          onLogout={handleLogout}
-        />
-      </Suspense>
-    );
-  }
-
   if (user && workspace === 'content') {
     return (
       <Suspense fallback={<div className="h-screen flex items-center justify-center bg-[#f7f9fb] text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
@@ -2916,8 +2907,8 @@ Retorne APENAS um JSON válido no seguinte formato:
 
       {/* Sidebar */}
       <aside className={`
-        fixed inset-y-0 left-0 w-[260px] bg-[#141311] text-white flex-shrink-0 flex flex-col z-40 
-        shadow-[4px_0_24px_rgba(0,0,0,0.05)] pt-4 transition-transform duration-300 md:static md:translate-x-0
+        fixed inset-y-0 left-0 w-[260px] ${sidebarCollapsed ? 'md:w-[76px]' : 'md:w-[260px]'} bg-[#141311] text-white flex-shrink-0 flex flex-col z-40
+        shadow-[4px_0_24px_rgba(0,0,0,0.05)] pt-4 transition-[width,transform] duration-300 md:static md:translate-x-0
         ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}
       `}>
         <div className="h-16 px-5 flex items-center justify-between border-b border-white/5 mx-3 mb-4 pb-4">
@@ -2925,8 +2916,8 @@ Retorne APENAS um JSON válido no seguinte formato:
             <img src={logoAlfreds} alt="Alfreds — Agente de Produto" className="h-9 w-auto" />
           </div>
           {/* Close Sidebar button on mobile */}
-          <button 
-            onClick={() => setIsSidebarOpen(false)} 
+          <button
+            onClick={() => setIsSidebarOpen(false)}
             className="md:hidden p-1 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
             title="Fechar Menu"
           >
@@ -2934,51 +2925,59 @@ Retorne APENAS um JSON válido no seguinte formato:
           </button>
         </div>
 
-        {/* Workspace switcher — only when Content Agent module is enabled */}
+        <div className="hidden md:block px-3 mb-2">
+          <button
+            onClick={() => setSidebarCollapsed((v) => !v)}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+            title={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}
+          >
+            <Menu className="w-4 h-4" />
+            {!sidebarCollapsed && <span className="text-xs font-medium">Recolher</span>}
+          </button>
+        </div>
+
+        {/* Workspace de gestão de conteúdo (projetos, clusters, calendário, artigos) — o chat do agente agora vive na tela Início, não mais aqui dentro. */}
         {hasContentAgent && (
           <div className="px-3 mb-3">
             <button
               onClick={() => { setWorkspace('content'); setIsSidebarOpen(false); }}
               className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 bg-white/5 hover:bg-white/10 transition-colors"
-              title="Trocar para a Agente de Conteúdo"
+              title="Gerenciar clusters, calendário e artigos de conteúdo"
             >
-              <FileText className="w-4 h-4" /> Ir para Agente de Conteúdo
-            </button>
-          </div>
-        )}
-
-        {/* Agente Operacional — opera Wake/Tiny por conversa, com aprovação por ação */}
-        {hasOperationsAgent && (
-          <div className="px-3 mb-3">
-            <button
-              onClick={() => { setWorkspace('operations'); setIsSidebarOpen(false); }}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 bg-white/5 hover:bg-white/10 transition-colors"
-              title="Trocar para o Agente Operacional"
-            >
-              <Zap className="w-4 h-4" /> Ir para Agente Operacional
+              <FileText className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Gerenciar Conteúdo'}
             </button>
           </div>
         )}
 
         <nav className="mt-2 px-3 flex flex-col gap-1 flex-1">
           <button
+            onClick={() => { setMainView('home'); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'home' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
+            title="Início"
+          >
+            <Sparkles className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Início'}
+          </button>
+          <button
             onClick={() => { setMainView('products'); setIsSidebarOpen(false); }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'products' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
+            title="Produtos"
           >
-            <Layout className="w-4 h-4" /> Produtos
+            <Layout className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Produtos'}
           </button>
-          <button 
-            onClick={() => { setMainView('categories'); setIsSidebarOpen(false); }} 
+          <button
+            onClick={() => { setMainView('categories'); setIsSidebarOpen(false); }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'categories' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
+            title="Categorias"
           >
-            <Folder className="w-4 h-4" /> Categorias
+            <Folder className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Categorias'}
           </button>
           <div className="my-2 border-t border-white/5 mx-4"></div>
-          <button 
-            onClick={() => { setMainView('history'); fetchCreditLogs(); setIsSidebarOpen(false); setIsCreditHistoryOpen(false); }} 
+          <button
+            onClick={() => { setMainView('history'); fetchCreditLogs(); setIsSidebarOpen(false); setIsCreditHistoryOpen(false); }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'history' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
+            title="Histórico"
           >
-            <RefreshCw className="w-4 h-4" /> Histórico
+            <RefreshCw className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Histórico'}
           </button>
           <button
             onClick={() => {
@@ -2987,8 +2986,9 @@ Retorne APENAS um JSON válido no seguinte formato:
               if (!referralNavSeen) { setReferralNavSeen(true); localStorage.setItem('referralNavSeen', '1'); }
             }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'referral' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
+            title="Indique e Ganhe"
           >
-            <Gift className="w-4 h-4" /> Indique e Ganhe
+            <Gift className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Indique e Ganhe'}
             {!referralNavSeen && (
               <span className="ml-auto relative flex h-2 w-2 shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FF5B03] opacity-75" />
@@ -2999,7 +2999,7 @@ Retorne APENAS um JSON válido no seguinte formato:
         </nav>
 
         {/* Production queue widget — visible whenever a video job is active */}
-        {activeVideoJob && (() => {
+        {!sidebarCollapsed && activeVideoJob && (() => {
           const step = activeVideoJob.step;
           const total = activeVideoJob.totalShots ?? 4;
           const done = activeVideoJob.shotsDone ?? 0;
@@ -3057,20 +3057,23 @@ Retorne APENAS um JSON válido no seguinte formato:
           <button
             onClick={() => { setMainView('tutorial'); setIsSidebarOpen(false); }}
             className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${mainView === 'tutorial' ? 'bg-[#1e293b] text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+            title="Tutorial"
           >
-            <GraduationCap className="w-4 h-4" /> Tutorial
+            <GraduationCap className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Tutorial'}
           </button>
           <button
             onClick={() => { setMainView('integrations'); setIsSidebarOpen(false); }}
             className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${mainView === 'integrations' ? 'bg-[#1e293b] text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+            title="Integrações"
           >
-            <Plug className="w-4 h-4" /> Integrações
+            <Plug className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Integrações'}
           </button>
           <button
             onClick={() => { setMainView('company'); setIsSidebarOpen(false); }}
             className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${mainView === 'company' ? 'bg-[#1e293b] text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+            title="Empresa"
           >
-            <Building2 className="w-4 h-4" /> Empresa
+            <Building2 className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Empresa'}
           </button>
           <button
             onClick={() => {
@@ -3078,14 +3081,16 @@ Retorne APENAS um JSON válido no seguinte formato:
               openSupportChat().catch((err) => console.error('[suporte] falha ao abrir o chat de ajuda', err));
             }}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 font-medium hover:text-white hover:bg-white/5 transition-colors"
+            title="Ajuda"
           >
-            <HelpCircle className="w-4 h-4" /> Ajuda
+            <HelpCircle className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Ajuda'}
           </button>
           <button
             onClick={() => { setIsTemplateModalOpen(true); setIsSidebarOpen(false); }}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 font-medium hover:text-white hover:bg-white/5 transition-colors"
+            title="Configurações"
           >
-            <Settings className="w-4 h-4" /> Configurações
+            <Settings className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Configurações'}
           </button>
         </div>
       </aside>
@@ -3173,7 +3178,17 @@ Retorne APENAS um JSON válido no seguinte formato:
 
         {/* Dynamic View Content */}
         <main className="flex-1 overflow-y-auto w-full p-6 pb-20 md:pb-6 bg-[#f7f9fb]">
-          {mainView === 'categories' ? (
+          {mainView === 'home' ? (
+            <AgentHomeScreen
+              uid={user.uid}
+              credits={credits}
+              products={products}
+              hasContentAgent={hasContentAgent}
+              hasOperationsAgent={hasOperationsAgent}
+              onOpenIntegrations={() => setMainView('integrations')}
+              onManageContent={() => setWorkspace('content')}
+            />
+          ) : mainView === 'categories' ? (
             <div className="animate-in fade-in h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
               <Suspense fallback={<div className="h-full flex items-center justify-center text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
                 <CategoryManager onClose={async () => {
