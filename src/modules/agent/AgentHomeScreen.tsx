@@ -40,6 +40,7 @@ const AgentHomeScreen: React.FC<Props> = ({
   const [streaming, setStreaming] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [logsAberto, setLogsAberto] = useState(false);
+  const [interagiu, setInteragiu] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -77,6 +78,7 @@ const AgentHomeScreen: React.FC<Props> = ({
     setParcial('');
     setLeituras([]);
     setStreaming(true);
+    setInteragiu(true);
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
@@ -94,6 +96,7 @@ const AgentHomeScreen: React.FC<Props> = ({
     setParcial('');
     setLeituras([]);
     setStreaming(true);
+    setInteragiu(true);
     try {
       await fn();
     } catch (e: any) {
@@ -117,7 +120,11 @@ const AgentHomeScreen: React.FC<Props> = ({
     ? Math.round((products.filter((p) => !!p['Descrição']?.trim()).length / totalProdutos) * 100)
     : 0;
 
-  const semChat = mensagens.length === 0 && !streaming;
+  // `mensagens` só reflete o Firestore quando o listener entrega o snapshot,
+  // o que chega depois do fim do SSE — sem `interagiu`, essa janela faz a
+  // tela voltar para o estado inicial entre o streaming acabar e a mensagem
+  // persistida aparecer.
+  const semChat = mensagens.length === 0 && !streaming && !interagiu;
 
   return (
     <div className="h-full flex flex-col">
