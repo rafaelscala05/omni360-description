@@ -42,6 +42,11 @@ const AgentHomeScreen: React.FC<Props> = ({
   const [logsAberto, setLogsAberto] = useState(false);
   const [interagiu, setInteragiu] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  // Só true durante um turno que teve evento `erro` — usado pra não marcar
+  // `interagiu` num turno que falhou sem persistir nenhuma mensagem (ver
+  // handlers.onFim). Ref porque é lido e escrito dentro do mesmo ciclo
+  // síncrono de despacho dos eventos SSE, antes de qualquer re-render.
+  const turnoComErroRef = useRef(false);
 
   useEffect(() => {
     const off1 = listenMessages(setMensagens);
@@ -69,8 +74,17 @@ const AgentHomeScreen: React.FC<Props> = ({
     // O card chega pelo listener do Firestore; aqui só limpamos o rascunho
     // para não duplicar o texto que já foi persistido na mensagem.
     onAcao: () => { setParcial(''); setLeituras([]); },
-    onErro: (m: string) => setErro(m),
-    onFim: () => { setParcial(''); setLeituras([]); },
+    onErro: (m: string) => { turnoComErroRef.current = true; setErro(m); },
+    onFim: () => {
+      // Se o turno terminou sem erro, a mensagem foi persistida — mantém o
+      // ChatThread visível já a partir de agora, sem esperar o snapshot do
+      // Firestore chegar (evita o flash de volta pro estado inicial). Se
+      // houve erro e nada foi persistido, deixa `interagiu` como estava pra
+      // a tela poder voltar à tela inicial (com o banner de erro nela).
+      if (!turnoComErroRef.current) setInteragiu(true);
+      setParcial('');
+      setLeituras([]);
+    },
   }), []);
 
   const enviar = async (texto: string) => {
@@ -78,7 +92,7 @@ const AgentHomeScreen: React.FC<Props> = ({
     setParcial('');
     setLeituras([]);
     setStreaming(true);
-    setInteragiu(true);
+    turnoComErroRef.current = false;
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
@@ -96,7 +110,7 @@ const AgentHomeScreen: React.FC<Props> = ({
     setParcial('');
     setLeituras([]);
     setStreaming(true);
-    setInteragiu(true);
+    turnoComErroRef.current = false;
     try {
       await fn();
     } catch (e: any) {
