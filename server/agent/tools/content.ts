@@ -6,7 +6,6 @@ import { registerTool } from '../registry';
 import { makePreview, buildFieldDiff, requireStr } from '../preview';
 import type { ToolCtx } from '../types';
 import { adminDb } from '../../firebaseAdmin';
-import { CREDIT_ACTIONS } from '../../../src/credits';
 import {
   scanWebsite,
   getReusableArticles,
@@ -16,7 +15,6 @@ import {
   projectRef,
   generateClusters,
   generateCalendar,
-  debitCreditsAdmin,
   runArticlePipeline,
   regenerateArticleImage,
   publishToBlog,
@@ -179,8 +177,6 @@ registerTool({
   execute: async (ctx: ToolCtx, _args, preview) => {
     const projectId = String((preview.payload as Record<string, unknown>).projectId);
     const project = await loadProject(ctx.uid, projectId);
-    await debitCreditsAdmin(ctx.uid, CREDIT_ACTIONS.contentClusters, { productName: project.config.nomeEmpresa });
-    await debitCreditsAdmin(ctx.uid, CREDIT_ACTIONS.seoKeywordResearch, { productName: project.config.nomeEmpresa });
     return { clusters: await generateClusters(ctx.uid, project) };
   },
 });
@@ -204,7 +200,6 @@ registerTool({
   execute: async (ctx: ToolCtx, _args, preview) => {
     const projectId = String((preview.payload as Record<string, unknown>).projectId);
     const project = await loadProject(ctx.uid, projectId);
-    await debitCreditsAdmin(ctx.uid, CREDIT_ACTIONS.contentCalendar, { productName: project.config.nomeEmpresa });
     return { calendar: await generateCalendar(ctx.uid, project) };
   },
 });

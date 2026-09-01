@@ -1,7 +1,9 @@
 // Verificação da lógica pura do Agente Operacional. Não sobe servidor, não toca
 // Firestore e não chama Wake/Tiny. Rodar com: npx tsx scripts/verify-agent-tools.mjs
 import { buildFieldDiff, isNoop, makePreview, sameValue, requireStr } from '../server/agent/preview.ts';
-import { registerTool, getTool, listTools, describeTools, toGeminiDeclarations, _resetRegistry } from '../server/agent/registry.ts';
+import { registerTool, getTool, listTools, describeTools, _resetRegistry } from '../server/agent/registry.ts';
+import { creditActionsFor } from '../server/agent/execution.ts';
+import { CREDIT_ACTIONS } from '../src/credits.ts';
 
 let failures = 0;
 function check(label, actual, expected) {
@@ -127,23 +129,45 @@ check('ferramenta de provider desconectado não é encontrável na lista', listT
 check('getTool encontra por nome, sem filtrar provider', getTool('tiny.teste.ler').name, 'tiny.teste.ler');
 check('getTool devolve undefined para nome inexistente', getTool('nao.existe'), undefined);
 
-// --- conversão para Gemini --------------------------------------------------
-
-const decls = toGeminiDeclarations(['wake']);
-check('cada ferramenta vira uma declaration', decls.length, 2);
-
-const declEscrita = decls.find((d) => d.name === 'wake.teste.escrever');
-const declLeitura = decls.find((d) => d.name === 'wake.teste.ler');
-check('declaration de escrita avisa o modelo que vai pausar', /\[ESCRITA\]/.test(declEscrita.description), true);
-check('declaration de leitura não leva o marcador', /\[ESCRITA\]/.test(declLeitura.description), false);
-check('schema vai como parametersJsonSchema', declEscrita.parametersJsonSchema, { type: 'object', properties: {} });
-
 // --- introspecção (base do futuro MCP tools/list) --------------------------
 
 const descrito = describeTools(['wake']);
 check('describeTools expõe modo e schema', Object.keys(descrito[0]).sort(), ['description', 'inputSchema', 'mode', 'name', 'provider']);
 check('describeTools não vaza as funções', descrito[0].execute, undefined);
 check('lista sai ordenada por nome', descrito.map((t) => t.name), ['wake.teste.escrever', 'wake.teste.ler']);
+
+// --- execution: creditActionsFor -------------------------------------------
+
+check(
+  'wake write tools debitam agentAction',
+  creditActionsFor({ name: 'wake.banner.criar', provider: 'wake', mode: 'write' }),
+  [CREDIT_ACTIONS.agentAction],
+);
+check(
+  'tiny write tools debitam agentAction',
+  creditActionsFor({ name: 'tiny.produto.atualizar', provider: 'tiny', mode: 'write' }),
+  [CREDIT_ACTIONS.agentAction],
+);
+check(
+  'content.clusters.gerar debita clusters + keyword research',
+  creditActionsFor({ name: 'content.clusters.gerar', provider: 'content', mode: 'write' }),
+  [CREDIT_ACTIONS.contentClusters, CREDIT_ACTIONS.seoKeywordResearch],
+);
+check(
+  'content.calendario.gerar debita calendar',
+  creditActionsFor({ name: 'content.calendario.gerar', provider: 'content', mode: 'write' }),
+  [CREDIT_ACTIONS.contentCalendar],
+);
+check(
+  'content.seo.auditoria.gerar debita seo audit',
+  creditActionsFor({ name: 'content.seo.auditoria.gerar', provider: 'content', mode: 'write' }),
+  [CREDIT_ACTIONS.seoAudit],
+);
+check(
+  'ferramenta de conteúdo sem mapeamento não debita nada aqui (debita mais fundo, fora deste helper)',
+  creditActionsFor({ name: 'content.artigo.publicar', provider: 'content', mode: 'write' }),
+  [],
+);
 
 console.log(failures === 0 ? '\nTodas as verificações passaram.' : `\n${failures} verificação(ões) falharam.`);
 process.exit(failures === 0 ? 0 : 1);

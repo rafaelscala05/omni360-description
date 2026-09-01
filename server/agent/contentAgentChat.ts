@@ -16,9 +16,10 @@
 // eventos SSE + documentos Firestore no mesmo formato do Operacional.
 
 import type express from 'express';
-import { randomUUID } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin';
 import { contentThreadRef } from './firestoreCheckpointer';
+import { resolveConnections } from './connections';
+import type { ToolProvider } from './types';
 
 const CONTENT_AGENT_URL = process.env.CONTENT_AGENT_LANGGRAPH_URL || 'http://localhost:8123';
 const GRAPH_ID = 'content_agent';
@@ -57,9 +58,43 @@ interface ContentAgentAction {
   error?: string;
 }
 
-const threadsCol = (uid: string) => adminDb.collection('users').doc(uid).collection('content_agent_threads');
+interface AgentContext {
+  providers: ToolProvider[];
+  conexoes: { wake: boolean; tiny: boolean };
+}
+
+/**
+ * Which tools a user's account can see, combining the per-module opt-in
+ * flags (users/{uid}.modules.contentAgent / .operationsAgent) with actual
+ * Wake/Tiny connection state. A module being off hides its tools from the
+ * model entirely — same principle resolveConnections already applies to
+ * unconnected platforms, extended to cover the content/operations split.
+ */
+async function resolveAgentContext(uid: string): Promise<AgentContext> {
+  const userSnap = await adminDb.collection('users').doc(uid).get();
+  const modules = (userSnap.data()?.modules ?? {}) as Record<string, boolean>;
+
+  const conns = modules.operationsAgent === true
+    ? await resolveConnections(uid)
+    : { wake: false, tiny: false, providers: [] as ToolProvider[] };
+
+  const providers: ToolProvider[] = [...conns.providers];
+  if (modules.contentAgent === true) providers.push('content');
+
+  return { providers, conexoes: { wake: conns.wake, tiny: conns.tiny } };
+}
+
+/** users/{uid}.modules.contentAgent or .operationsAgent must be on — the account needs at least one of the two features this agent covers. */
+async function requireAnyModule(uid: string): Promise<void> {
+  const snap = await adminDb.collection('users').doc(uid).get();
+  const modules = snap.data()?.modules ?? {};
+  if (modules.contentAgent !== true && modules.operationsAgent !== true) {
+    throw Object.assign(new Error('Nenhum módulo de agente está habilitado nesta conta.'), { status: 403 });
+  }
+}
+
 const messagesCol = (uid: string, threadId: string) => contentThreadRef(uid, threadId).collection('messages');
-const actionsCol = (uid: string) => adminDb.collection('users').doc(uid).collection('content_agent_actions');
+const actionsCol = (uid: string) => adminDb.collection('users').doc(uid).collection('agent_actions');
 
 const httpStatus = (e: any) => (typeof e?.status === 'number' ? e.status : 500);
 
@@ -219,12 +254,20 @@ async function streamRun(
   emit: Emit,
   contexto?: WorkspaceContext,
 ): Promise<RunResult> {
+  const agentContext = await resolveAgentContext(uid);
   const res = await fetch(`${CONTENT_AGENT_URL}/threads/${threadId}/runs/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
     body: JSON.stringify({
       assistant_id: GRAPH_ID,
-      config: { configurable: { uid, ...(contexto ? { contexto } : {}) } },
+      config: {
+        configurable: {
+          uid,
+          providers: agentContext.providers,
+          conexoes: agentContext.conexoes,
+          ...(contexto ? { contexto } : {}),
+        },
+      },
       stream_mode: ['messages-tuple', 'values'],
       ...body,
     }),
@@ -378,64 +421,31 @@ async function resolveAndContinue(
 // Rotas
 // ---------------------------------------------------------------------------
 
+const AGENT_THREAD_ID = 'principal';
+
+async function ensureUserThread(uid: string): Promise<void> {
+  const ref = contentThreadRef(uid, AGENT_THREAD_ID);
+  const snap = await ref.get();
+  if (snap.exists) return;
+  await ensureLangGraphThread(AGENT_THREAD_ID);
+  const now = new Date().toISOString();
+  await ref.set({ id: AGENT_THREAD_ID, createdAt: now, updatedAt: now });
+}
+
 export function registerContentAgentChatRoutes(app: express.Express, { verifyFirebaseToken }: Deps): void {
-  app.get('/api/content-agent/threads', async (req, res) => {
-    try {
-      const { uid } = await verifyFirebaseToken(req);
-      const snap = await threadsCol(uid).orderBy('updatedAt', 'desc').limit(50).get();
-      res.json({ threads: snap.docs.map((d) => d.data()) });
-    } catch (e: any) {
-      res.status(httpStatus(e)).json({ message: e?.message });
-    }
-  });
-
-  app.post('/api/content-agent/threads', async (req, res) => {
-    try {
-      const { uid } = await verifyFirebaseToken(req);
-      const threadId = randomUUID();
-      await ensureLangGraphThread(threadId);
-      const now = new Date().toISOString();
-      await contentThreadRef(uid, threadId).set({
-        id: threadId,
-        titulo: String(req.body?.titulo ?? '').trim().slice(0, 80) || 'Nova conversa',
-        createdAt: now,
-        updatedAt: now,
-      });
-      res.json({ id: threadId });
-    } catch (e: any) {
-      res.status(httpStatus(e)).json({ message: e?.message });
-    }
-  });
-
-  app.delete('/api/content-agent/threads/:id', async (req, res) => {
-    try {
-      const { uid } = await verifyFirebaseToken(req);
-      const ref = contentThreadRef(uid, req.params.id);
-      const msgs = await ref.collection('messages').get();
-      const batch = adminDb.batch();
-      msgs.docs.forEach((d) => batch.delete(d.ref));
-      batch.delete(ref);
-      await batch.commit();
-      res.json({ ok: true });
-    } catch (e: any) {
-      res.status(httpStatus(e)).json({ message: e?.message });
-    }
-  });
-
-  app.post('/api/content-agent/threads/:id/messages', async (req, res) => {
+  app.post('/api/agent/messages', async (req, res) => {
     let emit: Emit | null = null;
     try {
       const { uid } = await verifyFirebaseToken(req);
-      const threadId = req.params.id;
-      const exists = (await contentThreadRef(uid, threadId).get()).exists;
-      if (!exists) return res.status(404).json({ message: 'Conversa não encontrada.' });
+      await requireAnyModule(uid);
+      await ensureUserThread(uid);
 
       const texto = String(req.body?.texto ?? '');
       if (!texto.trim()) return res.status(400).json({ message: 'Mensagem vazia.' });
       const contexto = req.body?.contexto as WorkspaceContext | undefined;
 
       emit = openSse(res);
-      await sendUserMessage(uid, threadId, texto, emit, contexto);
+      await sendUserMessage(uid, AGENT_THREAD_ID, texto, emit, contexto);
       res.end();
     } catch (e: any) {
       if (emit) {
@@ -447,10 +457,11 @@ export function registerContentAgentChatRoutes(app: express.Express, { verifyFir
     }
   });
 
-  app.post('/api/content-agent/actions/:id/execute', async (req, res) => {
+  app.post('/api/agent/actions/:id/execute', async (req, res) => {
     let emit: Emit | null = null;
     try {
       const { uid } = await verifyFirebaseToken(req);
+      await requireAnyModule(uid);
       const action = await claimAction(uid, req.params.id);
       const contexto = req.body?.contexto as WorkspaceContext | undefined;
       emit = openSse(res);
@@ -466,10 +477,11 @@ export function registerContentAgentChatRoutes(app: express.Express, { verifyFir
     }
   });
 
-  app.post('/api/content-agent/actions/:id/reject', async (req, res) => {
+  app.post('/api/agent/actions/:id/reject', async (req, res) => {
     let emit: Emit | null = null;
     try {
       const { uid } = await verifyFirebaseToken(req);
+      await requireAnyModule(uid);
       const action = await claimAction(uid, req.params.id);
       const contexto = req.body?.contexto as WorkspaceContext | undefined;
       emit = openSse(res);

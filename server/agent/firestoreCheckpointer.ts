@@ -7,14 +7,11 @@
 // node_modules/@langchain/langgraph-checkpoint/dist/memory.js), só trocando
 // os dois objetos em memória por documentos no Firestore.
 //
-// Estrutura: users/{uid}/content_agent_threads/{threadId}/checkpoints/{checkpointId},
-// com uma subcoleção `writes/{taskId}__{writeIdx}` por checkpoint. Prefixo
-// PRÓPRIO (`content_agent_threads`, não `agent_threads`) — o Operacional já
-// usa `agent_threads` para docs de mensagem legíveis; misturar os dois
-// namespaces faria um checkpoint (blob base64, opaco) aparecer no mesmo
-// lugar que uma mensagem de chat de verdade. `content_agent_threads/
-// {threadId}` também guarda uma subcoleção `messages` (legível, para a UI —
-// ver server/agent/contentAgentChat.ts), irmã de `checkpoints`.
+// Estrutura: users/{uid}/agent_threads/{threadId}/checkpoints/{checkpointId},
+// com uma subcoleção `writes/{taskId}__{writeIdx}` por checkpoint.
+// `agent_threads/{threadId}` também guarda uma subcoleção `messages`
+// (legível, para a UI — ver server/agent/contentAgentChat.ts), irmã de
+// `checkpoints`.
 import {
   BaseCheckpointSaver,
   WRITES_IDX_MAP,
@@ -50,7 +47,7 @@ function requireThreadId(config: RunnableConfig): string {
 }
 
 export function contentThreadRef(uid: string, threadId: string) {
-  return adminDb.collection('users').doc(uid).collection('content_agent_threads').doc(threadId);
+  return adminDb.collection('users').doc(uid).collection('agent_threads').doc(threadId);
 }
 
 function checkpointsRef(uid: string, threadId: string) {
@@ -61,7 +58,7 @@ function checkpointsRef(uid: string, threadId: string) {
 // deleteThread(threadId) (que não recebe uid) sem precisar de uma
 // collectionGroup query nem de um índice novo — ver o comentário em put().
 function threadOwnerRef(threadId: string) {
-  return adminDb.collection('content_agent_thread_owners').doc(threadId);
+  return adminDb.collection('agent_thread_owners').doc(threadId);
 }
 
 interface CheckpointDoc {
