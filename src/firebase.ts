@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -31,5 +31,10 @@ initializeAppCheck(app, {
 
 // Initialize Firebase services
 export const auth = getAuth(app);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+// getFirestore() usa WebChannel puro, cujo streaming fetch alguns navegadores
+// (Safari com "Prevent Cross-Site Tracking", bloqueadores de anúncio, proxies
+// corporativos) recusam com "Fetch API cannot load ... due to access control
+// checks" — o listener nunca entrega snapshot algum. auto-detect faz o SDK
+// cair pro long-polling comum assim que percebe que o streaming falhou.
+export const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true }, firebaseConfig.firestoreDatabaseId);
 export const storage = getStorage(app);
