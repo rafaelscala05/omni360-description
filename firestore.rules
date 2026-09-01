@@ -180,10 +180,14 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
-      // Agente Operacional. O dono lê a conversa para renderizar o chat, mas
-      // toda escrita passa pelo servidor: as mensagens são o histórico que
-      // alimenta o modelo, e as ações carregam o status de aprovação. Deixar o
-      // cliente escrever aqui permitiria forjar um 'approved' e pular o gate.
+      // Agente unificado (Conteúdo + Operações). O dono lê a conversa para
+      // renderizar o chat, mas toda escrita passa pelo servidor: as
+      // mensagens são o histórico que alimenta o modelo, e as ações
+      // carregam o status de aprovação. Deixar o cliente escrever aqui
+      // permitiria forjar um 'approved' e pular o gate. O servidor também
+      // grava os checkpoints do LangGraph nesta mesma subcoleção de thread
+      // — o cliente nunca acessa `checkpoints` porque não há regra
+      // permitindo, então fica bloqueada por padrão.
       match /agent_threads/{threadId} {
         allow read: if isOwner(userId);
         allow write: if false;
@@ -204,26 +208,6 @@ service cloud.firestore {
       }
       // Trilha de auditoria do que o agente executou: imutável, inclusive para o dono.
       match /agent_audit/{entryId} {
-        allow read: if isOwner(userId);
-        allow write: if false;
-      }
-
-      // Agente de Conteúdo conversacional (LangGraph.js + ponte REST/SSE em
-      // server/agent/contentAgentChat.ts). Mesmo motivo do Agente Operacional
-      // acima: o dono só lê, toda escrita passa pelo servidor (Admin SDK),
-      // que também é quem grava os checkpoints do LangGraph nesta mesma
-      // subcoleção de thread — o cliente nunca acessa `checkpoints` porque
-      // não há regra permitindo, então fica bloqueada por padrão.
-      match /content_agent_threads/{threadId} {
-        allow read: if isOwner(userId);
-        allow write: if false;
-
-        match /messages/{messageId} {
-          allow read: if isOwner(userId);
-          allow write: if false;
-        }
-      }
-      match /content_agent_actions/{actionId} {
         allow read: if isOwner(userId);
         allow write: if false;
       }

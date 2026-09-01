@@ -18,8 +18,7 @@
 import type express from 'express';
 import { adminDb } from '../firebaseAdmin';
 import { contentThreadRef } from './firestoreCheckpointer';
-import { resolveConnections } from './connections';
-import type { ToolProvider } from './types';
+import { resolveAgentContext, requireAnyModule } from './connections';
 
 const CONTENT_AGENT_URL = process.env.CONTENT_AGENT_LANGGRAPH_URL || 'http://localhost:8123';
 const GRAPH_ID = 'content_agent';
@@ -56,41 +55,7 @@ interface ContentAgentAction {
   resolvedAt?: string;
   result?: unknown;
   error?: string;
-}
-
-interface AgentContext {
-  providers: ToolProvider[];
-  conexoes: { wake: boolean; tiny: boolean };
-}
-
-/**
- * Which tools a user's account can see, combining the per-module opt-in
- * flags (users/{uid}.modules.contentAgent / .operationsAgent) with actual
- * Wake/Tiny connection state. A module being off hides its tools from the
- * model entirely — same principle resolveConnections already applies to
- * unconnected platforms, extended to cover the content/operations split.
- */
-async function resolveAgentContext(uid: string): Promise<AgentContext> {
-  const userSnap = await adminDb.collection('users').doc(uid).get();
-  const modules = (userSnap.data()?.modules ?? {}) as Record<string, boolean>;
-
-  const conns = modules.operationsAgent === true
-    ? await resolveConnections(uid)
-    : { wake: false, tiny: false, providers: [] as ToolProvider[] };
-
-  const providers: ToolProvider[] = [...conns.providers];
-  if (modules.contentAgent === true) providers.push('content');
-
-  return { providers, conexoes: { wake: conns.wake, tiny: conns.tiny } };
-}
-
-/** users/{uid}.modules.contentAgent or .operationsAgent must be on — the account needs at least one of the two features this agent covers. */
-async function requireAnyModule(uid: string): Promise<void> {
-  const snap = await adminDb.collection('users').doc(uid).get();
-  const modules = snap.data()?.modules ?? {};
-  if (modules.contentAgent !== true && modules.operationsAgent !== true) {
-    throw Object.assign(new Error('Nenhum módulo de agente está habilitado nesta conta.'), { status: 403 });
-  }
+  dryRun?: boolean;
 }
 
 const messagesCol = (uid: string, threadId: string) => contentThreadRef(uid, threadId).collection('messages');
@@ -409,7 +374,7 @@ async function resolveAndContinue(
     status = 'executed';
     let parsed: unknown = toolResult?.content;
     try { parsed = toolResult ? JSON.parse(toolResult.content) : undefined; } catch { /* mantém string crua */ }
-    patch = { status, result: parsed };
+    patch = { status, result: parsed, dryRun: process.env.AGENT_DRY_RUN === 'true' };
   }
   await resolveAction(uid, action.id, patch);
   emit('resultado', { actionId: action.id, status, error: patch.error ?? null });

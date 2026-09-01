@@ -1,7 +1,8 @@
-// Tipos do Agente Operacional compartilhados pelo módulo e pelo serviço.
-// Espelham server/agent/types.ts — mantenha os dois em sincronia.
+// Tipos do agente unificado (Conteúdo + Operações), compartilhados pelo
+// módulo e pelo serviço. Espelham server/agent/types.ts — mantenha os dois
+// em sincronia.
 
-export type ToolProvider = 'wake' | 'tiny' | 'docs';
+export type ToolProvider = 'wake' | 'tiny' | 'docs' | 'content';
 
 export interface PreviewField {
   campo: string;
@@ -15,6 +16,12 @@ export interface ActionPreview {
   alvo: string;
   campos: PreviewField[];
   avisos: string[];
+  /** Nome da ferramenta e argumentos originais — dá pra UI renderizar um
+   * formulário específico por ferramenta (ex.: content.credencial.conectar)
+   * em vez do diff padrão. Sempre presentes: registry.ts inclui os dois em
+   * todo interrupt(), de qualquer provider. */
+  ferramenta?: string;
+  args?: Record<string, unknown>;
 }
 
 export type AgentActionStatus = 'pending' | 'executed' | 'failed' | 'rejected';
@@ -34,28 +41,13 @@ export interface AgentAction {
   dryRun?: boolean;
 }
 
-export interface ThreadAttachment {
-  url: string;
-  mimeType: string;
-  nome: string;
-}
-
 export interface ThreadMessage {
   id: string;
-  role: 'user' | 'model' | 'function';
+  role: 'user' | 'model';
   texto: string;
-  anexos?: ThreadAttachment[];
   actionIds?: string[];
-  leituras?: { tool: string; ok: boolean }[];
+  leituras?: { tool: string; ok: boolean; erro?: string }[];
   createdAt: string;
-}
-
-export interface AgentThread {
-  id: string;
-  titulo: string;
-  providers: ToolProvider[];
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface AgentConnections {
@@ -85,4 +77,15 @@ export interface AgentLog {
   erro?: string | null;
   ms: number;
   at: string;
+}
+
+// O que está aberto no workspace de conteúdo agora (projeto selecionado,
+// artigo em foco) — mandado a cada mensagem/ação pra o agente saber por
+// padrão de qual projeto o usuário está falando, sem precisar perguntar o
+// ID (que a UI nunca mostra). Espelha WorkspaceContext em
+// server/agent/contentGraph.ts.
+export interface WorkspaceContext {
+  projetoId?: string;
+  projetoNome?: string;
+  articleId?: string;
 }

@@ -43,6 +43,44 @@ export async function resolveConnections(uid: string): Promise<Connections> {
   return { wake: !!wake, tiny: !!tiny, providers };
 }
 
+export interface AgentContext {
+  providers: ToolProvider[];
+  conexoes: { wake: boolean; tiny: boolean };
+}
+
+/**
+ * Which tools a user's account can see, combining the per-module opt-in
+ * flags (users/{uid}.modules.contentAgent / .operationsAgent) with actual
+ * Wake/Tiny connection state. A module being off hides its tools from the
+ * model entirely — same principle resolveConnections already applies to
+ * unconnected platforms, extended to cover the content/operations split.
+ * Shared by contentAgentChat.ts (the chat itself) and routes.ts
+ * (introspection endpoints) so the two never disagree about what an
+ * account can see.
+ */
+export async function resolveAgentContext(uid: string): Promise<AgentContext> {
+  const userSnap = await adminDb.collection('users').doc(uid).get();
+  const modules = (userSnap.data()?.modules ?? {}) as Record<string, boolean>;
+
+  const conns = modules.operationsAgent === true
+    ? await resolveConnections(uid)
+    : { wake: false, tiny: false, providers: [] as ToolProvider[] };
+
+  const providers: ToolProvider[] = [...conns.providers];
+  if (modules.contentAgent === true) providers.push('content');
+
+  return { providers, conexoes: { wake: conns.wake, tiny: conns.tiny } };
+}
+
+/** users/{uid}.modules.contentAgent or .operationsAgent must be on — the account needs at least one of the two features this agent covers. */
+export async function requireAnyModule(uid: string): Promise<void> {
+  const snap = await adminDb.collection('users').doc(uid).get();
+  const modules = snap.data()?.modules ?? {};
+  if (modules.contentAgent !== true && modules.operationsAgent !== true) {
+    throw Object.assign(new Error('Nenhum módulo de agente está habilitado nesta conta.'), { status: 403 });
+  }
+}
+
 const notConnected = (nome: string) =>
   Object.assign(new Error(`${nome} não está conectado nesta conta.`), { status: 400 });
 

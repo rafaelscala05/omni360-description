@@ -7,19 +7,10 @@
 import type express from 'express';
 import { adminDb } from '../firebaseAdmin';
 import { describeTools } from './registry';
-import { resolveConnections } from './connections';
+import { resolveAgentContext, requireAnyModule } from './connections';
 
 interface Deps {
   verifyFirebaseToken: (req: express.Request) => Promise<{ uid: string }>;
-}
-
-/** users/{uid}.modules.contentAgent or .operationsAgent must be on. */
-async function requireAnyModule(uid: string): Promise<void> {
-  const snap = await adminDb.collection('users').doc(uid).get();
-  const modules = snap.data()?.modules ?? {};
-  if (modules.contentAgent !== true && modules.operationsAgent !== true) {
-    throw Object.assign(new Error('Nenhum módulo de agente está habilitado nesta conta.'), { status: 403 });
-  }
 }
 
 const httpStatus = (e: any) => (typeof e?.status === 'number' ? e.status : 500);
@@ -29,7 +20,8 @@ export function registerOperationsRoutes(app: express.Express, { verifyFirebaseT
     try {
       const { uid } = await verifyFirebaseToken(req);
       await requireAnyModule(uid);
-      return res.json(await resolveConnections(uid));
+      const ctx = await resolveAgentContext(uid);
+      return res.json({ wake: ctx.conexoes.wake, tiny: ctx.conexoes.tiny, providers: ctx.providers });
     } catch (e: any) {
       return res.status(httpStatus(e)).json({ message: e?.message });
     }
@@ -41,8 +33,8 @@ export function registerOperationsRoutes(app: express.Express, { verifyFirebaseT
     try {
       const { uid } = await verifyFirebaseToken(req);
       await requireAnyModule(uid);
-      const conns = await resolveConnections(uid);
-      return res.json({ providers: conns.providers, tools: describeTools(conns.providers) });
+      const ctx = await resolveAgentContext(uid);
+      return res.json({ providers: ctx.providers, tools: describeTools(ctx.providers) });
     } catch (e: any) {
       return res.status(httpStatus(e)).json({ message: e?.message });
     }

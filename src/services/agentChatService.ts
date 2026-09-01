@@ -1,17 +1,20 @@
-// Client do Agente Operacional.
+// Client do agente unificado (Conteúdo + Operações). Leituras da conversa
+// vêm do Firestore em tempo real; tudo que avança a conversa vai por
+// /api/agent/*, porque só o servidor pode escrever mensagens e mudar o
+// status de uma ação. SSE é só o canal de "pensando ao vivo".
 //
-// Leituras da conversa vêm do Firestore em tempo real (as rules dão read ao
-// dono); tudo que avança a conversa vai por /api/agent/*, porque só o servidor
-// pode escrever mensagens e mudar o status de uma ação.
-//
-// Mesmo padrão de fetch de src/services/adminService.ts, com um transporte SSE
-// a mais para acompanhar o agente pensando.
+// Substitui src/services/operationsService.ts e
+// src/services/contentAgentChatService.ts — thread única implícita
+// ('principal', mesmo id que server/agent/contentAgentChat.ts usa), sem
+// lista de conversas.
 
-import { collection, doc, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import type {
-  AgentAction, AgentConnections, AgentLog, AgentThread, AgentToolInfo, ThreadAttachment, ThreadMessage,
+  AgentAction, AgentConnections, AgentLog, AgentToolInfo, ThreadMessage, WorkspaceContext,
 } from '../types/agent';
+
+const AGENT_THREAD_ID = 'principal';
 
 async function authHeaders(): Promise<Record<string, string>> {
   const user = auth.currentUser;
@@ -38,7 +41,7 @@ function assertJson(resp: Response): void {
   }
 }
 
-async function call<T>(url: string, method: 'GET' | 'POST' | 'DELETE' = 'GET', body?: unknown): Promise<T> {
+async function call<T>(url: string, method: 'GET' | 'POST' = 'GET', body?: unknown): Promise<T> {
   const resp = await fetch(url, {
     method,
     headers: await authHeaders(),
@@ -54,9 +57,6 @@ async function call<T>(url: string, method: 'GET' | 'POST' | 'DELETE' = 'GET', b
 
 export const fetchConnections = () => call<AgentConnections>('/api/agent/connections');
 export const fetchTools = () => call<{ providers: string[]; tools: AgentToolInfo[] }>('/api/agent/tools');
-export const listThreads = () => call<{ threads: AgentThread[] }>('/api/agent/threads').then((r) => r.threads);
-export const createThread = (titulo: string) => call<{ id: string }>('/api/agent/threads', 'POST', { titulo }).then((r) => r.id);
-export const deleteThread = (id: string) => call<{ ok: boolean }>(`/api/agent/threads/${id}`, 'DELETE');
 
 /** Diagnóstico: últimas chamadas HTTP feitas a Wake/Tiny, com request e response. */
 export const fetchLogs = (opts: { apenasErros?: boolean; limit?: number } = {}) => {
@@ -66,7 +66,7 @@ export const fetchLogs = (opts: { apenasErros?: boolean; limit?: number } = {}) 
   return call<{ logs: AgentLog[] }>(`/api/agent/logs?${p}`).then((r) => r.logs);
 };
 
-// --- Listeners em tempo real -----------------------------------------------
+// --- Listeners em tempo real -------------------------------------------------
 
 const userCol = (...path: string[]) => {
   const uid = auth.currentUser?.uid;
@@ -74,33 +74,21 @@ const userCol = (...path: string[]) => {
   return collection(db, 'users', uid, ...path);
 };
 
-export function listenMessages(threadId: string, cb: (msgs: ThreadMessage[]) => void): () => void {
-  const q = query(userCol('agent_threads', threadId, 'messages'), orderBy('createdAt'));
+export function listenMessages(cb: (msgs: ThreadMessage[]) => void): () => void {
+  const q = query(userCol('agent_threads', AGENT_THREAD_ID, 'messages'), orderBy('createdAt'));
   return onSnapshot(q, (snap) => {
-    // As mensagens 'function' carregam o resultado das ferramentas para o
-    // modelo; não têm nada a mostrar no chat.
-    cb(snap.docs.map((d) => d.data() as ThreadMessage).filter((m) => m.role !== 'function'));
+    cb(snap.docs.map((d) => d.data() as ThreadMessage));
   });
 }
 
-export function listenActions(threadId: string, cb: (actions: AgentAction[]) => void): () => void {
-  const q = query(userCol('agent_actions'), where('threadId', '==', threadId));
+export function listenActions(cb: (actions: AgentAction[]) => void): () => void {
+  const q = query(userCol('agent_actions'), orderBy('createdAt'));
   return onSnapshot(q, (snap) => {
-    cb(snap.docs
-      .map((d) => d.data() as AgentAction)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
+    cb(snap.docs.map((d) => d.data() as AgentAction));
   });
 }
 
-export function listenThread(threadId: string, cb: (t: AgentThread | null) => void): () => void {
-  const uid = auth.currentUser?.uid;
-  if (!uid) throw new Error('Não autenticado');
-  return onSnapshot(doc(db, 'users', uid, 'agent_threads', threadId), (snap) => {
-    cb(snap.exists() ? (snap.data() as AgentThread) : null);
-  });
-}
-
-// --- SSE --------------------------------------------------------------------
+// --- SSE ----------------------------------------------------------------
 
 export interface StreamHandlers {
   onDelta?: (texto: string) => void;
@@ -112,9 +100,9 @@ export interface StreamHandlers {
 }
 
 /**
- * POST que responde text/event-stream. EventSource não serve aqui porque só faz
- * GET e não manda o header de autorização, então o stream é lido na mão a
- * partir do corpo da resposta.
+ * POST que responde text/event-stream. EventSource não serve aqui porque só
+ * faz GET e não manda o header de autorização, então o stream é lido na mão
+ * a partir do corpo da resposta.
  */
 async function stream(url: string, body: unknown, h: StreamHandlers, signal?: AbortSignal): Promise<void> {
   const resp = await fetch(url, {
@@ -147,7 +135,6 @@ async function stream(url: string, body: unknown, h: StreamHandlers, signal?: Ab
       case 'delta': h.onDelta?.(payload.texto ?? ''); break;
       case 'leitura': h.onLeitura?.(payload); break;
       case 'acao': h.onAcao?.(payload); break;
-      case 'aguardando': break; // a ação já chegou pelo evento anterior
       case 'resultado': h.onResultado?.(payload); break;
       case 'erro': h.onErro?.(payload.message ?? 'Falha no agente.'); break;
       case 'fim': h.onFim?.(); break;
@@ -158,7 +145,6 @@ async function stream(url: string, body: unknown, h: StreamHandlers, signal?: Ab
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
-    // Frames SSE são separados por linha em branco.
     const frames = buffer.split('\n\n');
     buffer = frames.pop() ?? '';
     for (const frame of frames) {
@@ -171,32 +157,14 @@ async function stream(url: string, body: unknown, h: StreamHandlers, signal?: Ab
 }
 
 export const enviarMensagem = (
-  threadId: string,
   texto: string,
-  anexos: ThreadAttachment[],
   h: StreamHandlers,
   signal?: AbortSignal,
-) => stream(`/api/agent/threads/${threadId}/messages`, { texto, anexos }, h, signal);
+  contexto?: WorkspaceContext,
+) => stream('/api/agent/messages', { texto, contexto }, h, signal);
 
-export const executarAcao = (actionId: string, h: StreamHandlers) =>
-  stream(`/api/agent/actions/${actionId}/execute`, {}, h);
+export const executarAcao = (actionId: string, h: StreamHandlers, contexto?: WorkspaceContext) =>
+  stream(`/api/agent/actions/${actionId}/execute`, { contexto }, h);
 
-export const rejeitarAcao = (actionId: string, motivo: string | undefined, h: StreamHandlers) =>
-  stream(`/api/agent/actions/${actionId}/reject`, { motivo }, h);
-
-// --- Upload de anexo --------------------------------------------------------
-
-/** Reaproveita POST /api/upload, o mesmo caminho usado pelas imagens do app. */
-export async function uploadAnexo(file: File): Promise<ThreadAttachment> {
-  const base64 = await new Promise<string>((resolve, reject) => {
-    const fr = new FileReader();
-    fr.onload = () => resolve(String(fr.result));
-    fr.onerror = () => reject(new Error('Não consegui ler o arquivo.'));
-    fr.readAsDataURL(file);
-  });
-  const { url } = await call<{ url: string }>('/api/upload', 'POST', {
-    imageBase64: base64,
-    filename: file.name.replace(/\.[^.]+$/, ''),
-  });
-  return { url, mimeType: file.type || 'application/octet-stream', nome: file.name };
-}
+export const rejeitarAcao = (actionId: string, h: StreamHandlers, contexto?: WorkspaceContext) =>
+  stream(`/api/agent/actions/${actionId}/reject`, { contexto }, h);
