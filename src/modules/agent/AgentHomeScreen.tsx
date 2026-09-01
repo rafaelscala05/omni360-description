@@ -47,6 +47,10 @@ const AgentHomeScreen: React.FC<Props> = ({
   // handlers.onFim). Ref porque é lido e escrito dentro do mesmo ciclo
   // síncrono de despacho dos eventos SSE, antes de qualquer re-render.
   const turnoComErroRef = useRef(false);
+  // Quantas mensagens existiam quando o turno atual começou a enviar —
+  // usado pra saber quando o Firestore já persistiu o que `parcial`/
+  // `leituras` mostram (ver o useEffect logo abaixo).
+  const mensagensAoIniciarRef = useRef(0);
 
   useEffect(() => {
     const off1 = listenMessages(setMensagens);
@@ -55,6 +59,19 @@ const AgentHomeScreen: React.FC<Props> = ({
     });
     return () => { off1(); off2(); };
   }, [uid]);
+
+  // O rascunho local (`parcial`/`leituras`) só deve sumir quando a mensagem
+  // persistida equivalente já estiver em `mensagens` — limpar no evento SSE
+  // (`acao` no meio do turno, `fim` no final) assume que o Firestore já
+  // escreveu aquilo, mas o listener pode demorar bem mais que o SSE
+  // (principalmente em long-polling), e nesse intervalo o texto some da
+  // tela antes de a versão persistida reaparecer.
+  useEffect(() => {
+    if (mensagens.length > mensagensAoIniciarRef.current) {
+      setParcial('');
+      setLeituras([]);
+    }
+  }, [mensagens]);
 
   useEffect(() => {
     if (!hasOperationsAgent) return;
@@ -71,9 +88,10 @@ const AgentHomeScreen: React.FC<Props> = ({
   const handlers = useMemo(() => ({
     onDelta: (t: string) => setParcial((p) => p + t),
     onLeitura: (l: { tool: string; ok: boolean; erro?: string }) => setLeituras((p) => [...p, l]),
-    // O card chega pelo listener do Firestore; aqui só limpamos o rascunho
-    // para não duplicar o texto que já foi persistido na mensagem.
-    onAcao: () => { setParcial(''); setLeituras([]); },
+    // O card em si vem do listener de `agent_actions`; o rascunho de texto
+    // (`parcial`) só é limpo quando `mensagens` confirmar que já foi
+    // persistido (ver o useEffect de `mensagens` acima) — não aqui.
+    onAcao: () => {},
     onErro: (m: string) => { turnoComErroRef.current = true; setErro(m); },
     onFim: () => {
       // Se o turno terminou sem erro, a mensagem foi persistida — mantém o
@@ -82,8 +100,6 @@ const AgentHomeScreen: React.FC<Props> = ({
       // houve erro e nada foi persistido, deixa `interagiu` como estava pra
       // a tela poder voltar à tela inicial (com o banner de erro nela).
       if (!turnoComErroRef.current) setInteragiu(true);
-      setParcial('');
-      setLeituras([]);
     },
   }), []);
 
@@ -93,6 +109,7 @@ const AgentHomeScreen: React.FC<Props> = ({
     setLeituras([]);
     setStreaming(true);
     turnoComErroRef.current = false;
+    mensagensAoIniciarRef.current = mensagens.length;
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
@@ -111,6 +128,7 @@ const AgentHomeScreen: React.FC<Props> = ({
     setLeituras([]);
     setStreaming(true);
     turnoComErroRef.current = false;
+    mensagensAoIniciarRef.current = mensagens.length;
     try {
       await fn();
     } catch (e: any) {
