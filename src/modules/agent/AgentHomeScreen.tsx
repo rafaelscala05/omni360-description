@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Boxes, FileText, ScrollText, Store, Zap } from 'lucide-react';
+import { AlertCircle, Boxes, FileText, ScrollText, Store, Zap } from 'lucide-react';
 import type { Product } from '../../types/models';
 import type { AgentAction, AgentConnections, ThreadMessage } from '../../types/agent';
 import {
@@ -135,6 +135,12 @@ const AgentHomeScreen: React.FC<Props> = ({
         {semChat ? (
           <div className="flex-1 overflow-y-auto px-6 py-10">
             <div className="max-w-3xl mx-auto flex flex-col items-center text-center gap-6">
+              {erro && (
+                <div className="w-full flex items-start gap-2 text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5 text-left">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{erro}</span>
+                </div>
+              )}
               <AgentSphere size={132} active={streaming} />
               <div className="space-y-2">
                 <h1 className="text-xl font-semibold text-[#141311]">Como posso ajudar hoje?</h1>

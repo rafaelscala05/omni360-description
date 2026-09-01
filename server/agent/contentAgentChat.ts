@@ -386,7 +386,18 @@ async function resolveAndContinue(
 // Rotas
 // ---------------------------------------------------------------------------
 
-const AGENT_THREAD_ID = 'principal';
+// Thread única e implícita por usuário (sem lista de conversas — ver
+// docs/superpowers/specs/2026-08-31-unified-agent-design.md, "Modelo de
+// thread"). Precisa ser um UUID válido, não um slug qualquer: o servidor
+// real do LangGraph.js (`langgraphjs dev`, usado em desenvolvimento — o
+// standalone server de produção em contentAgentServer.ts não valida isso)
+// recusa POST /threads com HTTP 400 se thread_id não passar em
+// z.string().uuid() (ver ThreadCreate em
+// node_modules/@langchain/langgraph-api/dist/schemas.mjs). O isolamento por
+// usuário não depende deste valor ser único — cada usuário tem seu próprio
+// checkpointer no Firestore, chaveado por uid (ver firestoreCheckpointer.ts)
+// — então é seguro todo usuário compartilhar o mesmo thread_id literal.
+const AGENT_THREAD_ID = '00000000-0000-0000-0000-000000000001';
 
 async function ensureUserThread(uid: string): Promise<void> {
   const ref = contentThreadRef(uid, AGENT_THREAD_ID);
