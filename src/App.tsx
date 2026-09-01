@@ -200,7 +200,7 @@ export default function App() {
   useEffect(() => { productsRef.current = products; }, [products]);
   const [originalHeaders, setOriginalHeaders] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [mainView, setMainView] = useState<'home' | 'products' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company'>('home');
+  const [mainView, setMainView] = useState<'home' | 'products' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company'>('products');
   // Top-level workspace: the Product agent (this App) or the Content agency module.
   const [workspace, setWorkspace] = useState<'product' | 'content'>('product');
   const [exportModel, setExportModel] = useState<'standard' | 'tinyerp'>('standard');
