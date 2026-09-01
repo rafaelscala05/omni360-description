@@ -2950,13 +2950,16 @@ Retorne APENAS um JSON válido no seguinte formato:
         )}
 
         <nav className="mt-2 px-3 flex flex-col gap-1 flex-1">
-          <button
-            onClick={() => { setMainView('home'); setIsSidebarOpen(false); }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'home' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
-            title="Início"
-          >
-            <Sparkles className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Início'}
-          </button>
+          {/* Chat unificado (Alfreds) — só aparece pra quem tem pelo menos um módulo de agente habilitado (conteúdo ou operações). */}
+          {(hasContentAgent || hasOperationsAgent) && (
+            <button
+              onClick={() => { setMainView('home'); setIsSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'home' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
+              title="Início"
+            >
+              <Sparkles className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Início'}
+            </button>
+          )}
           <button
             onClick={() => { setMainView('products'); setIsSidebarOpen(false); }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'products' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
