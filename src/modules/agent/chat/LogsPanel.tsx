@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AlertOctagon, ChevronDown, ChevronRight, RefreshCw, X } from 'lucide-react';
-import type { AgentLog } from '../../types/agent';
-import { fetchLogs } from '../../services/operationsService';
+import type { AgentLog } from '../../../types/agent';
+import { fetchLogs } from '../../../services/agentChatService';
 
 interface Props {
   aberto: boolean;

@@ -1,10 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import { AlertCircle, Bot, Check, Search, X } from 'lucide-react';
-import type { AgentAction, ThreadMessage } from '../../types/agent';
+import type { AgentAction, ThreadMessage } from '../../../types/agent';
 import ActionCard from './ActionCard';
 import Markdown from './Markdown';
 
 interface Props {
+  uid: string;
   mensagens: ThreadMessage[];
   acoes: Record<string, AgentAction>;
   parcial: string;
@@ -30,7 +31,7 @@ const Avatar = () => (
 );
 
 const ChatThread: React.FC<Props> = ({
-  mensagens, acoes, parcial, leituras, streaming, erro, onExecutar, onRejeitar,
+  uid, mensagens, acoes, parcial, leituras, streaming, erro, onExecutar, onRejeitar,
 }) => {
   const fimRef = useRef<HTMLDivElement>(null);
   const grudarRef = useRef(true);
@@ -53,23 +54,8 @@ const ChatThread: React.FC<Props> = ({
           if (m.role === 'user') {
             return (
               <div key={m.id} className="flex justify-end">
-                <div className="max-w-[85%] space-y-2">
-                  {!!m.anexos?.length && (
-                    <div className="flex flex-wrap gap-2 justify-end">
-                      {m.anexos.map((a) => (
-                        a.mimeType.startsWith('image/') ? (
-                          <img key={a.url} src={a.url} alt={a.nome} className="max-h-40 rounded-lg border border-slate-200" />
-                        ) : (
-                          <span key={a.url} className="px-2 py-1 rounded bg-slate-100 text-xs text-slate-600">{a.nome}</span>
-                        )
-                      ))}
-                    </div>
-                  )}
-                  {m.texto && (
-                    <div className="bg-slate-100 rounded-2xl rounded-tr-sm px-4 py-2.5 text-[15px] text-slate-800 whitespace-pre-wrap">
-                      {m.texto}
-                    </div>
-                  )}
+                <div className="max-w-[85%] bg-slate-100 rounded-2xl rounded-tr-sm px-4 py-2.5 text-[15px] text-slate-800 whitespace-pre-wrap">
+                  {m.texto}
                 </div>
               </div>
             );
@@ -84,12 +70,12 @@ const ChatThread: React.FC<Props> = ({
               <div className="min-w-0 flex-1 space-y-3">
                 {!!m.leituras?.length && (
                   <div className="space-y-1">
-                    {m.leituras.map((l, i) => <Leitura key={i} tool={l.tool} ok={l.ok} />)}
+                    {m.leituras.map((l, i) => <Leitura key={i} {...l} />)}
                   </div>
                 )}
                 {m.texto && <Markdown texto={m.texto} />}
                 {cards.map((a) => (
-                  <ActionCard key={a.id} action={a} onExecutar={onExecutar} onRejeitar={onRejeitar} />
+                  <ActionCard key={a.id} uid={uid} action={a} onExecutar={onExecutar} onRejeitar={onRejeitar} />
                 ))}
               </div>
             </div>
