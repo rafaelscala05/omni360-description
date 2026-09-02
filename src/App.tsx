@@ -34,12 +34,18 @@ import { fetchCategories, generateCategoryHierarchy, flattenHierarchy, getEffect
 import IntegrationsView from './components/integrations/IntegrationsView';
 import TutorialView from './components/tutorial/TutorialView';
 import type { WakePushFields } from './components/integrations/WakeConnector';
-import type { WakeNormalizedProduct, WakePushProduct } from './services/wakeService';
-import type { TinyPushProduct } from './services/tinyService';
+import { wakeStatus, wakePush } from './services/wakeService';
+import type { WakeNormalizedProduct, WakePushProduct, WakePushResult } from './services/wakeService';
+import { tinyStatus, tinyPush } from './services/tinyService';
+import type { TinyPushProduct, TinyPushResult } from './services/tinyService';
 import { type BlingPushFields } from './components/integrations/BlingConnector';
+import { blingStatus, blingPush } from './services/blingService';
 import type { BlingPushProduct, BlingPushResult } from './services/blingService';
 import { type IdworksPushFields } from './components/integrations/IdworksConnector';
+import { idworksStatus, idworksPush } from './services/idworksService';
 import type { IdworksPushProduct, IdworksPushResult } from './services/idworksService';
+import { INTEGRATION_META, getProductIntegrationLinks, type IntegrationKey, type SendPanelItem, type SendPanelState } from './types/integrations';
+const IntegrationSendPanel = lazy(() => import('./components/modals/IntegrationSendPanel'));
 import { fetchAndProcessImage } from './utils/imageUtils';
 import { generateGrounded, parseJsonResponse } from './services/aiService';
 import { CREDIT_ACTIONS, resolveCreditCost, type CreditAction } from './credits';
@@ -223,6 +229,12 @@ export default function App() {
   const [statusFilterMode, setStatusFilterMode] = useState<'esconder' | 'mostrar'>('esconder');
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   const [expandedParentIds, setExpandedParentIds] = useState<Set<string>>(new Set());
+  const [filterIntegracao, setFilterIntegracao] = useState<'' | IntegrationKey | 'nenhuma'>('');
+
+  // Envio para integrações
+  const [integrationConnections, setIntegrationConnections] = useState<Record<IntegrationKey, boolean>>({ wake: false, tiny: false, bling: false, idworks: false });
+  const [isSendDropdownOpen, setIsSendDropdownOpen] = useState(false);
+  const [sendPanel, setSendPanel] = useState<SendPanelState | null>(null);
   
   // Generation State
   const [isGeneratingMass, setIsGeneratingMass] = useState(false);
@@ -345,6 +357,21 @@ export default function App() {
       }
     }
     testConnection();
+  }, [isAuthReady, user]);
+
+  // Carrega o status de conexão das integrações uma vez, para saber quais
+  // aparecem habilitadas no dropdown "Enviar para integração".
+  useEffect(() => {
+    if (!isAuthReady || !user) return;
+    (async () => {
+      const [w, t, b, i] = await Promise.allSettled([wakeStatus(), tinyStatus(), blingStatus(), idworksStatus()]);
+      setIntegrationConnections({
+        wake: w.status === 'fulfilled' && !!w.value.validated,
+        tiny: t.status === 'fulfilled' && !!t.value.validated,
+        bling: b.status === 'fulfilled' && !!b.value.validated,
+        idworks: i.status === 'fulfilled' && !!i.value.validated,
+      });
+    })();
   }, [isAuthReady, user]);
 
   // Auto-abre o wizard de onboarding de primeiro produto uma única vez,
@@ -939,6 +966,11 @@ export default function App() {
                             (p['Código (SKU)']?.toLowerCase() || '').includes(searchQuery.toLowerCase());
       const matchesMarca = filterMarca ? p['Marca'] === filterMarca : true;
       const matchesCategoria = filterCategoria ? p['Categoria'] === filterCategoria : true;
+      const matchesIntegracao = filterIntegracao
+        ? filterIntegracao === 'nenhuma'
+          ? getProductIntegrationLinks(p).length === 0
+          : getProductIntegrationLinks(p).includes(filterIntegracao)
+        : true;
 
       // Status filters (AND): modo "esconder" oculta produtos que JÁ têm aquele dado gerado;
       // modo "mostrar" inverte e só mantém os que têm aquele dado gerado
@@ -954,9 +986,9 @@ export default function App() {
         if (statusFilters.atributos && !flags.atributosGerados) return false;
       }
 
-      return matchesSearch && matchesMarca && matchesCategoria;
+      return matchesSearch && matchesMarca && matchesCategoria && matchesIntegracao;
     });
-  }, [products, searchQuery, filterMarca, filterCategoria, statusFilters, statusFilterMode]);
+  }, [products, searchQuery, filterMarca, filterCategoria, filterIntegracao, statusFilters, statusFilterMode]);
 
   const paginatedProducts = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -1976,6 +2008,112 @@ export default function App() {
     }
     if (n > 0) await batch.commit().catch((e) => console.warn('Falha ao salvar _idworksPushed:', e));
   };
+
+  // --- Envio para integrações a partir da barra de seleção -------------------
+  // Reaproveita os builders/push acima (já escopados por selectedIds); a única
+  // diferença é que aqui o usuário escolhe a integração de destino num dropdown
+  // em vez de cada Connector ter seu próprio botão fixo, e o resultado é
+  // acompanhado num painel lateral em vez do modal de cada Connector.
+  const handleSendToIntegration = async (integration: IntegrationKey) => {
+    if (selectedIds.size === 0 || !integrationConnections[integration]) return;
+
+    let payload: any[] = [];
+    let pushFn: (chunk: any[]) => Promise<{ resultados: any[] }>;
+    let idField: string;
+
+    if (integration === 'bling') {
+      const campos: BlingPushFields = { descricao: true, seo: true, fiscal: true, imagens: true };
+      payload = await buildBlingPushPayload(campos);
+      pushFn = blingPush as any;
+      idField = 'blingId';
+    } else if (integration === 'idworks') {
+      const campos: IdworksPushFields = { descricao: true, seo: true, fiscal: true, imagens: true };
+      payload = await buildIdworksPushPayload(campos);
+      pushFn = idworksPush as any;
+      idField = 'idworksId';
+    } else if (integration === 'tiny') {
+      payload = await buildTinyPushPayload();
+      pushFn = tinyPush as any;
+      idField = 'tinyId';
+    } else {
+      const campos: WakePushFields = { descricao: true, seo: true, atributos: true, imagens: true };
+      payload = await buildWakePushPayload(campos);
+      pushFn = wakePush as any;
+      idField = 'produtoId';
+    }
+
+    if (payload.length === 0) {
+      alert(`Nenhum produto selecionado está vinculado à integração ${INTEGRATION_META[integration].label} (ou não há alterações pendentes para enviar).`);
+      return;
+    }
+
+    const productByExternalId = new Map<string, Product>();
+    for (const p of productsRef.current) {
+      const key = integration === 'wake' ? p._wakeProductId : integration === 'tiny' ? p._tinyProductId : integration === 'bling' ? p._blingProductId : p._idworksProductId;
+      if (key) productByExternalId.set(key, p);
+    }
+
+    const items: SendPanelItem[] = payload.map((it) => {
+      const p = productByExternalId.get(it[idField]);
+      return {
+        id: it[idField],
+        sku: p?.['Código (SKU)'] || it.sku || '',
+        nome: p?.['Descrição'] || p?.['Título SEO'] || '(sem nome)',
+        status: 'pending',
+      };
+    });
+
+    setSendPanel({ open: true, integration, items, sending: true });
+
+    const CHUNK_SIZE = 5;
+    const allResults: any[] = [];
+    for (let i = 0; i < payload.length; i += CHUNK_SIZE) {
+      const chunk = payload.slice(i, i + CHUNK_SIZE);
+      const chunkIds = new Set(chunk.map((it) => it[idField]));
+      setSendPanel((prev) => (prev ? { ...prev, items: prev.items.map((it) => (chunkIds.has(it.id) ? { ...it, status: 'sending' } : it)) } : prev));
+
+      try {
+        const { resultados } = await pushFn(chunk);
+        allResults.push(...resultados);
+        const byResultId = new Map(resultados.map((r: any) => [r[idField], r]));
+        setSendPanel((prev) =>
+          prev
+            ? {
+                ...prev,
+                items: prev.items.map((it) => {
+                  const r = byResultId.get(it.id);
+                  if (!r) return it;
+                  const log = r.steps
+                    ? Object.entries(r.steps as Record<string, string>).filter(([, v]) => v !== 'ok').map(([k, v]) => `${k}: ${v}`).join(' · ')
+                    : undefined;
+                  return { ...it, status: r.ok ? 'ok' : 'error', log };
+                }),
+              }
+            : prev,
+        );
+      } catch (e: any) {
+        setSendPanel((prev) =>
+          prev
+            ? { ...prev, items: prev.items.map((it) => (chunkIds.has(it.id) ? { ...it, status: 'error', log: e?.message || 'Falha na requisição.' } : it)) }
+            : prev,
+        );
+      }
+    }
+
+    if (integration === 'bling' && allResults.length) await handleBlingPushed(allResults as BlingPushResult[]);
+    if (integration === 'idworks' && allResults.length) await handleIdworksPushed(allResults as IdworksPushResult[]);
+
+    setSendPanel((prev) => (prev ? { ...prev, sending: false } : prev));
+  };
+
+  // Fecha o painel de envio automaticamente alguns segundos depois de concluir
+  // sem erros; se houve erro, mantém aberto para o usuário ver o log.
+  useEffect(() => {
+    if (!sendPanel || sendPanel.sending || !sendPanel.open) return;
+    if (sendPanel.items.some((it) => it.status === 'error')) return;
+    const t = setTimeout(() => setSendPanel((prev) => (prev ? { ...prev, open: false } : prev)), 2500);
+    return () => clearTimeout(t);
+  }, [sendPanel]);
 
   const handleSaveImages =(productId: string, selectedImage: string, ambientImages: string[], tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number }) => {
     setProducts(prev => {
@@ -3367,6 +3505,18 @@ Retorne APENAS um JSON válido no seguinte formato:
                           <option value="">Todas as Categorias</option>
                           {categorias.map(m => <option key={m} value={m}>{m}</option>)}
                         </select>
+                        <select
+                          className="w-[calc(50%-4px)] md:w-auto px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-700 font-medium focus:ring-[#FF5B03] outline-none focus:border-[#FF5B03] bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
+                          value={filterIntegracao}
+                          onChange={(e) => setFilterIntegracao(e.target.value as typeof filterIntegracao)}
+                          title="Filtrar por integração"
+                        >
+                          <option value="">Todas as Integrações</option>
+                          {(Object.keys(INTEGRATION_META) as IntegrationKey[]).map((key) => (
+                            <option key={key} value={key}>{INTEGRATION_META[key].label}</option>
+                          ))}
+                          <option value="nenhuma">Sem integração</option>
+                        </select>
 
                         {(() => {
                           const activeStatusCount = Object.values(statusFilters).filter(Boolean).length;
@@ -3494,6 +3644,47 @@ Retorne APENAS um JSON válido no seguinte formato:
                           <Trash2 className="w-3.5 h-3.5" />
                           <span className="hidden sm:inline">Excluir ({selectedIds.size})</span>
                         </button>
+
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setIsSendDropdownOpen((v) => !v)}
+                            disabled={selectedIds.size === 0}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-blue-700 border border-blue-200 rounded-lg text-sm font-medium hover:bg-blue-50 hover:border-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                            title="Enviar para integração"
+                          >
+                            <CloudUpload className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Enviar ({selectedIds.size})</span>
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </button>
+
+                          {isSendDropdownOpen && (
+                            <>
+                              <div className="fixed inset-0 z-30" onClick={() => setIsSendDropdownOpen(false)} />
+                              <div className="absolute right-0 mt-1.5 w-60 bg-white border border-slate-200 rounded-lg shadow-lg z-40 py-1.5 animate-in fade-in slide-in-from-top-1">
+                                <div className="px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">Enviar produtos para</div>
+                                {(Object.keys(INTEGRATION_META) as IntegrationKey[]).map((key) => {
+                                  const meta = INTEGRATION_META[key];
+                                  const connected = integrationConnections[key];
+                                  return (
+                                    <button
+                                      key={key}
+                                      type="button"
+                                      disabled={!connected}
+                                      onClick={() => { setIsSendDropdownOpen(false); handleSendToIntegration(key); }}
+                                      title={connected ? `Enviar selecionados para ${meta.label}` : `${meta.label} não conectado — configure em Integrações`}
+                                      className="w-full flex items-center gap-2 px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                                    >
+                                      <meta.Icon className="w-3.5 h-3.5" />
+                                      {meta.label}
+                                      {!connected && <span className="ml-auto text-[9px] font-bold uppercase text-slate-400">Não conectado</span>}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          )}
+                        </div>
 
                         <div className="w-px h-5 bg-slate-200 mx-1 sm:mx-2"></div>
 
@@ -3728,6 +3919,22 @@ Retorne APENAS um JSON válido no seguinte formato:
                               {visibleColumns['Descrição'] && (
                                 <td className="px-4 py-3 text-slate-900 bg-inherit">
                                   <div className="max-w-[400px] 2xl:max-w-[600px] truncate" title={product['Descrição']}>{product['Descrição']}</div>
+                                  {getProductIntegrationLinks(product).length > 0 && (
+                                    <div className="flex items-center gap-1 mt-1">
+                                      {getProductIntegrationLinks(product).map((key) => {
+                                        const meta = INTEGRATION_META[key];
+                                        return (
+                                          <span
+                                            key={key}
+                                            title={`Vinculado ao ${meta.label}`}
+                                            className={cn("inline-flex items-center justify-center w-5 h-5 p-0.5 rounded border", meta.className)}
+                                          >
+                                            <meta.Icon className="w-2.5 h-2.5" />
+                                          </span>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
                                   {hasChildren && (
                                     <div className="mt-0.5">
                                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-50 text-orange-600 border border-orange-200 uppercase tracking-wide cursor-pointer" onClick={() => setExpandedParentIds(prev => { const next = new Set(prev); if (next.has(product._id)) next.delete(product._id); else next.add(product._id); return next; })}>
@@ -3977,6 +4184,18 @@ Retorne APENAS um JSON válido no seguinte formato:
                                     <span className="text-[11px] text-slate-500 truncate">{product['Categoria']}</span>
                                   </>
                                 )}
+                                {getProductIntegrationLinks(product).map((key) => {
+                                  const meta = INTEGRATION_META[key];
+                                  return (
+                                    <span
+                                      key={key}
+                                      title={`Vinculado ao ${meta.label}`}
+                                      className={cn("inline-flex items-center justify-center w-4 h-4 p-0.5 rounded border shrink-0", meta.className)}
+                                    >
+                                      <meta.Icon className="w-2.5 h-2.5" />
+                                    </span>
+                                  );
+                                })}
                               </div>
                             </div>
                           </div>
@@ -4629,6 +4848,15 @@ Retorne APENAS um JSON válido no seguinte formato:
             user={user}
             onClose={() => setIsOnboardingWizardOpen(false)}
             onCompleted={() => setIsOnboardingWizardOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {sendPanel && (
+        <Suspense fallback={null}>
+          <IntegrationSendPanel
+            panel={sendPanel}
+            onClose={() => setSendPanel((prev) => (prev ? { ...prev, open: false } : prev))}
           />
         </Suspense>
       )}
