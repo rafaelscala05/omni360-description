@@ -236,6 +236,7 @@ export function normalizeProduct(p: any): TinyNormalizedProduct {
 export interface TinyPushProduct {
   tinyId: string;
   sku?: string;
+  nome?: string;
   descricaoHtml?: string;
   seoTitle?: string;
   seoDescription?: string;
@@ -255,7 +256,7 @@ export interface TinyPushProduct {
 // value), 'sem alteração' (local data matches Tiny already, nothing sent), or
 // 'sem dado local' (nothing locally to compare/send for this group). Field errors
 // use the exception message in place of one of these three.
-export type TinyPushSteps = Record<'descricao' | 'seo' | 'fiscal' | 'imagens', string>;
+export type TinyPushSteps = Record<'titulo' | 'descricao' | 'seo' | 'fiscal' | 'imagens', string>;
 
 export interface TinyPushResult {
   tinyId: string;
@@ -268,14 +269,14 @@ export interface TinyPushResult {
 // echoing every field the API expects (Tiny's PUT is a full-record update) and
 // overriding only the fields whose local value actually differs from what Tiny
 // already has — never previously-selected groups, never blank local data.
-export function buildProductPutBody(current: any, prod: TinyPushProduct): { body: Record<string, unknown>; steps: TinyPushSteps } {
+export function buildProductPutBody(current: any, prod: TinyPushProduct, sobrescreverTitulo = true): { body: Record<string, unknown>; steps: TinyPushSteps } {
   const dim = current?.dimensoes ?? {};
   const seo = current?.seo ?? {};
   const precos = current?.precos ?? {};
   const estoque = current?.estoque ?? {};
   const cur = normalizeProduct(current);
   const steps: TinyPushSteps = {
-    descricao: 'sem dado local', seo: 'sem dado local', fiscal: 'sem dado local', imagens: 'sem dado local',
+    titulo: 'sem dado local', descricao: 'sem dado local', seo: 'sem dado local', fiscal: 'sem dado local', imagens: 'sem dado local',
   };
   const strDiffers = (a?: string, b?: string) => (a ?? '').trim() !== (b ?? '').trim();
 
@@ -317,6 +318,15 @@ export function buildProductPutBody(current: any, prod: TinyPushProduct): { body
       linkVideo: seo.linkVideo,
     },
   };
+
+  if (prod.nome) {
+    if (!sobrescreverTitulo) {
+      steps.titulo = 'sobrescrita desativada';
+    } else {
+      steps.titulo = strDiffers(prod.nome, cur.nome) ? 'ok' : 'sem alteração';
+      if (steps.titulo === 'ok') body.descricao = prod.nome;
+    }
+  }
 
   if (prod.descricaoHtml) {
     steps.descricao = strDiffers(prod.descricaoHtml, cur.descricaoHtml) ? 'ok' : 'sem alteração';

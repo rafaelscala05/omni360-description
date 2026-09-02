@@ -5,6 +5,8 @@ import {
   tinyImportStart, tinyImportStatus, tinyImportCancel, tinyImportSetAutosync, tinyWebhookConfig,
   type TinyStatus, type TinyImportJob, type TinyPushProduct, type TinyPushResult,
 } from '../../services/tinyService';
+import { auth, db } from '../../firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 interface Props {
   // Called when a background import finishes, so the app can reload products.
@@ -54,6 +56,28 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, pushCandid
   const [savingWebhook, setSavingWebhook] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [pushResults, setPushResults] = useState<TinyPushResult[] | null>(null);
+  // Se marcado (padrão), o envio sobrescreve o título/nome do produto no Tiny
+  // com o título salvo aqui; desmarcado preserva o título que já está no Tiny.
+  const [sobrescreverTitulo, setSobrescreverTitulo] = useState(true);
+
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    getDoc(doc(db, `users/${uid}/settings/tiny`))
+      .then((snap) => {
+        const val = snap.data()?.sobrescreverTitulo;
+        if (typeof val === 'boolean') setSobrescreverTitulo(val);
+      })
+      .catch((e) => console.warn('Falha ao carregar configurações do Tiny:', e));
+  }, []);
+
+  const handleToggleSobrescreverTitulo = (checked: boolean) => {
+    setSobrescreverTitulo(checked);
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    setDoc(doc(db, `users/${uid}/settings/tiny`), { sobrescreverTitulo: checked }, { merge: true })
+      .catch((e) => console.warn('Falha ao salvar configurações do Tiny:', e));
+  };
 
   const refreshStatus = async (): Promise<TinyStatus> => {
     let next: TinyStatus;
@@ -224,7 +248,7 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, pushCandid
         setError('Selecione produtos importados do Tiny (com ID Tiny) para enviar.');
         return;
       }
-      const res = await tinyPush(payload);
+      const res = await tinyPush(payload, sobrescreverTitulo);
       setPushResults(res.resultados);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Falha no envio.');
@@ -521,6 +545,18 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, pushCandid
               Imagens são enviadas como anexos por URL (mescladas com as já existentes no produto).
               As URLs precisam ser públicas para o Tiny conseguir baixá-las.
             </p>
+            <label className="flex items-center gap-2 text-xs text-slate-600">
+              <input
+                type="checkbox"
+                checked={sobrescreverTitulo}
+                onChange={(e) => handleToggleSobrescreverTitulo(e.target.checked)}
+                className="rounded border-slate-300 text-[#FF5B03] focus:ring-[#FF5B03]"
+              />
+              Sobrescrever título do produto no Tiny
+              <span className="text-slate-400">
+                — desmarcado, mantém o título que já está salvo no Tiny
+              </span>
+            </label>
             <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={handlePush}
@@ -550,7 +586,7 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, pushCandid
                       : <AlertCircle className="w-3.5 h-3.5 text-red-500 mt-0.5 shrink-0" />}
                     <span className="font-medium text-slate-700">{r.sku || r.tinyId}</span>
                     <span className="text-slate-500">
-                      {(['descricao', 'seo', 'fiscal', 'imagens'] as const)
+                      {(['titulo', 'descricao', 'seo', 'fiscal', 'imagens'] as const)
                         .filter((k) => r.steps[k] !== 'sem dado local')
                         .map((k) => `${k}: ${r.steps[k]}`)
                         .join(' · ') || 'nada a enviar'}

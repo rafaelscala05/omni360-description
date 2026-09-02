@@ -297,6 +297,26 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
     }));
   };
 
+  // Renomeia a chave do atributo apenas neste produto — não altera a definição
+  // da categoria. Se o atributo vinha da categoria, o rename o desvincula do
+  // schema (ele passa a aparecer como "Extra" na próxima renderização).
+  const handleAttributeRename = (oldKey: string, rawNewName: string) => {
+    const newKey = rawNewName.trim();
+    if (!newKey || newKey === oldKey) return;
+    setEditedProduct(prev => {
+      const attrs = { ...(prev.attributes || {}) };
+      if (!(oldKey in attrs)) return prev;
+      if (newKey in attrs) {
+        alert(`Já existe um atributo chamado "${newKey}" neste produto.`);
+        return prev;
+      }
+      const val = attrs[oldKey];
+      delete attrs[oldKey];
+      attrs[newKey] = val;
+      return { ...prev, attributes: attrs };
+    });
+  };
+
   const handleGenerateIA = async () => {
     setIsGeneratingIA(true);
     try {
@@ -708,8 +728,14 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                               )}
                               
                               <div className="flex items-center gap-2 mb-4">
-                                 <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{attr.label}</label>
-                                 {isAI && <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full"><Sparkles className="w-2.5 h-2.5" /> SUGESTÃO</span>}
+                                 <input
+                                   type="text"
+                                   defaultValue={attr.label}
+                                   onBlur={(e) => handleAttributeRename(attr.key, e.target.value)}
+                                   title="Renomear este atributo neste produto"
+                                   className="text-[11px] font-black text-slate-400 uppercase tracking-widest bg-transparent border-b border-transparent hover:border-slate-200 focus:border-[#FF5B03] focus:text-slate-600 outline-none flex-1 min-w-0 py-0.5"
+                                 />
+                                 {isAI && <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full shrink-0"><Sparkles className="w-2.5 h-2.5" /> SUGESTÃO</span>}
                               </div>
 
                               <input 
@@ -751,7 +777,13 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                                </div>
                                
                                <div className="mb-4">
-                                  <label className="text-[11px] font-black text-orange-400 uppercase tracking-widest">{key.replace(/_/g, ' ')}</label>
+                                  <input
+                                    type="text"
+                                    defaultValue={key.replace(/_/g, ' ')}
+                                    onBlur={(e) => handleAttributeRename(key, e.target.value)}
+                                    title="Renomear este atributo"
+                                    className="text-[11px] font-black text-orange-400 uppercase tracking-widest bg-transparent border-b border-transparent hover:border-orange-200 focus:border-orange-500 outline-none w-full py-0.5"
+                                  />
                                </div>
 
                                <input 

@@ -178,11 +178,11 @@ export async function getV2Product(uid: string, id: string): Promise<TinyNormali
 // (unidade/preco/origem/situacao/tipo) are always echoed from the current product;
 // only descricao_complementar/seo/fiscal/imagens are conditionally overridden.
 // Skips the API call entirely when nothing differs.
-export async function updateV2Product(uid: string, id: string, prod: TinyPushProduct): Promise<TinyPushSteps> {
+export async function updateV2Product(uid: string, id: string, prod: TinyPushProduct, sobrescreverTitulo = true): Promise<TinyPushSteps> {
   const current = (await tinyV2Call(uid, 'produto.obter.php', { id }))?.produto ?? {};
   const cur = normalizeV2Product(current);
   const steps: TinyPushSteps = {
-    descricao: 'sem dado local', seo: 'sem dado local', fiscal: 'sem dado local', imagens: 'sem dado local',
+    titulo: 'sem dado local', descricao: 'sem dado local', seo: 'sem dado local', fiscal: 'sem dado local', imagens: 'sem dado local',
   };
   const strDiffers = (a?: string, b?: string) => (a ?? '').trim() !== (b ?? '').trim();
 
@@ -197,6 +197,15 @@ export async function updateV2Product(uid: string, id: string, prod: TinyPushPro
     situacao: current?.situacao,
     tipo: current?.tipo,
   };
+
+  if (prod.nome) {
+    if (!sobrescreverTitulo) {
+      steps.titulo = 'sobrescrita desativada';
+    } else {
+      steps.titulo = strDiffers(prod.nome, cur.nome) ? 'ok' : 'sem alteração';
+      if (steps.titulo === 'ok') produto.nome = prod.nome;
+    }
+  }
 
   if (prod.descricaoHtml) {
     steps.descricao = strDiffers(prod.descricaoHtml, cur.descricaoHtml) ? 'ok' : 'sem alteração';
@@ -247,7 +256,7 @@ export async function updateV2Product(uid: string, id: string, prod: TinyPushPro
     if (imagensChanged) produto.imagens_externas = novas.map((url) => ({ imagem_externa: { url } }));
   }
 
-  const hasAnyChange = steps.descricao === 'ok' || steps.seo === 'ok' || steps.fiscal === 'ok' || steps.imagens === 'ok';
+  const hasAnyChange = steps.titulo === 'ok' || steps.descricao === 'ok' || steps.seo === 'ok' || steps.fiscal === 'ok' || steps.imagens === 'ok';
   if (!hasAnyChange) return steps;
 
   Object.keys(produto).forEach((k) => { if (produto[k] === undefined || produto[k] === null) delete produto[k]; });

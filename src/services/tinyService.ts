@@ -40,6 +40,7 @@ export interface TinyNormalizedProduct {
 export interface TinyPushProduct {
   tinyId: string;
   sku?: string;
+  nome?: string;
   descricaoHtml?: string;
   seoTitle?: string;
   seoDescription?: string;
@@ -60,7 +61,7 @@ export interface TinyPushResult {
   tinyId: string;
   sku?: string;
   ok: boolean;
-  steps: Record<'descricao' | 'seo' | 'fiscal' | 'imagens', string>;
+  steps: Record<'titulo' | 'descricao' | 'seo' | 'fiscal' | 'imagens', string>;
 }
 
 async function authHeaders(): Promise<Record<string, string>> {
@@ -156,9 +157,9 @@ export async function tinyImportSetAutosync(enabled: boolean, everyHours: number
   });
 }
 
-export async function tinyPush(produtos: TinyPushProduct[]): Promise<{ resultados: TinyPushResult[] }> {
+export async function tinyPush(produtos: TinyPushProduct[], sobrescreverTitulo?: boolean): Promise<{ resultados: TinyPushResult[] }> {
   const resp = await fetch('/api/tiny/push', {
-    method: 'POST', headers: await authHeaders(), body: JSON.stringify({ produtos }),
+    method: 'POST', headers: await authHeaders(), body: JSON.stringify({ produtos, sobrescreverTitulo }),
   });
   return handle(resp);
 }

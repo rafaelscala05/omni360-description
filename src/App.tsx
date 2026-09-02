@@ -1791,6 +1791,7 @@ export default function App() {
     return tinySelectedProducts(productsRef.current).map((p) => ({
       tinyId: p._tinyProductId!,
       sku: p['Código (SKU)'],
+      nome: p['Descrição'],
       descricaoHtml: p['Descrição complementar'],
       seoTitle: p['Título SEO'],
       seoDescription: p['Descrição SEO'],
@@ -2033,7 +2034,17 @@ export default function App() {
       idField = 'idworksId';
     } else if (integration === 'tiny') {
       payload = await buildTinyPushPayload();
-      pushFn = tinyPush as any;
+      let sobrescreverTitulo = true;
+      if (user) {
+        try {
+          const snap = await getDoc(doc(db, `users/${user.uid}/settings/tiny`));
+          const val = snap.data()?.sobrescreverTitulo;
+          if (typeof val === 'boolean') sobrescreverTitulo = val;
+        } catch (e) {
+          console.warn('Falha ao carregar configuração de título do Tiny:', e);
+        }
+      }
+      pushFn = ((chunk: any[]) => tinyPush(chunk, sobrescreverTitulo)) as any;
       idField = 'tinyId';
     } else {
       const campos: WakePushFields = { descricao: true, seo: true, atributos: true, imagens: true };

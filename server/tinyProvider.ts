@@ -59,12 +59,12 @@ export async function tinyGetProduct(uid: string, id: string, version?: TinyVers
   return normalizeProduct(await tinyFetch<any>(uid, 'GET', `/produtos/${id}`));
 }
 
-export async function tinyUpdateProduct(uid: string, id: string, prod: TinyPushProduct, version?: TinyVersion): Promise<TinyPushSteps> {
+export async function tinyUpdateProduct(uid: string, id: string, prod: TinyPushProduct, version?: TinyVersion, sobrescreverTitulo = true): Promise<TinyPushSteps> {
   const v = version ?? await getActiveVersion(uid);
-  if (v === 'v2') return updateV2Product(uid, id, prod);
+  if (v === 'v2') return updateV2Product(uid, id, prod, sobrescreverTitulo);
   const current = await tinyFetch<any>(uid, 'GET', `/produtos/${id}`);
-  const { body, steps } = buildProductPutBody(current, prod);
-  const hasAnyChange = steps.descricao === 'ok' || steps.seo === 'ok' || steps.fiscal === 'ok' || steps.imagens === 'ok';
+  const { body, steps } = buildProductPutBody(current, prod, sobrescreverTitulo);
+  const hasAnyChange = steps.titulo === 'ok' || steps.descricao === 'ok' || steps.seo === 'ok' || steps.fiscal === 'ok' || steps.imagens === 'ok';
   if (hasAnyChange) await tinyFetch(uid, 'PUT', `/produtos/${id}`, body);
   return steps;
 }
@@ -105,6 +105,7 @@ export function registerTinyProviderRoutes(app: express.Express, { verifyFirebas
       if (!version) return res.status(400).json({ message: 'Tiny não conectado.' });
 
       const produtos: TinyPushProduct[] = Array.isArray(req.body?.produtos) ? req.body.produtos : [];
+      const sobrescreverTitulo = req.body?.sobrescreverTitulo !== false;
       if (produtos.length > MAX_PUSH_BATCH) {
         return res.status(400).json({
           message: `Selecione no máximo ${MAX_PUSH_BATCH} produtos por envio. Marque produtos específicos na lista antes de enviar.`,
@@ -115,17 +116,17 @@ export function registerTinyProviderRoutes(app: express.Express, { verifyFirebas
       for (const prod of produtos) {
         if (!prod.tinyId) {
           resultados.push({ tinyId: prod.tinyId, sku: prod.sku, ok: false, steps: {
-            descricao: 'Sem ID Tiny', seo: 'Sem ID Tiny', fiscal: 'Sem ID Tiny', imagens: 'Sem ID Tiny',
+            titulo: 'Sem ID Tiny', descricao: 'Sem ID Tiny', seo: 'Sem ID Tiny', fiscal: 'Sem ID Tiny', imagens: 'Sem ID Tiny',
           } });
           continue;
         }
         try {
-          const steps = await tinyUpdateProduct(uid, prod.tinyId, prod, version);
+          const steps = await tinyUpdateProduct(uid, prod.tinyId, prod, version, sobrescreverTitulo);
           resultados.push({ tinyId: prod.tinyId, sku: prod.sku, ok: true, steps });
         } catch (e: any) {
           const msg = e?.message ?? 'erro';
           resultados.push({ tinyId: prod.tinyId, sku: prod.sku, ok: false, steps: {
-            descricao: msg, seo: msg, fiscal: msg, imagens: msg,
+            titulo: msg, descricao: msg, seo: msg, fiscal: msg, imagens: msg,
           } });
         }
       }
