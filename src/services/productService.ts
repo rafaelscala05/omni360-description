@@ -70,7 +70,7 @@ Incorpore essas características visuais de forma natural e persuasiva na descri
 - Misture: nome exato, variações de busca, categoria, marca`
 };
 
-export const generateDescriptionText = async (product: Product, categories: Category[], template: Template = defaultTemplate): Promise<any> => {
+export const generateDescriptionText = async (product: Product, categories: Category[], template: Template = defaultTemplate, variantContext?: string): Promise<any> => {
     const effectiveAttributes = product.categoryId
       ? getEffectiveAttributes(product.categoryId, categories)
       : [];
@@ -84,12 +84,21 @@ PARA CADA UM DOS ATRIBUTOS ABAIXO, EXTRAIA O VALOR DO TEXTO OU IMAGEM (EM PORTUG
 ${attrsInfo}
 Retorne-os no campo "extracted_attributes" do JSON.` : `Se identificar características importantes do produto (cor, material, tamanho, etc), sugira-os no campo "suggested_attributes" do JSON em PORTUGUÊS DO BRASIL.`;
 
-    // Format variations
+    // Format variations. `product._children` is never persisted — callers that
+    // want the parent's prompt to list every variant in the group attach it
+    // on-the-fly (built from the derived pai→filhos grouping) just for this call.
     let variacoesText = 'Nenhuma';
     if (product._children && product._children.length > 0) {
       const allVariations = product._children.map((c: any) => c['Variações']).filter(Boolean);
       variacoesText = allVariations.join(' | ');
     }
+
+    // Geração individual dentro de um grupo de variantes: pede pra IA
+    // contextualizar a variação específica deste SKU (ex: "Cor: Azul").
+    const variantContextRules = variantContext ? `
+ESTE PRODUTO É UMA VARIANTE ESPECÍFICA DENTRO DE UM GRUPO (ex: uma cor/tamanho entre várias opções do mesmo produto base).
+A variação deste SKU específico é: ${variantContext}
+Mencione essa característica de forma natural na descrição, título e SEO — o texto deve deixar claro qual variação é esta, sem simplesmente repetir "${variantContext}" de forma mecânica.` : '';
 
     const visualEnhancementRules = `
 ESPECIFICAÇÕES VISUAIS DA DESCRIÇÃO (OBRIGATÓRIO):
@@ -126,7 +135,7 @@ ${attributeInstructions}`;
       return val != null ? String(val) : '';
     });
 
-    const parts: Part[] = [{ text: promptText + '\n\n' + visualEnhancementRules }];
+    const parts: Part[] = [{ text: promptText + '\n\n' + visualEnhancementRules + variantContextRules }];
 
     const imageUrl = product._selectedImage || product['URL imagem 1'] || product['URL imagem externa 1'];
     if (imageUrl) {

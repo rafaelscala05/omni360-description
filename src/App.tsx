@@ -241,7 +241,11 @@ export default function App() {
   const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 0 });
   const [generationLog, setGenerationLog] = useState<string>('');
   const [isEnrichingMass, setIsEnrichingMass] = useState(false);
-  
+  // IDs de produtos pai cujo grupo de variantes está gerando descrição agora
+  // (modo "grupo" ou "individual"), para desabilitar/spinnar os botões daquele grupo.
+  const [groupGeneratingIds, setGroupGeneratingIds] = useState<Set<string>>(new Set());
+  const isGroupGenerating = (parentId: string) => groupGeneratingIds.has(parentId);
+
   // Preview Modal State
   const [previewProduct, setPreviewProduct] = useState<Product | null>(null);
   const [previewInitialTab, setPreviewInitialTab] = useState<ProductModalTab>('geral');
@@ -955,6 +959,22 @@ export default function App() {
   const marcas = useMemo(() => Array.from(new Set(products.map(p => p['Marca']).filter(Boolean) as string[])).sort(), [products]);
   const categorias = useMemo(() => Array.from(new Set(products.map(p => p['Categoria']).filter(Boolean) as string[])).sort(), [products]);
 
+  // Agrupamento pai→variantes, derivado do array flat a cada mudança de `products`
+  // (nunca guardado no produto) — assim sobrevive a reload e cobre qualquer origem
+  // (Excel, Tiny, Bling, IdWorks), já que todas guardam cada SKU como doc próprio
+  // ligado só por 'Código do pai'.
+  const childrenByParentSku = useMemo(() => {
+    const map = new Map<string, Product[]>();
+    for (const p of products) {
+      const parentSku = p['Código do pai'];
+      if (parentSku) {
+        if (!map.has(parentSku)) map.set(parentSku, []);
+        map.get(parentSku)!.push(p);
+      }
+    }
+    return map;
+  }, [products]);
+
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
       // Only show parent or simple products in the main list
@@ -1130,35 +1150,13 @@ export default function App() {
           };
         });
 
-        // Group variations under parents
-        const parents: Product[] = [];
-        const childrenMap = new Map<string, Product[]>();
+        // Parents and variant children are stored flat, side by side, linked only
+        // by 'Código do pai' — same shape the Tiny/Bling/IdWorks importers already
+        // use. Grouping for the UI/generation is derived from that field
+        // (see `childrenByParentSku`), never nested on the parent object, so
+        // every child keeps its own independent doc/selection/push identity.
+        const finalProducts = allProducts;
 
-        allProducts.forEach(p => {
-          const parentCode = p['Código do pai'];
-          if (parentCode) {
-            if (!childrenMap.has(parentCode)) {
-              childrenMap.set(parentCode, []);
-            }
-            childrenMap.get(parentCode)!.push(p);
-          } else {
-            parents.push(p);
-          }
-        });
-
-        // Attach children to parents
-        const finalProducts = parents.map(parent => {
-          const sku = parent['Código (SKU)'];
-          if (sku && childrenMap.has(sku)) {
-            return { ...parent, _children: childrenMap.get(sku) };
-          }
-          return parent;
-        });
-
-        // We store ALL products in state so we can export them later, but we only render parents.
-        // Actually, it's better to store all products flat, and just compute the children for rendering.
-        // Let's store all products flat, but link them.
-        
         // Extract unique categories
         const uniqueCategories = Array.from(new Set(allProducts.map(p => p['Categoria']?.toString().trim()).filter(Boolean))) as string[];
         
@@ -1324,13 +1322,6 @@ export default function App() {
       if (p.attributes) {
         Object.keys(p.attributes).forEach(k => dynamicAttrs.add(k));
       }
-      if (p._children) {
-        p._children.forEach(c => {
-          if (c.attributes) {
-            Object.keys(c.attributes).forEach(k => dynamicAttrs.add(k));
-          }
-        });
-      }
     });
 
     const exportData = productsToExport.flatMap(p => {
@@ -1458,14 +1449,9 @@ export default function App() {
         return sanitizeExportRow(row, ['ID']);
       };
 
+      // Variant children are flat entries in `products` (linked via 'Código do
+      // pai'), so `productsToExport` already includes them — no separate pass needed.
       rowsToExport.push(prepareRow(p));
-
-      // Children rows
-      if (p._children && p._children.length > 0) {
-        p._children.forEach(child => {
-          rowsToExport.push(prepareRow(child));
-        });
-      }
 
       return rowsToExport;
     });
@@ -2518,6 +2504,98 @@ Retorne APENAS um JSON válido no seguinte formato:
     }, 3000);
   };
 
+  // --- Geração para grupos de variantes (barra de ações ao expandir) --------
+
+  // "Gerar para o grupo": 1 chamada de IA cujo resultado é aplicado ao pai e a
+  // todas as variantes — reaproveita o mesmo mecanismo de copy-down já usado na
+  // geração individual/em massa (buildGeneratedParentPatch/buildGeneratedChildPatch
+  // via applyGenerationToProductAndChildren), só que como ação explícita do
+  // usuário. Debita 1 crédito (mesma action key da geração individual).
+  const handleGenerateGroupShared = async (parentId: string) => {
+    const parent = productsRef.current.find(p => p._id === parentId);
+    if (!parent || isGroupGenerating(parentId)) return;
+    const parentSku = parent['Código (SKU)'];
+    const groupChildren = parentSku ? (childrenByParentSku.get(parentSku) || []) : [];
+    if (groupChildren.length === 0) return;
+
+    if (!ensureCredits(CREDIT_ACTIONS.generateSeoSingle)) return;
+
+    setGroupGeneratingIds(prev => new Set(prev).add(parentId));
+    try {
+      const template = templates.find(t => t.id === selectedTemplateId) || defaultTemplate;
+      // `_children` aqui é só um parâmetro passageiro pro prompt listar as
+      // variações do grupo — nunca é gravado de volta no produto.
+      const productForPrompt: Product = { ...parent, _children: groupChildren };
+      const generatedData = await generateDescriptionText(productForPrompt, existingCategories, template);
+      applyGenerationToProductAndChildren(parentId, generatedData);
+      await consumeCredit(CREDIT_ACTIONS.generateSeoSingle, parent['Descrição'], parent['Código (SKU)']);
+      trackDescriptionGenerated({ mode: 'single', sku: parent['Código (SKU)'] as string });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      alert(`Erro ao gerar descrição para o grupo de "${parent['Descrição']}": ${errorMessage}`);
+    } finally {
+      setGroupGeneratingIds(prev => { const next = new Set(prev); next.delete(parentId); return next; });
+    }
+  };
+
+  // "Gerar individualmente": uma chamada de IA por SKU do grupo (pai + cada
+  // variante), cada uma recebendo a variação específica daquele SKU como
+  // contexto extra no prompt. Debita 1 crédito por SKU gerado (mesmo custo da
+  // geração em massa), com o mesmo padrão de working/flush em lote usado em
+  // startGenerateMass — evita clonar o catálogo inteiro a cada item.
+  const handleGenerateGroupIndividually = async (parentId: string) => {
+    const parent = productsRef.current.find(p => p._id === parentId);
+    if (!parent || isGroupGenerating(parentId)) return;
+    const parentSku = parent['Código (SKU)'];
+    const groupChildren = parentSku ? (childrenByParentSku.get(parentSku) || []) : [];
+    if (groupChildren.length === 0) return;
+
+    const memberIds = [parentId, ...groupChildren.map(c => c._id)];
+    if (!ensureCredits(CREDIT_ACTIONS.generateSeoMass, memberIds.length)) return;
+
+    setGroupGeneratingIds(prev => new Set(prev).add(parentId));
+
+    let working = productsRef.current.slice();
+    const indexById = new Map(working.map((p, i) => [p._id, i] as const));
+    const flush = () => {
+      working = working.slice();
+      productsRef.current = working;
+      setProducts(working);
+    };
+
+    let successCount = 0;
+    for (const memberId of memberIds) {
+      const idx = indexById.get(memberId);
+      if (idx === undefined) continue;
+      const member = working[idx];
+      working[idx] = { ...member, _isGenerating: true };
+
+      try {
+        const template = templates.find(t => t.id === selectedTemplateId) || defaultTemplate;
+        const variantContext = member['Variações'] || undefined;
+        const generatedData = await generateDescriptionText(member, existingCategories, template, variantContext);
+        working[idx] = { ...working[idx], ...buildGeneratedParentPatch(working[idx], generatedData) };
+        if (!(await consumeCredit(CREDIT_ACTIONS.generateSeoMass, member['Descrição'], member['Código (SKU)']))) { flush(); break; }
+        successCount++;
+      } catch (error) {
+        console.error(`Falha ao gerar variante ${memberId}`, error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        working[idx] = {
+          ...working[idx],
+          _isGenerating: false,
+          _generationError: errorMessage,
+          _statusDescricao: 'Erro',
+          _statusSEO: 'Erro',
+          _isDirty: true,
+        };
+      }
+      flush();
+    }
+
+    if (successCount > 0) trackDescriptionGenerated({ mode: 'mass', product_count: successCount });
+    setGroupGeneratingIds(prev => { const next = new Set(prev); next.delete(parentId); return next; });
+  };
+
   const handleEnrichMass = async () => {
     if (selectedIds.size === 0) return;
 
@@ -2853,29 +2931,6 @@ Retorne APENAS um JSON válido no seguinte formato:
     const num = typeof price === 'string' ? parseFloat(price) : price;
     if (isNaN(num)) return price;
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
-  };
-
-  const renderVariations = (product: Product) => {
-    if (!product._children || product._children.length === 0) return null;
-    
-    // Extract unique attributes
-    const allAttributes = new Set<string>();
-    product._children.forEach(child => {
-      const vars = child['Variações'];
-      if (vars) {
-        vars.split('||').forEach(v => allAttributes.add(v.trim()));
-      }
-    });
-
-    return (
-      <div className="flex flex-wrap gap-1 mt-1">
-        {Array.from(allAttributes).map((attr, i) => (
-          <span key={i} className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-800 border border-gray-200">
-            {attr}
-          </span>
-        ))}
-      </div>
-    );
   };
 
   if (!isAuthReady) {
@@ -3855,7 +3910,8 @@ Retorne APENAS um JSON válido no seguinte formato:
                             const isError = !!product._generationError || product._statusDescricao === 'Erro';
                             const isEnriched = !!product._enrichmentLog;
                             const flags = getProductStatusFlags(product);
-                            const hasChildren = !!(product._children && product._children.length > 0);
+                            const groupChildren = childrenByParentSku.get(product['Código (SKU)'] || '') || [];
+                            const hasChildren = groupChildren.length > 0;
                             const isExpanded = expandedParentIds.has(product._id);
 
                             return (
@@ -3878,7 +3934,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                                       return next;
                                     })}
                                     className="text-slate-400 hover:text-slate-700 transition-colors"
-                                    title={isExpanded ? 'Recolher variantes' : `Expandir ${product._children!.length} variante(s)`}
+                                    title={isExpanded ? 'Recolher variantes' : `Expandir ${groupChildren.length} variante(s)`}
                                   >
                                     <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
                                   </button>
@@ -3949,7 +4005,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                                   {hasChildren && (
                                     <div className="mt-0.5">
                                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-50 text-orange-600 border border-orange-200 uppercase tracking-wide cursor-pointer" onClick={() => setExpandedParentIds(prev => { const next = new Set(prev); if (next.has(product._id)) next.delete(product._id); else next.add(product._id); return next; })}>
-                                        {product._children!.length} variante{product._children!.length > 1 ? 's' : ''} {isExpanded ? '▲' : '▼'}
+                                        {groupChildren.length} variante{groupChildren.length > 1 ? 's' : ''} {isExpanded ? '▲' : '▼'}
                                       </span>
                                     </div>
                                   )}
@@ -4055,7 +4111,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                                  </div>
                               </td>
                             </tr>
-                            {hasChildren && isExpanded && product._children!.map(child => (
+                            {hasChildren && isExpanded && groupChildren.map(child => (
                               <tr key={child._id} className="bg-slate-50/70 border-l-2 border-orange-300">
                                 <td className="pl-10 pr-3 py-2.5 border-r border-slate-100">
                                   <input
@@ -4108,9 +4164,83 @@ Retorne APENAS um JSON válido no seguinte formato:
                                 {visibleColumns['Categoria'] && <td className="px-4 py-2.5 text-slate-400 text-xs">{child['Categoria'] || '-'}</td>}
                                 {visibleColumns['Marca'] && <td className="px-4 py-2.5 text-slate-400 text-xs">{child['Marca'] || '-'}</td>}
                                 {visibleColumns['Status'] && <td className="px-4 py-2.5 text-slate-400 text-xs">—</td>}
-                                <td className="px-4 py-2.5"></td>
+                                <td className="px-5 py-2.5 text-right sticky right-0 bg-slate-50/70 shadow-[inset_1px_0_0_0_#e2e8f0] z-10 w-[280px]">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <button
+                                      onClick={() => openPreview(child)}
+                                      className="text-[#FF5B03] hover:bg-orange-600 hover:text-white bg-orange-50 border border-orange-100 p-1.5 rounded-lg transition-all shadow-sm flex items-center justify-center w-7 h-7"
+                                      title="Visualizar Detalhes desta variante"
+                                    >
+                                      <Eye className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      onClick={() => openPreview(child, 'atributos')}
+                                      className={cn(
+                                        "rounded-md transition-all shadow-sm flex items-center justify-center w-7 h-7",
+                                        getProductStatusFlags(child).atributosGerados
+                                          ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                          : "bg-white text-slate-400 hover:text-amber-700 border border-slate-200 hover:border-amber-300 hover:bg-amber-50"
+                                      )}
+                                      title="Gerar Atributos desta variante"
+                                    >
+                                      <Tag className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      onClick={() => openPreview(child, 'imagem')}
+                                      className={cn(
+                                        "rounded-md transition-all shadow-sm flex items-center justify-center w-7 h-7",
+                                        getProductStatusFlags(child).imagensGeradas
+                                          ? "bg-orange-50 text-orange-700 border border-orange-200"
+                                          : "bg-white text-slate-400 hover:text-orange-700 border border-slate-200 hover:border-orange-300 hover:bg-orange-50"
+                                      )}
+                                      title="Gerar Imagens desta variante"
+                                    >
+                                      <ImageIcon className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleGenerateSingle(child._id)}
+                                      disabled={child._isGenerating}
+                                      className={cn(
+                                        "rounded-md transition-all shadow-sm disabled:opacity-50 flex items-center justify-center w-7 h-7",
+                                        child._statusDescricao === 'Gerado por IA'
+                                          ? "bg-[#FF5B03]/10 text-[#FF5B03] border border-[#FF5B03]/20"
+                                          : "bg-white text-slate-400 hover:text-[#FF5B03] border border-slate-200 hover:border-orange-300 hover:bg-orange-50"
+                                      )}
+                                      title="Gerar Descrição desta variante"
+                                    >
+                                      <Sparkles className={`w-3 h-3 ${child._isGenerating ? 'animate-pulse text-[#FF5B03]' : ''}`} />
+                                    </button>
+                                  </div>
+                                </td>
                               </tr>
                             ))}
+                            {hasChildren && isExpanded && (
+                              <tr className="bg-slate-50/70 border-l-2 border-orange-300">
+                                <td colSpan={20} className="pl-10 pr-3 py-2.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Ações do grupo ({1 + groupChildren.length} SKUs)</span>
+                                    <button
+                                      onClick={() => handleGenerateGroupShared(product._id)}
+                                      disabled={isGroupGenerating(product._id)}
+                                      className="flex items-center gap-1.5 px-2.5 py-1 bg-white text-[#FF5B03] border border-orange-200 rounded-lg text-xs font-semibold hover:bg-orange-50 transition-colors disabled:opacity-50"
+                                      title="Gera 1 descrição e aplica ao pai e a todas as variantes (1 crédito)"
+                                    >
+                                      {isGroupGenerating(product._id) ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                                      Gerar para o grupo
+                                    </button>
+                                    <button
+                                      onClick={() => handleGenerateGroupIndividually(product._id)}
+                                      disabled={isGroupGenerating(product._id)}
+                                      className="flex items-center gap-1.5 px-2.5 py-1 bg-white text-slate-600 border border-slate-200 rounded-lg text-xs font-semibold hover:bg-slate-50 transition-colors disabled:opacity-50"
+                                      title={`Gera uma descrição por variante, contextualizada (${1 + groupChildren.length} créditos)`}
+                                    >
+                                      {isGroupGenerating(product._id) ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                                      Gerar individualmente
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
                             </React.Fragment>
                             )
                           })
