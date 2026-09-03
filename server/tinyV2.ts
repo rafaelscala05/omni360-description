@@ -1,7 +1,7 @@
 // Tiny ERP API v2 client. The legacy API authenticates with a static integration
 // token (POST form, formato=json) and wraps everything in { retorno: {...} }.
 // Used as an alternative to the v3 (OAuth) client via server/tinyProvider.ts.
-import { SECRET_REF, sleep, type TinyNormalizedProduct, type TinyPushProduct, type TinyPushSteps } from './tinyAgent';
+import { SECRET_REF, sleep, NOME_MAX, type TinyNormalizedProduct, type TinyPushProduct, type TinyPushSteps } from './tinyAgent';
 
 const V2_BASE = 'https://api.tiny.com.br/api2';
 const PAGE_SIZE = 100; // v2 lists 100 records per page
@@ -62,6 +62,22 @@ export async function tinyV2CallRaw(token: string, endpoint: string, params: Rec
     return tinyV2CallRaw(token, endpoint, params, attempt + 1);
   }
 
+  // Per-record errors (produto.alterar/incluir) live in registros[].registro.erros.
+  // They come back BOTH with the top-level status already "Erro" (and an empty
+  // top-level `erros`) and with status "OK" — so always collect them before
+  // deciding what to throw, or the only thing the user sees is the useless
+  // "Tiny v2 status Erro (cod ?)".
+  const registros: any[] = Array.isArray(retorno?.registros) ? retorno.registros : [];
+  const regErros: string[] = [];
+  for (const r of registros) {
+    const reg = r?.registro ?? r;
+    if (reg?.status && reg.status !== 'OK') {
+      const es = Array.isArray(reg?.erros) ? reg.erros.map((e: any) => e?.erro ?? e).join('; ') : (reg?.erros?.erro ?? `status ${reg.status}`);
+      const cod = reg?.codigo_erro ?? retorno?.codigo_erro;
+      regErros.push(cod ? `[cod ${cod}] ${es}` : String(es));
+    }
+  }
+
   if (retorno?.status && retorno.status !== 'OK') {
     // "No records" (codigo_erro 20) is not a failure — it's an empty result.
     const noRecords = String(retorno?.codigo_erro) === '20' || /n[ãa]o.*(retornou|encontrad)|nenhum registro|no records/i.test(String(errMsg));
@@ -69,20 +85,14 @@ export async function tinyV2CallRaw(token: string, endpoint: string, params: Rec
     // Log the full response so a generic Tiny message ("erro inesperado") can be
     // correlated with the request in the server logs.
     console.error(`[tiny-v2] ${endpoint} status=${retorno.status} codigo_erro=${retorno.codigo_erro} retorno=${JSON.stringify(retorno).slice(0, 1500)}`);
-    const status = /token|inv[áa]lid|autoriz|acesso negado/i.test(String(errMsg)) ? 401 : 400;
-    const detail = errMsg ? `[cod ${retorno.codigo_erro ?? '?'}] ${errMsg}` : `Tiny v2 status ${retorno.status} (cod ${retorno.codigo_erro ?? '?'})`;
+    const motivo = String(errMsg) || regErros.join(' | ');
+    const status = /token|inv[áa]lid|autoriz|acesso negado/i.test(motivo) ? 401 : 400;
+    const detail = motivo
+      ? (errMsg ? `[cod ${retorno.codigo_erro ?? '?'}] ${errMsg}` : motivo)
+      : `Tiny v2 status ${retorno.status} (cod ${retorno.codigo_erro ?? '?'})`;
     throw Object.assign(new Error(detail), { status });
   }
-  // Per-record errors (produto.alterar/incluir) can come back with top status OK.
-  const registros: any[] = Array.isArray(retorno?.registros) ? retorno.registros : [];
-  const regErros: string[] = [];
-  for (const r of registros) {
-    const reg = r?.registro ?? r;
-    if (reg?.status && reg.status !== 'OK') {
-      const es = Array.isArray(reg?.erros) ? reg.erros.map((e: any) => e?.erro ?? e).join('; ') : (reg?.erros?.erro ?? `status ${reg.status}`);
-      regErros.push(es);
-    }
-  }
+
   if (regErros.length) {
     console.error(`[tiny-v2] ${endpoint} erros por registro: ${JSON.stringify(retorno).slice(0, 1500)}`);
     throw Object.assign(new Error(`[registro] ${regErros.join(' | ')}`), { status: 400 });
@@ -176,13 +186,18 @@ export async function getV2Product(uid: string, id: string): Promise<TinyNormali
 // value actually differs from what Tiny currently has. produto.alterar is NOT a
 // partial update — it validates the whole record — so required fields
 // (unidade/preco/origem/situacao/tipo) are always echoed from the current product;
-// only descricao_complementar/seo/fiscal/imagens are conditionally overridden.
+// only nome/descricao_complementar/seo/imagens are conditionally overridden.
 // Skips the API call entirely when nothing differs.
+//
+// Fiscal/logistics data (ncm, gtin, cest, peso_liquido, peso_bruto, dimensões) is
+// deliberately NEVER sent: the ERP is the system of record for it, the local values
+// come from spreadsheets/AI enrichment, and writing ncm makes Tiny re-derive the
+// cest — so a description push was silently rewriting the product's tax data.
 export async function updateV2Product(uid: string, id: string, prod: TinyPushProduct, sobrescreverTitulo = true): Promise<TinyPushSteps> {
   const current = (await tinyV2Call(uid, 'produto.obter.php', { id }))?.produto ?? {};
   const cur = normalizeV2Product(current);
   const steps: TinyPushSteps = {
-    titulo: 'sem dado local', descricao: 'sem dado local', seo: 'sem dado local', fiscal: 'sem dado local', imagens: 'sem dado local',
+    titulo: 'sem dado local', descricao: 'sem dado local', seo: 'sem dado local', imagens: 'sem dado local',
   };
   const strDiffers = (a?: string, b?: string) => (a ?? '').trim() !== (b ?? '').trim();
 
@@ -201,6 +216,10 @@ export async function updateV2Product(uid: string, id: string, prod: TinyPushPro
   if (prod.nome) {
     if (!sobrescreverTitulo) {
       steps.titulo = 'sobrescrita desativada';
+    } else if (prod.nome.trim().length > NOME_MAX) {
+      // produto.alterar rejects the whole record when nome exceeds Tiny's limit.
+      // Skip just the title so the rest of the push still goes through.
+      steps.titulo = `título com ${prod.nome.trim().length} caracteres — o Tiny aceita no máximo ${NOME_MAX}`;
     } else {
       steps.titulo = strDiffers(prod.nome, cur.nome) ? 'ok' : 'sem alteração';
       if (steps.titulo === 'ok') produto.nome = prod.nome;
@@ -230,18 +249,6 @@ export async function updateV2Product(uid: string, id: string, prod: TinyPushPro
     if (Object.keys(seo).length) produto.seo = seo;
   }
 
-  const hasFiscalLocal = !!prod.ncm || !!prod.gtin || prod.pesoLiquido != null
-    || prod.pesoBruto != null || prod.largura != null || prod.altura != null || prod.comprimento != null;
-  let fiscalChanged = false;
-  if (prod.ncm && strDiffers(prod.ncm, cur.ncm)) { produto.ncm = prod.ncm; fiscalChanged = true; }
-  if (prod.gtin && strDiffers(prod.gtin, cur.gtin)) { produto.gtin = prod.gtin; fiscalChanged = true; }
-  if (prod.pesoLiquido != null && prod.pesoLiquido !== cur.pesoLiquido) { produto.peso_liquido = prod.pesoLiquido; fiscalChanged = true; }
-  if (prod.pesoBruto != null && prod.pesoBruto !== cur.pesoBruto) { produto.peso_bruto = prod.pesoBruto; fiscalChanged = true; }
-  if (prod.largura != null && prod.largura !== cur.largura) { produto.largura_embalagem = prod.largura; fiscalChanged = true; }
-  if (prod.altura != null && prod.altura !== cur.altura) { produto.altura_embalagem = prod.altura; fiscalChanged = true; }
-  if (prod.comprimento != null && prod.comprimento !== cur.comprimento) { produto.comprimento_embalagem = prod.comprimento; fiscalChanged = true; }
-  if (hasFiscalLocal) steps.fiscal = fiscalChanged ? 'ok' : 'sem alteração';
-
   let imagensChanged = false;
   if (prod.imagens?.length) {
     // Send ONLY images the product doesn't already have. Re-sending Tiny's own
@@ -256,7 +263,7 @@ export async function updateV2Product(uid: string, id: string, prod: TinyPushPro
     if (imagensChanged) produto.imagens_externas = novas.map((url) => ({ imagem_externa: { url } }));
   }
 
-  const hasAnyChange = steps.titulo === 'ok' || steps.descricao === 'ok' || steps.seo === 'ok' || steps.fiscal === 'ok' || steps.imagens === 'ok';
+  const hasAnyChange = steps.titulo === 'ok' || steps.descricao === 'ok' || steps.seo === 'ok' || steps.imagens === 'ok';
   if (!hasAnyChange) return steps;
 
   Object.keys(produto).forEach((k) => { if (produto[k] === undefined || produto[k] === null) delete produto[k]; });

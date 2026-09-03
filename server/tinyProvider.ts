@@ -64,7 +64,7 @@ export async function tinyUpdateProduct(uid: string, id: string, prod: TinyPushP
   if (v === 'v2') return updateV2Product(uid, id, prod, sobrescreverTitulo);
   const current = await tinyFetch<any>(uid, 'GET', `/produtos/${id}`);
   const { body, steps } = buildProductPutBody(current, prod, sobrescreverTitulo);
-  const hasAnyChange = steps.titulo === 'ok' || steps.descricao === 'ok' || steps.seo === 'ok' || steps.fiscal === 'ok' || steps.imagens === 'ok';
+  const hasAnyChange = steps.titulo === 'ok' || steps.descricao === 'ok' || steps.seo === 'ok' || steps.imagens === 'ok';
   if (hasAnyChange) await tinyFetch(uid, 'PUT', `/produtos/${id}`, body);
   return steps;
 }
@@ -116,7 +116,7 @@ export function registerTinyProviderRoutes(app: express.Express, { verifyFirebas
       for (const prod of produtos) {
         if (!prod.tinyId) {
           resultados.push({ tinyId: prod.tinyId, sku: prod.sku, ok: false, steps: {
-            titulo: 'Sem ID Tiny', descricao: 'Sem ID Tiny', seo: 'Sem ID Tiny', fiscal: 'Sem ID Tiny', imagens: 'Sem ID Tiny',
+            titulo: 'Sem ID Tiny', descricao: 'Sem ID Tiny', seo: 'Sem ID Tiny', imagens: 'Sem ID Tiny',
           } });
           continue;
         }
@@ -126,7 +126,7 @@ export function registerTinyProviderRoutes(app: express.Express, { verifyFirebas
         } catch (e: any) {
           const msg = e?.message ?? 'erro';
           resultados.push({ tinyId: prod.tinyId, sku: prod.sku, ok: false, steps: {
-            titulo: msg, descricao: msg, seo: msg, fiscal: msg, imagens: msg,
+            titulo: msg, descricao: msg, seo: msg, imagens: msg,
           } });
         }
       }

@@ -21,6 +21,9 @@ const REDIRECT_URI = process.env.TINY_REDIRECT_URI ?? '';
 // keeps us under it; accounts on higher plans can lower TINY_PACE_MS for speed.
 export const PACE_MS = Math.max(0, Number(process.env.TINY_PACE_MS ?? 1000));
 
+// Tiny caps the product name at 120 chars (both v2 produto.alterar and v3 PUT).
+export const NOME_MAX = 120;
+
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Resolves the public base URL (proto://host) behind the reverse proxy — req.protocol/
@@ -233,6 +236,9 @@ export function normalizeProduct(p: any): TinyNormalizedProduct {
 
 // --- Push ------------------------------------------------------------------
 
+// Only the fields the push is allowed to write. Fiscal/logistics data (ncm, gtin,
+// cest, pesos, dimensões) is deliberately absent so it cannot be written by
+// accident — the ERP owns it. See buildProductPutBody / updateV2Product.
 export interface TinyPushProduct {
   tinyId: string;
   sku?: string;
@@ -241,13 +247,6 @@ export interface TinyPushProduct {
   seoTitle?: string;
   seoDescription?: string;
   seoKeywords?: string;
-  ncm?: string;
-  gtin?: string;
-  pesoLiquido?: number;
-  pesoBruto?: number;
-  largura?: number;
-  altura?: number;
-  comprimento?: number;
   // Public image URLs to attach as product anexos.
   imagens?: string[];
 }
@@ -256,7 +255,7 @@ export interface TinyPushProduct {
 // value), 'sem alteração' (local data matches Tiny already, nothing sent), or
 // 'sem dado local' (nothing locally to compare/send for this group). Field errors
 // use the exception message in place of one of these three.
-export type TinyPushSteps = Record<'titulo' | 'descricao' | 'seo' | 'fiscal' | 'imagens', string>;
+export type TinyPushSteps = Record<'titulo' | 'descricao' | 'seo' | 'imagens', string>;
 
 export interface TinyPushResult {
   tinyId: string;
@@ -269,6 +268,10 @@ export interface TinyPushResult {
 // echoing every field the API expects (Tiny's PUT is a full-record update) and
 // overriding only the fields whose local value actually differs from what Tiny
 // already has — never previously-selected groups, never blank local data.
+//
+// Only título/descrição/SEO/imagens are ever overridden. Fiscal and logistics
+// fields (ncm, gtin, cest, pesos, dimensões) are echoed from Tiny and never
+// written: the ERP owns that data. See updateV2Product for the full rationale.
 export function buildProductPutBody(current: any, prod: TinyPushProduct, sobrescreverTitulo = true): { body: Record<string, unknown>; steps: TinyPushSteps } {
   const dim = current?.dimensoes ?? {};
   const seo = current?.seo ?? {};
@@ -276,7 +279,7 @@ export function buildProductPutBody(current: any, prod: TinyPushProduct, sobresc
   const estoque = current?.estoque ?? {};
   const cur = normalizeProduct(current);
   const steps: TinyPushSteps = {
-    titulo: 'sem dado local', descricao: 'sem dado local', seo: 'sem dado local', fiscal: 'sem dado local', imagens: 'sem dado local',
+    titulo: 'sem dado local', descricao: 'sem dado local', seo: 'sem dado local', imagens: 'sem dado local',
   };
   const strDiffers = (a?: string, b?: string) => (a ?? '').trim() !== (b ?? '').trim();
 
@@ -322,6 +325,8 @@ export function buildProductPutBody(current: any, prod: TinyPushProduct, sobresc
   if (prod.nome) {
     if (!sobrescreverTitulo) {
       steps.titulo = 'sobrescrita desativada';
+    } else if (prod.nome.trim().length > NOME_MAX) {
+      steps.titulo = `título com ${prod.nome.trim().length} caracteres — o Tiny aceita no máximo ${NOME_MAX}`;
     } else {
       steps.titulo = strDiffers(prod.nome, cur.nome) ? 'ok' : 'sem alteração';
       if (steps.titulo === 'ok') body.descricao = prod.nome;
@@ -343,18 +348,6 @@ export function buildProductPutBody(current: any, prod: TinyPushProduct, sobresc
   if (prod.seoTitle || prod.seoDescription || prod.seoKeywords) {
     steps.seo = seoChanged ? 'ok' : 'sem alteração';
   }
-
-  let fiscalChanged = false;
-  const hasFiscalLocal = !!prod.ncm || !!prod.gtin || prod.pesoLiquido != null
-    || prod.pesoBruto != null || prod.largura != null || prod.altura != null || prod.comprimento != null;
-  if (prod.ncm && strDiffers(prod.ncm, cur.ncm)) { body.ncm = prod.ncm; fiscalChanged = true; }
-  if (prod.gtin && strDiffers(prod.gtin, cur.gtin)) { body.gtin = prod.gtin; fiscalChanged = true; }
-  if (prod.pesoLiquido != null && prod.pesoLiquido !== cur.pesoLiquido) { body.dimensoes.pesoLiquido = prod.pesoLiquido; fiscalChanged = true; }
-  if (prod.pesoBruto != null && prod.pesoBruto !== cur.pesoBruto) { body.dimensoes.pesoBruto = prod.pesoBruto; fiscalChanged = true; }
-  if (prod.largura != null && prod.largura !== cur.largura) { body.dimensoes.largura = prod.largura; fiscalChanged = true; }
-  if (prod.altura != null && prod.altura !== cur.altura) { body.dimensoes.altura = prod.altura; fiscalChanged = true; }
-  if (prod.comprimento != null && prod.comprimento !== cur.comprimento) { body.dimensoes.comprimento = prod.comprimento; fiscalChanged = true; }
-  if (hasFiscalLocal) steps.fiscal = fiscalChanged ? 'ok' : 'sem alteração';
 
   if (prod.imagens?.length) {
     // anexos is documented on product creation; PUT appears to accept it too.

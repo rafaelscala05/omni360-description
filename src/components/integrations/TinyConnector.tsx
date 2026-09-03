@@ -536,8 +536,10 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, pushCandid
             <div>
               <h4 className="text-sm font-semibold text-slate-800">Enviar para Tiny</h4>
               <p className="text-xs text-slate-500">
-                Compara cada produto selecionado com o que está salvo no Tiny agora e envia
-                {' '}<strong>só os campos que realmente mudaram</strong> — nada é reenviado sem necessidade.
+                Envia apenas <strong>título, descrição, SEO e imagens</strong>. Dados fiscais e
+                logísticos (NCM, CEST, código de barras, pesos e dimensões) nunca são alterados —
+                o Tiny continua sendo a fonte deles. Cada campo é comparado com o que está salvo no
+                Tiny agora e {' '}<strong>só o que realmente mudou</strong> é enviado.
               </p>
             </div>
             <p className="text-xs text-slate-400 inline-flex items-start gap-1.5">
@@ -586,7 +588,7 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, pushCandid
                       : <AlertCircle className="w-3.5 h-3.5 text-red-500 mt-0.5 shrink-0" />}
                     <span className="font-medium text-slate-700">{r.sku || r.tinyId}</span>
                     <span className="text-slate-500">
-                      {(['titulo', 'descricao', 'seo', 'fiscal', 'imagens'] as const)
+                      {(['titulo', 'descricao', 'seo', 'imagens'] as const)
                         .filter((k) => r.steps[k] !== 'sem dado local')
                         .map((k) => `${k}: ${r.steps[k]}`)
                         .join(' · ') || 'nada a enviar'}

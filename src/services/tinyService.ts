@@ -37,6 +37,8 @@ export interface TinyNormalizedProduct {
   raw: unknown;
 }
 
+// Only the fields the push is allowed to write. Fiscal/logistics data
+// (NCM, CEST, GTIN, pesos, dimensões) is intentionally absent: the ERP owns it.
 export interface TinyPushProduct {
   tinyId: string;
   sku?: string;
@@ -45,13 +47,6 @@ export interface TinyPushProduct {
   seoTitle?: string;
   seoDescription?: string;
   seoKeywords?: string;
-  ncm?: string;
-  gtin?: string;
-  pesoLiquido?: number;
-  pesoBruto?: number;
-  largura?: number;
-  altura?: number;
-  comprimento?: number;
   imagens?: string[];
 }
 
@@ -61,7 +56,7 @@ export interface TinyPushResult {
   tinyId: string;
   sku?: string;
   ok: boolean;
-  steps: Record<'titulo' | 'descricao' | 'seo' | 'fiscal' | 'imagens', string>;
+  steps: Record<'titulo' | 'descricao' | 'seo' | 'imagens', string>;
 }
 
 async function authHeaders(): Promise<Record<string, string>> {

@@ -1770,9 +1770,12 @@ export default function App() {
     return selectedIds.size > 0 ? fromTiny.filter((p) => selectedIds.has(p._id)) : fromTiny;
   };
 
-  // Builds the push payload for every selected Tiny-linked product. No field
-  // filtering here — the server compares each value against Tiny's live data and
-  // only writes what actually differs.
+  // Builds the push payload for every selected Tiny-linked product. Only título,
+  // descrição, SEO and imagens travel: fiscal/logistics data (NCM, CEST, GTIN,
+  // pesos, dimensões) is owned by the ERP and must never be written back — the
+  // local values come from spreadsheets/AI enrichment and were silently
+  // overwriting Tiny's tax data. The server still diffs each field against Tiny's
+  // live record and only writes what actually differs.
   const buildTinyPushPayload = async (): Promise<TinyPushProduct[]> => {
     return tinySelectedProducts(productsRef.current).map((p) => ({
       tinyId: p._tinyProductId!,
@@ -1782,13 +1785,6 @@ export default function App() {
       seoTitle: p['Título SEO'],
       seoDescription: p['Descrição SEO'],
       seoKeywords: p['Palavras chave SEO'],
-      ncm: p['NCM (Classificação fiscal)'],
-      gtin: p['GTIN/EAN'],
-      pesoLiquido: tinyToNum(p['Peso líquido (Kg)']),
-      pesoBruto: tinyToNum(p['Peso bruto (Kg)']),
-      largura: tinyToNum(p['Largura embalagem']),
-      altura: tinyToNum(p['Altura Embalagem']),
-      comprimento: tinyToNum(p['Comprimento embalagem']),
       imagens: collectTinyImages(p),
     }));
   };
