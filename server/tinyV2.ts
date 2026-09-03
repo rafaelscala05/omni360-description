@@ -237,6 +237,15 @@ const PRESERVED_V2_FIELDS: Record<string, string> = {
   valor_ipi_fixo: 'valor_ipi_fixo',
   cod_lista_servicos: 'cod_lista_servicos',
   dias_preparacao: 'dias_preparacao',
+  id_fornecedor: 'id_fornecedor',
+};
+
+// Same idea, for keys produto.obter.php may answer in camelCase (like the
+// packaging dimensions above). First non-empty wins.
+const PRESERVED_V2_ALIASES: Record<string, string[]> = {
+  dias_preparacao: ['dias_preparacao', 'diasPreparacao'],
+  tipo_embalagem: ['tipoEmbalagem', 'tipo_embalagem'],
+  diametro_embalagem: ['diametroEmbalagem', 'diametro_embalagem'],
 };
 
 // Builds the produto.alterar.php payload. Pure — no I/O, so it can be verified
@@ -272,8 +281,11 @@ export function buildV2AlterarPayload(
   // it. Only fields Tiny actually holds a value for are echoed — sending an empty
   // string for something Tiny never had would be noise at best.
   for (const [alterarKey, obterKey] of Object.entries(PRESERVED_V2_FIELDS)) {
-    const v = current?.[obterKey];
-    if (v !== undefined && v !== null && v !== '') produto[alterarKey] = v;
+    const candidatos = PRESERVED_V2_ALIASES[alterarKey] ?? [obterKey];
+    for (const k of candidatos) {
+      const v = current?.[k];
+      if (v !== undefined && v !== null && v !== '') { produto[alterarKey] = v; break; }
+    }
   }
   // categoria comes back as a ">>"-separated path string; only echo that shape.
   if (typeof current?.categoria === 'string' && current.categoria.trim()) produto.categoria = current.categoria;
@@ -296,23 +308,19 @@ export function buildV2AlterarPayload(
     if (steps.descricao === 'ok') produto.descricao_complementar = prod.descricaoHtml;
   }
 
+  // The seo block follows the same echo rule as the scalar fields: seed it with
+  // everything Tiny already has (seo_title/description/keywords, plus slug and
+  // link_video, which this app never touches) and override only what changed.
+  // It is sent on EVERY call, not just when SEO changed — leaving it out of a
+  // description-only push would risk resetting it the way pesos were reset.
+  const seo: Record<string, any> = (current?.seo && typeof current.seo === 'object') ? { ...current.seo } : {};
   let seoChanged = false;
-  if (prod.seoTitle && strDiffers(prod.seoTitle, cur.seoTitle)) seoChanged = true;
-  if (prod.seoDescription && strDiffers(prod.seoDescription, cur.seoDescription)) seoChanged = true;
-  if (prod.seoKeywords && strDiffers(prod.seoKeywords, cur.seoKeywords)) seoChanged = true;
+  if (prod.seoTitle && strDiffers(prod.seoTitle, cur.seoTitle)) { seo.seo_title = prod.seoTitle; seoChanged = true; }
+  if (prod.seoDescription && strDiffers(prod.seoDescription, cur.seoDescription)) { seo.seo_description = prod.seoDescription; seoChanged = true; }
+  if (prod.seoKeywords && strDiffers(prod.seoKeywords, cur.seoKeywords)) { seo.seo_keywords = prod.seoKeywords; seoChanged = true; }
   if (prod.seoTitle || prod.seoDescription || prod.seoKeywords) steps.seo = seoChanged ? 'ok' : 'sem alteração';
-  if (seoChanged) {
-    // v2's produto.alterar validates the whole record — send every sibling
-    // key (seeded from Tiny's own current value) so an unrelated field isn't
-    // blanked just because only one SEO sub-field changed.
-    const seo: Record<string, any> = {
-      seo_title: (prod.seoTitle && strDiffers(prod.seoTitle, cur.seoTitle)) ? prod.seoTitle : cur.seoTitle,
-      seo_description: (prod.seoDescription && strDiffers(prod.seoDescription, cur.seoDescription)) ? prod.seoDescription : cur.seoDescription,
-      seo_keywords: (prod.seoKeywords && strDiffers(prod.seoKeywords, cur.seoKeywords)) ? prod.seoKeywords : cur.seoKeywords,
-    };
-    Object.keys(seo).forEach((k) => { if (!seo[k]) delete seo[k]; });
-    if (Object.keys(seo).length) produto.seo = seo;
-  }
+  Object.keys(seo).forEach((k) => { if (seo[k] === undefined || seo[k] === null || seo[k] === '') delete seo[k]; });
+  if (Object.keys(seo).length) produto.seo = seo;
 
   let imagensChanged = false;
   if (prod.imagens?.length) {

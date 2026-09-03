@@ -111,6 +111,8 @@ const noTinyV2 = {
   localizacao: 'A-12',
   categoria: 'Áudio >> Fones',
   descricao_complementar: '<p>antiga</p>',
+  diasPreparacao: '3',
+  seo: { seo_title: 'Fone Tascam TH-05', seo_description: 'desc antiga', slug: 'fone-tascam-th-05', link_video: 'https://youtu.be/x' },
 };
 
 const { produto, steps: st2, hasAnyChange } = buildV2AlterarPayload(noTinyV2, {
@@ -142,6 +144,23 @@ check('passos v2', st2, { titulo: 'ok', descricao: 'ok', seo: 'sem dado local', 
 
 // Campo que o Tiny não tem não é inventado no payload.
 check('campo vazio no Tiny não é enviado', 'obs' in produto, false);
+check('chave em camelCase no obter é reconhecida', produto.dias_preparacao, '3');
+
+// O bloco seo vai em TODA chamada, mesmo num envio só de descrição — deixá-lo
+// de fora arriscaria resetá-lo do mesmo jeito que os pesos foram resetados.
+check('seo preservado num envio só de descrição', produto.seo, {
+  seo_title: 'Fone Tascam TH-05', seo_description: 'desc antiga',
+  slug: 'fone-tascam-th-05', link_video: 'https://youtu.be/x',
+});
+check('envio só de descrição não marca seo como alterado', st2.seo, 'sem dado local');
+
+// SEO novo sobrescreve só o que mudou; slug e link_video continuam.
+const comSeo = buildV2AlterarPayload(noTinyV2, { tinyId: '777', seoTitle: 'Título SEO novo' });
+check('seo_title novo aplicado', comSeo.produto.seo.seo_title, 'Título SEO novo');
+check('seo_description antigo preservado', comSeo.produto.seo.seo_description, 'desc antiga');
+check('slug preservado', comSeo.produto.seo.slug, 'fone-tascam-th-05');
+check('link_video preservado', comSeo.produto.seo.link_video, 'https://youtu.be/x');
+check('passo seo marcado como enviado', comSeo.steps.seo, 'ok');
 
 // Nada local mudou → nem chega a montar chamada.
 const semMudanca = buildV2AlterarPayload(noTinyV2, { tinyId: '777', descricaoHtml: '<p>antiga</p>' });
