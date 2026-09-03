@@ -3,7 +3,7 @@
 // servidor e não toca o Firestore (o fetch é dublado).
 // Rodar com: npx tsx scripts/verify-tiny-push.mjs
 import { buildProductPutBody } from '../server/tinyAgent.ts';
-import { tinyV2CallRaw } from '../server/tinyV2.ts';
+import { tinyV2CallRaw, buildV2AlterarPayload, normalizeV2Product } from '../server/tinyV2.ts';
 
 let failures = 0;
 function check(label, actual, expected) {
@@ -52,7 +52,7 @@ const { body, steps } = buildProductPutBody(noTiny, localComFiscal);
 check('ncm preservado do Tiny', body.ncm, '63026000');
 check('gtin (código de barras) preservado do Tiny', body.gtin, '7891234567890');
 check('dimensões/pesos preservados do Tiny', body.dimensoes, noTiny.dimensoes);
-check('nenhum campo cest é enviado', 'cest' in body, false);
+check('v3 não tem cest no modelo, não inventa o campo', 'cest' in body, false);
 check('não existe mais o passo fiscal', 'fiscal' in steps, false);
 
 check('título é enviado', body.descricao, 'Toalha de Banho Premium');
@@ -80,6 +80,78 @@ check('título com exatamente 120 é enviado', r3.body.descricao, 'A'.repeat(120
 const r4 = buildProductPutBody(noTiny, { tinyId: '1', nome: 'Outro título' }, false);
 check('sobrescrita desativada mantém o título do Tiny', r4.body.descricao, 'Toalha de Banho');
 check('passo título reportado como desativado', r4.steps.titulo, 'sobrescrita desativada');
+
+// --- 3b. v2: produto.alterar devolve os dados do Tiny de volta -------------
+// produto.alterar.php é uma operação de registro inteiro: campo que não vai no
+// payload não é "mantido", é zerado. Por isso o payload eco tudo que o Tiny já
+// tem em vez de omitir. Repare no camelCase: obter responde larguraEmbalagem,
+// alterar lê largura_embalagem.
+const noTinyV2 = {
+  id: '777',
+  codigo: 'TATH05-1',
+  nome: 'Fone de Ouvido Tascam TH-05',
+  unidade: 'UN',
+  preco: '487.78',
+  origem: '1',
+  situacao: 'A',
+  tipo: 'P',
+  ncm: '85183000',
+  cest: '2106400',
+  gtin: '7891234567890',
+  peso_liquido: '0.320',
+  peso_bruto: '0.450',
+  larguraEmbalagem: '18.5',
+  alturaEmbalagem: '9.0',
+  comprimentoEmbalagem: '22.0',
+  tipoEmbalagem: '2',
+  estoque_minimo: '2.00',
+  garantia: '12 meses',
+  marca: 'Tascam',
+  preco_custo: '300.00',
+  localizacao: 'A-12',
+  categoria: 'Áudio >> Fones',
+  descricao_complementar: '<p>antiga</p>',
+};
+
+const { produto, steps: st2, hasAnyChange } = buildV2AlterarPayload(noTinyV2, {
+  tinyId: '777',
+  nome: 'Fone de Ouvido Tascam TH-05 Monitoramento Profissional',
+  descricaoHtml: '<p>nova descrição</p>',
+});
+
+check('peso líquido devolvido ao Tiny', produto.peso_liquido, '0.320');
+check('peso bruto devolvido ao Tiny', produto.peso_bruto, '0.450');
+check('largura convertida para snake_case', produto.largura_embalagem, '18.5');
+check('altura convertida para snake_case', produto.altura_embalagem, '9.0');
+check('comprimento convertido para snake_case', produto.comprimento_embalagem, '22.0');
+check('tipo de embalagem preservado', produto.tipo_embalagem, '2');
+check('ncm preservado', produto.ncm, '85183000');
+check('cest preservado', produto.cest, '2106400');
+check('gtin preservado', produto.gtin, '7891234567890');
+check('garantia preservada', produto.garantia, '12 meses');
+check('marca preservada', produto.marca, 'Tascam');
+check('preço de custo preservado', produto.preco_custo, '300.00');
+check('estoque mínimo preservado', produto.estoque_minimo, '2.00');
+check('localização preservada', produto.localizacao, 'A-12');
+check('categoria preservada', produto.categoria, 'Áudio >> Fones');
+check('campos obrigatórios ecoados', [produto.unidade, produto.preco, produto.origem, produto.situacao, produto.tipo], ['UN', '487.78', '1', 'A', 'P']);
+check('descrição local é a única coisa nova', produto.descricao_complementar, '<p>nova descrição</p>');
+check('título local aplicado', produto.nome, 'Fone de Ouvido Tascam TH-05 Monitoramento Profissional');
+check('há mudança a enviar', hasAnyChange, true);
+check('passos v2', st2, { titulo: 'ok', descricao: 'ok', seo: 'sem dado local', imagens: 'sem dado local' });
+
+// Campo que o Tiny não tem não é inventado no payload.
+check('campo vazio no Tiny não é enviado', 'obs' in produto, false);
+
+// Nada local mudou → nem chega a montar chamada.
+const semMudanca = buildV2AlterarPayload(noTinyV2, { tinyId: '777', descricaoHtml: '<p>antiga</p>' });
+check('sem diferença não gera chamada', semMudanca.hasAnyChange, false);
+
+// normalizeV2Product tem que ler o camelCase do obter.
+const norm = normalizeV2Product(noTinyV2);
+check('normalizador lê larguraEmbalagem', norm.largura, 18.5);
+check('normalizador lê alturaEmbalagem', norm.altura, 9);
+check('normalizador lê comprimentoEmbalagem', norm.comprimento, 22);
 
 // --- 4. parser de erro da v2 --------------------------------------------
 // produto.alterar devolve HTTP 200 com status "Erro" no topo, SEM erros no topo:

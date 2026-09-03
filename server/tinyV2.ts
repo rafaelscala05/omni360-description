@@ -137,9 +137,14 @@ export function normalizeV2Product(p: any): TinyNormalizedProduct {
     gtin: p?.gtin || undefined,
     pesoLiquido: num(p?.peso_liquido),
     pesoBruto: num(p?.peso_bruto),
-    largura: num(p?.largura_embalagem),
-    altura: num(p?.altura_embalagem),
-    comprimento: num(p?.comprimento_embalagem),
+    // produto.obter.php answers with the packaging dimensions in camelCase
+    // (larguraEmbalagem…) even though produto.alterar.php *reads* them in
+    // snake_case (largura_embalagem…). Reading the snake_case keys here always
+    // yielded undefined, so imported products came in with empty dimensions.
+    // The snake_case fallback is kept in case a future payload uses it.
+    largura: num(p?.larguraEmbalagem ?? p?.largura_embalagem),
+    altura: num(p?.alturaEmbalagem ?? p?.altura_embalagem),
+    comprimento: num(p?.comprimentoEmbalagem ?? p?.comprimento_embalagem),
     precoPor: num(p?.preco),
     precoDe: num(p?.preco_promocional),
     categorias: categoria ? [String(categoria)] : [],
@@ -182,28 +187,78 @@ export async function getV2Product(uid: string, id: string): Promise<TinyNormali
   return normalizeV2Product(r?.produto ?? {});
 }
 
-// Updates a product via produto.alterar.php, sending only the fields whose local
-// value actually differs from what Tiny currently has. produto.alterar is NOT a
-// partial update — it validates the whole record — so required fields
-// (unidade/preco/origem/situacao/tipo) are always echoed from the current product;
-// only nome/descricao_complementar/seo/imagens are conditionally overridden.
-// Skips the API call entirely when nothing differs.
-//
-// Fiscal/logistics data (ncm, gtin, cest, peso_liquido, peso_bruto, dimensões) is
-// deliberately NEVER sent: the ERP is the system of record for it, the local values
-// come from spreadsheets/AI enrichment, and writing ncm makes Tiny re-derive the
-// cest — so a description push was silently rewriting the product's tax data.
+// Reads the product from Tiny, builds the produto.alterar.php payload and sends it,
+// skipping the call entirely when nothing local differs. All payload logic lives in
+// the pure buildV2AlterarPayload below.
 export async function updateV2Product(uid: string, id: string, prod: TinyPushProduct, sobrescreverTitulo = true): Promise<TinyPushSteps> {
   const current = (await tinyV2Call(uid, 'produto.obter.php', { id }))?.produto ?? {};
+  const { produto, steps, hasAnyChange } = buildV2AlterarPayload(current, prod, sobrescreverTitulo);
+  if (!hasAnyChange) return steps;
+
+  const payload = JSON.stringify({ produtos: [{ produto }] });
+  console.log(`[tiny-v2] produto.alterar id=${id} payload=${payload.slice(0, 1500)}`);
+  await tinyV2Call(uid, 'produto.alterar.php', { produto: payload });
+  return steps;
+}
+
+// Fields produto.alterar.php accepts that we must hand back untouched, mapped
+// from the key produto.obter.php answers with. produto.alterar is a full-record
+// operation: a field left out of the payload is not "kept", it is reset — which
+// is how a description push ended up zeroing pesos and dimensões. So instead of
+// omitting this data we echo Tiny's OWN current value for it, which preserves it
+// under a full replace and is a no-op if Tiny ever treats the call as a patch.
+// Note the casing: obter answers the packaging dimensions in camelCase while
+// alterar reads them in snake_case.
+const PRESERVED_V2_FIELDS: Record<string, string> = {
+  ncm: 'ncm',
+  cest: 'cest',
+  gtin: 'gtin',
+  gtin_embalagem: 'gtin_embalagem',
+  peso_liquido: 'peso_liquido',
+  peso_bruto: 'peso_bruto',
+  largura_embalagem: 'larguraEmbalagem',
+  altura_embalagem: 'alturaEmbalagem',
+  comprimento_embalagem: 'comprimentoEmbalagem',
+  diametro_embalagem: 'diametroEmbalagem',
+  tipo_embalagem: 'tipoEmbalagem',
+  estoque_minimo: 'estoque_minimo',
+  estoque_maximo: 'estoque_maximo',
+  localizacao: 'localizacao',
+  preco_custo: 'preco_custo',
+  preco_promocional: 'preco_promocional',
+  unidade_por_caixa: 'unidade_por_caixa',
+  codigo_fornecedor: 'codigo_fornecedor',
+  codigo_pelo_fornecedor: 'codigo_pelo_fornecedor',
+  garantia: 'garantia',
+  obs: 'obs',
+  marca: 'marca',
+  classe_produto: 'classe_produto',
+  classe_ipi: 'classe_ipi',
+  valor_ipi_fixo: 'valor_ipi_fixo',
+  cod_lista_servicos: 'cod_lista_servicos',
+  dias_preparacao: 'dias_preparacao',
+};
+
+// Builds the produto.alterar.php payload. Pure — no I/O, so it can be verified
+// with scripts/verify-tiny-push.mjs. `current` is the produto.obter.php record.
+//
+// Only título, descrição complementar, SEO and imagens are ever taken from the
+// local product. Everything else is Tiny's own value, echoed back.
+export function buildV2AlterarPayload(
+  current: any,
+  prod: TinyPushProduct,
+  sobrescreverTitulo = true,
+): { produto: Record<string, any>; steps: TinyPushSteps; hasAnyChange: boolean } {
   const cur = normalizeV2Product(current);
   const steps: TinyPushSteps = {
     titulo: 'sem dado local', descricao: 'sem dado local', seo: 'sem dado local', imagens: 'sem dado local',
   };
   const strDiffers = (a?: string, b?: string) => (a ?? '').trim() !== (b ?? '').trim();
 
+  // Required fields, always echoed from the current record.
   const produto: Record<string, any> = {
     sequencia: 1,
-    id,
+    id: current?.id,
     codigo: current?.codigo,
     nome: current?.nome,
     unidade: current?.unidade,
@@ -212,6 +267,16 @@ export async function updateV2Product(uid: string, id: string, prod: TinyPushPro
     situacao: current?.situacao,
     tipo: current?.tipo,
   };
+
+  // Everything else Tiny already has, handed straight back so alterar can't reset
+  // it. Only fields Tiny actually holds a value for are echoed — sending an empty
+  // string for something Tiny never had would be noise at best.
+  for (const [alterarKey, obterKey] of Object.entries(PRESERVED_V2_FIELDS)) {
+    const v = current?.[obterKey];
+    if (v !== undefined && v !== null && v !== '') produto[alterarKey] = v;
+  }
+  // categoria comes back as a ">>"-separated path string; only echo that shape.
+  if (typeof current?.categoria === 'string' && current.categoria.trim()) produto.categoria = current.categoria;
 
   if (prod.nome) {
     if (!sobrescreverTitulo) {
@@ -264,12 +329,6 @@ export async function updateV2Product(uid: string, id: string, prod: TinyPushPro
   }
 
   const hasAnyChange = steps.titulo === 'ok' || steps.descricao === 'ok' || steps.seo === 'ok' || steps.imagens === 'ok';
-  if (!hasAnyChange) return steps;
-
   Object.keys(produto).forEach((k) => { if (produto[k] === undefined || produto[k] === null) delete produto[k]; });
-
-  const payload = JSON.stringify({ produtos: [{ produto }] });
-  console.log(`[tiny-v2] produto.alterar id=${id} payload=${payload.slice(0, 1500)}`);
-  await tinyV2Call(uid, 'produto.alterar.php', { produto: payload });
-  return steps;
+  return { produto, steps, hasAnyChange };
 }
