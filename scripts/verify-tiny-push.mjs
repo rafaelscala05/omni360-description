@@ -112,6 +112,8 @@ const noTinyV2 = {
   categoria: 'Áudio >> Fones',
   descricao_complementar: '<p>antiga</p>',
   diasPreparacao: '3',
+  tipoEmbalagem: '0',
+  id_fornecedor: '0',
   seo: { seo_title: 'Fone Tascam TH-05', seo_description: 'desc antiga', slug: 'fone-tascam-th-05', link_video: 'https://youtu.be/x' },
 };
 
@@ -126,7 +128,6 @@ check('peso bruto devolvido ao Tiny', produto.peso_bruto, '0.450');
 check('largura convertida para snake_case', produto.largura_embalagem, '18.5');
 check('altura convertida para snake_case', produto.altura_embalagem, '9.0');
 check('comprimento convertido para snake_case', produto.comprimento_embalagem, '22.0');
-check('tipo de embalagem preservado', produto.tipo_embalagem, '2');
 check('ncm preservado', produto.ncm, '85183000');
 check('cest preservado', produto.cest, '2106400');
 check('gtin preservado', produto.gtin, '7891234567890');
@@ -161,6 +162,27 @@ check('seo_description antigo preservado', comSeo.produto.seo.seo_description, '
 check('slug preservado', comSeo.produto.seo.slug, 'fone-tascam-th-05');
 check('link_video preservado', comSeo.produto.seo.link_video, 'https://youtu.be/x');
 check('passo seo marcado como enviado', comSeo.steps.seo, 'ok');
+
+// obter responde "0" para "não definido"; alterar só aceita 1/2/3 em
+// tipo_embalagem e exige fornecedor cadastrado — ecoar o zero viraria erro.
+check('tipo_embalagem 0 não é ecoado', 'tipo_embalagem' in produto, false);
+check('id_fornecedor 0 não é ecoado', 'id_fornecedor' in produto, false);
+const comEmbalagem = buildV2AlterarPayload({ ...noTinyV2, tipoEmbalagem: '2' }, { tinyId: '777', descricaoHtml: '<p>x</p>' });
+check('tipo_embalagem válido é ecoado', comEmbalagem.produto.tipo_embalagem, '2');
+
+// Limites documentados do layout: acima deles o Tiny recusa o registro inteiro.
+const seoLongo = buildV2AlterarPayload(noTinyV2, {
+  tinyId: '777',
+  seoDescription: 'D'.repeat(256),
+  seoTitle: 'Título SEO aceitável',
+});
+check('seo_description acima de 255 não é enviado', seoLongo.produto.seo.seo_description, 'desc antiga');
+check('seo_title dentro do limite é enviado', seoLongo.produto.seo.seo_title, 'Título SEO aceitável');
+checkMatch('recusa do seo é reportada', seoLongo.steps.seo, /seo_description com 256 caracteres \(máx\. 255\)/);
+
+const soRecusa = buildV2AlterarPayload(noTinyV2, { tinyId: '777', seoTitle: 'T'.repeat(121) });
+check('seo_title acima de 120 não é enviado', soRecusa.produto.seo.seo_title, 'Fone Tascam TH-05');
+check('nada a enviar quando só havia o campo recusado', soRecusa.hasAnyChange, false);
 
 // Nada local mudou → nem chega a montar chamada.
 const semMudanca = buildV2AlterarPayload(noTinyV2, { tinyId: '777', descricaoHtml: '<p>antiga</p>' });

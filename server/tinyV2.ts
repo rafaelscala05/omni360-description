@@ -203,10 +203,17 @@ export async function updateV2Product(uid: string, id: string, prod: TinyPushPro
 
 // Fields produto.alterar.php accepts that we must hand back untouched, mapped
 // from the key produto.obter.php answers with. produto.alterar is a full-record
-// operation: a field left out of the payload is not "kept", it is reset — which
-// is how a description push ended up zeroing pesos and dimensões. So instead of
-// omitting this data we echo Tiny's OWN current value for it, which preserves it
-// under a full replace and is a no-op if Tiny ever treats the call as a patch.
+// operation: a scalar field left out of the payload is not "kept", it is reset —
+// which is how a description push ended up zeroing pesos and dimensões. So
+// instead of omitting this data we echo Tiny's OWN current value for it, which
+// preserves it under a full replace and is a no-op if Tiny ever treats the call
+// as a patch.
+//
+// Collections behave the other way round and must NOT be echoed: the docs state
+// that omitting `tags` keeps the product's current tags and that `mapeamentos` is
+// ignored unless sent (sending an empty array deletes them), and `variacoes`
+// survived being omitted on a real push. So only scalars are listed here.
+//
 // Note the casing: obter answers the packaging dimensions in camelCase while
 // alterar reads them in snake_case.
 const PRESERVED_V2_FIELDS: Record<string, string> = {
@@ -239,6 +246,16 @@ const PRESERVED_V2_FIELDS: Record<string, string> = {
   dias_preparacao: 'dias_preparacao',
   id_fornecedor: 'id_fornecedor',
 };
+
+// For these, produto.obter.php answers "0" to mean "not set", and 0 is not a
+// value produto.alterar.php accepts — tipo_embalagem only takes 1/2/3, and a
+// id_fornecedor must match a supplier registered in Tiny. Echoing the zero would
+// turn a preservation into a validation error, so treat it as absent.
+const ZERO_MEANS_UNSET = new Set(['tipo_embalagem', 'id_fornecedor']);
+
+// Documented field limits (produto.alterar.php layout). Over them Tiny rejects
+// the whole record, so an oversized local value is skipped and reported instead.
+const SEO_MAX: Record<string, number> = { seo_title: 120, seo_description: 255, seo_keywords: 255 };
 
 // Same idea, for keys produto.obter.php may answer in camelCase (like the
 // packaging dimensions above). First non-empty wins.
@@ -284,7 +301,10 @@ export function buildV2AlterarPayload(
     const candidatos = PRESERVED_V2_ALIASES[alterarKey] ?? [obterKey];
     for (const k of candidatos) {
       const v = current?.[k];
-      if (v !== undefined && v !== null && v !== '') { produto[alterarKey] = v; break; }
+      if (v === undefined || v === null || v === '') continue;
+      if (ZERO_MEANS_UNSET.has(alterarKey) && Number(v) === 0) continue;
+      produto[alterarKey] = v;
+      break;
     }
   }
   // categoria comes back as a ">>"-separated path string; only echo that shape.
@@ -315,10 +335,21 @@ export function buildV2AlterarPayload(
   // description-only push would risk resetting it the way pesos were reset.
   const seo: Record<string, any> = (current?.seo && typeof current.seo === 'object') ? { ...current.seo } : {};
   let seoChanged = false;
-  if (prod.seoTitle && strDiffers(prod.seoTitle, cur.seoTitle)) { seo.seo_title = prod.seoTitle; seoChanged = true; }
-  if (prod.seoDescription && strDiffers(prod.seoDescription, cur.seoDescription)) { seo.seo_description = prod.seoDescription; seoChanged = true; }
-  if (prod.seoKeywords && strDiffers(prod.seoKeywords, cur.seoKeywords)) { seo.seo_keywords = prod.seoKeywords; seoChanged = true; }
-  if (prod.seoTitle || prod.seoDescription || prod.seoKeywords) steps.seo = seoChanged ? 'ok' : 'sem alteração';
+  const seoRecusados: string[] = [];
+  const aplicarSeo = (key: string, local?: string, atual?: string) => {
+    if (!local || !strDiffers(local, atual)) return;
+    const len = local.trim().length;
+    if (len > SEO_MAX[key]) { seoRecusados.push(`${key} com ${len} caracteres (máx. ${SEO_MAX[key]})`); return; }
+    seo[key] = local;
+    seoChanged = true;
+  };
+  aplicarSeo('seo_title', prod.seoTitle, cur.seoTitle);
+  aplicarSeo('seo_description', prod.seoDescription, cur.seoDescription);
+  aplicarSeo('seo_keywords', prod.seoKeywords, cur.seoKeywords);
+  if (prod.seoTitle || prod.seoDescription || prod.seoKeywords) {
+    const recusa = seoRecusados.length ? `não enviado: ${seoRecusados.join('; ')}` : '';
+    steps.seo = seoChanged ? (recusa ? `ok (${recusa})` : 'ok') : (recusa || 'sem alteração');
+  }
   Object.keys(seo).forEach((k) => { if (seo[k] === undefined || seo[k] === null || seo[k] === '') delete seo[k]; });
   if (Object.keys(seo).length) produto.seo = seo;
 
