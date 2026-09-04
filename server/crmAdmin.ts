@@ -151,7 +151,7 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
       displayName: data.displayName ?? '',
       email: data.email ?? '',
       companyName: data.company?.nomeFantasia || data.company?.razaoSocial || '',
-      whatsapp: data.onboarding?.contact?.whatsapp ?? '',
+      whatsapp: data.onboarding?.contact?.whatsapp || data.phone || '',
       credits: Number(data.credits ?? 0),
       crm,
       stagnant: crm ? isStagnant(crm, now) : false,
@@ -301,7 +301,7 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
         stagnant: crm ? isStagnant(crm, now) : false,
         daysInStage: crm ? daysBetween(crm.stageEnteredAt, now) : 0,
         productCount: products.data().count,
-        whatsapp: String(data.onboarding?.contact?.whatsapp ?? ''),
+        whatsapp: String(data.onboarding?.contact?.whatsapp || data.phone || ''),
         whatsappConsent: data.onboarding?.contact?.whatsappConsent === true,
         whatsappConsentAt: data.onboarding?.contact?.whatsappConsentAt ?? null,
       };

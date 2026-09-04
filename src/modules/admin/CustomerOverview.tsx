@@ -3,7 +3,7 @@
 
 import type { ReactNode } from 'react';
 import type { CustomerDetailPayload } from '../../types/crm';
-import { Card, formatDate } from './ui';
+import { Card, formatDate, whatsappHref } from './ui';
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -40,6 +40,20 @@ export default function CustomerOverview({ customer }: { customer: CustomerDetai
         <h2 className="text-sm font-bold text-slate-700 mb-3">Conta</h2>
         <Row label="Nome">{str(customer.displayName)}</Row>
         <Row label="E-mail">{str(customer.email)}</Row>
+        <Row label="Telefone">
+          {whatsappHref(customer.whatsapp) ? (
+            <a
+              href={whatsappHref(customer.whatsapp)!}
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-emerald-600 hover:text-emerald-800"
+            >
+              {customer.whatsapp}
+            </a>
+          ) : (
+            str(customer.whatsapp)
+          )}
+        </Row>
         <Row label="Primeiro acesso">{formatDate(customer.createdAt)}</Row>
         <Row label="Créditos">{customer.credits}</Row>
         <Row label="Código de indicação">{str(customer.referralCode)}</Row>

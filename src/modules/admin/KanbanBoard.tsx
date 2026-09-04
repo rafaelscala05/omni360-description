@@ -279,7 +279,7 @@ function KanbanCard({
             <span className="w-7 h-7 shrink-0 rounded-full bg-violet-100 text-violet-700 text-[11px] font-bold flex items-center justify-center">
               {initials(customer.displayName, customer.email)}
             </span>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-slate-800 truncate">
                 {customer.displayName || customer.email || 'Sem nome'}
               </p>
@@ -287,6 +287,17 @@ function KanbanCard({
                 <p className="text-[11px] text-slate-400 truncate">{customer.companyName}</p>
               )}
             </div>
+            {customer.whatsapp && (
+              <span
+                title={`WhatsApp: ${customer.whatsapp}`}
+                className="shrink-0 text-emerald-500"
+                aria-label="Possui WhatsApp"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                  <path d="M12.04 2c-5.52 0-10 4.48-10 10 0 1.76.46 3.44 1.34 4.94L2 22l5.2-1.36a9.94 9.94 0 0 0 4.84 1.23h.01c5.52 0 10-4.48 10-10s-4.48-9.87-10.01-9.87Zm5.85 14.13c-.25.7-1.25 1.29-1.94 1.44-.51.11-1.17.2-3.42-.73-2.87-1.19-4.72-4.1-4.86-4.29-.14-.19-1.16-1.54-1.16-2.94s.72-2.09.98-2.38c.25-.28.55-.35.73-.35.18 0 .37 0 .53.01.17.01.4-.06.62.48.25.6.85 2.08.92 2.23.07.15.12.32.02.51-.09.19-.14.31-.28.48-.14.17-.29.37-.42.5-.14.14-.28.29-.12.57.16.28.71 1.18 1.53 1.92 1.05.95 1.94 1.24 2.22 1.38.28.14.44.12.61-.07.17-.19.71-.82.9-1.1.19-.28.37-.23.62-.14.25.1 1.62.77 1.9.91.28.14.46.21.53.33.07.12.07.68-.18 1.38Z" />
+                </svg>
+              </span>
+            )}
           </div>
 
           <div className="mt-2 flex items-center gap-2 flex-wrap">

@@ -94,7 +94,7 @@ export default function CustomerDetail() {
   if (error && !customer) return <ErrorBanner message={error} />;
   if (!customer) return null;
 
-  const wa = whatsappHref(String(customer.onboarding?.contact?.whatsapp ?? ''));
+  const wa = whatsappHref(customer.whatsapp);
   const companyName =
     (customer.company?.nomeFantasia as string) || (customer.company?.razaoSocial as string) || '';
 
