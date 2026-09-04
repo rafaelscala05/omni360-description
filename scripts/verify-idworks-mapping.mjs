@@ -301,6 +301,26 @@ const resultDescOneField = buildSkuUpdateBody(currentDesc, prodDescOneField);
 check('desc one field changed → steps.descricao = ok', resultDescOneField.steps.descricao, 'ok');
 check('desc one field → body.EcommerceDescription setado', resultDescOneField.body.EcommerceDescription, 'Desc nova');
 check('desc one field → body.EcommerceDescriptionShort ausente', resultDescOneField.body.EcommerceDescriptionShort, undefined);
+// --- log do que foi enviado (server/pushLog.ts) ---
+// O log é montado na mesma decisão que grava o campo, então só pode conter o
+// que realmente entrou no body.
+check('log registra só o campo fiscal gravado', resultFiscalChanged.enviado.map((e) => e.campo), ['Peso líquido (Kg)']);
+check('log traz o valor gravado', resultFiscalChanged.enviado[0].valor, '2.5');
+check('sem alteração → log vazio', resultUnchanged.enviado, []);
+// Só o título mudou nesse fixture; meta e keywords eram iguais, então não vão
+// para o body nem para o log — é exatamente o invariante que interessa.
+check('log do SEO cobre só o que mudou', resultSeoChanged.enviado.map((e) => e.campo), ['Título SEO']);
+check('log do SEO traz o valor gravado', resultSeoChanged.enviado[0].valor, 'Título novo');
+check('campos desligados não geram log', resultDisabled.enviado, []);
+
+// Invariante geral: um campo aparece no log se, e somente se, entrou no body.
+for (const [nome, r] of [
+  ['fiscal', resultFiscalChanged], ['seo', resultSeoChanged], ['descrição', resultDescOneField],
+  ['sem alteração', resultUnchanged], ['campos desligados', resultDisabled],
+]) {
+  check(`log e body têm o mesmo tamanho (${nome})`, r.enviado.length, Object.keys(r.body).length);
+}
+
 
 // --- parseWebhookEnvelope tests (server/idworksWebhook.ts) ---
 // The IdWorks OpenAPI schema WebhookLogListItem.PostData documents the webhook payload as

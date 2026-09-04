@@ -2,6 +2,7 @@
 // token (POST form, formato=json) and wraps everything in { retorno: {...} }.
 // Used as an alternative to the v3 (OAuth) client via server/tinyProvider.ts.
 import { SECRET_REF, sleep, NOME_MAX, type TinyNormalizedProduct, type TinyPushProduct, type TinyPushSteps } from './tinyAgent';
+import { logTexto, logLista, push as pushLog, type PushLogEntry } from './pushLog';
 
 const V2_BASE = 'https://api.tiny.com.br/api2';
 const PAGE_SIZE = 100; // v2 lists 100 records per page
@@ -190,15 +191,15 @@ export async function getV2Product(uid: string, id: string): Promise<TinyNormali
 // Reads the product from Tiny, builds the produto.alterar.php payload and sends it,
 // skipping the call entirely when nothing local differs. All payload logic lives in
 // the pure buildV2AlterarPayload below.
-export async function updateV2Product(uid: string, id: string, prod: TinyPushProduct, sobrescreverTitulo = true): Promise<TinyPushSteps> {
+export async function updateV2Product(uid: string, id: string, prod: TinyPushProduct, sobrescreverTitulo = true): Promise<{ steps: TinyPushSteps; enviado: PushLogEntry[] }> {
   const current = (await tinyV2Call(uid, 'produto.obter.php', { id }))?.produto ?? {};
-  const { produto, steps, hasAnyChange } = buildV2AlterarPayload(current, prod, sobrescreverTitulo);
-  if (!hasAnyChange) return steps;
+  const { produto, steps, enviado, hasAnyChange } = buildV2AlterarPayload(current, prod, sobrescreverTitulo);
+  if (!hasAnyChange) return { steps, enviado: [] };
 
   const payload = JSON.stringify({ produtos: [{ produto }] });
   console.log(`[tiny-v2] produto.alterar id=${id} payload=${payload.slice(0, 1500)}`);
   await tinyV2Call(uid, 'produto.alterar.php', { produto: payload });
-  return steps;
+  return { steps, enviado };
 }
 
 // Fields produto.alterar.php accepts that we must hand back untouched, mapped
@@ -256,6 +257,7 @@ const ZERO_MEANS_UNSET = new Set(['tipo_embalagem', 'id_fornecedor']);
 // Documented field limits (produto.alterar.php layout). Over them Tiny rejects
 // the whole record, so an oversized local value is skipped and reported instead.
 const SEO_MAX: Record<string, number> = { seo_title: 120, seo_description: 255, seo_keywords: 255 };
+const SEO_LABEL: Record<string, string> = { seo_title: 'Título SEO', seo_description: 'Descrição SEO', seo_keywords: 'Palavras-chave SEO' };
 
 // Same idea, for keys produto.obter.php may answer in camelCase (like the
 // packaging dimensions above). First non-empty wins.
@@ -274,8 +276,9 @@ export function buildV2AlterarPayload(
   current: any,
   prod: TinyPushProduct,
   sobrescreverTitulo = true,
-): { produto: Record<string, any>; steps: TinyPushSteps; hasAnyChange: boolean } {
+): { produto: Record<string, any>; steps: TinyPushSteps; enviado: PushLogEntry[]; hasAnyChange: boolean } {
   const cur = normalizeV2Product(current);
+  const enviado: PushLogEntry[] = [];
   const steps: TinyPushSteps = {
     titulo: 'sem dado local', descricao: 'sem dado local', seo: 'sem dado local', imagens: 'sem dado local',
   };
@@ -319,13 +322,16 @@ export function buildV2AlterarPayload(
       steps.titulo = `título com ${prod.nome.trim().length} caracteres — o Tiny aceita no máximo ${NOME_MAX}`;
     } else {
       steps.titulo = strDiffers(prod.nome, cur.nome) ? 'ok' : 'sem alteração';
-      if (steps.titulo === 'ok') produto.nome = prod.nome;
+      if (steps.titulo === 'ok') { produto.nome = prod.nome; pushLog(enviado, logTexto('Nome do produto', prod.nome)); }
     }
   }
 
   if (prod.descricaoHtml) {
     steps.descricao = strDiffers(prod.descricaoHtml, cur.descricaoHtml) ? 'ok' : 'sem alteração';
-    if (steps.descricao === 'ok') produto.descricao_complementar = prod.descricaoHtml;
+    if (steps.descricao === 'ok') {
+      produto.descricao_complementar = prod.descricaoHtml;
+      pushLog(enviado, logTexto('Descrição complementar', prod.descricaoHtml));
+    }
   }
 
   // The seo block follows the same echo rule as the scalar fields: seed it with
@@ -342,6 +348,7 @@ export function buildV2AlterarPayload(
     if (len > SEO_MAX[key]) { seoRecusados.push(`${key} com ${len} caracteres (máx. ${SEO_MAX[key]})`); return; }
     seo[key] = local;
     seoChanged = true;
+    pushLog(enviado, logTexto(SEO_LABEL[key], local));
   };
   aplicarSeo('seo_title', prod.seoTitle, cur.seoTitle);
   aplicarSeo('seo_description', prod.seoDescription, cur.seoDescription);
@@ -364,10 +371,13 @@ export function buildV2AlterarPayload(
     steps.imagens = imagensChanged ? 'ok' : 'sem alteração';
     // Tiny's structure is imagens_externas[].imagem_externa.url — each URL must be
     // wrapped in an `imagem_externa` object, or produto.alterar fails with cod 35.
-    if (imagensChanged) produto.imagens_externas = novas.map((url) => ({ imagem_externa: { url } }));
+    if (imagensChanged) {
+      produto.imagens_externas = novas.map((url) => ({ imagem_externa: { url } }));
+      pushLog(enviado, logLista('Imagens novas', novas));
+    }
   }
 
   const hasAnyChange = steps.titulo === 'ok' || steps.descricao === 'ok' || steps.seo === 'ok' || steps.imagens === 'ok';
   Object.keys(produto).forEach((k) => { if (produto[k] === undefined || produto[k] === null) delete produto[k]; });
-  return { produto, steps, hasAnyChange };
+  return { produto, steps, enviado, hasAnyChange };
 }

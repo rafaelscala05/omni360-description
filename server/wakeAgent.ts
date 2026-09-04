@@ -4,6 +4,7 @@
 import type express from 'express';
 import { adminDb } from './firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { logTexto, push as pushLog, type PushLogEntry } from './pushLog';
 
 const WAKE_BASE = 'https://api.fbits.net';
 const SECRET_REF = (uid: string) =>
@@ -147,6 +148,8 @@ export interface WakePushProduct {
 
 export interface WakePushResult {
   produtoId: string;
+  /** What was actually written, field by field (see server/pushLog.ts). */
+  enviado?: PushLogEntry[];
   sku?: string;
   ok: boolean;
   steps: Record<'descricao' | 'seo' | 'atributos' | 'imagens', string>;
@@ -307,6 +310,7 @@ export function registerWakeRoutes(app: express.Express, { verifyFirebaseToken }
 
       for (const prod of produtos) {
         const steps: WakePushResult['steps'] = { descricao: 'skip', seo: 'skip', atributos: 'skip', imagens: 'skip' };
+        const enviado: PushLogEntry[] = [];
 
         // Writes are keyed by SKU — the only identifier accepted across all
         // write endpoints (produto, informacoes, seo, imagens). ProdutoId is
@@ -340,6 +344,7 @@ export function registerWakeRoutes(app: express.Express, { verifyFirebaseToken }
                 tipoInformacao: block?.tipoInformacao ?? 'Informacoes',
               });
               steps.descricao = 'ok';
+              pushLog(enviado, logTexto('Descrição complementar', prod.descricaoHtml));
             } else {
               steps.descricao = 'Sem bloco de informação para atualizar';
             }
@@ -360,6 +365,9 @@ export function registerWakeRoutes(app: express.Express, { verifyFirebaseToken }
               metaTags,
             });
             steps.seo = 'ok';
+            pushLog(enviado, logTexto('Título SEO', prod.seoTitle));
+            pushLog(enviado, logTexto('Descrição SEO', prod.seoDescription));
+            pushLog(enviado, logTexto('Palavras-chave SEO', prod.seoKeywords));
           } catch (e: any) { steps.seo = e?.message ?? 'erro'; }
         }
 
@@ -389,6 +397,8 @@ export function registerWakeRoutes(app: express.Express, { verifyFirebaseToken }
             const body = buildProductPutBody(current, prod.atributos, prod.nome);
             await fbitsFetch(token, 'PUT', `/produtos/${id}${q}`, body);
             steps.atributos = 'ok';
+            if (prod.nome) pushLog(enviado, logTexto('Nome do produto', prod.nome));
+            for (const a of prod.atributos) pushLog(enviado, logTexto(`Atributo · ${a.nome}`, a.valor));
           } catch (e: any) { steps.atributos = e?.message ?? 'erro'; }
         }
 
@@ -399,12 +409,15 @@ export function registerWakeRoutes(app: express.Express, { verifyFirebaseToken }
               base64: img.base64, formato: img.formato, exibirMiniatura: false, estampa: false, ordem: 100 + i,
             })));
             steps.imagens = 'ok';
+            // Wake takes images as base64, so there is no URL to show — report
+            // how many were uploaded instead.
+            pushLog(enviado, logTexto('Imagens enviadas', `${prod.imagensBase64.length} imagem(ns)`));
           } catch (e: any) { steps.imagens = e?.message ?? 'erro'; }
         }
 
         const ok = (['descricao', 'seo', 'atributos', 'imagens'] as const)
           .every((k) => steps[k] === 'ok' || steps[k] === 'skip');
-        resultados.push({ produtoId: id, sku: prod.sku, ok, steps });
+        resultados.push({ produtoId: id, sku: prod.sku, ok, steps, enviado });
       }
 
       return res.json({ resultados });

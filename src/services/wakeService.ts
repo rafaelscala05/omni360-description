@@ -1,4 +1,5 @@
 import { auth } from '../firebase';
+import type { PushLogEntry } from '../types/integrations';
 
 // Client wrappers for the server-side Wake proxy (/api/wake/*). The token never
 // lives in the browser — it is sent once to /api/wake/validate and persisted
@@ -43,6 +44,8 @@ export interface WakePushProduct {
 }
 
 export interface WakePushResult {
+  /** What the ERP actually received (see server/pushLog.ts). */
+  enviado?: PushLogEntry[];
   produtoId: string;
   sku?: string;
   ok: boolean;

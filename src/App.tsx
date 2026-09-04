@@ -2076,10 +2076,12 @@ export default function App() {
                 items: prev.items.map((it) => {
                   const r = byResultId.get(it.id);
                   if (!r) return it;
+                  // `log` keeps the groups that were NOT written (or the error);
+                  // `enviado` carries what actually reached the ERP.
                   const log = r.steps
                     ? Object.entries(r.steps as Record<string, string>).filter(([, v]) => v !== 'ok').map(([k, v]) => `${k}: ${v}`).join(' · ')
                     : undefined;
-                  return { ...it, status: r.ok ? 'ok' : 'error', log };
+                  return { ...it, status: r.ok ? 'ok' : 'error', log, enviado: r.enviado };
                 }),
               }
             : prev,
@@ -2099,14 +2101,9 @@ export default function App() {
     setSendPanel((prev) => (prev ? { ...prev, sending: false } : prev));
   };
 
-  // Fecha o painel de envio automaticamente alguns segundos depois de concluir
-  // sem erros; se houve erro, mantém aberto para o usuário ver o log.
-  useEffect(() => {
-    if (!sendPanel || sendPanel.sending || !sendPanel.open) return;
-    if (sendPanel.items.some((it) => it.status === 'error')) return;
-    const t = setTimeout(() => setSendPanel((prev) => (prev ? { ...prev, open: false } : prev)), 2500);
-    return () => clearTimeout(t);
-  }, [sendPanel]);
+  // O painel não se fecha sozinho: ao terminar ele passa a mostrar, por produto,
+  // o log recolhido com o que foi de fato enviado ao ERP — fechar automaticamente
+  // esconderia justamente isso. O usuário fecha quando terminar de conferir.
 
   const handleSaveImages =(productId: string, selectedImage: string, ambientImages: string[], tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number }) => {
     setProducts(prev => {

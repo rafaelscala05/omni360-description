@@ -1,4 +1,5 @@
 import { auth } from '../firebase';
+import type { PushLogEntry } from '../types/integrations';
 
 // Client wrappers for the server-side Tiny ERP proxy (/api/tiny/*). Tokens never
 // live in the browser — the OAuth flow runs server-side and per-user access/refresh
@@ -53,6 +54,8 @@ export interface TinyPushProduct {
 // Per-group outcome: 'ok' (sent — differed from Tiny), 'sem alteração' (local data
 // matches Tiny already), 'sem dado local' (nothing local to send), or an error message.
 export interface TinyPushResult {
+  /** What the ERP actually received (see server/pushLog.ts). */
+  enviado?: PushLogEntry[];
   tinyId: string;
   sku?: string;
   ok: boolean;

@@ -1,4 +1,5 @@
 import { auth } from '../firebase';
+import type { PushLogEntry } from '../types/integrations';
 
 // Client wrappers for the server-side Bling ERP proxy (/api/bling/*). Tokens never
 // live in the browser — OAuth runs server-side and per-user access/refresh tokens
@@ -35,6 +36,8 @@ export interface BlingPushProduct {
 }
 
 export interface BlingPushResult {
+  /** What the ERP actually received (see server/pushLog.ts). */
+  enviado?: PushLogEntry[];
   blingId: string;
   sku?: string;
   ok: boolean;

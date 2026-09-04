@@ -7,6 +7,7 @@ import {
   tinyFetch, normalizeProduct, buildProductPutBody, SECRET_REF, STATUS_REF,
   type TinyNormalizedProduct, type TinyPushProduct, type TinyPushResult, type TinyPushSteps,
 } from './tinyAgent';
+import type { PushLogEntry } from './pushLog';
 import { listV2Page, getV2Product, updateV2Product, validateV2Token } from './tinyV2';
 
 export type TinyVersion = 'v2' | 'v3';
@@ -59,14 +60,15 @@ export async function tinyGetProduct(uid: string, id: string, version?: TinyVers
   return normalizeProduct(await tinyFetch<any>(uid, 'GET', `/produtos/${id}`));
 }
 
-export async function tinyUpdateProduct(uid: string, id: string, prod: TinyPushProduct, version?: TinyVersion, sobrescreverTitulo = true): Promise<TinyPushSteps> {
+export async function tinyUpdateProduct(uid: string, id: string, prod: TinyPushProduct, version?: TinyVersion, sobrescreverTitulo = true): Promise<{ steps: TinyPushSteps; enviado: PushLogEntry[] }> {
   const v = version ?? await getActiveVersion(uid);
   if (v === 'v2') return updateV2Product(uid, id, prod, sobrescreverTitulo);
   const current = await tinyFetch<any>(uid, 'GET', `/produtos/${id}`);
-  const { body, steps } = buildProductPutBody(current, prod, sobrescreverTitulo);
+  const { body, steps, enviado } = buildProductPutBody(current, prod, sobrescreverTitulo);
   const hasAnyChange = steps.titulo === 'ok' || steps.descricao === 'ok' || steps.seo === 'ok' || steps.imagens === 'ok';
-  if (hasAnyChange) await tinyFetch(uid, 'PUT', `/produtos/${id}`, body);
-  return steps;
+  if (!hasAnyChange) return { steps, enviado: [] };
+  await tinyFetch(uid, 'PUT', `/produtos/${id}`, body);
+  return { steps, enviado };
 }
 
 // --- Routes (push + v2 connect) --------------------------------------------
@@ -121,8 +123,8 @@ export function registerTinyProviderRoutes(app: express.Express, { verifyFirebas
           continue;
         }
         try {
-          const steps = await tinyUpdateProduct(uid, prod.tinyId, prod, version, sobrescreverTitulo);
-          resultados.push({ tinyId: prod.tinyId, sku: prod.sku, ok: true, steps });
+          const { steps, enviado } = await tinyUpdateProduct(uid, prod.tinyId, prod, version, sobrescreverTitulo);
+          resultados.push({ tinyId: prod.tinyId, sku: prod.sku, ok: true, steps, enviado });
         } catch (e: any) {
           const msg = e?.message ?? 'erro';
           resultados.push({ tinyId: prod.tinyId, sku: prod.sku, ok: false, steps: {

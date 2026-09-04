@@ -19,5 +19,23 @@ export function getProductIntegrationLinks(p: Product): IntegrationKey[] {
   return out;
 }
 
-export type SendPanelItem = { id: string; sku: string; nome: string; status: 'pending' | 'sending' | 'ok' | 'error'; log?: string };
+// Mirrors server/pushLog.ts — what the ERP actually received, field by field.
+export type PushLogEntry = {
+  campo: string;
+  valor?: string;
+  itens?: string[];
+  bytes?: number;
+  truncado?: boolean;
+};
+
+export type SendPanelItem = {
+  id: string;
+  sku: string;
+  nome: string;
+  status: 'pending' | 'sending' | 'ok' | 'error';
+  /** Error message, or the summary of groups that were not written. */
+  log?: string;
+  /** Fields actually written to the ERP, for the collapsed log. */
+  enviado?: PushLogEntry[];
+};
 export type SendPanelState = { open: boolean; integration: IntegrationKey; items: SendPanelItem[]; sending: boolean };

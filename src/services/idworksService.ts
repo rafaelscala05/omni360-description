@@ -1,4 +1,5 @@
 import { auth } from '../firebase';
+import type { PushLogEntry } from '../types/integrations';
 
 // Client wrappers for the server-side IdWorks ERP proxy (/api/idworks/*). Tokens never
 // live in the browser — credentials are persisted server-side via the Admin SDK and never
@@ -64,6 +65,8 @@ export interface IdworksPushProduct {
 }
 
 export interface IdworksPushResult {
+  /** What the ERP actually received (see server/pushLog.ts). */
+  enviado?: PushLogEntry[];
   idworksId: string;
   sku?: string;
   ok: boolean;

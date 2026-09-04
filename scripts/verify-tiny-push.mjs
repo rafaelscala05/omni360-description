@@ -47,7 +47,7 @@ const localComFiscal = {
   imagens: ['https://cdn.omni/nova.jpg'],
 };
 
-const { body, steps } = buildProductPutBody(noTiny, localComFiscal);
+const { body, steps, enviado } = buildProductPutBody(noTiny, localComFiscal);
 
 check('ncm preservado do Tiny', body.ncm, '63026000');
 check('gtin (código de barras) preservado do Tiny', body.gtin, '7891234567890');
@@ -66,6 +66,30 @@ check('imagem nova mesclada com a existente', body.anexos, [
 check('passos reportados', steps, {
   titulo: 'ok', descricao: 'ok', seo: 'ok', imagens: 'ok',
 });
+
+// --- 1b. log do que foi enviado (v3) --------------------------------------
+// O log nasce na mesma decisão que grava o campo, então ele não pode divergir
+// do payload: tudo que está no log tem que estar no body, e nada fiscal entra.
+check('log lista os campos gravados', enviado.map((e) => e.campo), [
+  'Nome do produto', 'Descrição complementar', 'Título SEO', 'Imagens novas',
+]);
+check('log traz o conteúdo do título', enviado[0].valor, 'Toalha de Banho Premium');
+check('log traz o HTML da descrição', enviado[1].valor, '<p>nova descrição</p>');
+check('log mede o tamanho real', enviado[1].bytes, Buffer.byteLength('<p>nova descrição</p>', 'utf8'));
+check('log de imagens traz só a URL nova', enviado[3].itens, ['https://cdn.omni/nova.jpg']);
+check('nenhum campo fiscal aparece no log', enviado.some((e) => /NCM|GTIN|Peso|Largura/i.test(e.campo)), false);
+
+// Texto longo é cortado na exibição, mas o tamanho real vai junto.
+const htmlGrande = '<p>' + 'x'.repeat(2000) + '</p>';
+const grande = buildProductPutBody(noTiny, { tinyId: '1', descricaoHtml: htmlGrande });
+const entradaGrande = grande.enviado.find((e) => e.campo === 'Descrição complementar');
+check('valor longo é truncado', entradaGrande.valor.length, 601);
+check('truncagem é sinalizada', entradaGrande.truncado, true);
+check('bytes reportam o tamanho original', entradaGrande.bytes, Buffer.byteLength(htmlGrande, 'utf8'));
+check('o payload continua com o HTML inteiro', grande.body.descricaoComplementar, htmlGrande);
+
+// Nada gravado → log vazio.
+check('sem alteração não gera log', buildProductPutBody(noTiny, { tinyId: '1', descricaoHtml: '<p>antiga</p>' }).enviado, []);
 
 // --- 2. limite de 120 caracteres do nome ----------------------------------
 const tituloLongo = 'A'.repeat(121);
@@ -117,7 +141,7 @@ const noTinyV2 = {
   seo: { seo_title: 'Fone Tascam TH-05', seo_description: 'desc antiga', slug: 'fone-tascam-th-05', link_video: 'https://youtu.be/x' },
 };
 
-const { produto, steps: st2, hasAnyChange } = buildV2AlterarPayload(noTinyV2, {
+const { produto, steps: st2, enviado: env2, hasAnyChange } = buildV2AlterarPayload(noTinyV2, {
   tinyId: '777',
   nome: 'Fone de Ouvido Tascam TH-05 Monitoramento Profissional',
   descricaoHtml: '<p>nova descrição</p>',
@@ -141,6 +165,8 @@ check('campos obrigatórios ecoados', [produto.unidade, produto.preco, produto.o
 check('descrição local é a única coisa nova', produto.descricao_complementar, '<p>nova descrição</p>');
 check('título local aplicado', produto.nome, 'Fone de Ouvido Tascam TH-05 Monitoramento Profissional');
 check('há mudança a enviar', hasAnyChange, true);
+check('log v2 registra só o que foi gravado', env2.map((e) => e.campo), ['Nome do produto', 'Descrição complementar']);
+check('log v2 não inclui os campos ecoados', env2.some((e) => /NCM|CEST|Peso|Marca|Garantia/i.test(e.campo)), false);
 check('passos v2', st2, { titulo: 'ok', descricao: 'ok', seo: 'sem dado local', imagens: 'sem dado local' });
 
 // Campo que o Tiny não tem não é inventado no payload.
@@ -162,6 +188,12 @@ check('seo_description antigo preservado', comSeo.produto.seo.seo_description, '
 check('slug preservado', comSeo.produto.seo.slug, 'fone-tascam-th-05');
 check('link_video preservado', comSeo.produto.seo.link_video, 'https://youtu.be/x');
 check('passo seo marcado como enviado', comSeo.steps.seo, 'ok');
+check('log v2 registra o SEO gravado', comSeo.enviado.map((e) => e.campo), ['Título SEO']);
+check('log v2 traz o valor do SEO', comSeo.enviado[0].valor, 'Título SEO novo');
+
+// Campo recusado pelo limite não entra no log — ele não foi enviado.
+const recusado = buildV2AlterarPayload(noTinyV2, { tinyId: '777', seoDescription: 'D'.repeat(256) });
+check('campo recusado não entra no log', recusado.enviado, []);
 
 // obter responde "0" para "não definido"; alterar só aceita 1/2/3 em
 // tipo_embalagem e exige fornecedor cadastrado — ecoar o zero viraria erro.

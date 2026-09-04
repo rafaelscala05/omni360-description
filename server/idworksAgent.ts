@@ -8,6 +8,7 @@
 import type express from 'express';
 import { adminDb } from './firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { logTexto, logLista, push as pushLog, type PushLogEntry } from './pushLog';
 
 // Minimum spacing between calls. IdWorks' rate limit isn't publicly documented;
 // 200ms (~5 req/s) is a conservative default — see .env.example.
@@ -229,24 +230,27 @@ export interface IdworksPushSteps {
 }
 
 export interface IdworksPushResult {
+  /** What was actually written, field by field (see server/pushLog.ts). */
+  enviado?: PushLogEntry[];
   idworksId: string;
   sku?: string;
   ok: boolean;
   steps: IdworksPushSteps;
 }
 
-export function buildSkuUpdateBody(current: any, prod: IdworksPushProduct): { body: Record<string, any>; steps: IdworksPushSteps } {
+export function buildSkuUpdateBody(current: any, prod: IdworksPushProduct): { body: Record<string, any>; steps: IdworksPushSteps; enviado: PushLogEntry[] } {
   const cur = normalizeProduct(current);
   const steps: IdworksPushSteps = { descricao: 'sem dado local', seo: 'sem dado local', fiscal: 'sem dado local', imagens: 'sem dado local' };
   const body: Record<string, any> = {};
+  const enviado: PushLogEntry[] = [];
   const strDiffers = (a?: string, b?: string) => (a ?? '').trim() !== (b ?? '').trim();
 
   if (prod.campos.descricao) {
     const hasLocal = !!prod.descricaoHtml || !!prod.descricaoCurta;
     if (hasLocal) {
       let changed = false;
-      if (prod.descricaoHtml && strDiffers(prod.descricaoHtml, cur.descricaoHtml)) { body.EcommerceDescription = prod.descricaoHtml; changed = true; }
-      if (prod.descricaoCurta && strDiffers(prod.descricaoCurta, cur.descricaoCurta)) { body.EcommerceDescriptionShort = prod.descricaoCurta; changed = true; }
+      if (prod.descricaoHtml && strDiffers(prod.descricaoHtml, cur.descricaoHtml)) { body.EcommerceDescription = prod.descricaoHtml; changed = true; pushLog(enviado, logTexto('Descrição', prod.descricaoHtml)); }
+      if (prod.descricaoCurta && strDiffers(prod.descricaoCurta, cur.descricaoCurta)) { body.EcommerceDescriptionShort = prod.descricaoCurta; changed = true; pushLog(enviado, logTexto('Descrição curta', prod.descricaoCurta)); }
       steps.descricao = changed ? 'ok' : 'sem alteração';
     }
   }
@@ -255,11 +259,11 @@ export function buildSkuUpdateBody(current: any, prod: IdworksPushProduct): { bo
     const hasLocal = !!prod.seoTitle || !!prod.seoDescription || !!prod.seoKeywords || !!prod.slug || !!prod.linkVideo;
     if (hasLocal) {
       let changed = false;
-      if (prod.seoTitle && strDiffers(prod.seoTitle, cur.seoTitle)) { body.EcommerceTitle = prod.seoTitle; changed = true; }
-      if (prod.seoDescription && strDiffers(prod.seoDescription, cur.seoDescription)) { body.EcommerceMetaTagDescription = prod.seoDescription; changed = true; }
-      if (prod.seoKeywords && strDiffers(prod.seoKeywords, cur.seoKeywords)) { body.EcommerceKeyWords = prod.seoKeywords; changed = true; }
-      if (prod.slug && strDiffers(prod.slug, cur.slug)) { body.EcommerceLinkId = prod.slug; changed = true; }
-      if (prod.linkVideo && strDiffers(prod.linkVideo, cur.linkVideo)) { body.EcommerceVideoUrl = prod.linkVideo; changed = true; }
+      if (prod.seoTitle && strDiffers(prod.seoTitle, cur.seoTitle)) { body.EcommerceTitle = prod.seoTitle; changed = true; pushLog(enviado, logTexto('Título SEO', prod.seoTitle)); }
+      if (prod.seoDescription && strDiffers(prod.seoDescription, cur.seoDescription)) { body.EcommerceMetaTagDescription = prod.seoDescription; changed = true; pushLog(enviado, logTexto('Descrição SEO', prod.seoDescription)); }
+      if (prod.seoKeywords && strDiffers(prod.seoKeywords, cur.seoKeywords)) { body.EcommerceKeyWords = prod.seoKeywords; changed = true; pushLog(enviado, logTexto('Palavras-chave SEO', prod.seoKeywords)); }
+      if (prod.slug && strDiffers(prod.slug, cur.slug)) { body.EcommerceLinkId = prod.slug; changed = true; pushLog(enviado, logTexto('Slug', prod.slug)); }
+      if (prod.linkVideo && strDiffers(prod.linkVideo, cur.linkVideo)) { body.EcommerceVideoUrl = prod.linkVideo; changed = true; pushLog(enviado, logTexto('Link do vídeo', prod.linkVideo)); }
       steps.seo = changed ? 'ok' : 'sem alteração';
     }
   }
@@ -268,14 +272,14 @@ export function buildSkuUpdateBody(current: any, prod: IdworksPushProduct): { bo
     const hasLocal = !!prod.ncm || !!prod.cest || prod.pesoLiquido != null || prod.pesoBruto != null || prod.largura != null || prod.altura != null || prod.comprimento != null;
     if (hasLocal) {
       let changed = false;
-      if (prod.ncm && strDiffers(prod.ncm, cur.ncm)) { body.SkuNCM = prod.ncm; changed = true; }
-      if (prod.ncmExTipi && strDiffers(prod.ncmExTipi, cur.ncmExTipi)) { body.SkuNCMExTipi = prod.ncmExTipi; changed = true; }
-      if (prod.cest && strDiffers(prod.cest, cur.cest)) { body.SkuCest = prod.cest; changed = true; }
-      if (prod.pesoLiquido != null && prod.pesoLiquido !== cur.pesoLiquido) { body.SkuWeightNet = prod.pesoLiquido; changed = true; }
-      if (prod.pesoBruto != null && prod.pesoBruto !== cur.pesoBruto) { body.SkuWeight = prod.pesoBruto; changed = true; }
-      if (prod.largura != null && prod.largura !== cur.largura) { body.SkuWidth = prod.largura; changed = true; }
-      if (prod.altura != null && prod.altura !== cur.altura) { body.SkuHeight = prod.altura; changed = true; }
-      if (prod.comprimento != null && prod.comprimento !== cur.comprimento) { body.SkuLength = prod.comprimento; changed = true; }
+      if (prod.ncm && strDiffers(prod.ncm, cur.ncm)) { body.SkuNCM = prod.ncm; changed = true; pushLog(enviado, logTexto('NCM', prod.ncm)); }
+      if (prod.ncmExTipi && strDiffers(prod.ncmExTipi, cur.ncmExTipi)) { body.SkuNCMExTipi = prod.ncmExTipi; changed = true; pushLog(enviado, logTexto('NCM Ex TIPI', prod.ncmExTipi)); }
+      if (prod.cest && strDiffers(prod.cest, cur.cest)) { body.SkuCest = prod.cest; changed = true; pushLog(enviado, logTexto('CEST', prod.cest)); }
+      if (prod.pesoLiquido != null && prod.pesoLiquido !== cur.pesoLiquido) { body.SkuWeightNet = prod.pesoLiquido; changed = true; pushLog(enviado, logTexto('Peso líquido (Kg)', prod.pesoLiquido)); }
+      if (prod.pesoBruto != null && prod.pesoBruto !== cur.pesoBruto) { body.SkuWeight = prod.pesoBruto; changed = true; pushLog(enviado, logTexto('Peso bruto (Kg)', prod.pesoBruto)); }
+      if (prod.largura != null && prod.largura !== cur.largura) { body.SkuWidth = prod.largura; changed = true; pushLog(enviado, logTexto('Largura', prod.largura)); }
+      if (prod.altura != null && prod.altura !== cur.altura) { body.SkuHeight = prod.altura; changed = true; pushLog(enviado, logTexto('Altura', prod.altura)); }
+      if (prod.comprimento != null && prod.comprimento !== cur.comprimento) { body.SkuLength = prod.comprimento; changed = true; pushLog(enviado, logTexto('Comprimento', prod.comprimento)); }
       steps.fiscal = changed ? 'ok' : 'sem alteração';
     }
   }
@@ -284,7 +288,7 @@ export function buildSkuUpdateBody(current: any, prod: IdworksPushProduct): { bo
   // POST /sku/image/{idsku} call, handled by the caller (registerIdworksRoutes'
   // push route), not by this function. `steps.imagens` is set there.
 
-  return { body, steps };
+  return { body, steps, enviado };
 }
 
 // --- Routes ------------------------------------------------------------------
@@ -361,7 +365,7 @@ export function registerIdworksRoutes(app: express.Express, { verifyFirebaseToke
         try {
           const currentArr = await idworksFetch<any[]>(uid, 'GET', `/sku/${prod.idworksId}`);
           const current = Array.isArray(currentArr) ? currentArr[0] : currentArr;
-          const { body, steps } = buildSkuUpdateBody(current, prod);
+          const { body, steps, enviado } = buildSkuUpdateBody(current, prod);
           if (Object.keys(body).length) await idworksFetch(uid, 'PUT', `/sku/${prod.idworksId}`, body);
 
           if (prod.campos.imagens && prod.imagens?.length) {
@@ -370,12 +374,13 @@ export function registerIdworksRoutes(app: express.Express, { verifyFirebaseToke
             if (novas.length) {
               for (const url of novas) await idworksFetch(uid, 'POST', `/sku/image/${prod.idworksId}`, { Url: url });
               steps.imagens = 'ok';
+              pushLog(enviado, logLista('Imagens novas', novas));
             } else {
               steps.imagens = 'sem alteração';
             }
           }
 
-          resultados.push({ idworksId: prod.idworksId, sku: prod.sku, ok: true, steps });
+          resultados.push({ idworksId: prod.idworksId, sku: prod.sku, ok: true, steps, enviado });
         } catch (e: any) {
           const msg = e?.message ?? 'erro';
           resultados.push({ idworksId: prod.idworksId, sku: prod.sku, ok: false, steps: { descricao: msg, seo: msg, fiscal: msg, imagens: msg } });

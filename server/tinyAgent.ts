@@ -7,6 +7,7 @@ import type express from 'express';
 import { adminDb } from './firebaseAdmin';
 import { recordEvent } from './crmEvents';
 import { FieldValue } from 'firebase-admin/firestore';
+import { logTexto, logLista, push as pushLog, type PushLogEntry } from './pushLog';
 
 const TINY_BASE = 'https://api.tiny.com.br/public-api/v3';
 const OAUTH_AUTH = 'https://accounts.tiny.com.br/realms/tiny/protocol/openid-connect/auth';
@@ -259,6 +260,8 @@ export type TinyPushSteps = Record<'titulo' | 'descricao' | 'seo' | 'imagens', s
 
 export interface TinyPushResult {
   tinyId: string;
+  /** What was actually written, field by field (see server/pushLog.ts). */
+  enviado?: PushLogEntry[];
   sku?: string;
   ok: boolean;
   steps: TinyPushSteps;
@@ -272,12 +275,13 @@ export interface TinyPushResult {
 // Only título/descrição/SEO/imagens are ever overridden. Fiscal and logistics
 // fields (ncm, gtin, cest, pesos, dimensões) are echoed from Tiny and never
 // written: the ERP owns that data. See updateV2Product for the full rationale.
-export function buildProductPutBody(current: any, prod: TinyPushProduct, sobrescreverTitulo = true): { body: Record<string, unknown>; steps: TinyPushSteps } {
+export function buildProductPutBody(current: any, prod: TinyPushProduct, sobrescreverTitulo = true): { body: Record<string, unknown>; steps: TinyPushSteps; enviado: PushLogEntry[] } {
   const dim = current?.dimensoes ?? {};
   const seo = current?.seo ?? {};
   const precos = current?.precos ?? {};
   const estoque = current?.estoque ?? {};
   const cur = normalizeProduct(current);
+  const enviado: PushLogEntry[] = [];
   const steps: TinyPushSteps = {
     titulo: 'sem dado local', descricao: 'sem dado local', seo: 'sem dado local', imagens: 'sem dado local',
   };
@@ -329,21 +333,31 @@ export function buildProductPutBody(current: any, prod: TinyPushProduct, sobresc
       steps.titulo = `título com ${prod.nome.trim().length} caracteres — o Tiny aceita no máximo ${NOME_MAX}`;
     } else {
       steps.titulo = strDiffers(prod.nome, cur.nome) ? 'ok' : 'sem alteração';
-      if (steps.titulo === 'ok') body.descricao = prod.nome;
+      if (steps.titulo === 'ok') { body.descricao = prod.nome; pushLog(enviado, logTexto('Nome do produto', prod.nome)); }
     }
   }
 
   if (prod.descricaoHtml) {
     steps.descricao = strDiffers(prod.descricaoHtml, cur.descricaoHtml) ? 'ok' : 'sem alteração';
-    if (steps.descricao === 'ok') body.descricaoComplementar = prod.descricaoHtml;
+    if (steps.descricao === 'ok') {
+      body.descricaoComplementar = prod.descricaoHtml;
+      pushLog(enviado, logTexto('Descrição complementar', prod.descricaoHtml));
+    }
   }
 
   let seoChanged = false;
-  if (prod.seoTitle && strDiffers(prod.seoTitle, cur.seoTitle)) { body.seo.titulo = prod.seoTitle; seoChanged = true; }
-  if (prod.seoDescription && strDiffers(prod.seoDescription, cur.seoDescription)) { body.seo.descricao = prod.seoDescription; seoChanged = true; }
+  if (prod.seoTitle && strDiffers(prod.seoTitle, cur.seoTitle)) {
+    body.seo.titulo = prod.seoTitle; seoChanged = true;
+    pushLog(enviado, logTexto('Título SEO', prod.seoTitle));
+  }
+  if (prod.seoDescription && strDiffers(prod.seoDescription, cur.seoDescription)) {
+    body.seo.descricao = prod.seoDescription; seoChanged = true;
+    pushLog(enviado, logTexto('Descrição SEO', prod.seoDescription));
+  }
   if (prod.seoKeywords && strDiffers(prod.seoKeywords, cur.seoKeywords)) {
     body.seo.keywords = prod.seoKeywords.split(',').map((k) => k.trim()).filter(Boolean);
     seoChanged = true;
+    pushLog(enviado, logTexto('Palavras-chave SEO', prod.seoKeywords));
   }
   if (prod.seoTitle || prod.seoDescription || prod.seoKeywords) {
     steps.seo = seoChanged ? 'ok' : 'sem alteração';
@@ -363,7 +377,10 @@ export function buildProductPutBody(current: any, prod: TinyPushProduct, sobresc
       if (url && !byUrl.has(url)) { byUrl.set(url, { url, externo: true }); imagensChanged = true; }
     }
     steps.imagens = imagensChanged ? 'ok' : 'sem alteração';
-    if (imagensChanged) body.anexos = Array.from(byUrl.values());
+    if (imagensChanged) {
+      body.anexos = Array.from(byUrl.values());
+      pushLog(enviado, logLista('Imagens novas', prod.imagens.filter((u) => !current_anexos.some((a: any) => a?.url === u))));
+    }
   }
 
   // Drop empty nested objects and undefined keys so we never send nulls the API rejects.
@@ -377,7 +394,7 @@ export function buildProductPutBody(current: any, prod: TinyPushProduct, sobresc
     });
   };
   prune(body);
-  return { body, steps };
+  return { body, steps, enviado };
 }
 
 // --- Routes ----------------------------------------------------------------

@@ -9,6 +9,7 @@ import type express from 'express';
 import { adminDb } from './firebaseAdmin';
 import { recordEvent } from './crmEvents';
 import { FieldValue } from 'firebase-admin/firestore';
+import { logTexto, logLista, push as pushLog, type PushLogEntry } from './pushLog';
 
 const BLING_BASE = 'https://api.bling.com.br/Api/v3';
 const OAUTH_AUTH = 'https://www.bling.com.br/Api/v3/oauth/authorize';
@@ -256,6 +257,8 @@ export interface BlingPushProduct {
 }
 
 export interface BlingPushResult {
+  /** What was actually written, field by field (see server/pushLog.ts). */
+  enviado?: PushLogEntry[];
   blingId: string;
   sku?: string;
   ok: boolean;
@@ -267,9 +270,10 @@ export interface BlingPushResult {
 // full update, so existing values are preserved. NOTE: Bling v3 has no rich SEO
 // block on the product, so the `seo` group is a no-op here (reported separately
 // in the push route) — no regression.
-export function buildProductPutBody(current: any, prod: BlingPushProduct): Record<string, unknown> {
+export function buildProductPutBody(current: any, prod: BlingPushProduct): { body: Record<string, unknown>; enviado: PushLogEntry[] } {
   const dim = current?.dimensoes ?? {};
   const trib = current?.tributacao ?? {};
+  const enviado: PushLogEntry[] = [];
 
   const body: Record<string, any> = {
     nome: current?.nome,
@@ -301,16 +305,17 @@ export function buildProductPutBody(current: any, prod: BlingPushProduct): Recor
 
   if (prod.campos.descricao && prod.descricaoHtml) {
     body.descricaoComplementar = prod.descricaoHtml;
+    pushLog(enviado, logTexto('Descrição complementar', prod.descricaoHtml));
   }
   if (prod.campos.fiscal) {
-    if (prod.ncm) body.tributacao.ncm = prod.ncm;
-    if (prod.cest) body.tributacao.cest = prod.cest;
-    if (prod.gtin) body.gtin = prod.gtin;
-    if (prod.pesoLiquido != null) body.pesoLiquido = prod.pesoLiquido;
-    if (prod.pesoBruto != null) body.pesoBruto = prod.pesoBruto;
-    if (prod.largura != null) body.dimensoes.largura = prod.largura;
-    if (prod.altura != null) body.dimensoes.altura = prod.altura;
-    if (prod.comprimento != null) body.dimensoes.profundidade = prod.comprimento;
+    if (prod.ncm) { body.tributacao.ncm = prod.ncm; pushLog(enviado, logTexto('NCM', prod.ncm)); }
+    if (prod.cest) { body.tributacao.cest = prod.cest; pushLog(enviado, logTexto('CEST', prod.cest)); }
+    if (prod.gtin) { body.gtin = prod.gtin; pushLog(enviado, logTexto('GTIN/EAN', prod.gtin)); }
+    if (prod.pesoLiquido != null) { body.pesoLiquido = prod.pesoLiquido; pushLog(enviado, logTexto('Peso líquido (Kg)', prod.pesoLiquido)); }
+    if (prod.pesoBruto != null) { body.pesoBruto = prod.pesoBruto; pushLog(enviado, logTexto('Peso bruto (Kg)', prod.pesoBruto)); }
+    if (prod.largura != null) { body.dimensoes.largura = prod.largura; pushLog(enviado, logTexto('Largura', prod.largura)); }
+    if (prod.altura != null) { body.dimensoes.altura = prod.altura; pushLog(enviado, logTexto('Altura', prod.altura)); }
+    if (prod.comprimento != null) { body.dimensoes.profundidade = prod.comprimento; pushLog(enviado, logTexto('Comprimento', prod.comprimento)); }
   }
   if (prod.campos.imagens && prod.imagens?.length) {
     // Merge with the current external images (dedup by link) so existing photos
@@ -321,10 +326,12 @@ export function buildProductPutBody(current: any, prod: BlingPushProduct): Recor
       const link = a?.link ?? a?.url;
       if (link) byLink.set(link, { link });
     }
+    const novas: string[] = [];
     for (const link of prod.imagens) {
-      if (link && !byLink.has(link)) byLink.set(link, { link });
+      if (link && !byLink.has(link)) { byLink.set(link, { link }); novas.push(link); }
     }
     body.midia = { ...(current?.midia ?? {}), imagens: { ...(current?.midia?.imagens ?? {}), externas: Array.from(byLink.values()) } };
+    pushLog(enviado, logLista('Imagens novas', novas));
   }
 
   // Drop empty nested objects and undefined keys so we never send nulls the API rejects.
@@ -338,7 +345,7 @@ export function buildProductPutBody(current: any, prod: BlingPushProduct): Recor
     });
   };
   prune(body);
-  return body;
+  return { body, enviado };
 }
 
 // --- Routes ----------------------------------------------------------------
@@ -486,6 +493,7 @@ export function registerBlingRoutes(app: express.Express, { verifyFirebaseToken 
 
       for (const prod of produtos) {
         const steps: BlingPushResult['steps'] = { descricao: 'skip', seo: 'skip', fiscal: 'skip', imagens: 'skip' };
+        let enviado: PushLogEntry[] = [];
         if (!prod.blingId) {
           resultados.push({ blingId: prod.blingId, sku: prod.sku, ok: false, steps: {
             descricao: 'Sem ID Bling', seo: 'Sem ID Bling', fiscal: 'Sem ID Bling', imagens: 'Sem ID Bling',
@@ -494,7 +502,9 @@ export function registerBlingRoutes(app: express.Express, { verifyFirebaseToken 
         }
         try {
           const current = (await blingFetch<any>(uid, 'GET', `/produtos/${prod.blingId}`))?.data ?? {};
-          await blingFetch(uid, 'PUT', `/produtos/${prod.blingId}`, buildProductPutBody(current, prod));
+          const built = buildProductPutBody(current, prod);
+          enviado = built.enviado;
+          await blingFetch(uid, 'PUT', `/produtos/${prod.blingId}`, built.body);
           if (prod.campos.descricao) steps.descricao = prod.descricaoHtml ? 'ok' : 'sem descrição';
           // Bling v3 has no rich SEO block on the product — nothing is pushed.
           if (prod.campos.seo) steps.seo = 'não suportado no Bling v3';
@@ -509,7 +519,7 @@ export function registerBlingRoutes(app: express.Express, { verifyFirebaseToken 
         }
         const ok = (['descricao', 'seo', 'fiscal', 'imagens'] as const)
           .every((k) => steps[k] === 'ok' || steps[k] === 'skip' || steps[k].startsWith('sem ') || steps[k].startsWith('não suportado'));
-        resultados.push({ blingId: prod.blingId, sku: prod.sku, ok, steps });
+        resultados.push({ blingId: prod.blingId, sku: prod.sku, ok, steps, enviado });
       }
       return res.json({ resultados });
     } catch (e: any) {
