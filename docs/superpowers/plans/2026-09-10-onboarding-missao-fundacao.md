@@ -174,7 +174,7 @@ Atenção: `cohort` começa `null` e só chega pelo snapshot. Como o efeito tamb
 
 - [ ] **Step 6: Permitir o campo nas regras do Firestore**
 
-`isValidUser()` em `firestore.rules` enumera os campos aceitos. Sem isso a criação da conta passa a ser **rejeitada**. Adicione a linha dentro da função (por volta de `firestore.rules:44`):
+`isValidUser()` em `firestore.rules` checa o **tipo** dos campos que conhece, mas não usa `hasOnly` — então `cohort` já seria aceito sem mudança. A linha abaixo só impede que o cliente grave algo que não seja string. Adicione dentro da função (por volta de `firestore.rules:44`):
 
 ```
              (!('cohort' in data) || data.cohort is string) &&
@@ -1328,54 +1328,82 @@ export default MissaoProduto;
 
 - [ ] **Step 3: Montar a jornada em App.tsx para a coorte nova**
 
-Em `src/App.tsx`, depois do bloco `if (user && workspace === 'content')` (por volta de `src/App.tsx:3071`), adicione a porta da jornada nova. Declare o estado junto dos outros:
+Três requisitos que a montagem precisa cumprir, e que uma versão ingênua quebra:
+nunca chamar `setState` durante o render (loop de re-render); **retomar** a missão em
+andamento ao recarregar a página, sem passar pela Tela 0 de novo; e não mostrar a jornada
+outra vez depois que uma missão foi concluída.
+
+Declare junto dos outros `useState`/`useEffect` do `App` — **antes de qualquer `return`
+antecipado** (o `if (user && workspace === 'content') return` em `src/App.tsx:3071` já é um):
 
 ```ts
 const [missao, setMissao] = useState<MissionState | null>(null);
-const [missaoEscolhida, setMissaoEscolhida] = useState<MissionId | null>(null);
+const [missoesCarregadas, setMissoesCarregadas] = useState(false);
+const [jornadaConcluida, setJornadaConcluida] = useState(false);
+
+// Retomada: missão em andamento volta direto; missão concluída encerra a
+// jornada. O estado local vence o snapshot enquanto a missão roda, para um
+// eco atrasado do Firestore não voltar o passo.
+useEffect(() => {
+  if (!user || !isCoorteMissao(cohort)) return;
+  return ouvirMissoes(user.uid, (lista) => {
+    setJornadaConcluida(lista.some((m) => !!m.concluidaEm));
+    const emAndamento = lista.find((m) => m.missionId === 'produto' && !m.concluidaEm) ?? null;
+    setMissao((atual) => atual ?? emAndamento);
+    setMissoesCarregadas(true);
+  });
+}, [user, cohort]);
 ```
 
-E o bloco de render:
+Imports no topo de `src/App.tsx`:
+
+```ts
+import MissionPicker from './modules/onboarding/mission/MissionPicker';
+import MissaoProduto from './modules/onboarding/mission/MissaoProduto';
+import { iniciarMissao, ouvirMissoes, salvarMissao } from './services/missionService';
+import type { MissionState } from './modules/onboarding/mission/missionTypes';
+```
+
+E o bloco de render, depois do `if (user && workspace === 'content')`:
 
 ```tsx
-  // Jornada de missão — só para a coorte nova, e só enquanto não concluída.
-  if (user && isCoorteMissao(cohort) && !missao?.concluidaEm) {
-    const signal = {
-      produtos: products.length,
-      erpConectado: products.some((p) => p._tinyProductId || p._blingProductId || p._idworksProductId),
-      temProjetoConteudo: hasContentAgent,
-    };
-    if (!missaoEscolhida) {
+  // Jornada de missão — só para a coorte nova, e só até a primeira missão
+  // concluída (a trilha do dia 2 chega no Plano 2).
+  if (user && isCoorteMissao(cohort) && missoesCarregadas && !jornadaConcluida) {
+    const erpConectado = products.some((p) => p._tinyProductId || p._blingProductId || p._idworksProductId);
+    if (!missao) {
       return (
         <MissionPicker
-          signal={signal}
+          signal={{ produtos: products.length, erpConectado, temProjetoConteudo: hasContentAgent }}
           semDescricao={products.filter((p) => !p['Descrição complementar']).length}
           onEscolher={async (id) => {
-            setMissaoEscolhida(id);
+            if (id === 'conteudo') {
+              // A Missão Conteúdo chega no Plano 2. Até lá, a escolha leva ao
+              // workspace de Conteúdo que já existe — decidido no handler, não
+              // no render, para não disparar setState durante a renderização.
+              setWorkspace('content');
+              return;
+            }
             setMissao(await iniciarMissao(user.uid, id));
           }}
         />
       );
     }
-    if (missaoEscolhida === 'produto' && missao) {
-      return (
-        <MissaoProduto
-          uid={user.uid}
-          state={missao}
-          onState={(s) => { setMissao(s); void salvarMissao(user.uid, s); }}
-          produtos={products}
-          categorias={existingCategories}
-          temErp={signal.erpConectado}
-          onProdutoCriado={handleProductCreatedFromOnboarding}
-          onGerarDescricao={handleGenerateDescriptionForOnboarding}
-          onSalvarNoCatalogo={() => saveToCloud(true)}
-          onPublicarNoErp={async (id) => { void id; /* push de ERP: Plano 2 */ }}
-          onConcluir={() => setMissao((m) => (m ? { ...m, concluidaEm: new Date().toISOString() } : m))}
-        />
-      );
-    }
-    // Missão Conteúdo chega no Plano 2 — por ora volta pra escolha.
-    setMissaoEscolhida(null);
+    return (
+      <MissaoProduto
+        uid={user.uid}
+        state={missao}
+        onState={(s) => { setMissao(s); void salvarMissao(user.uid, s); }}
+        produtos={products}
+        categorias={existingCategories}
+        temErp={erpConectado}
+        onProdutoCriado={handleProductCreatedFromOnboarding}
+        onGerarDescricao={handleGenerateDescriptionForOnboarding}
+        onSalvarNoCatalogo={() => saveToCloud(true)}
+        onPublicarNoErp={async (id) => { void id; /* push de ERP: Plano 2 */ }}
+        onConcluir={() => setJornadaConcluida(true)}
+      />
+    );
   }
 ```
 
@@ -1399,10 +1427,12 @@ Com uma conta nova (coorte `missao-v1`), no navegador em ~375px de largura:
 3. Colar a URL de um produto real → o palco mostra as linhas de leitura, e a missão avança para a etapa 2.
 4. Gerar a descrição → o log completa e avança para a etapa 3.
 5. A chegada mostra antes/depois e o botão diz **"Salvar no meu catálogo"** (conta sem ERP).
-6. **Retomada:** recarregar a página no meio da etapa 2 volta na etapa 2, não no começo.
+6. **Retomada:** recarregar a página no meio da etapa 2 volta **direto** na etapa 2 — sem passar pela Tela 0.
 7. **Troca de layout:** alargar a janela para >768px troca para as duas colunas **sem perder o progresso**.
 8. No Firestore, `users/{uid}/missions/produto` reflete o passo atual.
 9. Em `/admin`, os eventos `mission_started` e `mission_step_completed` aparecem na jornada do usuário.
+10. Concluir a missão e recarregar → o app normal aparece; a Tela 0 **não** volta.
+11. Escolher "Aparecer no Google" na Tela 0 → abre o workspace de Conteúdo existente (interino até o Plano 2).
 
 Com uma conta **existente** (sem coorte): nada mudou — o `ProductUrlImportModal` auto-abre como antes.
 
@@ -1422,6 +1452,32 @@ Claude-Session: https://claude.ai/code/session_0145emgyx4jy8XzpsXzdVDnK"
 
 ---
 
+## Desvios na execução
+
+Registrados para o plano não descrever um código diferente do que foi commitado.
+
+- **Baseline do type-check não era limpo.** `main` já tinha 3 erros (`App.tsx:797`,
+  `App.tsx:1525`, `ProductEditModal.tsx:333`), em linhas que este plano não toca. O critério
+  aplicado foi "nenhum erro novo", comparando a lista contra o baseline.
+- **Task 8 — fallback manual e categoria obrigatória.** O plano só checava foto e título, e
+  prometia "quer cadastrar na mão?" sem implementar caminho nenhum. A missão agora reusa o
+  `ProductFormFields` (upload de foto, criação de categoria com o nome sugerido pelo
+  breadcrumb) e `matchExistingCategory`, extraído junto com `buildProduct` para
+  `buildProduct.ts`. "Prefiro cadastrar na mão" existe desde a primeira tela, como no modal.
+- **Task 8 — `source: 'failed'` é retorno, não exceção.** O plano só tratava o `catch`. Agora
+  os dois caminhos caem no formulário manual.
+- **Task 8 — sem publicação falsa no ERP.** O plano deixava `onPublicarNoErp` como no-op mas
+  mostrava "Publicar no Tiny" e registrava `mission_artifact_published` com `destino: 'tiny'`.
+  O botão agora é "Salvar no meu catálogo" para todo mundo; `onPublicarNoErp` e `temErp` saíram.
+  Publicar no ERP entra no Plano 2.
+- **Task 8 — "Quero ajustar antes" conclui de verdade.** No plano ela só fechava a tela sem
+  persistir, e a jornada voltava no reload. Agora grava `concluidaEm` e dispara
+  `mission_completed`, mas **não** `mission_artifact_published` — completar e publicar ficam
+  distinguíveis na métrica.
+- **Task 1 — a corrida do auto-open é teórica.** `setIsAuthReady(true)` só roda depois de
+  `await loadUserData()`, quando o snapshot com a `cohort` já chegou (é a mesma garantia de
+  que o `promptShown` legado depende). Nenhuma guarda extra foi adicionada.
+
 ## Fica para o Plano 2
 
 - `indexable` em `BlogSettings` + `noindex` no `renderDocument` (`server/blog/shell.ts:114`) e 404 em sitemap/feed (`server/blogPublic.ts:236,249`), com **default `true` na ausência do campo** para não desindexar blogs existentes.
@@ -1435,6 +1491,12 @@ Claude-Session: https://claude.ai/code/session_0145emgyx4jy8XzpsXzdVDnK"
 **Cobertura do spec (Plano 1):** decisão 1 → Tasks 2 e 7; decisão 2 → Tasks 2 e 6; decisão 5 → Task 1; máquina de estados → Task 2; estado/retomada → Task 3; palco → Task 5; eventos → Task 4; Missão Produto → Task 8; risco 2 (colisão com `ProductUrlImportModal`) → Task 1 Step 5. Decisões 3 e 4 e os riscos 1 e 3 caem no Plano 2 — listados acima.
 
 **Lacuna conhecida:** o pedido de WhatsApp durante a espera (decisão 3) **não** está neste plano. Ele depende de a geração ser longa o bastante para valer a interrupção, o que só se sabe medindo a etapa de palco em uso real. Fica para o Plano 2, junto com a Missão Conteúdo, que tem a espera mais longa das duas.
+
+**Correções da revisão crítica antes da execução:** a montagem no `App.tsx` chamava
+`setState` durante o render (loop), não retomava a missão ao recarregar e mostrava a Tela 0 de
+novo depois de concluída — reescrita com `ouvirMissoes` + `jornadaConcluida`. A Task 1
+afirmava que sem a regra nova a criação de conta seria rejeitada; falso, `isValidUser` não usa
+`hasOnly`.
 
 **Correção aplicada na auto-revisão:** a primeira versão da Task 8 assumia que
 `scrapeProductUrl` devolvia um `Product` e chutava os nomes dos handlers de `App.tsx`. Os dois
