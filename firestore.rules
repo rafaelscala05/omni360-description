@@ -218,6 +218,13 @@ service cloud.firestore {
         allow write: if isOwner(userId);
       }
 
+      // Estado das missões de onboarding. O dono lê e escreve: a missão roda
+      // no cliente (como o resto da geração do app) e o que ela guarda é
+      // progresso, não autorização. É o que dá retomada entre dispositivos.
+      match /missions/{missionId} {
+        allow read, write: if isOwner(userId);
+      }
+
       // Integration secrets (e.g. Wake token). Written only server-side via the
       // Admin SDK, which bypasses these rules. Clients are fully denied.
       match /integration_secrets/{docId} {
