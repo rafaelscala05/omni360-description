@@ -4,6 +4,10 @@ import * as XLSX from 'xlsx';
 import logoAlfreds from './assets/brand/logo-alfreds-produtos.png';
 import AgentHomeScreen from './modules/agent/AgentHomeScreen';
 import { COORTE_ATUAL, isCoorteMissao } from './modules/onboarding/mission/missionTypes';
+import type { MissionState } from './modules/onboarding/mission/missionTypes';
+import MissionPicker from './modules/onboarding/mission/MissionPicker';
+import MissaoProduto from './modules/onboarding/mission/MissaoProduto';
+import { iniciarMissao, ouvirMissoes, salvarMissao } from './services/missionService';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import MarketingLayout from './marketing/MarketingLayout';
 import HomePage from './marketing/pages/HomePage';
@@ -271,6 +275,9 @@ export default function App() {
   const [hasBlogModule, setHasBlogModule] = useState<boolean>(false);
   // Coorte da jornada de missão (users/{uid}.cohort). null = ainda não lida ou conta legada.
   const [cohort, setCohort] = useState<string | null>(null);
+  const [missao, setMissao] = useState<MissionState | null>(null);
+  const [missoesCarregadas, setMissoesCarregadas] = useState(false);
+  const [jornadaConcluida, setJornadaConcluida] = useState(false);
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(false);
   const [productOnboardingPromptShown, setProductOnboardingPromptShown] = useState<boolean>(false);
   const [companyData, setCompanyData] = useState<CompanyData | null>(null);
@@ -396,6 +403,19 @@ export default function App() {
       console.error('Erro ao marcar productOnboarding.promptShown:', err),
     );
   }, [isAuthReady, user, productOnboardingPromptShown, products.length, cohort]);
+
+  // Retomada da jornada de missão: missão em andamento volta direto; missão
+  // concluída encerra a jornada. O estado local vence o snapshot enquanto a
+  // missão roda, para um eco atrasado do Firestore não voltar o passo.
+  useEffect(() => {
+    if (!user || !isCoorteMissao(cohort)) return;
+    return ouvirMissoes(user.uid, (lista) => {
+      setJornadaConcluida(lista.some((m) => !!m.concluidaEm));
+      const emAndamento = lista.find((m) => m.missionId === 'produto' && !m.concluidaEm) ?? null;
+      setMissao((atual) => atual ?? emAndamento);
+      setMissoesCarregadas(true);
+    });
+  }, [user, cohort]);
 
   // Track changes for auto-save
   useEffect(() => {
@@ -3093,6 +3113,49 @@ Retorne APENAS um JSON válido no seguinte formato:
           onLogout={handleLogout}
         />
       </Suspense>
+    );
+  }
+
+  // Jornada de missão — só para a coorte nova, e só até a primeira missão
+  // concluída (a trilha do dia 2 chega no Plano 2).
+  if (user && isAuthReady && isCoorteMissao(cohort) && missoesCarregadas && !jornadaConcluida) {
+    if (!missao) {
+      return (
+        <MissionPicker
+          signal={{
+            produtos: products.length,
+            erpConectado: products.some((p) => p._tinyProductId || p._blingProductId || p._idworksProductId),
+            temProjetoConteudo: hasContentAgent,
+          }}
+          semDescricao={products.filter((p) => !p['Descrição complementar']).length}
+          onEscolher={async (id) => {
+            if (id === 'conteudo') {
+              // A Missão Conteúdo chega no Plano 2. Até lá a escolha leva ao
+              // workspace de Conteúdo que já existe — decidido no handler, não
+              // no render, para não disparar setState durante a renderização.
+              setWorkspace('content');
+              return;
+            }
+            setMissao(await iniciarMissao(user.uid, id));
+          }}
+        />
+      );
+    }
+    return (
+      <MissaoProduto
+        state={missao}
+        onState={(s) => {
+          setMissao(s);
+          salvarMissao(user.uid, s).catch((err) => console.error('Erro ao salvar missão:', err));
+        }}
+        produtos={products}
+        categorias={existingCategories}
+        onProdutoCriado={handleProductCreatedFromOnboarding}
+        onCriarCategoria={handleCreateCategoryForOnboarding}
+        onGerarDescricao={handleGenerateDescriptionForOnboarding}
+        onSalvarNoCatalogo={() => saveToCloud(true)}
+        onConcluir={() => setJornadaConcluida(true)}
+      />
     );
   }
 

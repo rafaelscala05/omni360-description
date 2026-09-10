@@ -7,6 +7,7 @@ import { uploadProductImage } from '../../services/uploadService';
 import { trackProductUrlImportStarted, trackProductUrlImportResult, trackOnboardingStepCompleted } from '../../analytics';
 import ProductFormFields, { isProductFormValid, type ProductFormValue } from './ProductFormFields';
 import EnrichmentStepCard from './EnrichmentStepCard';
+import { buildProduct, matchExistingCategory } from './buildProduct';
 
 export type WizardStep =
   | 'intro' | 'loading' | 'review' | 'manual'
@@ -30,41 +31,6 @@ export interface ProductUrlImportModalProps {
 }
 
 const emptyForm: ProductFormValue = { title: '', categoryId: '', imageUrl: '', price: '', description: '' };
-
-function normalizeForCompare(value: string): string {
-  return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
-}
-
-// Tenta casar o segmento mais específico do breadcrumb extraído da página
-// (ex.: "Travesseiro" de ["Cama", "Travesseiro"]) contra o nome-folha de
-// alguma categoria já existente do usuário.
-function matchExistingCategory(breadcrumb: string[] | undefined, categories: Category[]): Category | undefined {
-  if (!breadcrumb?.length) return undefined;
-  for (let i = breadcrumb.length - 1; i >= 0; i--) {
-    const target = normalizeForCompare(breadcrumb[i]);
-    const match = categories.find((c) => normalizeForCompare(c.path[c.path.length - 1] ?? '') === target);
-    if (match) return match;
-  }
-  return undefined;
-}
-
-function buildProduct(form: ProductFormValue, categories: Category[]): Product {
-  const category = categories.find((c) => c.id === form.categoryId);
-  return {
-    _id: `prod_url_${Date.now()}`,
-    _statusDescricao: 'Sem descrição',
-    _statusSEO: 'Sem SEO',
-    _isDirty: true,
-    _selectedImage: form.imageUrl,
-    'Descrição': form.title,
-    'Descrição complementar': form.description || undefined,
-    'Categoria': category?.path.join(' > '),
-    categoryId: form.categoryId || undefined,
-    categoryPath: category?.path,
-    'Preço': form.price || undefined,
-    'URL imagem externa 1': form.imageUrl,
-  };
-}
 
 const ProductUrlImportModal: React.FC<ProductUrlImportModalProps> = ({
   isOpen, onClose, categories, initialStep, initialProduct,
