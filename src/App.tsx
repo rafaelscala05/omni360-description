@@ -3,6 +3,7 @@ import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Che
 import * as XLSX from 'xlsx';
 import logoAlfreds from './assets/brand/logo-alfreds-produtos.png';
 import AgentHomeScreen from './modules/agent/AgentHomeScreen';
+import { COORTE_ATUAL, isCoorteMissao } from './modules/onboarding/mission/missionTypes';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import MarketingLayout from './marketing/MarketingLayout';
 import HomePage from './marketing/pages/HomePage';
@@ -268,6 +269,8 @@ export default function App() {
   const [hasOperationsAgent, setHasOperationsAgent] = useState<boolean>(false);
   const [hasVideoModule, setHasVideoModule] = useState<boolean>(false);
   const [hasBlogModule, setHasBlogModule] = useState<boolean>(false);
+  // Coorte da jornada de missão (users/{uid}.cohort). null = ainda não lida ou conta legada.
+  const [cohort, setCohort] = useState<string | null>(null);
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(false);
   const [productOnboardingPromptShown, setProductOnboardingPromptShown] = useState<boolean>(false);
   const [companyData, setCompanyData] = useState<CompanyData | null>(null);
@@ -380,14 +383,19 @@ export default function App() {
 
   // Auto-abre o wizard de onboarding de primeiro produto uma única vez,
   // quando o dashboard carrega vazio.
+  //
+  // Não vale para a coorte de missão: lá a Missão Produto é a porta de
+  // entrada e chama a mesma extração por dentro. Deixar os dois armados
+  // abriria duas janelas concorrentes na mesma condição.
   useEffect(() => {
     if (!isAuthReady || !user || productOnboardingPromptShown || products.length !== 0) return;
+    if (isCoorteMissao(cohort)) return;
     handleOpenProductUrlImport();
     setProductOnboardingPromptShown(true);
     updateDoc(doc(db, `users/${user.uid}`), { productOnboarding: { promptShown: true } }).catch((err) =>
       console.error('Erro ao marcar productOnboarding.promptShown:', err),
     );
-  }, [isAuthReady, user, productOnboardingPromptShown, products.length]);
+  }, [isAuthReady, user, productOnboardingPromptShown, products.length, cohort]);
 
   // Track changes for auto-save
   useEffect(() => {
@@ -443,6 +451,9 @@ export default function App() {
               credits: initialCredits,
               lastSync: new Date().toISOString(),
               displayName: currentUser.displayName,
+              // Coorte da jornada de onboarding. Gravada só na criação: contas
+              // existentes seguem sem o campo e permanecem no fluxo legado.
+              cohort: COORTE_ATUAL,
               ...(phone ? { phone } : {}),
             });
             setCredits(initialCredits);
@@ -466,6 +477,7 @@ export default function App() {
               setHasOperationsAgent(snap.data().modules?.operationsAgent === true);
               setHasVideoModule(snap.data().modules?.video === true);
               setHasBlogModule(snap.data().modules?.blog === true);
+              setCohort(snap.data().cohort ?? null);
               setOnboardingCompleted(snap.data().onboarding?.completed === true);
               setProductOnboardingPromptShown(snap.data().productOnboarding?.promptShown === true);
               const company = snap.data().company ?? null;
