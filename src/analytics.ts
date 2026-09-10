@@ -4,6 +4,7 @@ import { metaTrack, metaSetUser, metaSetProfile } from './meta';
 
 export { metaSetProfile };
 import { tiktokTrack, tiktokSetUser } from './tiktok';
+import type { MissionId, StepId } from './modules/onboarding/mission/missionTypes';
 
 let analytics: Analytics | null = null;
 
@@ -185,6 +186,36 @@ export function trackProductUrlImportResult(params: { source: 'structured' | 'hy
   const a = getAnalyticsInstance();
   if (a) logEvent(a, 'product_url_import_result', params);
   crmTrack('product_url_import_result', params);
+}
+
+export function trackMissionStarted(params: {
+  missionId: MissionId; sugerida: MissionId | null; aceitouSugestao: boolean;
+}) {
+  const a = getAnalyticsInstance();
+  if (a) logEvent(a, 'mission_started', params);
+  crmTrack('mission_started', params);
+}
+
+export function trackMissionStepCompleted(params: { missionId: MissionId; step: StepId }) {
+  const a = getAnalyticsInstance();
+  if (a) logEvent(a, 'mission_step_completed', params);
+  crmTrack('mission_step_completed', params);
+}
+
+export function trackMissionCompleted(params: { missionId: MissionId }) {
+  const a = getAnalyticsInstance();
+  if (a) logEvent(a, 'mission_completed', params);
+  crmTrack('mission_completed', params);
+}
+
+// 'catalogo' existe porque, sem ERP (o caso principal), a chegada da Missão
+// Produto salva no catálogo em vez de publicar.
+export function trackMissionArtifactPublished(params: {
+  missionId: MissionId; destino: 'tiny' | 'catalogo' | 'blog';
+}) {
+  const a = getAnalyticsInstance();
+  if (a) logEvent(a, 'mission_artifact_published', params);
+  crmTrack('mission_artifact_published', params);
 }
 
 export function trackOnboardingStepCompleted(params: { step: 'description' | 'attributes' | 'image'; skipped: boolean }) {
