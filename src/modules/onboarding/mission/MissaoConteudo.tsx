@@ -15,7 +15,7 @@ import { MISSOES, avancar, progresso } from './missionSteps';
 import type { MissionState } from './missionTypes';
 import { proximaAcaoConteudo, rotuloEstagio, slugCandidatos, type AcaoConteudo, type DadosConteudo } from './conteudoFluxo';
 import {
-  approveCluster, createArticleManual, createProject, generateClusters, listenCalendar,
+  approveCluster, createArticleManual, createProject, generateClusters, getClusters, listenCalendar,
   produceArticle, publishArticle, scanWebsite,
 } from '../../../services/contentService';
 import { claimBlogSlug, saveBlogSettings } from '../../../services/blogService';
@@ -55,6 +55,9 @@ const MissaoConteudo: React.FC<Props> = ({
   const [erro, setErro] = useState<string | null>(null);
   const [artigo, setArtigo] = useState<CalendarArticle | null>(null);
   const [tick, setTick] = useState(0);
+  // Bumpa a cada 30s enquanto esperamos o servidor, só para recalcular
+  // paradoHaMin (produção travada, sem novidade nenhuma do listener).
+  const [agora, setAgora] = useState(() => Date.now());
   const [pedirWhatsapp] = useState(mostrarPedidoWhatsapp);
   const executando = useRef(false);
   const stateRef = useRef(state);
@@ -144,8 +147,11 @@ const MissaoConteudo: React.FC<Props> = ({
     const dd = stateRef.current.dados as DadosConteudo;
     const projectId = dd.projectId!;
     if (acao === 'gerar-clusters') {
-      const { clusters } = await generateClusters(projectId);
-      const ativos = clusters.filter((c) => !c.excluido);
+      // Recarregar no meio da geração não deve cobrar de novo: se o servidor
+      // já gravou clusters deste projeto (de uma corrida anterior), usa esses.
+      const existentes = await getClusters(uid, projectId);
+      const jaAtivos = existentes.filter((c) => !c.excluido);
+      const ativos = jaAtivos.length ? jaAtivos : (await generateClusters(projectId)).clusters.filter((c) => !c.excluido);
       if (!ativos.length) throw new Error('Não encontrei temas para o seu blog. Tenta revisar o que você vende.');
       const volume = (c: (typeof ativos)[number]) => c.palavrasChave.reduce((t, k) => t + (k.volume ?? 0), 0);
       const tema = [...ativos].sort((a, b) => volume(b) - volume(a))[0];
@@ -197,6 +203,11 @@ const MissaoConteudo: React.FC<Props> = ({
       try {
         await produceArticle(projectId, dd.articleId!);
       } catch (e) {
+        // O servidor recusa uma corrida concorrente/duplicada com essa
+        // mensagem quando já há uma produção recente em andamento — não é
+        // uma falha, é a proteção contra cobrar duas vezes. Mantém
+        // producaoIniciada e deixa o listener mostrar o desfecho.
+        if (e instanceof Error && e.message === 'Este artigo já está em produção') return;
         // Se o servidor nem começou (o artigo segue agendado), devolve o erro e
         // libera o "tentar de novo". Se começou, o listener mostra o desfecho.
         if ((artigoRef.current?.status ?? 'agendado') === 'agendado') {
@@ -216,11 +227,12 @@ const MissaoConteudo: React.FC<Props> = ({
     }
   };
 
-  const resumo = artigo ? { status: artigo.status, stage: artigo.stage, temFinal: !!artigo.articleFinal } : null;
+  const paradoHaMin = artigo ? Math.floor((agora - new Date(artigo.updatedAt).getTime()) / 60000) : undefined;
+  const resumo = artigo ? { status: artigo.status, stage: artigo.stage, temFinal: !!artigo.articleFinal, paradoHaMin } : null;
   const acao = state.step === 'palco' ? proximaAcaoConteudo(d, resumo) : null;
 
   useEffect(() => {
-    if (!acao || acao === 'aguardar' || acao === 'erro' || erro || executando.current) return;
+    if (!acao || acao === 'aguardar' || acao === 'erro' || acao === 'travado' || erro || executando.current) return;
     executando.current = true;
     executar(acao)
       .catch((e) => setErro(mensagem(e, 'Algo falhou no meio do caminho.')))
@@ -231,8 +243,17 @@ const MissaoConteudo: React.FC<Props> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [acao, erro, tick]);
 
+  // Enquanto esperamos (ou já detectamos que travou), recalcula paradoHaMin
+  // periodicamente — sem isso, um servidor morto nunca é detectado, porque
+  // nada mais dispara um novo render.
+  useEffect(() => {
+    if (acao !== 'aguardar' && acao !== 'travado') return;
+    const id = setInterval(() => setAgora(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, [acao]);
+
   const tentarDeNovo = () => {
-    if (artigo?.status === 'erro') gravar({ producaoIniciada: false });
+    if (artigo?.status === 'erro' || acao === 'travado') gravar({ producaoIniciada: false });
     setErro(null);
   };
 
@@ -258,15 +279,18 @@ const MissaoConteudo: React.FC<Props> = ({
     turnos.push({
       autor: 'agente',
       texto: (
-        <input
-          id="missao-conteudo-site"
-          type="url"
-          inputMode="url"
-          value={site}
-          onChange={(e) => setSite(e.target.value)}
-          placeholder="suamarca.com.br"
-          className="w-full rounded-lg border border-slate-200 bg-[#f7f9fb] px-3 py-2 font-mono text-xs"
-        />
+        <>
+          <label htmlFor="missao-conteudo-site" className="sr-only">Endereço do seu site</label>
+          <input
+            id="missao-conteudo-site"
+            type="url"
+            inputMode="url"
+            value={site}
+            onChange={(e) => setSite(e.target.value)}
+            placeholder="suamarca.com.br"
+            className="w-full rounded-lg border border-slate-200 bg-[#f7f9fb] px-3 py-2 font-mono text-xs"
+          />
+        </>
       ),
     });
     acoes.push({ rotulo: ocupado ? 'Lendo o site…' : 'Ler meu site', onClick: lerSite, desabilitada: ocupado || !site.trim() });
@@ -303,7 +327,7 @@ const MissaoConteudo: React.FC<Props> = ({
     if (acao === 'gerar-clusters') linhas.push({ estado: 'agora', texto: 'pesquisando temas e palavras-chave…' });
     else if (artigo?.status === 'em_producao') linhas.push({ estado: 'agora', texto: `${rotuloEstagio(stage) || 'escrevendo'}…` });
     else if (acao === 'publicar') linhas.push({ estado: 'agora', texto: 'publicando no blog…' });
-    else if (!erro && acao !== 'erro') linhas.push({ estado: 'agora', texto: 'preparando o artigo…' });
+    else if (!erro && acao !== 'erro' && acao !== 'travado') linhas.push({ estado: 'agora', texto: 'preparando o artigo…' });
 
     turnos.push({
       autor: 'agente',
@@ -311,7 +335,11 @@ const MissaoConteudo: React.FC<Props> = ({
         ? <>Vou escrever sobre <b>{d.kwPrincipal}</b> — é o que mais buscam no seu tema. Usa cerca de {custoCreditos} créditos.</>
         : <>Procurando os temas que o seu público mais busca. O caminho todo usa cerca de {custoCreditos} créditos.</>,
     });
-    const falha = erro ?? (acao === 'erro' ? (artigo?.lastError ?? 'O artigo falhou no meio da produção.') : null);
+    const textoLastError = artigo?.lastError === 'INSUFFICIENT_CREDITS'
+      ? 'Créditos insuficientes para terminar o artigo.'
+      : (artigo?.lastError ?? 'O artigo falhou no meio da produção.');
+    const falha = erro
+      ?? (acao === 'erro' ? textoLastError : acao === 'travado' ? 'A produção parou de responder.' : null);
     if (falha) {
       turnos.push({ autor: 'agente', texto: falha });
       acoes.push({ rotulo: 'Tentar de novo', onClick: tentarDeNovo });
@@ -326,7 +354,7 @@ const MissaoConteudo: React.FC<Props> = ({
 
   if (state.step === 'chegada') {
     const blogUrl = `${window.location.origin}/b/${d.blogSlug}/`;
-    turnos.push({ autor: 'agente', texto: <>Seu blog está montado. <b>Abre aí</b> — por enquanto só você consegue ver.</> });
+    turnos.push({ autor: 'agente', texto: <>Seu blog está montado. <b>Abre aí</b> — ele ainda não aparece no Google até você publicar.</> });
     if (erro) turnos.push({ autor: 'agente', texto: erro });
     palco = {
       titulo: 'Resultado',

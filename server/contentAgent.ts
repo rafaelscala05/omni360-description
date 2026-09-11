@@ -33,6 +33,7 @@ import * as seRanking from './seRankingClient';
 import { getLatestFinishedAudit, auditSummaryText, omitUndefined } from './seoAgent';
 import { loadStoreContext, extractSeedKeywords, discoverKeywordPool } from './keywordDiscovery';
 import { logPublishCall } from './contentTelemetry';
+import { producaoRecente } from '../src/modules/onboarding/mission/conteudoFluxo';
 
 const TEXT_MODEL = 'gemini-2.5-flash';
 const IMAGE_MODEL = 'gemini-2.5-flash-image';
@@ -569,9 +570,24 @@ export async function runArticlePipeline(
   projectId: string,
   articleId: string,
 ): Promise<void> {
+  const artRef = projectRef(uid, projectId).collection('calendar').doc(articleId);
+
+  // Refuse a concurrent/duplicate run before doing anything else (including
+  // any AI call): the first status write used to happen only after the Deep
+  // Research call, so a network drop during research let "Tentar de novo"
+  // start a second pipeline against the same doc and debit credits twice.
+  await adminDb.runTransaction(async (tx) => {
+    const s = await tx.get(artRef);
+    if (!s.exists) throw Object.assign(new Error('Artigo não encontrado'), { status: 404 });
+    const data = s.data() as Partial<CalendarArticle>;
+    if (producaoRecente(data.status ?? '', data.updatedAt, Date.now())) {
+      throw Object.assign(new Error('Este artigo já está em produção'), { status: 409 });
+    }
+    tx.update(artRef, { status: 'em_producao', updatedAt: new Date().toISOString() });
+  });
+
   const project = await loadProject(uid, projectId);
   const sys = systemFor(project);
-  const artRef = projectRef(uid, projectId).collection('calendar').doc(articleId);
   const snap = await artRef.get();
   if (!snap.exists) throw Object.assign(new Error('Artigo não encontrado'), { status: 404 });
   const article = { id: snap.id, ...(snap.data() as Omit<CalendarArticle, 'id'>) };

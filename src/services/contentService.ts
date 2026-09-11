@@ -410,6 +410,13 @@ export function listenProjects(uid: string, cb: (projects: ContentProject[]) => 
   });
 }
 
+// One-shot read, same collection/shape as listenClusters — used to check for
+// already-generated clusters before paying to generate again (reload mid-mission).
+export async function getClusters(uid: string, projectId: string): Promise<ContentCluster[]> {
+  const snap = await getDocs(collection(db, `users/${uid}/contentProjects/${projectId}/clusters`));
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ContentCluster, 'id'>) }));
+}
+
 export function listenClusters(uid: string, projectId: string, cb: (clusters: ContentCluster[]) => void): () => void {
   return onSnapshot(collection(db, `users/${uid}/contentProjects/${projectId}/clusters`), (snap) => {
     cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ContentCluster, 'id'>) })));
