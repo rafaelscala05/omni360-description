@@ -309,6 +309,28 @@ Tomadas ao planejar a segunda metade, com números lidos do código e do seed de
   é a fonte da verdade do pipeline.
 - **`mission_completed` comprova o marco `content_generated`** no CRM, pelo mapa de eventos.
 
+## Emendas da execução do Plano 2 (2026-09-11)
+
+Decididas durante a revisão da Missão Conteúdo, que achou dois caminhos de cobrança dupla, um de
+publicação sem cobrança e um travamento sem saída — todos no código do próprio plano.
+
+- **O pipeline de artigos passa a marcar `em_producao` antes da pesquisa**, e recusa com 409 ("Este
+  artigo já está em produção") uma segunda execução enquanto a primeira atualizou há menos de 15
+  minutos. `runArticlePipeline` é compartilhado com o módulo de Conteúdo e o cron. Sem a trava,
+  "tentar de novo" durante a pesquisa iniciava dois pipelines e cobrava em dobro. Efeito colateral
+  aceito: o módulo de Conteúdo mostra "em produção" mais cedo e recebe 409 em execução concorrente.
+- **A missão só publica um artigo terminado com sucesso** (`revisao`, `aprovado` ou `publicado`). O
+  pipeline grava a versão final antes de cobrar, então um artigo em `erro` pode ter versão final — e
+  não é publicado. Falta de crédito aparece como "Créditos insuficientes para terminar o artigo.".
+- **A missão reaproveita os temas já gerados** do projeto antes de gerar de novo, e mostra "A
+  produção parou de responder." com "Tentar de novo" quando o artigo passa 15 minutos sem avançar.
+- **Pendências conhecidas, levadas ao dono do produto:**
+  - recarregar *durante* a geração de temas ainda gera de novo — resolver exige trava na rota
+    compartilhada `generate-clusters`;
+  - `generate-clusters` cobra antes da chamada de IA, então falha seguida de nova tentativa cobra de
+    novo (pré-existente);
+  - o passo de capa ignora `INSUFFICIENT_CREDITS` depois de salvar a imagem (pré-existente).
+
 ## Referência visual
 
 Mockups das telas, o diagrama da jornada e o handoff:
