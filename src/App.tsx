@@ -3378,7 +3378,13 @@ Retorne APENAS um JSON válido no seguinte formato:
         </header>
 
         {/* Dynamic View Content */}
-        <main className="flex-1 overflow-y-auto w-full p-6 pb-20 md:pb-6 bg-[#f7f9fb]">
+        <main className={cn(
+          "flex-1 overflow-y-auto w-full bg-[#f7f9fb]",
+          // O chat do agente não tem barra inferior no telefone (o menu foi
+          // para o cabeçalho dele), então dispensa a reserva de 5rem embaixo
+          // e usa um respiro menor nas laterais — a tela toda é a conversa.
+          mainView === 'home' ? "p-3 sm:p-6" : "p-6 pb-20 md:pb-6",
+        )}>
           {mainView === 'home' ? (
             <AgentHomeScreen
               uid={user.uid}
@@ -3388,6 +3394,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               hasOperationsAgent={hasOperationsAgent}
               onOpenIntegrations={() => setMainView('integrations')}
               onManageContent={() => setWorkspace('content')}
+              onAbrirMenu={() => setIsSidebarOpen(true)}
             />
           ) : mainView === 'categories' ? (
             <div className="animate-in fade-in h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -5039,13 +5046,15 @@ Retorne APENAS um JSON válido no seguinte formato:
         </div>
       )}
 
-      <AppTabBar
-        atual={mainView}
-        mostrarAgente={hasContentAgent || hasOperationsAgent}
-        onNavegar={setMainView}
-        onNovoProduto={handleOpenProductUrlImport}
-        onMenu={() => setIsSidebarOpen(true)}
-      />
+      {mainView !== 'home' && (
+        <AppTabBar
+          atual={mainView}
+          mostrarAgente={hasContentAgent || hasOperationsAgent}
+          onNavegar={setMainView}
+          onNovoProduto={handleOpenProductUrlImport}
+          onMenu={() => setIsSidebarOpen(true)}
+        />
+      )}
 
     </div>
   );

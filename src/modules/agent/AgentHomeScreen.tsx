@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertCircle, ArrowUpRight, Boxes, Coins, FileText, Moon, ScrollText, Sparkles, Sun, Zap,
+  AlertCircle, ArrowUpRight, Boxes, Coins, FileText, Menu, Moon, ScrollText, Sparkles, Sun, Zap,
 } from 'lucide-react';
 import type { Product } from '../../types/models';
 import type { AgentAction, AgentConnections, ThreadMessage } from '../../types/agent';
@@ -10,8 +10,10 @@ import {
 import { fetchIntegrationsOverview, desde, type IntegrationSummary } from '../../services/integrationsStatusService';
 import { listenProjects } from '../../services/contentService';
 import AgentSphere from './AgentSphere';
+import VoiceOrb from './VoiceOrb';
 import ConnectionsBar, { type ConnectionItem } from './ConnectionsBar';
 import { useAgentTheme } from './theme';
+import { useAlturaTeclado, useTelaPequena } from './useViewport';
 import ChatThread from './chat/ChatThread';
 import Composer from './chat/Composer';
 import LogsPanel from './chat/LogsPanel';
@@ -24,6 +26,8 @@ interface Props {
   hasOperationsAgent: boolean;
   onOpenIntegrations: () => void;
   onManageContent: () => void;
+  /** Abre o menu lateral — no telefone esta tela não tem barra inferior. */
+  onAbrirMenu: () => void;
 }
 
 const SUGESTOES: { texto: string; icone: React.ComponentType<{ className?: string }> }[] = [
@@ -43,68 +47,47 @@ const MARCA: Record<string, { glifo: string; cor: string }> = {
 };
 
 /**
- * Miniatura do agente para a barra de título.
+ * Métrica do estado inicial.
  *
- * Não é a AgentSphere: a malha de 90 nós vira uma bola cinza ilegível abaixo
- * de ~48px, e seriam dois contextos WebGL vivos na mesma página só para
- * desenhar um ponto de 30px (navegadores derrubam o mais antigo passando do
- * limite, que é baixo). O orb é CSS puro e pulsa quando o agente trabalha.
+ * Era um cartão de vidro com número de 26px. Virou pílula: o número continua
+ * legível, mas para de competir com a pergunta — nesta tela o assunto é o
+ * campo de digitar, e três cartões grandes empurravam o composer para fora da
+ * dobra no telefone.
  */
-const Orb: React.FC<{ ativo: boolean }> = ({ ativo }) => (
-  <span className="relative block w-8 h-8 shrink-0">
-    <span
-      className="absolute inset-0 rounded-full"
-      style={{
-        background: 'radial-gradient(circle at 32% 28%, #ffd2b0, var(--ag-accent) 52%, #c23b00 100%)',
-        boxShadow: '0 4px 14px -4px var(--ag-accent), inset 0 -2px 6px rgba(0,0,0,.28)',
-      }}
-    />
-    {ativo && (
-      <span
-        className="ag-live absolute inset-0 rounded-full"
-        style={{ color: 'var(--ag-accent)' }}
-      />
-    )}
-  </span>
-);
-
-const Cartao: React.FC<{
+const Metrica: React.FC<{
   icone: React.ReactNode;
-  titulo: string;
   valor: React.ReactNode;
-  rodape: React.ReactNode;
-}> = ({ icone, titulo, valor, rodape }) => (
-  <div className="ag-glass ag-sheen rounded-[20px] p-4 text-left shrink-0 min-w-[8.75rem] sm:min-w-0">
-    <div className="flex items-center gap-2 mb-2.5">
+  rotulo: React.ReactNode;
+  onClick?: () => void;
+}> = ({ icone, valor, rotulo, onClick }) => {
+  const Tag = onClick ? 'button' : 'div';
+  return (
+    <Tag
+      onClick={onClick}
+      className="flex items-center gap-2 pl-2.5 pr-3.5 py-1.5 rounded-full shrink-0 transition-colors"
+      style={{ background: 'var(--ag-fill)', border: '1px solid var(--ag-hairline)' }}
+    >
       {icone}
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ag-text-3)]">{titulo}</span>
-    </div>
-    <div className="text-[26px] leading-none font-semibold text-[var(--ag-text)] tabular-nums">{valor}</div>
-    <div className="text-[12px] text-[var(--ag-text-3)] mt-1.5">{rodape}</div>
-  </div>
-);
-
-/**
- * A esfera é um canvas de lado fixo (o renderer recebe px, não %), então o
- * tamanho tem que vir do JS — 132px ocupa meia tela num telefone de 390px.
- */
-function useEsferaPx(): number {
-  const [px, setPx] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 640 ? 96 : 132));
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 640px)');
-    const aplicar = () => setPx(mq.matches ? 132 : 96);
-    aplicar();
-    mq.addEventListener('change', aplicar);
-    return () => mq.removeEventListener('change', aplicar);
-  }, []);
-  return px;
-}
+      <span className="text-[13px] font-semibold text-[var(--ag-text)] tabular-nums">{valor}</span>
+      <span className="text-[12px] text-[var(--ag-text-3)] whitespace-nowrap">{rotulo}</span>
+    </Tag>
+  );
+};
 
 const AgentHomeScreen: React.FC<Props> = ({
   uid, credits, products, hasContentAgent, hasOperationsAgent, onOpenIntegrations, onManageContent,
+  onAbrirMenu,
 }) => {
   const { tema, alternar } = useAgentTheme();
-  const esferaPx = useEsferaPx();
+  const telaPequena = useTelaPequena();
+  const alturaTeclado = useAlturaTeclado();
+  const [composerFocado, setComposerFocado] = useState(false);
+  // A esfera é um canvas de lado fixo (o renderer recebe px, não %), então o
+  // tamanho tem que vir do JS — 132px ocupa meia tela num telefone de 390px.
+  const esferaPx = telaPequena ? 96 : 132;
+  // Modo foco: só no telefone, e só enquanto o campo está focado. No desktop
+  // não há teclado cobrindo nada e recolher a tela seria gratuito.
+  const emFoco = telaPequena && composerFocado;
   const [mensagens, setMensagens] = useState<ThreadMessage[]>([]);
   const [acoes, setAcoes] = useState<Record<string, AgentAction>>({});
   const [conns, setConns] = useState<AgentConnections | null>(null);
@@ -311,16 +294,27 @@ const AgentHomeScreen: React.FC<Props> = ({
   return (
     <div className="alfreds h-full flex flex-col" data-tema={tema}>
       <div
-        className="ag-aurora flex-1 min-h-0 rounded-[28px] flex flex-col overflow-hidden"
+        className="ag-aurora flex-1 min-h-0 rounded-[24px] sm:rounded-[28px] flex flex-col overflow-hidden"
         style={{ border: '1px solid var(--ag-hairline)', boxShadow: 'var(--ag-shadow)' }}
       >
-        {/* Barra de título — identidade, estado e os controles da superfície. */}
+        {/* Barra de título — identidade, estado e os controles da superfície.
+            No telefone ela também carrega o menu: esta tela não tem barra
+            inferior, para a base da tela ser só do campo de digitar. */}
         <header
-          className="ag-glass shrink-0 px-3 sm:px-4 py-2.5 flex items-center gap-3"
+          className="ag-glass shrink-0 px-2.5 sm:pl-5 sm:pr-4 py-2 sm:py-2.5 flex items-center gap-2 sm:gap-3"
           style={{ borderBottom: '1px solid var(--ag-hairline)', borderRadius: 0, borderLeft: 0, borderRight: 0, borderTop: 0 }}
         >
+          <button
+            onClick={onAbrirMenu}
+            title="Menu"
+            className="md:hidden w-9 h-9 rounded-full grid place-items-center shrink-0 text-[var(--ag-text-2)] transition-colors"
+            style={{ background: 'var(--ag-fill)' }}
+          >
+            <Menu className="w-[18px] h-[18px]" />
+          </button>
+
           <div className="flex items-center gap-2.5 min-w-0">
-            <Orb ativo={streaming} />
+            <VoiceOrb size={34} ativo={streaming} />
             <div className="min-w-0">
               <div className="font-display text-[15px] font-semibold text-[var(--ag-text)] leading-tight">Alfreds</div>
               <div className="text-[11px] text-[var(--ag-text-3)] leading-tight flex items-center gap-1.5">
@@ -385,13 +379,25 @@ const AgentHomeScreen: React.FC<Props> = ({
           </div>
         </header>
 
-        <div className="px-3 sm:px-4 pt-3 shrink-0">
+        {/* Com o teclado aberto no telefone a régua vira ruído: some para o
+            campo ficar com o que sobrou da viewport. */}
+        <div className="ag-recolhe px-3 sm:px-4 pt-3 shrink-0" data-recolhido={emFoco} style={{ maxHeight: 220 }}>
           <ConnectionsBar itens={itensConexao} carregando={statusCarregando} onConectar={onOpenIntegrations} />
         </div>
 
         {semChat ? (
-          <div className="ag-scroll flex-1 overflow-y-auto px-4 sm:px-6 py-8">
-            <div className="max-w-3xl mx-auto flex flex-col items-center text-center gap-6">
+          <div className="ag-scroll flex-1 overflow-y-auto px-4 sm:px-6 py-6 sm:py-8">
+            {/* No modo foco os blocos recolhem para altura zero, mas o `gap` do
+                flex continua valendo e sobra um buraco no topo — por isso ele
+                também zera. */}
+            <div
+              className={`max-w-3xl mx-auto flex flex-col items-center text-center ${
+                // No modo foco o que sobra (os atalhos) desce e encosta no
+                // campo, em vez de ficar boiando embaixo do cabeçalho com o
+                // teclado ocupando o resto da tela.
+                emFoco ? 'gap-0 min-h-full justify-end' : 'gap-5 sm:gap-6'
+              }`}
+            >
               {erro && (
                 <div
                   className="w-full flex items-start gap-2 text-[13px] rounded-2xl px-3.5 py-2.5 text-left"
@@ -406,78 +412,80 @@ const AgentHomeScreen: React.FC<Props> = ({
                 </div>
               )}
 
-              <div className="relative ag-rise">
-                <div
-                  className="absolute inset-0 -z-10 rounded-full blur-3xl"
-                  style={{ background: 'var(--ag-aurora-1)', transform: 'scale(1.4)' }}
-                />
-                <AgentSphere size={esferaPx} active={streaming} tema={tema} />
+              {/* `pt-7 -mt-5`: o `.ag-recolhe` precisa de `overflow: hidden` para
+                  recolher, e sem essa folga no topo ele corta o halo da esfera
+                  numa linha reta. A margem negativa devolve o espaço ao layout
+                  e zera junto com o resto quando o bloco recolhe. */}
+              <div
+                className="ag-recolhe flex flex-col items-center gap-5 sm:gap-6 pt-7 -mt-5"
+                data-recolhido={emFoco}
+                style={{ maxHeight: 640 }}
+              >
+                <div className="ag-rise">
+                  <AgentSphere size={esferaPx} active={streaming} tema={tema} />
+                </div>
+
+                <div className="space-y-2 ag-rise">
+                  <h1 className="font-display text-[22px] sm:text-[30px] font-semibold text-[var(--ag-text)] tracking-tight">
+                    Como posso ajudar hoje?
+                  </h1>
+                  <p className="text-[14px] text-[var(--ag-text-2)] max-w-md mx-auto leading-relaxed">
+                    Peça uma descrição, um artigo ou uma ação no seu ERP — eu mostro exatamente
+                    o que vai mudar antes de alterar qualquer coisa.
+                  </p>
+                </div>
               </div>
 
-              <div className="space-y-2 ag-rise">
-                <h1 className="font-display text-[22px] sm:text-[30px] font-semibold text-[var(--ag-text)] tracking-tight">
-                  Como posso ajudar hoje?
-                </h1>
-                <p className="text-[14px] text-[var(--ag-text-2)] max-w-md mx-auto leading-relaxed">
-                  Peça uma descrição, um artigo ou uma ação no seu ERP — eu mostro exatamente
-                  o que vai mudar antes de alterar qualquer coisa.
-                </p>
-              </div>
-
-              <div className="ag-scroll-x flex sm:grid sm:grid-cols-3 gap-2.5 sm:gap-3 w-full mt-1 ag-rise overflow-x-auto -mx-1 px-1 sm:mx-0 sm:px-0">
-                <Cartao
-                  icone={<Boxes className="w-4 h-4" style={{ color: 'var(--ag-accent)' }} />}
-                  titulo="Produtos"
+              {/* Métricas em pílula, não em cartão: o protagonista da tela é a
+                  pergunta que o usuário vai fazer, não o painel. */}
+              <div
+                className="ag-scroll-x ag-recolhe flex sm:flex-wrap sm:justify-center items-center gap-2 w-full overflow-x-auto -mx-1 px-1"
+                data-recolhido={emFoco}
+                style={{ maxHeight: 80 }}
+              >
+                <Metrica
+                  icone={<Boxes className="w-3.5 h-3.5" style={{ color: 'var(--ag-accent)' }} />}
                   valor={totalProdutos.toLocaleString('pt-BR')}
-                  rodape={`${comDescricao}% com descrição`}
+                  rotulo={
+                    <>
+                      produtos
+                      <span className="hidden sm:inline"> · {comDescricao}% com descrição</span>
+                    </>
+                  }
                 />
 
                 {hasContentAgent && (
-                  <Cartao
-                    icone={<FileText className="w-4 h-4" style={{ color: 'var(--ag-blue)' }} />}
-                    titulo="Conteúdo"
+                  <Metrica
+                    icone={<FileText className="w-3.5 h-3.5" style={{ color: 'var(--ag-blue)' }} />}
                     valor={projetosCount ?? '—'}
-                    rodape={
-                      acoesPendentesConteudo > 0 ? (
-                        <span style={{ color: 'var(--ag-accent)' }}>
-                          {acoesPendentesConteudo} {acoesPendentesConteudo === 1 ? 'ação pendente' : 'ações pendentes'}
-                        </span>
-                      ) : (
-                        <button onClick={onManageContent} className="inline-flex items-center gap-1 hover:text-[var(--ag-text)] transition-colors">
-                          gerenciar projetos <ArrowUpRight className="w-3 h-3" />
-                        </button>
-                      )
+                    rotulo={
+                      acoesPendentesConteudo > 0
+                        ? `projetos · ${acoesPendentesConteudo} pendente(s)`
+                        : <span className="inline-flex items-center gap-1">projetos <ArrowUpRight className="w-3 h-3" /></span>
                     }
+                    onClick={onManageContent}
                   />
                 )}
 
                 {hasOperationsAgent && (
-                  <Cartao
-                    icone={<Zap className="w-4 h-4" style={{ color: 'var(--ag-warn)' }} />}
-                    titulo="Operações"
-                    valor={
-                      conns && !conns.wake && !conns.tiny
-                        ? <span className="text-[16px]">—</span>
-                        : acoesPendentesOperacionais
-                    }
-                    rodape={
-                      conns && !conns.wake && !conns.tiny ? (
-                        <button
-                          onClick={onOpenIntegrations}
-                          className="font-semibold inline-flex items-center gap-1"
-                          style={{ color: 'var(--ag-accent)' }}
-                        >
-                          conectar plataforma <ArrowUpRight className="w-3 h-3" />
-                        </button>
-                      ) : (
-                        `${acoesPendentesOperacionais === 1 ? 'ação pendente' : 'ações pendentes'}`
-                      )
-                    }
-                  />
+                  conns && !conns.wake && !conns.tiny ? (
+                    <Metrica
+                      icone={<Zap className="w-3.5 h-3.5" style={{ color: 'var(--ag-warn)' }} />}
+                      valor={<span style={{ color: 'var(--ag-accent)' }}>Conectar</span>}
+                      rotulo={<span className="inline-flex items-center gap-1">plataforma <ArrowUpRight className="w-3 h-3" /></span>}
+                      onClick={onOpenIntegrations}
+                    />
+                  ) : (
+                    <Metrica
+                      icone={<Zap className="w-3.5 h-3.5" style={{ color: 'var(--ag-warn)' }} />}
+                      valor={acoesPendentesOperacionais}
+                      rotulo={acoesPendentesOperacionais === 1 ? 'ação pendente' : 'ações pendentes'}
+                    />
+                  )
                 )}
               </div>
 
-              <div className="grid sm:grid-cols-2 gap-2 text-left w-full mt-1 ag-rise">
+              <div className="grid sm:grid-cols-2 gap-2 text-left w-full ag-rise">
                 {SUGESTOES.map(({ texto, icone: Icone }) => (
                   <button
                     key={texto}
@@ -506,7 +514,15 @@ const AgentHomeScreen: React.FC<Props> = ({
           />
         )}
 
-        <Composer disabled={false} streaming={streaming} onEnviar={enviar} onParar={parar} />
+        <Composer
+          disabled={false}
+          streaming={streaming}
+          onEnviar={enviar}
+          onParar={parar}
+          onFoco={setComposerFocado}
+          recuoTeclado={alturaTeclado}
+          emFoco={emFoco}
+        />
       </div>
 
       <LogsPanel aberto={logsAberto} onFechar={() => setLogsAberto(false)} tema={tema} />

@@ -104,7 +104,7 @@ const Pensando = () => (
 const ChatThread: React.FC<Props> = ({
   uid, mensagens, acoes, parcial, leituras, streaming, erro, onExecutar, onRejeitar,
 }) => {
-  const fimRef = useRef<HTMLDivElement>(null);
+  const areaRef = useRef<HTMLDivElement>(null);
   const grudarRef = useRef(true);
 
   // Só rola sozinho se o usuário já estiver no fim — senão atrapalha quem
@@ -114,12 +114,18 @@ const ChatThread: React.FC<Props> = ({
     grudarRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
   };
 
+  // scrollTop na própria área, e não `scrollIntoView` no fim da lista: o
+  // scrollIntoView rola TODOS os ancestrais roláveis até o elemento aparecer —
+  // e um contêiner `overflow: hidden` continua rolável por script. Na prática
+  // isso empurrava a barra de título do agente (e, no app, a `main` inteira)
+  // para fora da tela na primeira resposta.
   useEffect(() => {
-    if (grudarRef.current) fimRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = areaRef.current;
+    if (el && grudarRef.current) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [mensagens.length, parcial, leituras.length]);
 
   return (
-    <div onScroll={aoRolar} className="ag-scroll flex-1 overflow-y-auto">
+    <div ref={areaRef} onScroll={aoRolar} className="ag-scroll flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
         {mensagens.map((m) => {
           if (m.role === 'user') {
@@ -184,7 +190,6 @@ const ChatThread: React.FC<Props> = ({
           </div>
         )}
 
-        <div ref={fimRef} />
       </div>
     </div>
   );

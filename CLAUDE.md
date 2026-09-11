@@ -69,6 +69,10 @@ O invariante: **o loop do modelo nunca chama `execute()`**. Uma ferramenta `writ
 
 A régua de conexões (`ConnectionsBar.tsx`) junta três fontes que ninguém mais junta: `fetchIntegrationsOverview` (`src/services/integrationsStatusService.ts`, agrega os quatro `/api/*/status` com `allSettled` — falha de checagem é estado distinto de "não conectado"), `GET /api/agent/tools` (quantas ferramentas cada plataforma libera) e as `agent_actions` pendentes por provider.
 
+No telefone esta é a **única tela sem a barra inferior** (`AppTabBar`): o menu vai no cabeçalho dela (`onAbrirMenu`) para a base da tela ser só do campo de digitar, e `App.tsx` esconde a tab bar quando `mainView === 'home'`. Focar o campo entra em modo foco (`useTelaPequena`) — régua, esfera, título e métricas recolhem via `.ag-recolhe[data-recolhido]`, e o que sobra desce para encostar no composer. Três detalhes que parecem cosméticos e não são: o campo tem `text-[16px]` fixo porque abaixo disso o Safari do iOS dá zoom ao focar; o recuo do teclado vem de `useAlturaTeclado` (`src/modules/agent/useViewport.ts`) porque o teclado do iOS **cobre** a viewport em vez de encolhê-la, e sem isso o campo fica atrás dele; e `.ag-recolhe` precisa de `overflow: hidden` para recolher, o que corta o halo da esfera se o bloco não tiver folga no topo.
+
+O auto-scroll da thread (`ChatThread.tsx`) usa `scrollTop` na própria área, nunca `scrollIntoView`: este último rola **todos** os ancestrais roláveis — e um contêiner `overflow: hidden` continua rolável por script —, o que empurrava a barra de título do agente (e a `main` do app) para fora da tela na primeira resposta.
+
 - `src/App.tsx` — monolithic root component (~2700 lines); handles all product CRUD, AI generation flows, cloud sync, auth, export, and most UI
 - `src/services/productService.ts` — `generateDescriptionText`, `generateProductAttributes`, `generateAttributesFromImage`, and the `defaultTemplate`
 - `src/services/categoryService.ts` — `fetchCategories`, `generateCategoryHierarchy`, `flattenHierarchy`, `getEffectiveAttributes`
