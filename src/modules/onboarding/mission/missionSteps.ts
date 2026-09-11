@@ -129,3 +129,8 @@ export function sugerirTrilha(signal: AccountSignal): SugestaoTrilha {
   if (signal.temProjetoConteudo) return { sugerida: 'produto', variante: 'vazia' };
   return { sugerida: null, variante: 'vazia' };
 }
+
+/** Caso "conta com catálogo": os primeiros produtos que ainda não têm descrição. */
+export function produtosSemDescricao<T extends { 'Descrição complementar'?: unknown }>(produtos: T[], limite = 5): T[] {
+  return produtos.filter((p) => !String(p['Descrição complementar'] ?? '').trim()).slice(0, limite);
+}

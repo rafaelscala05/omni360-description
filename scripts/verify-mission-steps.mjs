@@ -3,7 +3,7 @@
 // toca Firestore e não renderiza React.
 // Rodar com: npx tsx scripts/verify-mission-steps.mjs
 import {
-  MISSOES, avancar, criarEstadoInicial, progresso, proximoStep, stepConcluido, sugerirTrilha,
+  MISSOES, avancar, criarEstadoInicial, produtosSemDescricao, progresso, proximoStep, stepConcluido, sugerirTrilha,
 } from '../src/modules/onboarding/mission/missionSteps.ts';
 import { STEP_ORDER } from '../src/modules/onboarding/mission/missionTypes.ts';
 
@@ -73,6 +73,16 @@ check(
   sugerirTrilha({ produtos: 0, erpConectado: false, temProjetoConteudo: true }),
   { sugerida: 'produto', variante: 'vazia' },
 );
+
+const cat = [
+  { _id: 'a', 'Descrição complementar': 'tem' },
+  { _id: 'b' },
+  { _id: 'c', 'Descrição complementar': '' },
+  { _id: 'd' },
+];
+check('só produtos sem descrição, na ordem', produtosSemDescricao(cat).map((p) => p._id), ['b', 'c', 'd']);
+check('respeita o limite', produtosSemDescricao(cat, 2).map((p) => p._id), ['b', 'c']);
+check('catálogo todo descrito', produtosSemDescricao([{ _id: 'a', 'Descrição complementar': 'x' }]), []);
 
 console.log(failures === 0 ? '\nTudo ok.' : `\n${failures} falha(s).`);
 process.exit(failures === 0 ? 0 : 1);

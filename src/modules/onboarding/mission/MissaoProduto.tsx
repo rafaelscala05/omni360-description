@@ -12,8 +12,9 @@ import React, { useMemo, useState } from 'react';
 import MissionRunner from './MissionRunner';
 import type { Acao, Turno } from './MissionChat';
 import type { StageLogLine, StageProps } from './Stage';
-import { MISSOES, avancar, progresso } from './missionSteps';
+import { MISSOES, avancar, produtosSemDescricao, progresso } from './missionSteps';
 import type { MissionState } from './missionTypes';
+import PedidoWhatsApp from './PedidoWhatsApp';
 import type { Category, Product } from '../../../types/models';
 import { scrapeProductUrl } from '../../../services/productImportService';
 import { uploadProductImage } from '../../../services/uploadService';
@@ -37,6 +38,11 @@ interface Props {
   /** saveToCloud(true) — persiste o catálogo já com o produto novo */
   onSalvarNoCatalogo: () => Promise<void>;
   onConcluir: () => void;
+  /** publicarProdutoNoTiny do App — só chamado quando o produto tem _tinyProductId */
+  onPublicarNoTiny: (id: string) => Promise<void>;
+  /** true quando a conta ainda não deixou contato (onboarding não concluído) */
+  mostrarPedidoWhatsapp: boolean;
+  onEnviarWhatsapp: (whatsapp: string) => Promise<void>;
 }
 
 const formVazio: ProductFormValue = { title: '', categoryId: '', imageUrl: '', price: '', description: '' };
@@ -54,9 +60,15 @@ function hostDe(url: string): string {
 const MissaoProduto: React.FC<Props> = ({
   state, onState, produtos, categorias,
   onProdutoCriado, onCriarCategoria, onGerarDescricao, onSalvarNoCatalogo, onConcluir,
+  onPublicarNoTiny, mostrarPedidoWhatsapp, onEnviarWhatsapp,
 }) => {
   const [url, setUrl] = useState('');
-  const [fase, setFase] = useState<'link' | 'revisao'>('link');
+  const candidatos = useMemo(() => produtosSemDescricao(produtos), [produtos]);
+  const [fase, setFase] = useState<'catalogo' | 'link' | 'revisao'>(() =>
+    produtosSemDescricao(produtos).length > 0 ? 'catalogo' : 'link');
+  // Capturado na montagem: depois do envio o App passa false, mas o cartão
+  // precisa continuar na tela para mostrar o "Anotado".
+  const [pedirWhatsapp] = useState(mostrarPedidoWhatsapp);
   const [form, setForm] = useState<ProductFormValue>(formVazio);
   const [categoriaSugerida, setCategoriaSugerida] = useState<string | undefined>();
   const [enviandoFoto, setEnviandoFoto] = useState(false);
@@ -161,20 +173,25 @@ const MissaoProduto: React.FC<Props> = ({
     }
   };
 
-  const finalizar = async (salvar: boolean) => {
+  const temTiny = !!produto?._tinyProductId;
+
+  const finalizar = async (modo: 'tiny' | 'catalogo' | 'depois') => {
     if (!produto?._id) return;
     setErro(null);
     setOcupado(true);
     try {
-      if (salvar) {
-        await onSalvarNoCatalogo();
-        trackMissionArtifactPublished({ missionId: 'produto', destino: 'catalogo' });
-      }
+      if (modo !== 'depois') await onSalvarNoCatalogo();
+      if (modo === 'tiny') await onPublicarNoTiny(produto._id);
+      if (modo !== 'depois') trackMissionArtifactPublished({ missionId: 'produto', destino: modo });
       trackMissionStepCompleted({ missionId: 'produto', step: 'chegada' });
       trackMissionCompleted({ missionId: 'produto' });
       onState({
         ...state,
-        dados: { ...state.dados, ...(salvar ? { salvoNoCatalogo: true } : {}) },
+        dados: {
+          ...state.dados,
+          ...(modo === 'tiny' ? { publicado: true } : {}),
+          ...(modo !== 'depois' ? { salvoNoCatalogo: true } : {}),
+        },
         artefato: { tipo: 'produto', id: produto._id, rotulo: String(produto['Descrição'] ?? 'Produto') },
         concluidaEm: new Date().toISOString(),
       });
@@ -189,6 +206,31 @@ const MissaoProduto: React.FC<Props> = ({
   const turnos: Turno[] = [];
   const acoes: Acao[] = [];
   let palco: StageProps | undefined;
+
+  if (state.step === 'contexto' && fase === 'catalogo') {
+    turnos.push({
+      autor: 'agente',
+      texto: `Você tem ${produtos.length} produtos, ${produtosSemDescricao(produtos, Infinity).length} sem descrição nenhuma. Escolhe um pra começar:`,
+    });
+    turnos.push({
+      autor: 'agente',
+      texto: (
+        <div className="flex flex-col gap-1.5">
+          {candidatos.map((p) => (
+            <button
+              key={p._id}
+              type="button"
+              onClick={() => avancarPasso({ produtoId: p._id, origem: 'catalogo', descricaoOriginal: semHtml(p['Descrição complementar']) })}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-left text-xs hover:border-[#FF5B03]"
+            >
+              {String(p['Descrição'] ?? p['Código (SKU)'] ?? 'Produto sem nome')}
+            </button>
+          ))}
+        </div>
+      ),
+    });
+    acoes.push({ rotulo: 'Colar um link em vez disso', variante: 'secundaria', onClick: () => setFase('link') });
+  }
 
   if (state.step === 'contexto' && fase === 'link') {
     turnos.push({
@@ -254,6 +296,7 @@ const MissaoProduto: React.FC<Props> = ({
     palco = {
       titulo: 'Agente de Produto trabalhando',
       linhas: log.length ? log : [{ estado: 'feito', texto: 'produto no catálogo', destaque: String(produto?.['Descrição'] ?? '') }],
+      children: pedirWhatsapp ? <PedidoWhatsApp onEnviar={onEnviarWhatsapp} /> : undefined,
     };
     acoes.push({ rotulo: ocupado ? 'Escrevendo…' : 'Gerar a descrição', onClick: gerarDescricao, desabilitada: ocupado || !produto });
   }
@@ -279,8 +322,12 @@ const MissaoProduto: React.FC<Props> = ({
         </div>
       ),
     };
-    acoes.push({ rotulo: ocupado ? 'Salvando…' : 'Salvar no meu catálogo', onClick: () => finalizar(true), desabilitada: ocupado });
-    acoes.push({ rotulo: 'Quero ajustar antes', variante: 'secundaria', onClick: () => finalizar(false), desabilitada: ocupado });
+    acoes.push({
+      rotulo: ocupado ? 'Salvando…' : temTiny ? 'Publicar no Tiny' : 'Salvar no meu catálogo',
+      onClick: () => finalizar(temTiny ? 'tiny' : 'catalogo'),
+      desabilitada: ocupado,
+    });
+    acoes.push({ rotulo: 'Quero ajustar antes', variante: 'secundaria', onClick: () => finalizar('depois'), desabilitada: ocupado });
   }
 
   return (

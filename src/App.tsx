@@ -8,6 +8,7 @@ import type { MissionState } from './modules/onboarding/mission/missionTypes';
 import MissionPicker from './modules/onboarding/mission/MissionPicker';
 import MissaoProduto from './modules/onboarding/mission/MissaoProduto';
 import { iniciarMissao, ouvirMissoes, salvarMissao } from './services/missionService';
+import { enviarContatoMissao } from './services/onboardingService';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import MarketingLayout from './marketing/MarketingLayout';
 import HomePage from './marketing/pages/HomePage';
@@ -1808,17 +1809,31 @@ export default function App() {
   // local values come from spreadsheets/AI enrichment and were silently
   // overwriting Tiny's tax data. The server still diffs each field against Tiny's
   // live record and only writes what actually differs.
-  const buildTinyPushPayload = async (): Promise<TinyPushProduct[]> => {
-    return tinySelectedProducts(productsRef.current).map((p) => ({
-      tinyId: p._tinyProductId!,
-      sku: p['Código (SKU)'],
-      nome: p['Descrição'],
-      descricaoHtml: p['Descrição complementar'],
-      seoTitle: p['Título SEO'],
-      seoDescription: p['Descrição SEO'],
-      seoKeywords: p['Palavras chave SEO'],
-      imagens: collectTinyImages(p),
-    }));
+  const tinyPushPayloadOf = (p: Product): TinyPushProduct => ({
+    tinyId: p._tinyProductId!,
+    sku: p['Código (SKU)'],
+    nome: p['Descrição'],
+    descricaoHtml: p['Descrição complementar'],
+    seoTitle: p['Título SEO'],
+    seoDescription: p['Descrição SEO'],
+    seoKeywords: p['Palavras chave SEO'],
+    imagens: collectTinyImages(p),
+  });
+
+  const buildTinyPushPayload = async (): Promise<TinyPushProduct[]> =>
+    tinySelectedProducts(productsRef.current).map(tinyPushPayloadOf);
+
+  // Publica um único produto no Tiny (Missão Produto). O push nunca cria
+  // produto — só atualiza um que já veio do Tiny, então exige _tinyProductId.
+  const publicarProdutoNoTiny = async (id: string): Promise<void> => {
+    const p = productsRef.current.find((x) => x._id === id);
+    if (!p?._tinyProductId) throw new Error('Esse produto não veio do Tiny.');
+    const { resultados } = await tinyPush([tinyPushPayloadOf(p)]);
+    const r = resultados[0];
+    if (!r?.ok) {
+      const motivo = Object.values(r?.steps ?? {}).find((v) => v && v !== 'ok' && v !== 'sem alteração');
+      throw new Error(motivo ?? 'O Tiny recusou o envio.');
+    }
   };
 
   // djb2/tinyGroup/tinyGenerated are no longer needed for Tiny (the server now
@@ -3155,6 +3170,9 @@ Retorne APENAS um JSON válido no seguinte formato:
         onGerarDescricao={handleGenerateDescriptionForOnboarding}
         onSalvarNoCatalogo={() => saveToCloud(true)}
         onConcluir={() => setJornadaConcluida(true)}
+        onPublicarNoTiny={publicarProdutoNoTiny}
+        mostrarPedidoWhatsapp={!onboardingCompleted}
+        onEnviarWhatsapp={async (w) => { await enviarContatoMissao(w); }}
       />
     );
   }
