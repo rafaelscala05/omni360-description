@@ -22,6 +22,7 @@ export const EVENT_MILESTONE: Record<string, CrmStage> = {
   image_generated: 'content_generated',
   video_generated: 'content_generated',
   attributes_generated: 'content_generated',
+  mission_completed: 'content_generated',
   spreadsheet_export: 'integrated_or_exported',
   erp_connected: 'integrated_or_exported',
   erp_push: 'integrated_or_exported',

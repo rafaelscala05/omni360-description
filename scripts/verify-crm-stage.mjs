@@ -4,6 +4,7 @@ import {
   applyEventToSummary,
   computeHealth,
   emptySummary,
+  EVENT_MILESTONE,
   isStagnant,
   isoWeek,
   resolveStage,
@@ -84,6 +85,9 @@ check('estágio terminal nunca fica travado', isStagnant(recorrente, new Date('2
 // esse sinal dispara WhatsApp, então dado ruim jamais pode virar disparo.
 const dataRuim = { ...emptySummary('2026-08-01T00:00:00.000Z'), stage: 'active', stageEnteredAt: '2026-W31' };
 check('data inválida não marca como travado', isStagnant(dataRuim, new Date('2026-08-06T00:00:00.000Z')), false);
+
+// Missão concluída = conteúdo gerado (a missão sempre gera descrição ou artigo).
+check('mission_completed comprova o marco de conteúdo', EVENT_MILESTONE.mission_completed, 'content_generated');
 
 console.log(failures === 0 ? '\nTodas as verificações passaram.' : `\n${failures} verificação(ões) falharam.`);
 process.exit(failures === 0 ? 0 : 1);
