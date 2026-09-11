@@ -22,7 +22,11 @@ const inline = (texto: string, chave: string): React.ReactNode[] => {
     if (t.startsWith('**')) nos.push(<strong key={`${chave}-b${i}`}>{t.slice(2, -2)}</strong>);
     else if (t.startsWith('`')) {
       nos.push(
-        <code key={`${chave}-c${i}`} className="px-1.5 py-0.5 rounded bg-slate-100 text-[0.9em] font-mono text-slate-700">
+        <code
+          key={`${chave}-c${i}`}
+          className="px-1.5 py-0.5 rounded-md text-[0.9em] font-mono text-[var(--ag-text)]"
+          style={{ background: 'var(--ag-fill)', border: '1px solid var(--ag-hairline)' }}
+        >
           {t.slice(1, -1)}
         </code>,
       );
@@ -57,7 +61,7 @@ const Markdown: React.FC<{ texto: string }> = ({ texto }) => {
     const titulo = linha.match(/^(#{1,3})\s+(.*)$/);
     if (titulo) {
       blocos.push(
-        <div key={i} className="font-semibold text-slate-900 mt-3 mb-1">{inline(titulo[2], `h${i}`)}</div>,
+        <div key={i} className="font-semibold text-[var(--ag-text)] mt-3 mb-1">{inline(titulo[2], `h${i}`)}</div>,
       );
       return;
     }
@@ -66,7 +70,7 @@ const Markdown: React.FC<{ texto: string }> = ({ texto }) => {
   });
   fecharLista('fim');
 
-  return <div className="text-[15px] leading-relaxed text-slate-800">{blocos}</div>;
+  return <div className="text-[15px] leading-[1.65] text-[var(--ag-text)]">{blocos}</div>;
 };
 
 export default Markdown;
