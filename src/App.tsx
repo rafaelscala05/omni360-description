@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'react';
-import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, Link as LinkIcon, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3, Plug, GraduationCap, Gift, Building2, Zap } from 'lucide-react';
+import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, Link as LinkIcon, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3, Plug, GraduationCap, Gift, Building2, Zap, Target } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import logoAlfreds from './assets/brand/logo-alfreds-produtos.png';
 import AgentHomeScreen from './modules/agent/AgentHomeScreen';
@@ -8,6 +8,8 @@ import type { MissionState } from './modules/onboarding/mission/missionTypes';
 import MissionPicker from './modules/onboarding/mission/MissionPicker';
 import MissaoProduto from './modules/onboarding/mission/MissaoProduto';
 import MissaoConteudo from './modules/onboarding/mission/MissaoConteudo';
+import TrilhaMissoes from './modules/onboarding/mission/TrilhaMissoes';
+import { montarTrilha, type EstadoItem, type ItemId } from './modules/onboarding/mission/trilha';
 import { iniciarMissao, ouvirMissoes, salvarMissao } from './services/missionService';
 import { enviarContatoMissao } from './services/onboardingService';
 import { listenProjects } from './services/contentService';
@@ -280,6 +282,7 @@ export default function App() {
   const [cohort, setCohort] = useState<string | null>(null);
   const [missao, setMissao] = useState<MissionState | null>(null);
   const [missoesCarregadas, setMissoesCarregadas] = useState(false);
+  const [todasMissoes, setTodasMissoes] = useState<MissionState[]>([]);
   // Sinal real de existência de projeto de conteúdo (não a flag de módulo).
   const [projetosConteudo, setProjetosConteudo] = useState(0);
   const [jornadaConcluida, setJornadaConcluida] = useState(false);
@@ -415,6 +418,7 @@ export default function App() {
   useEffect(() => {
     if (!user || !isCoorteMissao(cohort)) return;
     return ouvirMissoes(user.uid, (lista) => {
+      setTodasMissoes(lista);
       setJornadaConcluida(lista.some((m) => !!m.concluidaEm));
       const emAndamento = lista
         .filter((m) => !m.concluidaEm)
@@ -429,6 +433,15 @@ export default function App() {
     if (!user || !isCoorteMissao(cohort)) return;
     return listenProjects(user.uid, (lista) => setProjetosConteudo(lista.length));
   }, [user, cohort]);
+
+  // Aterrissagem na trilha: quem é da coorte e já concluiu a primeira missão
+  // abre na trilha — uma vez por sessão.
+  const trilhaAterrissou = useRef(false);
+  useEffect(() => {
+    if (!isCoorteMissao(cohort) || !jornadaConcluida || trilhaAterrissou.current) return;
+    trilhaAterrissou.current = true;
+    setMainView('missoes');
+  }, [cohort, jornadaConcluida]);
 
   // Track changes for auto-save
   useEffect(() => {
@@ -2400,6 +2413,24 @@ Retorne APENAS um JSON válido no seguinte formato:
     setIsProductUrlImportOpen(true);
   };
 
+  const acaoDaTrilha = async (id: ItemId, estado: EstadoItem) => {
+    if (!user) return;
+    // Item feito só leva ao resultado — nunca reinicia a missão: iniciarMissao
+    // numa missão concluída recria o doc e apaga a conclusão.
+    if (estado === 'feito') {
+      if (id === 'produto' || id === 'catalogo') { setMainView('products'); return; }
+      if (id === 'conteudo' || id === 'publicar-blog') { setWorkspace('content'); return; }
+      if (id === 'erp') { setMainView('integrations'); return; }
+      if (id === 'empresa') { setMainView('company'); }
+      return;
+    }
+    if (id === 'produto' || id === 'conteudo') { setMissao(await iniciarMissao(user.uid, id)); return; }
+    if (id === 'catalogo') { setMainView('products'); handleOpenProductUrlImport(); return; }
+    if (id === 'erp') { setMainView('integrations'); return; }
+    if (id === 'publicar-blog') { setWorkspace('content'); return; }
+    if (id === 'empresa') { setMainView('company'); }
+  };
+
   // Reusa exatamente o mesmo caminho de geração de descrição por crédito que
   // a tabela de produtos já usa (startGenerateSingle) — sem duplicar
   // ensureCredits/consumeCredit/tracking.
@@ -3291,6 +3322,15 @@ Retorne APENAS um JSON válido no seguinte formato:
         )}
 
         <nav className="mt-2 px-3 flex flex-col gap-1 flex-1">
+          {isCoorteMissao(cohort) && (
+            <button
+              onClick={() => { setMainView('missoes'); setIsSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'missoes' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
+              title="Missões"
+            >
+              <Target className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Missões'}
+            </button>
+          )}
           {/* Chat unificado (Alfreds) — só aparece pra quem tem pelo menos um módulo de agente habilitado (conteúdo ou operações). */}
           {(hasContentAgent || hasOperationsAgent) && (
             <button
@@ -3522,7 +3562,18 @@ Retorne APENAS um JSON válido no seguinte formato:
 
         {/* Dynamic View Content */}
         <main className="flex-1 overflow-y-auto w-full p-6 pb-20 md:pb-6 bg-[#f7f9fb]">
-          {mainView === 'home' ? (
+          {mainView === 'missoes' ? (
+            <TrilhaMissoes
+              nome={(user.displayName ?? '').split(' ')[0]}
+              itens={montarTrilha({
+                missoes: todasMissoes,
+                produtos: products.length,
+                erpConectado: products.some((p) => p._tinyProductId || p._blingProductId || p._idworksProductId),
+                empresaCompleta: !!companyData?.cnpj,
+              })}
+              onAcao={acaoDaTrilha}
+            />
+          ) : mainView === 'home' ? (
             <AgentHomeScreen
               uid={user.uid}
               credits={credits}
