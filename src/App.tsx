@@ -434,13 +434,22 @@ export default function App() {
     return listenProjects(user.uid, (lista) => setProjetosConteudo(lista.length));
   }, [user, cohort]);
 
+  // Espelha mainView num ref só para o efeito de aterrissagem abaixo ler o
+  // valor atual sem entrar nas dependências (senão toda navegação re-executa
+  // o efeito).
+  const mainViewRef = useRef(mainView);
+  mainViewRef.current = mainView;
+
   // Aterrissagem na trilha: quem é da coorte e já concluiu a primeira missão
-  // abre na trilha — uma vez por sessão.
+  // abre na trilha — uma vez por sessão. `jornadaConcluida` chega de forma
+  // assíncrona (snapshot do Firestore), então o usuário pode já ter saído da
+  // tela inicial antes desse efeito disparar; nesse caso só marcamos como
+  // "já aterrissou" e não forçamos a trilha por cima da navegação dele.
   const trilhaAterrissou = useRef(false);
   useEffect(() => {
     if (!isCoorteMissao(cohort) || !jornadaConcluida || trilhaAterrissou.current) return;
     trilhaAterrissou.current = true;
-    setMainView('missoes');
+    if (mainViewRef.current === 'products') setMainView('missoes');
   }, [cohort, jornadaConcluida]);
 
   // Track changes for auto-save
