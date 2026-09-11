@@ -65,7 +65,8 @@ export const MISSOES: Record<MissionId, MissionDef> = {
       {
         id: 'palco',
         titulo: 'Palco',
-        concluido: (d) => typeof d.blogSlug === 'string' && d.blogSlug.length > 0,
+        // Só termina com o post publicado no blog — não quando o blog passa a existir.
+        concluido: (d) => typeof d.urlPost === 'string' && d.urlPost.length > 0,
       },
       {
         id: 'chegada',
