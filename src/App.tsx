@@ -3,6 +3,7 @@ import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Che
 import * as XLSX from 'xlsx';
 import logoAlfreds from './assets/brand/logo-alfreds-produtos.png';
 import AgentHomeScreen from './modules/agent/AgentHomeScreen';
+import AppTabBar from './components/AppTabBar';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import MarketingLayout from './marketing/MarketingLayout';
 import HomePage from './marketing/pages/HomePage';
@@ -5038,48 +5039,13 @@ Retorne APENAS um JSON válido no seguinte formato:
         </div>
       )}
 
-      {/* Nav inferior — mobile only, atalho fixo para criar produto sem depender do menu lateral */}
-      <div className="md:hidden fixed left-0 right-0 bottom-0 z-30 bg-white border-t border-slate-200 flex items-center px-2 pt-1.5" style={{ paddingBottom: 'calc(0.375rem + env(safe-area-inset-bottom, 0px))' }}>
-        <button
-          onClick={() => setMainView('products')}
-          className={cn("flex-1 flex flex-col items-center justify-center gap-1 py-1 min-h-[44px]", mainView === 'products' ? "text-[#FF5B03]" : "text-slate-400")}
-        >
-          <Layout className="w-[19px] h-[19px]" />
-          <span className={cn("text-[10px]", mainView === 'products' ? "font-bold" : "font-medium")}>Catálogo</span>
-        </button>
-        <button
-          onClick={() => setMainView('categories')}
-          className={cn("flex-1 flex flex-col items-center justify-center gap-1 py-1 min-h-[44px]", mainView === 'categories' ? "text-[#FF5B03]" : "text-slate-400")}
-        >
-          <Folder className="w-[19px] h-[19px]" />
-          <span className={cn("text-[10px]", mainView === 'categories' ? "font-bold" : "font-medium")}>Categorias</span>
-        </button>
-
-        <div className="flex-none w-16 flex justify-center relative">
-          <button
-            onClick={handleOpenProductUrlImport}
-            className="absolute -top-[26px] w-[52px] h-[52px] rounded-full bg-[#FF5B03] border-4 border-[#f7f9fb] shadow-[0_6px_16px_rgba(255,91,3,0.4)] flex items-center justify-center text-white"
-            title="Novo Produto"
-          >
-            <Plus className="w-[22px] h-[22px]" />
-          </button>
-        </div>
-
-        <button
-          onClick={() => { setIsCreditPurchaseOpen(true); trackCreditPurchaseOpen(); }}
-          className="flex-1 flex flex-col items-center justify-center gap-1 py-1 min-h-[44px] text-slate-400"
-        >
-          <Coins className="w-[19px] h-[19px]" />
-          <span className="text-[10px] font-medium">Créditos</span>
-        </button>
-        <button
-          onClick={() => setIsSidebarOpen(true)}
-          className="flex-1 flex flex-col items-center justify-center gap-1 py-1 min-h-[44px] text-slate-400"
-        >
-          <Menu className="w-[19px] h-[19px]" />
-          <span className="text-[10px] font-medium">Menu</span>
-        </button>
-      </div>
+      <AppTabBar
+        atual={mainView}
+        mostrarAgente={hasContentAgent || hasOperationsAgent}
+        onNavegar={setMainView}
+        onNovoProduto={handleOpenProductUrlImport}
+        onMenu={() => setIsSidebarOpen(true)}
+      />
 
     </div>
   );

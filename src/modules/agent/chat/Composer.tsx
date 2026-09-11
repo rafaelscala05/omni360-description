@@ -11,6 +11,7 @@ interface Props {
 
 const Composer: React.FC<Props> = ({ disabled, streaming, onEnviar, onParar, placeholder }) => {
   const [texto, setTexto] = useState('');
+  const [focado, setFocado] = useState(false);
   const areaRef = useRef<HTMLTextAreaElement>(null);
 
   // Cresce com o conteúdo até um teto, como no Claude.
@@ -28,40 +29,62 @@ const Composer: React.FC<Props> = ({ disabled, streaming, onEnviar, onParar, pla
     setTexto('');
   };
 
+  const podeEnviar = !disabled && !!texto.trim();
+
   return (
-    <div className="px-4 pb-4 pt-2">
+    <div className="px-4 pb-4 pt-2 shrink-0">
       <div className="max-w-3xl mx-auto">
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm focus-within:border-slate-300 transition-colors">
+        <div
+          className="ag-glass-strong rounded-[26px] overflow-hidden transition-all duration-200"
+          style={{
+            borderColor: focado ? 'var(--ag-accent)' : 'var(--ag-hairline)',
+            boxShadow: focado
+              ? 'inset 0 1px 0 rgba(255,255,255,.35), 0 0 0 4px var(--ag-accent-soft), var(--ag-shadow)'
+              : 'inset 0 1px 0 rgba(255,255,255,.35), var(--ag-shadow)',
+          }}
+        >
           <textarea
             ref={areaRef}
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
+            onFocus={() => setFocado(true)}
+            onBlur={() => setFocado(false)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar(); }
             }}
             rows={1}
             disabled={disabled}
             placeholder={placeholder ?? 'Pergunte algo ou peça uma ação…'}
-            className="w-full resize-none bg-transparent px-4 py-3.5 text-[15px] text-slate-800 placeholder:text-slate-400 focus:outline-none disabled:opacity-60"
+            className="ag-scroll w-full resize-none bg-transparent px-5 pt-4 pb-2 text-[15px] leading-[1.5] text-[var(--ag-text)] placeholder:text-[var(--ag-text-3)] focus:outline-none disabled:opacity-60"
           />
-          <div className="flex items-center justify-between px-2.5 pb-2.5">
-            <span className="text-[11px] text-slate-400 ml-1.5">Enter envia · Shift+Enter quebra linha</span>
+          <div className="flex items-center justify-between pl-5 pr-2.5 pb-2.5">
+            <span className="text-[11px] text-[var(--ag-text-3)] hidden sm:block">
+              Enter envia · Shift+Enter quebra linha
+            </span>
+            <span className="text-[11px] text-[var(--ag-text-3)] sm:hidden">Nada é alterado sem aprovação</span>
+
             {streaming ? (
               <button
                 onClick={onParar}
                 title="Parar"
-                className="p-2 rounded-lg bg-slate-900 text-white hover:bg-slate-700 transition-colors"
+                className="w-9 h-9 rounded-full grid place-items-center transition-transform active:scale-95"
+                style={{ background: 'var(--ag-fill-2)', color: 'var(--ag-text)' }}
               >
-                <Square className="w-4 h-4 fill-current" />
+                <Square className="w-3.5 h-3.5 fill-current" />
               </button>
             ) : (
               <button
                 onClick={enviar}
-                disabled={disabled || !texto.trim()}
+                disabled={!podeEnviar}
                 title="Enviar"
-                className="p-2 rounded-lg bg-[#FF5B03] text-white hover:bg-[#e65003] disabled:bg-slate-200 disabled:text-slate-400 transition-colors"
+                className="w-9 h-9 rounded-full grid place-items-center transition-all duration-200 active:scale-95 disabled:cursor-not-allowed"
+                style={{
+                  background: podeEnviar ? 'var(--ag-accent)' : 'var(--ag-fill-2)',
+                  color: podeEnviar ? 'var(--ag-accent-ink)' : 'var(--ag-text-3)',
+                  boxShadow: podeEnviar ? '0 8px 20px -8px var(--ag-accent)' : 'none',
+                }}
               >
-                <ArrowUp className="w-4 h-4" />
+                <ArrowUp className="w-[18px] h-[18px]" />
               </button>
             )}
           </div>

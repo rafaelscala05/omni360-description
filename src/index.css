@@ -57,3 +57,266 @@ body {
 .quill-view-mode .ql-editor p {
   line-height: 1.6;
 }
+
+/* ============================================================================
+   Alfreds — design system da tela de chat do agente.
+
+   "Liquid Glass" no espírito do UI kit da Apple: superfícies translúcidas com
+   blur + saturação, hairlines de 1px, cantos generosos e uma aurora sutil ao
+   fundo que dá o ar futurista sem virar sci-fi. Tudo em tokens para o tema
+   escuro ser só uma troca de variáveis (`[data-tema="escuro"]`), sem duplicar
+   componente nenhum.
+
+   O escopo é a classe `.alfreds` (não `:root`) porque o resto do app continua
+   claro — o tema escuro fica confinado à superfície do agente.
+   ========================================================================== */
+
+.alfreds {
+  --ag-bg: #eef1f7;
+  --ag-bg-2: #f9fafc;
+  --ag-surface: 255 255 255;
+  --ag-surface-a: 0.72;
+  --ag-surface-solid: #ffffff;
+  --ag-raised: rgba(255, 255, 255, 0.55);
+  --ag-hairline: rgba(15, 23, 42, 0.09);
+  --ag-hairline-2: rgba(15, 23, 42, 0.16);
+  --ag-text: #0b0d12;
+  --ag-text-2: #59626f;
+  --ag-text-3: #8b94a3;
+  --ag-fill: rgba(15, 23, 42, 0.05);
+  --ag-fill-2: rgba(15, 23, 42, 0.09);
+  --ag-accent: #ff5b03;
+  --ag-accent-soft: rgba(255, 91, 3, 0.12);
+  --ag-accent-ink: #ffffff;
+  --ag-blue: #3053ff;
+  --ag-blue-soft: rgba(48, 83, 255, 0.12);
+  --ag-ok: #12a150;
+  --ag-ok-soft: rgba(18, 161, 80, 0.12);
+  --ag-warn: #c2610a;
+  --ag-warn-soft: rgba(217, 119, 6, 0.13);
+  --ag-danger: #dc2626;
+  --ag-danger-soft: rgba(220, 38, 38, 0.1);
+  --ag-shadow-sm: 0 1px 2px rgba(9, 12, 20, 0.05);
+  --ag-shadow: 0 1px 2px rgba(9, 12, 20, 0.05), 0 10px 30px -12px rgba(9, 12, 20, 0.22);
+  --ag-shadow-lg: 0 2px 4px rgba(9, 12, 20, 0.05), 0 28px 60px -20px rgba(9, 12, 20, 0.32);
+  --ag-aurora-1: rgba(255, 91, 3, 0.26);
+  --ag-aurora-2: rgba(48, 83, 255, 0.22);
+  --ag-aurora-3: rgba(130, 142, 209, 0.22);
+  --ag-sphere-node: #ff5b03;
+  --ag-sphere-link: #1e293b;
+  --ag-sphere-link-a: 0.32;
+
+  color: var(--ag-text);
+}
+
+.alfreds[data-tema='escuro'] {
+  --ag-bg: #07080c;
+  --ag-bg-2: #0d1017;
+  --ag-surface: 148 163 184;
+  --ag-surface-a: 0.1;
+  --ag-surface-solid: #14171f;
+  --ag-raised: rgba(255, 255, 255, 0.06);
+  --ag-hairline: rgba(255, 255, 255, 0.1);
+  --ag-hairline-2: rgba(255, 255, 255, 0.18);
+  --ag-text: #f2f5f9;
+  --ag-text-2: #a2adbd;
+  --ag-text-3: #6d7787;
+  --ag-fill: rgba(255, 255, 255, 0.07);
+  --ag-fill-2: rgba(255, 255, 255, 0.13);
+  --ag-accent: #ff7a33;
+  --ag-accent-soft: rgba(255, 122, 51, 0.18);
+  --ag-accent-ink: #1a0d04;
+  --ag-blue: #7e94ff;
+  --ag-blue-soft: rgba(126, 148, 255, 0.18);
+  --ag-ok: #3ddc84;
+  --ag-ok-soft: rgba(61, 220, 132, 0.16);
+  --ag-warn: #f5b544;
+  --ag-warn-soft: rgba(245, 181, 68, 0.16);
+  --ag-danger: #ff6b6b;
+  --ag-danger-soft: rgba(255, 107, 107, 0.16);
+  --ag-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --ag-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 34px -14px rgba(0, 0, 0, 0.8);
+  --ag-shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.5), 0 30px 70px -24px rgba(0, 0, 0, 0.9);
+  --ag-aurora-1: rgba(255, 91, 3, 0.34);
+  --ag-aurora-2: rgba(48, 83, 255, 0.32);
+  --ag-aurora-3: rgba(130, 142, 209, 0.24);
+  --ag-sphere-node: #ff7a33;
+  --ag-sphere-link: #94a3b8;
+  --ag-sphere-link-a: 0.34;
+}
+
+/* Material translúcido padrão — o "vidro" de todo card/barra/sheet. */
+.ag-glass {
+  background: rgb(var(--ag-surface) / var(--ag-surface-a));
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--ag-hairline);
+}
+
+/* Variante mais opaca, para superfícies que precisam segurar texto longo. */
+.ag-glass-strong {
+  background: rgb(var(--ag-surface) / calc(var(--ag-surface-a) + 0.18));
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  border: 1px solid var(--ag-hairline);
+}
+
+/* Realce interno de 1px no topo — é o que dá a sensação de vidro com brilho
+   no kit da Apple, em vez de um simples retângulo semi-transparente. */
+.ag-sheen {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), var(--ag-shadow);
+}
+
+.alfreds[data-tema='escuro'] .ag-sheen {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ag-shadow);
+}
+
+/* Aurora de fundo: três manchas de cor que derivam lentamente atrás do vidro.
+   Fica em ::before/::after para não exigir nós extras na árvore React. */
+.ag-aurora {
+  position: relative;
+  isolation: isolate;
+  background: var(--ag-bg);
+  overflow: hidden;
+}
+
+.ag-aurora::before,
+.ag-aurora::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  border-radius: 9999px;
+  filter: blur(80px);
+  pointer-events: none;
+}
+
+.ag-aurora::before {
+  width: 52%;
+  aspect-ratio: 1;
+  top: -18%;
+  left: -10%;
+  background: radial-gradient(circle at 35% 35%, var(--ag-aurora-1), transparent 68%);
+  animation: ag-drift-a 26s ease-in-out infinite;
+}
+
+.ag-aurora::after {
+  width: 60%;
+  aspect-ratio: 1;
+  bottom: -26%;
+  right: -14%;
+  background: radial-gradient(circle at 60% 40%, var(--ag-aurora-2), transparent 66%);
+  animation: ag-drift-b 32s ease-in-out infinite;
+}
+
+@keyframes ag-drift-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(14%, 12%, 0) scale(1.18); }
+}
+
+@keyframes ag-drift-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.05); }
+  50% { transform: translate3d(-12%, -14%, 0) scale(0.9); }
+}
+
+/* Entrada de mensagens/cards: sobe e materializa, com a curva de mola que a
+   Apple usa nas transições de sheet. */
+.ag-rise {
+  animation: ag-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes ag-rise {
+  from { opacity: 0; transform: translate3d(0, 10px, 0) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.ag-sheet-in {
+  animation: ag-sheet-in 0.34s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+@keyframes ag-sheet-in {
+  from { opacity: 0; transform: translate3d(24px, 0, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Halo pulsante do indicador "conectado" e da esfera enquanto o agente pensa. */
+.ag-live,
+.ag-live::after {
+  /* Puramente decorativo: o halo cresce até 1.9x e, sem isto, engole o clique
+     de qualquer controle que caia debaixo dele. */
+  pointer-events: none;
+}
+
+.ag-live::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 9999px;
+  border: 1px solid currentColor;
+  opacity: 0.55;
+  animation: ag-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes ag-ping {
+  0% { transform: scale(0.85); opacity: 0.6; }
+  80%, 100% { transform: scale(1.9); opacity: 0; }
+}
+
+/* Varredura de luz sobre um placeholder enquanto o status carrega. */
+.ag-shimmer {
+  background: linear-gradient(90deg, var(--ag-fill) 25%, var(--ag-fill-2) 37%, var(--ag-fill) 63%);
+  background-size: 400% 100%;
+  animation: ag-shimmer 1.4s ease infinite;
+}
+
+@keyframes ag-shimmer {
+  from { background-position: 100% 50%; }
+  to { background-position: 0 50%; }
+}
+
+.ag-dot {
+  animation: ag-blink 1.2s ease-in-out infinite;
+}
+
+.ag-dot:nth-child(2) { animation-delay: 0.16s; }
+.ag-dot:nth-child(3) { animation-delay: 0.32s; }
+
+@keyframes ag-blink {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+
+/* Scrollbar discreta, no espírito do overlay scroller do macOS. */
+.ag-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ag-fill-2) transparent;
+}
+
+.ag-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.ag-scroll::-webkit-scrollbar-track { background: transparent; }
+
+.ag-scroll::-webkit-scrollbar-thumb {
+  background-clip: padding-box;
+  background-color: var(--ag-fill-2);
+  border: 3px solid transparent;
+  border-radius: 9999px;
+}
+
+/* Esconde a barra sem perder o scroll — usado na régua de integrações. */
+.ag-scroll-x {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.ag-scroll-x::-webkit-scrollbar { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-aurora::before,
+  .ag-aurora::after,
+  .ag-rise,
+  .ag-sheet-in,
+  .ag-live::after,
+  .ag-shimmer,
+  .ag-dot {
+    animation: none;
+  }
+}

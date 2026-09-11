@@ -65,6 +65,10 @@ O invariante: **o loop do modelo nunca chama `execute()`**. Uma ferramenta `writ
 
 ## Frontend Structure
 
+**Alfreds (tela do agente)** — `src/modules/agent/*` tem um design system próprio, "liquid glass" no espírito do UI kit da Apple, definido em `src/index.css` sob a classe `.alfreds`. Regras para mexer ali: cor nenhuma é literal, tudo vem dos tokens `--ag-*` (`--ag-text`, `--ag-fill`, `--ag-accent`, `--ag-hairline`…), porque o tema escuro é só a troca desses tokens em `.alfreds[data-tema="escuro"]` — um `text-slate-800` solto fica ilegível no escuro. O tema é local à superfície do agente (o resto do app é sempre claro), persistido em `localStorage` por `src/modules/agent/theme.ts`; componentes montados fora da árvore (`LogsPanel`) recebem o tema por prop e reabrem o escopo `.alfreds`. Dois utilitários de Tailwind não funcionam com esses tokens e têm substitutos: `divide-*` (a cor cai no `currentColor` e vira traço preto sobre o vidro — use `borderTop` por linha) e qualquer `border-*` sem `borderColor` explícito. Todo enfeite animado (`.ag-live`, `.ag-aurora`) é `pointer-events: none`, senão engole clique.
+
+A régua de conexões (`ConnectionsBar.tsx`) junta três fontes que ninguém mais junta: `fetchIntegrationsOverview` (`src/services/integrationsStatusService.ts`, agrega os quatro `/api/*/status` com `allSettled` — falha de checagem é estado distinto de "não conectado"), `GET /api/agent/tools` (quantas ferramentas cada plataforma libera) e as `agent_actions` pendentes por provider.
+
 - `src/App.tsx` — monolithic root component (~2700 lines); handles all product CRUD, AI generation flows, cloud sync, auth, export, and most UI
 - `src/services/productService.ts` — `generateDescriptionText`, `generateProductAttributes`, `generateAttributesFromImage`, and the `defaultTemplate`
 - `src/services/categoryService.ts` — `fetchCategories`, `generateCategoryHierarchy`, `flattenHierarchy`, `getEffectiveAttributes`

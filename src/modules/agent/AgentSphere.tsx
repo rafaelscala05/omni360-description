@@ -18,6 +18,13 @@ interface Props {
   size?: number;
   /** true enquanto uma resposta está em andamento (SSE delta/leitura chegando). */
   active?: boolean;
+  /**
+   * Só existe como dependência do efeito: as cores vêm das custom properties
+   * `--ag-sphere-*` herdadas de `.alfreds`, e trocar o tema não dispara
+   * re-render do canvas WebGL sozinho — sem isso a esfera fica com a paleta do
+   * tema anterior até a tela ser remontada.
+   */
+  tema?: string;
 }
 
 const N = 90;
@@ -36,7 +43,7 @@ function fibonacciSphere(n: number): Float32Array {
   return pts;
 }
 
-export default function AgentSphere({ size = 132, active = false }: Props) {
+export default function AgentSphere({ size = 132, active = false, tema }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   // Lido dentro do loop de animação, que não deve reiniciar a cada mudança
   // de `active` — só o valor lido a cada frame precisa estar atualizado.
@@ -46,6 +53,14 @@ export default function AgentSphere({ size = 132, active = false }: Props) {
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
+
+    // Custom properties são herdadas, então o próprio nó de montagem já enxerga
+    // os tokens definidos lá em cima em `.alfreds[data-tema=…]`.
+    const css = getComputedStyle(mount);
+    const token = (nome: string, padrao: string) => css.getPropertyValue(nome).trim() || padrao;
+    const corNo = new THREE.Color(token('--ag-sphere-node', '#ff5b03'));
+    const corLinha = new THREE.Color(token('--ag-sphere-link', '#1e293b'));
+    const opacidadeLinha = Number(token('--ag-sphere-link-a', '0.35')) || 0.35;
 
     const positions = fibonacciSphere(N);
 
@@ -64,7 +79,7 @@ export default function AgentSphere({ size = 132, active = false }: Props) {
     // Nós.
     const pointsGeo = new THREE.BufferGeometry();
     pointsGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const pointsMat = new THREE.PointsMaterial({ color: 0xff5b03, size: 0.035, sizeAttenuation: true });
+    const pointsMat = new THREE.PointsMaterial({ color: corNo, size: 0.038, sizeAttenuation: true });
     const points = new THREE.Points(pointsGeo, pointsMat);
     group.add(points);
 
@@ -78,7 +93,7 @@ export default function AgentSphere({ size = 132, active = false }: Props) {
     const lineGeo = new THREE.BufferGeometry();
     lineGeo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
     lineGeo.setDrawRange(0, 0);
-    const lineMat = new THREE.LineBasicMaterial({ color: 0x1e293b, transparent: true, opacity: 0.35 });
+    const lineMat = new THREE.LineBasicMaterial({ color: corLinha, transparent: true, opacity: opacidadeLinha });
     const lines = new THREE.LineSegments(lineGeo, lineMat);
     group.add(lines);
 
@@ -122,7 +137,7 @@ export default function AgentSphere({ size = 132, active = false }: Props) {
       mount.removeChild(renderer.domElement);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [size]);
+  }, [size, tema]);
 
   return <div ref={mountRef} style={{ width: size, height: size }} />;
 }
