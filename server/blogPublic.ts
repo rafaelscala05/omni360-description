@@ -5,6 +5,7 @@ import type express from 'express';
 import { adminDb } from './firebaseAdmin';
 import { renderHome, renderCategory, renderPost, renderNotFound, escapeHtml, type BlogRenderContext } from './blogTemplates';
 import type { BlogSettings, BlogPost, BlogCategory, BlogDomainDoc } from '../src/modules/content/blog/types';
+import { isBlogIndexable } from '../src/modules/content/blog/types';
 import { ensureHtml } from '../src/modules/content/markdown';
 import { PLACEHOLDER_CATEGORIES, PLACEHOLDER_POSTS } from '../src/modules/content/blog/placeholderContent';
 
@@ -232,6 +233,12 @@ async function serveBlogPath(
   const categories = usingPlaceholder ? PLACEHOLDER_CATEGORIES : realCategories;
   const posts = usingPlaceholder ? PLACEHOLDER_POSTS : realPosts;
   const ctx = makeCtx(t, categories, baseUrl, req, verifiedDomain, Boolean(domainOverride), usingPlaceholder ? 'preview=1' : undefined);
+
+  // Blog em preview (Missão Conteúdo, antes de "Publicar"): sem sitemap nem
+  // feed — não há o que anunciar ao Google enquanto o dono não publicar.
+  if ((path === '/sitemap.xml' || path === '/feed.xml') && !isBlogIndexable(t.settings)) {
+    return send('Não encontrado', 'text/plain', 404);
+  }
 
   if (path === '/sitemap.xml') {
     const urls = [

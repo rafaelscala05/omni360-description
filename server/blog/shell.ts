@@ -2,7 +2,7 @@
 // documento (SEO/OG/JSON-LD/fontes/vars de cor). Cada tema fornece seu próprio
 // css + body; renderDocument os envolve num HTML completo.
 import type { BlogSettings, BlogPost, BlogCategory, BlogFonts, BlogLayout, BlogAppearance } from '../../src/modules/content/blog/types';
-import { BLOG_FONTS, DEFAULT_BLOG_FONTS, DEFAULT_BLOG_LAYOUT, effectiveAppearance as computeAppearance } from '../../src/modules/content/blog/types';
+import { BLOG_FONTS, DEFAULT_BLOG_FONTS, DEFAULT_BLOG_LAYOUT, effectiveAppearance as computeAppearance, isBlogIndexable } from '../../src/modules/content/blog/types';
 
 export interface BlogRenderContext {
   settings: BlogSettings;
@@ -119,6 +119,7 @@ export function renderDocument(ctx: BlogRenderContext, head: Head, parts: { css:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+${isBlogIndexable(s) ? '' : '<meta name="robots" content="noindex,nofollow">'}
 <title>${escapeHtml(head.title)}</title>
 <meta name="description" content="${escapeHtml(head.description)}">
 <link rel="canonical" href="${escapeHtml(canonical)}">

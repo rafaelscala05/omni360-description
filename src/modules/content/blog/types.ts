@@ -171,6 +171,10 @@ export function effectiveAppearance(s: Pick<BlogSettings, 'appearance' | 'templa
 
 export interface BlogSettings {
   enabled: boolean;
+  // Ausente = indexável. A Missão Conteúdo cria o blog com false (preview que
+  // o dono abre, mas o Google não indexa) e "Publicar o blog" grava true.
+  // O default é o que mantém os blogs que já estão no ar exatamente como estão.
+  indexable?: boolean;
   slug: string; // identificador público único global (claim server-side em blogSlugs)
   title: string;
   description: string;
@@ -250,4 +254,8 @@ export interface BlogDomainDoc {
   // posse. Mantido só para não quebrar docs antigos; nada mais lê.
   verificationToken?: string;
   createdAt: string;
+}
+
+export function isBlogIndexable(s: Pick<BlogSettings, 'indexable'>): boolean {
+  return s.indexable !== false;
 }
