@@ -30,6 +30,7 @@ const PedidoWhatsApp: React.FC<Props> = ({ onEnviar }) => {
       <p className="text-xs leading-relaxed">
         Isso leva uns minutos. Te chamo no WhatsApp quando ficar pronto? Você ganha <b>{ONBOARDING_BONUS} créditos</b>.
       </p>
+      <label htmlFor="missao-whatsapp" className="sr-only">Seu WhatsApp</label>
       <input
         id="missao-whatsapp"
         type="tel"
