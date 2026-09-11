@@ -7,8 +7,10 @@ import { COORTE_ATUAL, isCoorteMissao } from './modules/onboarding/mission/missi
 import type { MissionState } from './modules/onboarding/mission/missionTypes';
 import MissionPicker from './modules/onboarding/mission/MissionPicker';
 import MissaoProduto from './modules/onboarding/mission/MissaoProduto';
+import MissaoConteudo from './modules/onboarding/mission/MissaoConteudo';
 import { iniciarMissao, ouvirMissoes, salvarMissao } from './services/missionService';
 import { enviarContatoMissao } from './services/onboardingService';
+import { listenProjects } from './services/contentService';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import MarketingLayout from './marketing/MarketingLayout';
 import HomePage from './marketing/pages/HomePage';
@@ -212,7 +214,7 @@ export default function App() {
   useEffect(() => { productsRef.current = products; }, [products]);
   const [originalHeaders, setOriginalHeaders] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [mainView, setMainView] = useState<'home' | 'products' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company'>('products');
+  const [mainView, setMainView] = useState<'home' | 'products' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company' | 'missoes'>('products');
   // Top-level workspace: the Product agent (this App) or the Content agency module.
   const [workspace, setWorkspace] = useState<'product' | 'content'>('product');
   const [exportModel, setExportModel] = useState<'standard' | 'tinyerp'>('standard');
@@ -278,6 +280,8 @@ export default function App() {
   const [cohort, setCohort] = useState<string | null>(null);
   const [missao, setMissao] = useState<MissionState | null>(null);
   const [missoesCarregadas, setMissoesCarregadas] = useState(false);
+  // Sinal real de existência de projeto de conteúdo (não a flag de módulo).
+  const [projetosConteudo, setProjetosConteudo] = useState(0);
   const [jornadaConcluida, setJornadaConcluida] = useState(false);
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(false);
   const [productOnboardingPromptShown, setProductOnboardingPromptShown] = useState<boolean>(false);
@@ -412,10 +416,18 @@ export default function App() {
     if (!user || !isCoorteMissao(cohort)) return;
     return ouvirMissoes(user.uid, (lista) => {
       setJornadaConcluida(lista.some((m) => !!m.concluidaEm));
-      const emAndamento = lista.find((m) => m.missionId === 'produto' && !m.concluidaEm) ?? null;
+      const emAndamento = lista
+        .filter((m) => !m.concluidaEm)
+        .sort((a, b) => b.iniciadaEm.localeCompare(a.iniciadaEm))[0] ?? null;
       setMissao((atual) => atual ?? emAndamento);
       setMissoesCarregadas(true);
     });
+  }, [user, cohort]);
+
+  // Sinal real de projeto de conteúdo (não a flag de módulo hasContentAgent).
+  useEffect(() => {
+    if (!user || !isCoorteMissao(cohort)) return;
+    return listenProjects(user.uid, (lista) => setProjetosConteudo(lista.length));
   }, [user, cohort]);
 
   // Track changes for auto-save
@@ -1836,6 +1848,23 @@ export default function App() {
     }
   };
 
+  const enviarWhatsappDaMissao = async (whatsapp: string) => {
+    await enviarContatoMissao(whatsapp);
+  };
+
+  // Quem inicia a Missão Conteúdo passa a ter o workspace de Conteúdo e o
+  // blog nativo — sem isso o blog criado na missão ficaria inalcançável.
+  const habilitarConteudo = async () => {
+    if (!user) return;
+    await updateDoc(doc(db, `users/${user.uid}`), { 'modules.contentAgent': true, 'modules.blog': true });
+  };
+
+  const custoMissaoConteudo =
+    getCreditCost(CREDIT_ACTIONS.contentClusters.key) +
+    getCreditCost(CREDIT_ACTIONS.seoKeywordResearch.key) +
+    getCreditCost(CREDIT_ACTIONS.contentArticle.key) +
+    getCreditCost(CREDIT_ACTIONS.contentImage.key);
+
   // djb2/tinyGroup/tinyGenerated are no longer needed for Tiny (the server now
   // diffs against Tiny's live data). Kept only because the Bling push flow below
   // (unchanged, out of scope here) still relies on this stale-flag-based
@@ -3131,50 +3160,72 @@ Retorne APENAS um JSON válido no seguinte formato:
     );
   }
 
-  // Jornada de missão — só para a coorte nova, e só até a primeira missão
-  // concluída (a trilha do dia 2 chega no Plano 2).
-  if (user && isAuthReady && isCoorteMissao(cohort) && missoesCarregadas && !jornadaConcluida) {
-    if (!missao) {
+  // Jornada de missão (coorte nova). Tela 0 até a primeira missão concluída;
+  // depois disso, uma missão só aparece em tela cheia quando iniciada pela
+  // trilha (e fica até ser concluída).
+  if (user && isAuthReady && isCoorteMissao(cohort) && missoesCarregadas) {
+    const emCurso = missao && !missao.concluidaEm ? missao : null;
+    const modalCreditos = isCreditPurchaseOpen && (
+      <CreditPurchaseModal onClose={() => setIsCreditPurchaseOpen(false)} />
+    );
+    const salvar = (s: MissionState) => {
+      setMissao(s);
+      salvarMissao(user.uid, s).catch((err) => console.error('Erro ao salvar missão:', err));
+    };
+    const aoConcluir = () => { setJornadaConcluida(true); setMainView('missoes'); };
+
+    if (!emCurso && !jornadaConcluida) {
       return (
         <MissionPicker
           signal={{
             produtos: products.length,
             erpConectado: products.some((p) => p._tinyProductId || p._blingProductId || p._idworksProductId),
-            temProjetoConteudo: hasContentAgent,
+            temProjetoConteudo: projetosConteudo > 0,
           }}
           semDescricao={products.filter((p) => !p['Descrição complementar']).length}
-          onEscolher={async (id) => {
-            if (id === 'conteudo') {
-              // A Missão Conteúdo chega no Plano 2. Até lá a escolha leva ao
-              // workspace de Conteúdo que já existe — decidido no handler, não
-              // no render, para não disparar setState durante a renderização.
-              setWorkspace('content');
-              return;
-            }
-            setMissao(await iniciarMissao(user.uid, id));
-          }}
+          onEscolher={async (id) => setMissao(await iniciarMissao(user.uid, id))}
         />
       );
     }
-    return (
-      <MissaoProduto
-        state={missao}
-        onState={(s) => {
-          setMissao(s);
-          salvarMissao(user.uid, s).catch((err) => console.error('Erro ao salvar missão:', err));
-        }}
-        produtos={products}
-        categorias={existingCategories}
-        onProdutoCriado={handleProductCreatedFromOnboarding}
-        onCriarCategoria={handleCreateCategoryForOnboarding}
-        onGerarDescricao={handleGenerateDescriptionForOnboarding}
-        onSalvarNoCatalogo={() => saveToCloud(true)}
-        onConcluir={() => setJornadaConcluida(true)}
-        onPublicarNoTiny={publicarProdutoNoTiny}
-        mostrarPedidoWhatsapp={!onboardingCompleted}
-        onEnviarWhatsapp={async (w) => { await enviarContatoMissao(w); }}
-      />
-    );
+    if (emCurso?.missionId === 'produto') {
+      return (
+        <>
+          <MissaoProduto
+            state={emCurso}
+            onState={salvar}
+            produtos={products}
+            categorias={existingCategories}
+            onProdutoCriado={handleProductCreatedFromOnboarding}
+            onCriarCategoria={handleCreateCategoryForOnboarding}
+            onGerarDescricao={handleGenerateDescriptionForOnboarding}
+            onSalvarNoCatalogo={() => saveToCloud(true)}
+            onPublicarNoTiny={publicarProdutoNoTiny}
+            mostrarPedidoWhatsapp={!onboardingCompleted}
+            onEnviarWhatsapp={enviarWhatsappDaMissao}
+            onConcluir={aoConcluir}
+          />
+          {modalCreditos}
+        </>
+      );
+    }
+    if (emCurso?.missionId === 'conteudo') {
+      return (
+        <>
+          <MissaoConteudo
+            uid={user.uid}
+            state={emCurso}
+            onState={salvar}
+            custoCreditos={custoMissaoConteudo}
+            mostrarPedidoWhatsapp={!onboardingCompleted}
+            onEnviarWhatsapp={enviarWhatsappDaMissao}
+            onHabilitarConteudo={habilitarConteudo}
+            onComprarCreditos={() => setIsCreditPurchaseOpen(true)}
+            onConcluir={aoConcluir}
+          />
+          {modalCreditos}
+        </>
+      );
+    }
   }
 
   const renderApp = () => (
