@@ -284,6 +284,31 @@ Imagem + Título + Categoria. Essas decisões são independentes do formato da i
   Não bloqueia esta entrega (a variante secundária já está especificada), mas decide se vale
   inverter as variantes mais adiante.
 
+## Decisões do Plano 2 (2026-09-10)
+
+Tomadas ao planejar a segunda metade, com números lidos do código e do seed de produção.
+
+- **A Missão Conteúdo não cabia no saldo inicial.** Pelo caminho completo ela custa clusters 2
+  + pesquisa de palavra-chave 1 (incondicional) + calendário 2 + artigo 5 + capa 1 = 11, contra
+  10 créditos de conta nova. Decisão: **caminho enxuto + bônus no WhatsApp**.
+  - O calendário não é gerado; o artigo é criado com `createArticleManual` (sem custo). Total: 9.
+  - O `ONBOARDING_BONUS` (30) passa a ser concedido quando a pessoa deixa o WhatsApp durante a
+    espera, via `POST /api/onboarding/mission-contact`. O pedido acontece na geração dos
+    clusters — a primeira espera —, para os créditos entrarem antes de o artigo ser cobrado.
+  - O endpoint grava o contato em `onboarding.contact` (de onde a automação de WhatsApp lê) e
+    marca `onboarding.completed: true` sem `step1`. É isso que impede o bônus duplo com o wizard
+    legado, e o admin já trata `step1` ausente.
+- **Publicar no ERP dentro da missão: só Tiny**, que é o que este spec nomeia. Os builders de
+  Bling e IdWorks dependem de seleção de campos; esses produtos salvam no catálogo e seguem pela
+  tela de Integrações.
+- **Quem inicia a Missão Conteúdo ganha `modules.contentAgent` e `modules.blog`.** Sem isso o blog
+  criado na missão fica inalcançável — o atalho do workspace de Conteúdo depende de `contentAgent`.
+  Vale só para quem escolhe essa missão, não para toda a coorte.
+- **O palco de Conteúdo é retomável.** Cada sub-passo grava o id do que criou, e a orquestração
+  decide o próximo passo a partir do que já existe; o listener do artigo, e não a resposta HTTP,
+  é a fonte da verdade do pipeline.
+- **`mission_completed` comprova o marco `content_generated`** no CRM, pelo mapa de eventos.
+
 ## Referência visual
 
 Mockups das telas, o diagrama da jornada e o handoff:
