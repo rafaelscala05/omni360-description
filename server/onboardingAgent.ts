@@ -8,6 +8,7 @@ import { recordEvent } from './crmEvents';
 import type { CompanyData, OnboardingContact, OnboardingStep1 } from '../src/types/onboarding';
 import { ONBOARDING_BONUS } from '../src/types/onboarding';
 import { REFERRAL_ONBOARDING_BONUS } from '../src/types/referral';
+import { montarContatoMissao, validarPedidoContato } from './onboardingMissionRules';
 
 const CNPJ_BASE_URL = 'https://publica.cnpj.ws/cnpj';
 
@@ -85,6 +86,53 @@ function sendError(res: express.Response, err: unknown) {
   res.status(e.status ?? 500).json({ error: e.message ?? 'Erro interno' });
 }
 
+// Paga ao indicador o bônus de "amigo completou onboarding", uma vez só.
+// Compartilhado pelo onboarding legado e pelo contato da missão.
+function pagarIndicacao(
+  tx: FirebaseFirestore.Transaction,
+  referredBy: string,
+  referralRef: FirebaseFirestore.DocumentReference,
+  now: FirebaseFirestore.FieldValue,
+): void {
+  const referrerRef = adminDb.collection('users').doc(referredBy);
+  tx.update(referrerRef, { credits: FieldValue.increment(REFERRAL_ONBOARDING_BONUS) });
+  tx.set(referrerRef.collection('credit_logs').doc(), {
+    type: 'bonus',
+    actionType: 'Indicação — amigo completou onboarding',
+    actionKey: 'referral_onboarding_bonus',
+    productName: 'N/A',
+    sku: 'N/A',
+    userName: '',
+    creditsConsumed: 0,
+    creditsAdded: REFERRAL_ONBOARDING_BONUS,
+    timestamp: new Date().toISOString(),
+  });
+  tx.update(referralRef, { status: 'onboarding_completed', onboardingCreditsGranted: true, onboardingGrantedAt: now });
+}
+
+// Concede o bônus de onboarding: grava o bloco `onboarding` e credita
+// ONBOARDING_BONUS com o log correspondente. Compartilhado pelo onboarding
+// legado e pelo contato da missão — os dois pagam o mesmo bônus, do mesmo jeito.
+function concederBonusOnboarding(
+  tx: FirebaseFirestore.Transaction,
+  userRef: FirebaseFirestore.DocumentReference,
+  onboarding: Record<string, unknown>,
+  userName: string,
+): void {
+  tx.update(userRef, { onboarding, credits: FieldValue.increment(ONBOARDING_BONUS) });
+  tx.set(userRef.collection('credit_logs').doc(), {
+    type: 'bonus',
+    actionType: 'Bônus de Onboarding',
+    actionKey: 'onboarding_bonus',
+    productName: 'N/A',
+    sku: 'N/A',
+    userName,
+    creditsConsumed: 0,
+    creditsAdded: ONBOARDING_BONUS,
+    timestamp: new Date().toISOString(),
+  });
+}
+
 export function registerOnboardingRoutes(app: express.Application, deps: OnboardingDeps): void {
   const { verifyFirebaseToken } = deps;
 
@@ -130,45 +178,12 @@ export function registerOnboardingRoutes(app: express.Application, deps: Onboard
           !!referredBy && !!referralSnap?.exists && referralSnap.data()?.onboardingCreditsGranted !== true;
 
         const now = FieldValue.serverTimestamp();
-        tx.update(userRef, {
-          onboarding: { completed: true, completedAt: now, step1, contact },
-          credits: FieldValue.increment(ONBOARDING_BONUS),
-        });
-        const logRef = userRef.collection('credit_logs').doc();
-        tx.set(logRef, {
-          type: 'bonus',
-          actionType: 'Bônus de Onboarding',
-          actionKey: 'onboarding_bonus',
-          productName: 'N/A',
-          sku: 'N/A',
-          userName: decoded.name ?? decoded.email ?? '',
-          creditsConsumed: 0,
-          creditsAdded: ONBOARDING_BONUS,
-          timestamp: new Date().toISOString(),
-        });
+        concederBonusOnboarding(tx, userRef, { completed: true, completedAt: now, step1, contact }, decoded.name ?? decoded.email ?? '');
 
         // Referral milestone: if this user was referred, and the referrer hasn't
         // already been paid the onboarding bonus for them, pay it now.
         if (shouldPayReferrer && referredBy) {
-          const referrerRef = adminDb.collection('users').doc(referredBy);
-          tx.update(referrerRef, { credits: FieldValue.increment(REFERRAL_ONBOARDING_BONUS) });
-          const referrerLogRef = referrerRef.collection('credit_logs').doc();
-          tx.set(referrerLogRef, {
-            type: 'bonus',
-            actionType: 'Indicação — amigo completou onboarding',
-            actionKey: 'referral_onboarding_bonus',
-            productName: 'N/A',
-            sku: 'N/A',
-            userName: '',
-            creditsConsumed: 0,
-            creditsAdded: REFERRAL_ONBOARDING_BONUS,
-            timestamp: new Date().toISOString(),
-          });
-          tx.update(referralRef, {
-            status: 'onboarding_completed',
-            onboardingCreditsGranted: true,
-            onboardingGrantedAt: now,
-          });
+          pagarIndicacao(tx, referredBy, referralRef, now);
         }
 
         return { alreadyCompleted: false };
@@ -182,6 +197,43 @@ export function registerOnboardingRoutes(app: express.Application, deps: Onboard
         });
       }
 
+      res.json(result);
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // Contato pedido durante a missão (coorte missao-v1). Grava onde o wizard
+  // legado grava (onboarding.contact — é de lá que a automação de WhatsApp lê)
+  // e marca onboarding.completed, o que impede o bônus de ser pago duas vezes
+  // se a pessoa abrir o wizard antigo depois.
+  app.post('/api/onboarding/mission-contact', async (req, res) => {
+    try {
+      const decoded = await verifyFirebaseToken(req);
+      const pedido = validarPedidoContato(req.body);
+      if (pedido.ok === false) throw Object.assign(new Error(pedido.erro), { status: 422 });
+
+      const userRef = adminDb.collection('users').doc(decoded.uid);
+      const referralRef = adminDb.collection('referrals').doc(decoded.uid);
+      const contact = montarContatoMissao(pedido.digitos, { email: decoded.email, name: decoded.name }, new Date().toISOString());
+
+      const result = await adminDb.runTransaction(async (tx) => {
+        const userSnap = await tx.get(userRef);
+        if (!userSnap.exists) throw Object.assign(new Error('Usuário não encontrado'), { status: 404 });
+        if (userSnap.data()?.onboarding?.completed === true) return { alreadyCompleted: true, creditsAdded: 0 };
+
+        const referredBy = userSnap.data()?.referredBy as string | undefined;
+        const referralSnap = referredBy ? await tx.get(referralRef) : null;
+        const shouldPayReferrer =
+          !!referredBy && !!referralSnap?.exists && referralSnap.data()?.onboardingCreditsGranted !== true;
+
+        const now = FieldValue.serverTimestamp();
+        concederBonusOnboarding(tx, userRef, { completed: true, completedAt: now, source: 'missao', contact }, decoded.name ?? decoded.email ?? '');
+        if (shouldPayReferrer && referredBy) pagarIndicacao(tx, referredBy, referralRef, now);
+        return { alreadyCompleted: false, creditsAdded: ONBOARDING_BONUS };
+      });
+
+      if (!result.alreadyCompleted) void recordEvent(decoded.uid, 'onboarding_completed', { source: 'missao' });
       res.json(result);
     } catch (err) {
       sendError(res, err);

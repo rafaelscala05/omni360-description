@@ -12,3 +12,6 @@ export const completeOnboarding = (step1: OnboardingStep1, contact: OnboardingCo
 
 export const saveCompanyProfile = (company: CompanyData) =>
   callJson<{ ok: true }>('/api/onboarding/company', 'POST', { company });
+
+export const enviarContatoMissao = (whatsapp: string) =>
+  callJson<{ alreadyCompleted: boolean; creditsAdded: number }>('/api/onboarding/mission-contact', 'POST', { whatsapp });
