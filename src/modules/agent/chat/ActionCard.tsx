@@ -17,17 +17,31 @@ function formatar(v: unknown): string {
   return String(v);
 }
 
-const Linha: React.FC<{ campo: PreviewField }> = ({ campo }) => (
-  <div className={`grid grid-cols-[minmax(0,7rem)_1fr] gap-x-3 gap-y-1 px-4 py-2.5 text-sm ${campo.mudou ? '' : 'opacity-50'}`}>
-    <div className="text-slate-500 truncate" title={campo.campo}>{campo.campo}</div>
+/**
+ * A divisória vai no style de cada linha, e não num `divide-y` no pai: o
+ * utilitário só define a espessura da borda, a cor cai no `currentColor` do
+ * texto e vira um traço preto sobre o vidro.
+ */
+const Linha: React.FC<{ campo: PreviewField; primeira: boolean }> = ({ campo, primeira }) => (
+  <div
+    className={`grid grid-cols-[minmax(0,5.5rem)_1fr] sm:grid-cols-[minmax(0,7rem)_1fr] gap-x-3 gap-y-1 px-4 py-2.5 text-sm ${campo.mudou ? '' : 'opacity-45'}`}
+    style={primeira ? undefined : { borderTop: '1px solid var(--ag-hairline)' }}
+  >
+    <div className="text-[var(--ag-text-3)] truncate" title={campo.campo}>{campo.campo}</div>
     <div className="flex items-center gap-2 flex-wrap min-w-0">
-      <span className={`truncate max-w-full ${campo.mudou ? 'text-slate-400 line-through decoration-slate-300' : 'text-slate-600'}`}>
+      <span
+        className={`truncate max-w-full ${campo.mudou ? 'line-through' : ''}`}
+        style={{
+          color: campo.mudou ? 'var(--ag-text-3)' : 'var(--ag-text-2)',
+          textDecorationColor: 'var(--ag-hairline-2)',
+        }}
+      >
         {formatar(campo.antes)}
       </span>
       {campo.mudou && (
         <>
-          <ArrowRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
-          <span className="font-medium text-slate-900 break-words">{formatar(campo.depois)}</span>
+          <ArrowRight className="w-3.5 h-3.5 shrink-0 text-[var(--ag-text-3)]" />
+          <span className="font-medium text-[var(--ag-text)] break-words">{formatar(campo.depois)}</span>
         </>
       )}
     </div>
@@ -69,34 +83,60 @@ const ActionCard: React.FC<Props> = ({ uid, action, onExecutar, onRejeitar }) =>
   }
 
   const selo = {
-    pending: { texto: 'Aguardando sua aprovação', classe: 'bg-amber-50 text-amber-700 border-amber-200' },
-    executed: { texto: action.dryRun ? 'Simulado (dry-run)' : 'Executado', classe: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-    failed: { texto: 'Falhou', classe: 'bg-red-50 text-red-700 border-red-200' },
-    rejected: { texto: 'Rejeitado', classe: 'bg-slate-100 text-slate-500 border-slate-200' },
+    pending: { texto: 'Aguardando aprovação', fundo: 'var(--ag-warn-soft)', cor: 'var(--ag-warn)' },
+    executed: {
+      texto: action.dryRun ? 'Simulado (dry-run)' : 'Executado',
+      fundo: 'var(--ag-ok-soft)',
+      cor: 'var(--ag-ok)',
+    },
+    failed: { texto: 'Falhou', fundo: 'var(--ag-danger-soft)', cor: 'var(--ag-danger)' },
+    rejected: { texto: 'Rejeitado', fundo: 'var(--ag-fill)', cor: 'var(--ag-text-3)' },
   }[action.status];
 
   return (
-    <div className={`rounded-xl border bg-white overflow-hidden transition-opacity ${pendente ? 'border-[#FF5B03]/40 shadow-sm' : 'border-slate-200'} ${action.status === 'rejected' ? 'opacity-60' : ''}`}>
-      <div className="px-4 py-3 border-b border-slate-100 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="font-medium text-slate-900 text-sm">{action.preview.resumo}</div>
-          <div className="text-xs text-slate-500 mt-0.5 truncate" title={action.preview.alvo}>{action.preview.alvo}</div>
+    <div
+      className="ag-glass rounded-[20px] overflow-hidden transition-all duration-200"
+      style={{
+        borderColor: pendente ? 'var(--ag-accent)' : 'var(--ag-hairline)',
+        boxShadow: pendente
+          ? '0 0 0 4px var(--ag-accent-soft), var(--ag-shadow)'
+          : 'var(--ag-shadow-sm)',
+        opacity: action.status === 'rejected' ? 0.6 : 1,
+      }}
+    >
+      <div
+        className="px-4 py-3 flex flex-col sm:flex-row sm:items-start justify-between gap-2 sm:gap-3"
+        style={{ borderBottom: '1px solid var(--ag-hairline)' }}
+      >
+        <div className="min-w-0 order-2 sm:order-1">
+          <div className="font-semibold text-[var(--ag-text)] text-[14px] leading-snug">{action.preview.resumo}</div>
+          <div className="text-[12px] text-[var(--ag-text-3)] mt-0.5 truncate" title={action.preview.alvo}>
+            {action.preview.alvo}
+          </div>
         </div>
-        <span className={`shrink-0 text-[11px] font-medium px-2 py-1 rounded-full border ${selo.classe}`}>
+        <span
+          className="shrink-0 self-start order-1 sm:order-2 text-[11px] font-semibold px-2.5 py-1 rounded-full"
+          style={{ background: selo.fundo, color: selo.cor }}
+        >
           {selo.texto}
         </span>
       </div>
 
       {action.preview.campos.length > 0 && (
-        <div className="divide-y divide-slate-50">
-          {action.preview.campos.map((c, i) => <Linha key={`${c.campo}-${i}`} campo={c} />)}
+        <div>
+          {action.preview.campos.map((c, i) => (
+            <Linha key={`${c.campo}-${i}`} campo={c} primeira={i === 0} />
+          ))}
         </div>
       )}
 
       {action.preview.avisos.length > 0 && (
-        <div className="px-4 py-3 bg-amber-50/60 border-t border-amber-100 space-y-1.5">
+        <div
+          className="px-4 py-3 space-y-1.5"
+          style={{ background: 'var(--ag-warn-soft)', borderTop: '1px solid var(--ag-hairline)' }}
+        >
           {action.preview.avisos.map((a, i) => (
-            <div key={i} className="flex gap-2 text-xs text-amber-800">
+            <div key={i} className="flex gap-2 text-[12px]" style={{ color: 'var(--ag-warn)' }}>
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
               <span>{a}</span>
             </div>
@@ -105,15 +145,32 @@ const ActionCard: React.FC<Props> = ({ uid, action, onExecutar, onRejeitar }) =>
       )}
 
       {action.error && (
-        <div className="px-4 py-3 bg-red-50 border-t border-red-100 text-xs text-red-700">{action.error}</div>
+        <div
+          className="px-4 py-3 text-[12px]"
+          style={{
+            background: 'var(--ag-danger-soft)',
+            borderTop: '1px solid var(--ag-hairline)',
+            color: 'var(--ag-danger)',
+          }}
+        >
+          {action.error}
+        </div>
       )}
 
       {pendente && (
-        <div className="px-4 py-3 bg-slate-50/80 border-t border-slate-100 flex items-center gap-2">
+        <div
+          className="px-4 py-3 flex items-center gap-2 flex-wrap"
+          style={{ background: 'var(--ag-fill)', borderTop: '1px solid var(--ag-hairline)' }}
+        >
           <button
             onClick={() => rodar('executar')}
             disabled={!!busy}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#FF5B03] text-white text-sm font-medium hover:bg-[#e65003] disabled:opacity-50 transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-semibold transition-transform active:scale-95 disabled:opacity-50"
+            style={{
+              background: 'var(--ag-accent)',
+              color: 'var(--ag-accent-ink)',
+              boxShadow: '0 8px 20px -10px var(--ag-accent)',
+            }}
           >
             {busy === 'executar' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
             Executar
@@ -121,12 +178,13 @@ const ActionCard: React.FC<Props> = ({ uid, action, onExecutar, onRejeitar }) =>
           <button
             onClick={() => rodar('rejeitar')}
             disabled={!!busy}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-slate-600 text-sm font-medium hover:bg-slate-200/70 disabled:opacity-50 transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-semibold transition-transform active:scale-95 disabled:opacity-50"
+            style={{ background: 'var(--ag-fill-2)', color: 'var(--ag-text-2)' }}
           >
             {busy === 'rejeitar' ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
             Rejeitar
           </button>
-          <div className="ml-auto flex items-center gap-1.5 text-[11px] text-slate-400">
+          <div className="ml-auto flex items-center gap-1.5 text-[11px] text-[var(--ag-text-3)]">
             <ShieldCheck className="w-3.5 h-3.5" />
             {semMudanca ? 'Nada muda' : 'Nada é alterado até você aprovar'}
           </div>
