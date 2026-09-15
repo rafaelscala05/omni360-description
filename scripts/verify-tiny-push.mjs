@@ -4,6 +4,7 @@
 // Rodar com: npx tsx scripts/verify-tiny-push.mjs
 import { buildProductPutBody } from '../server/tinyAgent.ts';
 import { tinyV2CallRaw, buildV2AlterarPayload, normalizeV2Product } from '../server/tinyV2.ts';
+import { normalizeWebhookPayload } from '../server/tinyWebhook.ts';
 
 let failures = 0;
 function check(label, actual, expected) {
@@ -263,6 +264,27 @@ const ok = await tinyV2CallRaw('tok', 'produto.alterar.php', {});
 check('resposta OK não lança', ok.status, 'OK');
 
 globalThis.fetch = originalFetch;
+
+// --- 5. webhook: título e grade da variante -------------------------------
+// O webhook não manda nome por variação. O título é o nome do pai + os valores
+// da grade, e 'Variações' usa o separador || que a lista do catálogo divide.
+const webhook = normalizeWebhookPayload({
+  id: '100',
+  codigo: 'COB',
+  nome: 'Cobertor Manta Bebê Colibri Jolitex',
+  variacoes: [
+    { id: '101', codigo: 'COB-1', grade: [{ chave: 'Cor', valor: 'Rosa' }] },
+    { id: '102', codigo: 'COB-2', grade: [{ chave: 'Cor', valor: 'Azul' }, { chave: 'Tamanho', valor: 'P' }] },
+    { id: '103', codigo: 'COB-3', grade: [] },
+  ],
+});
+check('título com 1 atributo', webhook.variacoes[0].nome, 'Cobertor Manta Bebê Colibri Jolitex - Rosa');
+check('título com 2 atributos', webhook.variacoes[1].nome, 'Cobertor Manta Bebê Colibri Jolitex - Azul / P');
+check('grade vazia fica só com o nome do pai', webhook.variacoes[2].nome, 'Cobertor Manta Bebê Colibri Jolitex');
+check('Variações com ||', webhook.variacoes[1].variacaoGrade, 'Cor: Azul||Tamanho: P');
+check('grade vazia não grava Variações', webhook.variacoes[2].variacaoGrade, undefined);
+check('SKU da variante continua o código', webhook.variacoes[0].sku, 'COB-1');
+check('variante aponta para o SKU do pai', webhook.variacoes[0].codigoPai, 'COB');
 
 console.log(failures === 0 ? '\nTudo certo.' : `\n${failures} falha(s).`);
 process.exit(failures === 0 ? 0 : 1);

@@ -63,22 +63,30 @@ function normalizeWebhookParent(p: any): TinyNormalizedProduct {
   };
 }
 
-// Tiny doesn't send a display name per variação — reuse its own codigo so the
-// row is identifiable in the product list.
-function normalizeWebhookVariacao(v: any, parentCodigo: string): TinyNormalizedProduct {
-  const grade = Array.isArray(v?.grade)
-    ? v.grade.map((g: any) => `${g?.chave}: ${g?.valor}`).filter(Boolean).join(', ')
-    : undefined;
+// Tiny doesn't send a display name per variação. The title is the parent's
+// name plus the grade values ("Cobertor … - Azul / P"), and 'Variações' uses
+// the "Chave: Valor||Chave: Valor" format the catalog UI splits on.
+function gradeDaVariacao(v: any): Array<{ chave: string; valor: string }> {
+  if (!Array.isArray(v?.grade)) return [];
+  return v.grade
+    .map((g: any) => ({ chave: String(g?.chave ?? '').trim(), valor: String(g?.valor ?? '').trim() }))
+    .filter((g: { valor: string }) => g.valor);
+}
+
+function normalizeWebhookVariacao(v: any, parent: TinyNormalizedProduct): TinyNormalizedProduct {
+  const grade = gradeDaVariacao(v);
+  const valores = grade.map((g) => g.valor).join(' / ');
+  const variacaoGrade = grade.map((g) => (g.chave ? `${g.chave}: ${g.valor}` : g.valor)).join('||');
   return {
     tinyId: String(v?.id),
     sku: v?.codigo ?? '',
-    nome: v?.codigo ?? '',
+    nome: [parent.nome, valores].filter(Boolean).join(' - '),
     gtin: v?.gtin || undefined,
     precoPor: num(v?.preco),
     precoDe: num(v?.precoPromocional),
     estoque: num(v?.estoqueAtual),
-    codigoPai: parentCodigo || undefined,
-    variacaoGrade: grade || undefined,
+    codigoPai: parent.sku || undefined,
+    variacaoGrade: variacaoGrade || undefined,
     categorias: [],
     imagens: collectWebhookImages(v),
     raw: v,
@@ -88,7 +96,7 @@ function normalizeWebhookVariacao(v: any, parentCodigo: string): TinyNormalizedP
 export function normalizeWebhookPayload(dados: any): { parent: TinyNormalizedProduct; variacoes: TinyNormalizedProduct[] } {
   const parent = normalizeWebhookParent(dados);
   const variacoes = Array.isArray(dados?.variacoes)
-    ? dados.variacoes.map((v: any) => normalizeWebhookVariacao(v, parent.sku))
+    ? dados.variacoes.map((v: any) => normalizeWebhookVariacao(v, parent))
     : [];
   return { parent, variacoes };
 }
