@@ -135,6 +135,16 @@ Sem `TINY_DEVELOPER_ID`, nenhuma variante é escrita — funciona também como
 chave para desligar a função. O caminho de texto de produtos normais e pais
 não depende dele.
 
+Dois casos de borda adicionados no plano: variante do lote que não aparece
+em `variacoes[]` do pai → `variação não encontrada no produto pai no Tiny`
+(nada enviado); `tinyId` repetido no lote → `produto repetido no envio`
+(`ok: false`), para todo item ter resultado.
+
+Como um push só de variante escreve no registro inteiro do pai sem texto
+local, `buildV2AlterarPayload` passa a **ecoar `descricao_complementar`** do
+Tiny (hoje ela só entra quando a local muda, e um escalar fora do payload é
+zerado pelo `alterar`). A local continua sobrescrevendo quando difere.
+
 Limitações assumidas:
 - O `obter` não devolve o `urlImagem` atual, então não há diff: toda
   variante com imagem própria reenvia o `urlImagem` a cada push.
