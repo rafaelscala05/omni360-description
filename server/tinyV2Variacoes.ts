@@ -11,6 +11,7 @@ export const PASSO_NAO_MAPEADA = 'variação ainda não mapeada no Tiny — envi
 export const PASSO_NAO_ENCONTRADA = 'variação não encontrada no produto pai no Tiny';
 export const PASSO_SEM_PAI = 'o Tiny não informou o produto pai desta variação';
 export const PASSO_PAI_SEM_VARIACOES = 'o produto pai não está como "com variações" no Tiny';
+export const PASSO_PAI_NAO_ENCONTRADO = 'o produto pai não foi encontrado no Tiny';
 export const PASSO_SEM_DEVELOPER_ID = 'Developer-Id do Tiny não configurado';
 
 export interface VarianteDoLote {

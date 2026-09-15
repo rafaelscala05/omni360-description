@@ -4,7 +4,7 @@
 import { SECRET_REF, sleep, NOME_MAX, type TinyNormalizedProduct, type TinyPushProduct, type TinyPushResult, type TinyPushSteps } from './tinyAgent';
 import {
   buildV2VariacoesPayload, PASSO_PERTENCE_AO_PAI, PASSO_SEM_PAI, PASSO_PAI_SEM_VARIACOES, PASSO_SEM_DEVELOPER_ID,
-  type VariacoesPayload,
+  PASSO_PAI_NAO_ENCONTRADO, type VariacoesPayload,
 } from './tinyV2Variacoes';
 import { logTexto, logLista, push as pushLog, type PushLogEntry } from './pushLog';
 
@@ -396,6 +396,13 @@ export function buildV2AlterarPayload(
 
 export type V2Caller = (endpoint: string, params: Record<string, string>, headers?: Record<string, string>) => Promise<any>;
 
+export const PASSO_NAO_ENCONTRADO = 'produto não encontrado no Tiny';
+
+// produto.obter answers "não encontrado" as an empty result (tinyV2CallRaw treats
+// it like an empty list), so a missing product comes back as {}. Pushing that
+// would send a record with no unidade/preco/origem/situacao/tipo (erro 31).
+const semRegistro = (p: any): boolean => p?.id === undefined || p?.id === null || p?.id === '';
+
 const passosIguais = (msg: string): TinyPushSteps => ({ titulo: msg, descricao: msg, seo: msg, imagens: msg });
 const passosDeVariante = (imagens: string): TinyPushSteps => ({
   titulo: PASSO_PERTENCE_AO_PAI, descricao: PASSO_PERTENCE_AO_PAI, seo: PASSO_PERTENCE_AO_PAI, imagens,
@@ -430,6 +437,7 @@ export async function pushV2Lote(
     if (!prod.tinyId) { resultado(i, false, passosIguais('Sem ID Tiny')); continue; }
     try {
       const atual = (await call('produto.obter.php', { id: String(prod.tinyId) }))?.produto ?? {};
+      if (semRegistro(atual)) { resultado(i, false, passosIguais(PASSO_NAO_ENCONTRADO)); continue; }
       if (atual?.tipoVariacao === 'V') {
         const paiId = atual?.idProdutoPai ? String(atual.idProdutoPai) : '';
         if (!paiId) { resultado(i, false, passosDeVariante(PASSO_SEM_PAI)); continue; }
@@ -456,10 +464,14 @@ export async function pushV2Lote(
           g.variantes.forEach((i) => resultado(i, true, passosDeVariante(PASSO_SEM_DEVELOPER_ID)));
         } else {
           headers = { 'Developer-Id': opts.developerId };
-          paiAtual = (await call('produto.obter.php', { id: paiId }, headers))?.produto ?? {};
-          if (String(paiAtual?.classe_produto ?? '') !== 'V') {
+          const paiComMapeamentos = (await call('produto.obter.php', { id: paiId }, headers))?.produto ?? {};
+          if (semRegistro(paiComMapeamentos)) {
+            g.variantes.forEach((i) => resultado(i, false, passosDeVariante(PASSO_PAI_NAO_ENCONTRADO)));
+          } else if (String(paiComMapeamentos?.classe_produto ?? '') !== 'V') {
+            paiAtual = paiComMapeamentos;
             g.variantes.forEach((i) => resultado(i, false, passosDeVariante(PASSO_PAI_SEM_VARIACOES)));
           } else {
+            paiAtual = paiComMapeamentos;
             vp = buildV2VariacoesPayload(paiAtual, g.variantes.map((i) => ({
               tinyId: String(produtos[i].tinyId), urlImagem: produtos[i].urlImagem,
             })));

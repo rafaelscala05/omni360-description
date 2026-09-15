@@ -3,12 +3,12 @@
 // servidor e não toca o Firestore (o fetch é dublado).
 // Rodar com: npx tsx scripts/verify-tiny-push.mjs
 import { buildProductPutBody } from '../server/tinyAgent.ts';
-import { tinyV2CallRaw, buildV2AlterarPayload, normalizeV2Product, pushV2Lote } from '../server/tinyV2.ts';
+import { tinyV2CallRaw, buildV2AlterarPayload, normalizeV2Product, pushV2Lote, PASSO_NAO_ENCONTRADO } from '../server/tinyV2.ts';
 import { normalizeWebhookPayload } from '../server/tinyWebhook.ts';
 import { urlImagemPropria } from '../src/services/tinyVariantImage.ts';
 import {
   buildV2VariacoesPayload, PASSO_PERTENCE_AO_PAI, PASSO_SEM_IMAGEM, PASSO_NAO_MAPEADA,
-  PASSO_NAO_ENCONTRADA, PASSO_SEM_PAI, PASSO_PAI_SEM_VARIACOES, PASSO_SEM_DEVELOPER_ID,
+  PASSO_NAO_ENCONTRADA, PASSO_SEM_PAI, PASSO_PAI_SEM_VARIACOES, PASSO_SEM_DEVELOPER_ID, PASSO_PAI_NAO_ENCONTRADO,
 } from '../server/tinyV2Variacoes.ts';
 
 let failures = 0;
@@ -490,6 +490,25 @@ const DEV = { sobrescreverTitulo: true, developerId: 'dev-123' };
   ], { sobrescreverTitulo: true });
   check('I: sem ID Tiny', [res[0].ok, res[0].steps.titulo], [false, 'Sem ID Tiny']);
   check('I: todo item tem resultado', res.length === 3 && res.every(Boolean), true);
+}
+
+// J. Produto que o Tiny não encontra: nada é enviado. Antes, o obter "não
+// encontrado" virava registro vazio e o alterar saía sem unidade/preço/origem/
+// situação/tipo (erro 31 em produção, 2026-09-15).
+{
+  const { call, chamadas } = tinyFalso(registrosCobertor);
+  const res = await pushV2Lote(call, [{ tinyId: '404', descricaoHtml: '<p>nova</p>' }], DEV);
+  check('J: nenhuma alteração', alteracoes(chamadas).length, 0);
+  check('J: produto não encontrado', [res[0].ok, res[0].steps.titulo], [false, PASSO_NAO_ENCONTRADO]);
+}
+
+// K. Variação cujo pai o Tiny não encontra.
+{
+  const { '500': _semPai, ...semPai } = registrosCobertor;
+  const { call, chamadas } = tinyFalso(semPai);
+  const res = await pushV2Lote(call, [{ tinyId: '501', urlImagem: 'https://img/rosa.jpg' }], DEV);
+  check('K: nenhuma alteração', alteracoes(chamadas).length, 0);
+  check('K: pai não encontrado', [res[0].ok, res[0].steps.imagens], [false, PASSO_PAI_NAO_ENCONTRADO]);
 }
 
 console.log(failures === 0 ? '\nTudo certo.' : `\n${failures} falha(s).`);
