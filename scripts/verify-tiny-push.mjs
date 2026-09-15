@@ -298,5 +298,15 @@ check('variante sem imagem', urlImagemPropria({ 'Código do pai': 'COB' }, paiIm
 check('imagem não pública (data:) não vale', urlImagemPropria({ _selectedImage: 'data:image/png;base64,AAA' }), undefined);
 check('produto sem pai não é comparado', urlImagemPropria({ _selectedImage: 'https://img/pai.jpg' }, paiImg), 'https://img/pai.jpg');
 
+// --- 7. descricao_complementar ecoada do Tiny ------------------------------
+// É escalar como os pesos: fora do payload, o alterar zera. O push de uma
+// variante escreve no pai sem texto local, então a descrição do pai tem que ir.
+const soSeo = buildV2AlterarPayload(noTinyV2, { tinyId: '777', seoTitle: 'Outro título SEO' });
+check('descrição do Tiny ecoada quando não há local', soSeo.produto.descricao_complementar, '<p>antiga</p>');
+check('eco da descrição não entra no log', soSeo.enviado.map((e) => e.campo), ['Título SEO']);
+check('eco da descrição não marca o passo', soSeo.steps.descricao, 'sem dado local');
+const semDescricaoNoTiny = buildV2AlterarPayload({ ...noTinyV2, descricao_complementar: '' }, { tinyId: '777', seoTitle: 'Outro título SEO' });
+check('descrição vazia no Tiny não é inventada', 'descricao_complementar' in semDescricaoNoTiny.produto, false);
+
 console.log(failures === 0 ? '\nTudo certo.' : `\n${failures} falha(s).`);
 process.exit(failures === 0 ? 0 : 1);

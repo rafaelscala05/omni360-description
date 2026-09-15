@@ -312,6 +312,12 @@ export function buildV2AlterarPayload(
   }
   // categoria comes back as a ">>"-separated path string; only echo that shape.
   if (typeof current?.categoria === 'string' && current.categoria.trim()) produto.categoria = current.categoria;
+  // descricao_complementar is a scalar like pesos: left out, alterar resets it.
+  // Echo Tiny's own value; the local one overrides it below only when it differs.
+  // A variant push writes to the PARENT record with no local text at all.
+  if (typeof current?.descricao_complementar === 'string' && current.descricao_complementar !== '') {
+    produto.descricao_complementar = current.descricao_complementar;
+  }
 
   if (prod.nome) {
     if (!sobrescreverTitulo) {
