@@ -6,6 +6,10 @@ import { buildProductPutBody } from '../server/tinyAgent.ts';
 import { tinyV2CallRaw, buildV2AlterarPayload, normalizeV2Product } from '../server/tinyV2.ts';
 import { normalizeWebhookPayload } from '../server/tinyWebhook.ts';
 import { urlImagemPropria } from '../src/services/tinyVariantImage.ts';
+import {
+  buildV2VariacoesPayload, PASSO_PERTENCE_AO_PAI, PASSO_SEM_IMAGEM, PASSO_NAO_MAPEADA,
+  PASSO_NAO_ENCONTRADA, PASSO_SEM_PAI, PASSO_PAI_SEM_VARIACOES, PASSO_SEM_DEVELOPER_ID,
+} from '../server/tinyV2Variacoes.ts';
 
 let failures = 0;
 function check(label, actual, expected) {
@@ -307,6 +311,44 @@ check('eco da descrição não entra no log', soSeo.enviado.map((e) => e.campo),
 check('eco da descrição não marca o passo', soSeo.steps.descricao, 'sem dado local');
 const semDescricaoNoTiny = buildV2AlterarPayload({ ...noTinyV2, descricao_complementar: '' }, { tinyId: '777', seoTitle: 'Outro título SEO' });
 check('descrição vazia no Tiny não é inventada', 'descricao_complementar' in semDescricaoNoTiny.produto, false);
+
+// --- 8. buildV2VariacoesPayload: todas as variações, mapeamento só no lote --
+// Registro do pai como o produto.obter responde COM Developer-Id (é o que traz
+// os mapeamentos de cada variação).
+const paiTiny = {
+  id: '500', codigo: 'COB', nome: 'Cobertor Manta Bebê Colibri Jolitex', unidade: 'UN', preco: '149.00',
+  origem: '0', situacao: 'A', tipo: 'P', classe_produto: 'V', tipoVariacao: 'P',
+  descricao_complementar: '<p>descrição do pai</p>', seo: { seo_title: 'SEO do pai' },
+  variacoes: [
+    { variacao: { id: '501', codigo: 'COB-501', preco: '149.00', grade: { Cor: 'Rosa' },
+      mapeamentos: [{ mapeamento: { idEcommerce: 7, skuMapeamento: 'COB.501', skuMapeamentoPai: 'COB', idMapeamento: 9001, idMapeamentoPai: 9000 } }] } },
+    { variacao: { id: '502', codigo: 'COB-502', preco: '139.00', grade: { Cor: 'Azul' },
+      mapeamentos: [{ mapeamento: { idEcommerce: 7, skuMapeamento: 'COB.502', skuMapeamentoPai: 'COB' } }] } },
+    { variacao: { id: '503', codigo: 'COB-503', preco: '149.00', grade: { Cor: 'Verde' } } },
+  ],
+};
+const vp = buildV2VariacoesPayload(paiTiny, [
+  { tinyId: '501', urlImagem: 'https://img/rosa.jpg' },
+  { tinyId: '502' },
+  { tinyId: '503', urlImagem: 'https://img/verde.jpg' },
+  { tinyId: '999', urlImagem: 'https://img/x.jpg' },
+]);
+check('todas as variações do pai vão no payload', vp.variacoes.map((v) => v.variacao.id), ['501', '502', '503']);
+check('variação ecoa código, preço e grade do Tiny', vp.variacoes[1].variacao, { id: '502', codigo: 'COB-502', preco: '139.00', grade: { Cor: 'Azul' } });
+check('mapeamento copiado com urlImagem (sem ids da Olist)', vp.variacoes[0].variacao.mapeamentos, [
+  { mapeamento: { idEcommerce: 7, skuMapeamento: 'COB.501', skuMapeamentoPai: 'COB', urlImagem: 'https://img/rosa.jpg' } },
+]);
+check('variante sem imagem não leva mapeamentos', 'mapeamentos' in vp.variacoes[1].variacao, false);
+check('variação sem mapeamento não leva mapeamentos', 'mapeamentos' in vp.variacoes[2].variacao, false);
+check('passo de imagem por variante', vp.passoImagem, { '501': 'ok', '502': PASSO_SEM_IMAGEM, '503': PASSO_NAO_MAPEADA, '999': PASSO_NAO_ENCONTRADA });
+check('log só na variante gravada', Object.fromEntries(Object.entries(vp.enviado).map(([k, v]) => [k, v.map((e) => e.valor)])), {
+  '501': ['https://img/rosa.jpg'], '502': [], '503': [], '999': [],
+});
+check('log nomeia o campo', vp.enviado['501'][0].campo, 'URL da imagem (mapeamento)');
+check('há mapeamento a gravar', vp.temMapeamento, true);
+check('nunca manda mapeamentos vazio', JSON.stringify(vp.variacoes).includes('"mapeamentos":[]'), false);
+check('sem imagem, nada a gravar', buildV2VariacoesPayload(paiTiny, [{ tinyId: '501' }]).temMapeamento, false);
+check('pai sem variações devolve lista vazia', buildV2VariacoesPayload({ id: '1' }, []).variacoes, []);
 
 console.log(failures === 0 ? '\nTudo certo.' : `\n${failures} falha(s).`);
 process.exit(failures === 0 ? 0 : 1);
