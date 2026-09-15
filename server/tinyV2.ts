@@ -1,7 +1,11 @@
 // Tiny ERP API v2 client. The legacy API authenticates with a static integration
 // token (POST form, formato=json) and wraps everything in { retorno: {...} }.
 // Used as an alternative to the v3 (OAuth) client via server/tinyProvider.ts.
-import { SECRET_REF, sleep, NOME_MAX, type TinyNormalizedProduct, type TinyPushProduct, type TinyPushSteps } from './tinyAgent';
+import { SECRET_REF, sleep, NOME_MAX, type TinyNormalizedProduct, type TinyPushProduct, type TinyPushResult, type TinyPushSteps } from './tinyAgent';
+import {
+  buildV2VariacoesPayload, PASSO_PERTENCE_AO_PAI, PASSO_SEM_PAI, PASSO_PAI_SEM_VARIACOES, PASSO_SEM_DEVELOPER_ID,
+  type VariacoesPayload,
+} from './tinyV2Variacoes';
 import { logTexto, logLista, push as pushLog, type PushLogEntry } from './pushLog';
 
 const V2_BASE = 'https://api.tiny.com.br/api2';
@@ -28,24 +32,26 @@ export async function getV2Token(uid: string): Promise<string | null> {
 
 // Low-level v2 call with an explicit token (used by validate before the token is
 // persisted). Retries on network/5xx and on Tiny's rate-limit error.
-export async function tinyV2CallRaw(token: string, endpoint: string, params: Record<string, string>, attempt = 0): Promise<any> {
+// `headers` carries extras such as Developer-Id, which produto.obter/alterar need
+// to read and write mapeamentos.
+export async function tinyV2CallRaw(token: string, endpoint: string, params: Record<string, string>, attempt = 0, headers: Record<string, string> = {}): Promise<any> {
   const body = new URLSearchParams({ token, formato: 'json', ...params });
   let res: Response;
   try {
     res = await fetch(`${V2_BASE}/${endpoint}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...headers },
       body,
     });
   } catch (e: any) {
-    if (attempt < 3) { await sleep(2 ** attempt * 700); return tinyV2CallRaw(token, endpoint, params, attempt + 1); }
+    if (attempt < 3) { await sleep(2 ** attempt * 700); return tinyV2CallRaw(token, endpoint, params, attempt + 1, headers); }
     throw Object.assign(new Error('Falha de rede ao chamar o Tiny (v2).'), { status: 502 });
   }
 
   if ((res.status === 429 || res.status >= 500) && attempt < 4) {
     const retryAfter = Number(res.headers.get('retry-after'));
     await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : Math.min(60000, 5000 * 2 ** attempt));
-    return tinyV2CallRaw(token, endpoint, params, attempt + 1);
+    return tinyV2CallRaw(token, endpoint, params, attempt + 1, headers);
   }
 
   const text = await res.text();
@@ -60,7 +66,7 @@ export async function tinyV2CallRaw(token: string, endpoint: string, params: Rec
   const rateLimited = String(retorno?.codigo_erro) === '6' || /requisi|limit/i.test(String(errMsg));
   if (retorno?.status === 'Erro' && rateLimited && attempt < 4) {
     await sleep(Math.min(60000, 5000 * 2 ** attempt));
-    return tinyV2CallRaw(token, endpoint, params, attempt + 1);
+    return tinyV2CallRaw(token, endpoint, params, attempt + 1, headers);
   }
 
   // Per-record errors (produto.alterar/incluir) live in registros[].registro.erros.
@@ -101,10 +107,10 @@ export async function tinyV2CallRaw(token: string, endpoint: string, params: Rec
   return retorno;
 }
 
-async function tinyV2Call(uid: string, endpoint: string, params: Record<string, string>): Promise<any> {
+export async function tinyV2Call(uid: string, endpoint: string, params: Record<string, string>, headers?: Record<string, string>): Promise<any> {
   const token = await getV2Token(uid);
   if (!token) throw Object.assign(new Error('Tiny (v2) não conectado.'), { status: 401 });
-  return tinyV2CallRaw(token, endpoint, params);
+  return tinyV2CallRaw(token, endpoint, params, 0, headers);
 }
 
 // Validates a token by fetching one page of products.
@@ -386,4 +392,111 @@ export function buildV2AlterarPayload(
   const hasAnyChange = steps.titulo === 'ok' || steps.descricao === 'ok' || steps.seo === 'ok' || steps.imagens === 'ok';
   Object.keys(produto).forEach((k) => { if (produto[k] === undefined || produto[k] === null) delete produto[k]; });
   return { produto, steps, enviado, hasAnyChange };
+}
+
+export type V2Caller = (endpoint: string, params: Record<string, string>, headers?: Record<string, string>) => Promise<any>;
+
+const passosIguais = (msg: string): TinyPushSteps => ({ titulo: msg, descricao: msg, seo: msg, imagens: msg });
+const passosDeVariante = (imagens: string): TinyPushSteps => ({
+  titulo: PASSO_PERTENCE_AO_PAI, descricao: PASSO_PERTENCE_AO_PAI, seo: PASSO_PERTENCE_AO_PAI, imagens,
+});
+
+// Sends a batch to Tiny v2. Normal products and parents follow the usual text
+// path. Variações (tipoVariacao "V") are grouped by idProdutoPai and only write
+// the urlImagem of their mapeamento, in ONE produto.alterar per parent with the
+// Developer-Id header: in Tiny, nome/descrição/SEO belong to the parent and a
+// variação only exists inside the parent's variacoes[]. `call` is injected so the
+// whole flow is verified without network (scripts/verify-tiny-push.mjs). Returns
+// one result per input item, in input order.
+export async function pushV2Lote(
+  call: V2Caller,
+  produtos: TinyPushProduct[],
+  opts: { sobrescreverTitulo: boolean; developerId?: string },
+): Promise<TinyPushResult[]> {
+  const resultados: (TinyPushResult | undefined)[] = new Array(produtos.length).fill(undefined);
+  const grupos = new Map<string, { texto?: number; variantes: number[] }>();
+  const atuais = new Map<string, any>();
+  const grupo = (id: string) => {
+    if (!grupos.has(id)) grupos.set(id, { variantes: [] });
+    return grupos.get(id)!;
+  };
+  const resultado = (i: number, ok: boolean, steps: TinyPushSteps, enviado: PushLogEntry[] = []) => {
+    resultados[i] = { tinyId: produtos[i].tinyId, sku: produtos[i].sku, ok, steps, ...(ok ? { enviado } : {}) };
+  };
+
+  // 1. Read every item; Tiny's tipoVariacao decides the path.
+  for (let i = 0; i < produtos.length; i++) {
+    const prod = produtos[i];
+    if (!prod.tinyId) { resultado(i, false, passosIguais('Sem ID Tiny')); continue; }
+    try {
+      const atual = (await call('produto.obter.php', { id: String(prod.tinyId) }))?.produto ?? {};
+      if (atual?.tipoVariacao === 'V') {
+        const paiId = atual?.idProdutoPai ? String(atual.idProdutoPai) : '';
+        if (!paiId) { resultado(i, false, passosDeVariante(PASSO_SEM_PAI)); continue; }
+        grupo(paiId).variantes.push(i);
+      } else {
+        grupo(String(prod.tinyId)).texto = i;
+        atuais.set(String(prod.tinyId), atual);
+      }
+    } catch (e: any) {
+      resultado(i, false, passosIguais(e?.message ?? 'erro'));
+    }
+  }
+
+  // 2. One produto.alterar per group.
+  for (const [paiId, g] of grupos) {
+    const indices = [...(g.texto !== undefined ? [g.texto] : []), ...g.variantes];
+    try {
+      let paiAtual = atuais.get(paiId);
+      let headers: Record<string, string> | undefined;
+      let vp: VariacoesPayload | undefined;
+
+      if (g.variantes.length) {
+        if (!opts.developerId) {
+          g.variantes.forEach((i) => resultado(i, true, passosDeVariante(PASSO_SEM_DEVELOPER_ID)));
+        } else {
+          headers = { 'Developer-Id': opts.developerId };
+          paiAtual = (await call('produto.obter.php', { id: paiId }, headers))?.produto ?? {};
+          if (String(paiAtual?.classe_produto ?? '') !== 'V') {
+            g.variantes.forEach((i) => resultado(i, false, passosDeVariante(PASSO_PAI_SEM_VARIACOES)));
+          } else {
+            vp = buildV2VariacoesPayload(paiAtual, g.variantes.map((i) => ({
+              tinyId: String(produtos[i].tinyId), urlImagem: produtos[i].urlImagem,
+            })));
+          }
+        }
+      }
+
+      const temMapeamento = !!vp?.temMapeamento;
+      if (paiAtual && (g.texto !== undefined || temMapeamento)) {
+        const texto: TinyPushProduct = g.texto !== undefined ? produtos[g.texto] : { tinyId: paiId };
+        const { produto, steps, enviado, hasAnyChange } = buildV2AlterarPayload(paiAtual, texto, opts.sobrescreverTitulo);
+        if (temMapeamento) produto.variacoes = vp!.variacoes;
+        if (hasAnyChange || temMapeamento) {
+          const payload = JSON.stringify({ produtos: [{ produto }] });
+          console.log(`[tiny-v2] produto.alterar id=${paiId} payload=${payload.slice(0, 1500)}`);
+          if (temMapeamento) console.log(`[tiny-v2] produto.alterar id=${paiId} variacoes=${JSON.stringify(produto.variacoes).slice(0, 1500)}`);
+          await call('produto.alterar.php', { produto: payload }, temMapeamento ? headers : undefined);
+        }
+        if (g.texto !== undefined) resultado(g.texto, true, steps, hasAnyChange ? enviado : []);
+      }
+
+      if (vp) {
+        for (const i of g.variantes) {
+          const id = String(produtos[i].tinyId);
+          const passo = vp.passoImagem[id];
+          resultado(i, true, passosDeVariante(passo), passo === 'ok' ? vp.enviado[id] : []);
+        }
+      }
+    } catch (e: any) {
+      const msg = e?.message ?? 'erro';
+      indices.filter((i) => resultados[i] === undefined).forEach((i) => resultado(i, false, passosIguais(msg)));
+    }
+  }
+
+  // A tinyId repeated in the batch overwrites its group slot; never leave a hole.
+  for (let i = 0; i < produtos.length; i++) {
+    if (!resultados[i]) resultado(i, false, passosIguais('produto repetido no envio'));
+  }
+  return resultados as TinyPushResult[];
 }

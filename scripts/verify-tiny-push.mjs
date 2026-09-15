@@ -3,7 +3,7 @@
 // servidor e não toca o Firestore (o fetch é dublado).
 // Rodar com: npx tsx scripts/verify-tiny-push.mjs
 import { buildProductPutBody } from '../server/tinyAgent.ts';
-import { tinyV2CallRaw, buildV2AlterarPayload, normalizeV2Product } from '../server/tinyV2.ts';
+import { tinyV2CallRaw, buildV2AlterarPayload, normalizeV2Product, pushV2Lote } from '../server/tinyV2.ts';
 import { normalizeWebhookPayload } from '../server/tinyWebhook.ts';
 import { urlImagemPropria } from '../src/services/tinyVariantImage.ts';
 import {
@@ -349,6 +349,148 @@ check('há mapeamento a gravar', vp.temMapeamento, true);
 check('nunca manda mapeamentos vazio', JSON.stringify(vp.variacoes).includes('"mapeamentos":[]'), false);
 check('sem imagem, nada a gravar', buildV2VariacoesPayload(paiTiny, [{ tinyId: '501' }]).temMapeamento, false);
 check('pai sem variações devolve lista vazia', buildV2VariacoesPayload({ id: '1' }, []).variacoes, []);
+
+// --- 9. tinyV2CallRaw repassa cabeçalhos extras ----------------------------
+{
+  let capturado;
+  globalThis.fetch = async (_url, init) => {
+    capturado = init.headers;
+    return new Response(JSON.stringify({ retorno: { status: 'OK' } }), { status: 200 });
+  };
+  await tinyV2CallRaw('tok', 'produto.obter.php', { id: '1' }, 0, { 'Developer-Id': 'dev-123' });
+  check('Developer-Id vai no cabeçalho', capturado['Developer-Id'], 'dev-123');
+  check('Content-Type continua', capturado['Content-Type'], 'application/x-www-form-urlencoded');
+  await tinyV2CallRaw('tok', 'produto.obter.php', { id: '1' });
+  check('sem cabeçalho extra não há Developer-Id', 'Developer-Id' in capturado, false);
+  globalThis.fetch = originalFetch;
+}
+
+// --- 10. pushV2Lote: variações agrupadas pelo pai ---------------------------
+const varTiny = (id, extra = {}) => ({
+  id, codigo: `COB-${id}`, nome: `COB-${id}`, unidade: 'UN', preco: '149.00', origem: '0', situacao: 'A', tipo: 'P',
+  tipoVariacao: 'V', idProdutoPai: '500', classe_produto: 'S', ...extra,
+});
+const registrosCobertor = {
+  '500': paiTiny, '501': varTiny('501'), '502': varTiny('502'), '503': varTiny('503'),
+  '600': { ...noTinyV2, id: '600', tipoVariacao: 'N', classe_produto: 'S' },
+};
+function tinyFalso(registros, { falharAlterar = false } = {}) {
+  const chamadas = [];
+  const call = async (endpoint, params, headers) => {
+    chamadas.push({ endpoint, params, headers });
+    if (endpoint === 'produto.obter.php') return { produto: registros[params.id] };
+    if (endpoint === 'produto.alterar.php') {
+      if (falharAlterar) throw new Error('[registro] [cod 31] erro do Tiny');
+      return { status: 'OK' };
+    }
+    throw new Error(`endpoint inesperado: ${endpoint}`);
+  };
+  return { call, chamadas };
+}
+const alteracoes = (chamadas) => chamadas.filter((c) => c.endpoint === 'produto.alterar.php');
+const payloadDe = (chamada) => JSON.parse(chamada.params.produto).produtos[0].produto;
+const DEV = { sobrescreverTitulo: true, developerId: 'dev-123' };
+
+// A. Duas variantes do mesmo pai, uma com imagem própria.
+{
+  const { call, chamadas } = tinyFalso(registrosCobertor);
+  const res = await pushV2Lote(call, [
+    { tinyId: '501', sku: 'COB-501', nome: 'Título local', descricaoHtml: '<p>local da variante</p>', seoTitle: 'SEO local', urlImagem: 'https://img/rosa.jpg' },
+    { tinyId: '502', sku: 'COB-502' },
+  ], DEV);
+  check('A: uma única alteração, no pai', alteracoes(chamadas).map((c) => payloadDe(c).id), ['500']);
+  check('A: obter do pai leva Developer-Id', chamadas.find((c) => c.endpoint === 'produto.obter.php' && c.params.id === '500').headers, { 'Developer-Id': 'dev-123' });
+  check('A: alterar leva Developer-Id', alteracoes(chamadas)[0].headers, { 'Developer-Id': 'dev-123' });
+  const p = payloadDe(alteracoes(chamadas)[0]);
+  check('A: payload leva todas as variações do pai', p.variacoes.map((v) => v.variacao.id), ['501', '502', '503']);
+  check('A: mapeamento só na variante com imagem', p.variacoes.map((v) => 'mapeamentos' in v.variacao), [true, false, false]);
+  check('A: texto da variante não entra no pai', [p.nome, p.descricao_complementar], ['Cobertor Manta Bebê Colibri Jolitex', '<p>descrição do pai</p>']);
+  check('A: seo do pai intacto', p.seo.seo_title, 'SEO do pai');
+  check('A: resultados na ordem do lote', res.map((r) => r.tinyId), ['501', '502']);
+  check('A: passos da variante com imagem', res[0].steps, { titulo: PASSO_PERTENCE_AO_PAI, descricao: PASSO_PERTENCE_AO_PAI, seo: PASSO_PERTENCE_AO_PAI, imagens: 'ok' });
+  check('A: log da variante com imagem', res[0].enviado.map((e) => e.campo), ['URL da imagem (mapeamento)']);
+  check('A: variante sem imagem', [res[1].ok, res[1].steps.imagens, res[1].enviado], [true, PASSO_SEM_IMAGEM, []]);
+}
+
+// B. Sem Developer-Id nada de variante é gravado.
+{
+  const { call, chamadas } = tinyFalso(registrosCobertor);
+  const res = await pushV2Lote(call, [{ tinyId: '501', urlImagem: 'https://img/rosa.jpg' }], { sobrescreverTitulo: true });
+  check('B: nenhuma alteração', alteracoes(chamadas).length, 0);
+  check('B: pai nem é lido', chamadas.some((c) => c.params.id === '500'), false);
+  check('B: aviso de configuração', [res[0].ok, res[0].steps.imagens], [true, PASSO_SEM_DEVELOPER_ID]);
+}
+
+// C. Pai e variante no mesmo lote: uma chamada só.
+{
+  const { call, chamadas } = tinyFalso(registrosCobertor);
+  const res = await pushV2Lote(call, [
+    { tinyId: '500', sku: 'COB', descricaoHtml: '<p>descrição nova do pai</p>' },
+    { tinyId: '501', urlImagem: 'https://img/rosa.jpg' },
+  ], DEV);
+  check('C: uma alteração', alteracoes(chamadas).length, 1);
+  const p = payloadDe(alteracoes(chamadas)[0]);
+  check('C: texto do pai aplicado', p.descricao_complementar, '<p>descrição nova do pai</p>');
+  check('C: variações junto', p.variacoes.length, 3);
+  check('C: resultado do pai', [res[0].ok, res[0].steps.descricao], [true, 'ok']);
+  check('C: resultado da variante', res[1].steps.imagens, 'ok');
+}
+
+// D. Variação sem mapeamento: nada a gravar.
+{
+  const { call, chamadas } = tinyFalso(registrosCobertor);
+  const res = await pushV2Lote(call, [{ tinyId: '503', urlImagem: 'https://img/verde.jpg' }], DEV);
+  check('D: nenhuma alteração', alteracoes(chamadas).length, 0);
+  check('D: aviso de variação não mapeada', [res[0].ok, res[0].steps.imagens], [true, PASSO_NAO_MAPEADA]);
+}
+
+// E. Produto simples segue o caminho de sempre.
+{
+  const { call, chamadas } = tinyFalso(registrosCobertor);
+  const res = await pushV2Lote(call, [{ tinyId: '600', descricaoHtml: '<p>nova</p>' }], DEV);
+  check('E: uma alteração', alteracoes(chamadas).length, 1);
+  check('E: alterar do simples sem Developer-Id', alteracoes(chamadas)[0].headers, undefined);
+  check('E: sem variacoes no payload do simples', 'variacoes' in payloadDe(alteracoes(chamadas)[0]), false);
+  check('E: passo do simples', [res[0].ok, res[0].steps.descricao], [true, 'ok']);
+}
+
+// F. Pai que não está como "com variações".
+{
+  const { call, chamadas } = tinyFalso({ ...registrosCobertor, '500': { ...paiTiny, classe_produto: 'S' } });
+  const res = await pushV2Lote(call, [{ tinyId: '501', urlImagem: 'https://img/rosa.jpg' }], DEV);
+  check('F: nenhuma alteração', alteracoes(chamadas).length, 0);
+  check('F: erro de pai sem variações', [res[0].ok, res[0].steps.imagens], [false, PASSO_PAI_SEM_VARIACOES]);
+}
+
+// G. Variação sem idProdutoPai.
+{
+  const { call } = tinyFalso({ ...registrosCobertor, '501': varTiny('501', { idProdutoPai: undefined }) });
+  const res = await pushV2Lote(call, [{ tinyId: '501', urlImagem: 'https://img/rosa.jpg' }], DEV);
+  check('G: variação sem pai', [res[0].ok, res[0].steps.imagens], [false, PASSO_SEM_PAI]);
+}
+
+// H. Falha do alterar chega ao pai e à variante.
+{
+  const { call } = tinyFalso(registrosCobertor, { falharAlterar: true });
+  const res = await pushV2Lote(call, [
+    { tinyId: '500', descricaoHtml: '<p>descrição nova do pai</p>' },
+    { tinyId: '501', urlImagem: 'https://img/rosa.jpg' },
+  ], DEV);
+  check('H: pai e variante falham', res.map((r) => r.ok), [false, false]);
+  checkMatch('H: mensagem real do Tiny', res[1].steps.imagens, /cod 31/);
+}
+
+// I. Item sem ID e item repetido sempre têm resultado.
+{
+  const { call } = tinyFalso(registrosCobertor);
+  const res = await pushV2Lote(call, [
+    { tinyId: '' },
+    { tinyId: '600', descricaoHtml: '<p>nova</p>' },
+    { tinyId: '600', descricaoHtml: '<p>nova</p>' },
+  ], { sobrescreverTitulo: true });
+  check('I: sem ID Tiny', [res[0].ok, res[0].steps.titulo], [false, 'Sem ID Tiny']);
+  check('I: todo item tem resultado', res.length === 3 && res.every(Boolean), true);
+}
 
 console.log(failures === 0 ? '\nTudo certo.' : `\n${failures} falha(s).`);
 process.exit(failures === 0 ? 0 : 1);

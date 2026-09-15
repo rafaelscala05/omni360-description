@@ -8,7 +8,7 @@ import {
   type TinyNormalizedProduct, type TinyPushProduct, type TinyPushResult, type TinyPushSteps,
 } from './tinyAgent';
 import type { PushLogEntry } from './pushLog';
-import { listV2Page, getV2Product, updateV2Product, validateV2Token } from './tinyV2';
+import { listV2Page, getV2Product, updateV2Product, validateV2Token, pushV2Lote, tinyV2Call, type V2Caller } from './tinyV2';
 
 export type TinyVersion = 'v2' | 'v3';
 
@@ -113,6 +113,17 @@ export function registerTinyProviderRoutes(app: express.Express, { verifyFirebas
           message: `Selecione no máximo ${MAX_PUSH_BATCH} produtos por envio. Marque produtos específicos na lista antes de enviar.`,
         });
       }
+      // v2 groups variações under their parent (see pushV2Lote). v3 keeps the
+      // per-product loop below.
+      if (version === 'v2') {
+        const call: V2Caller = (endpoint, params, headers) => tinyV2Call(uid, endpoint, params, headers);
+        const resultados = await pushV2Lote(call, produtos, {
+          sobrescreverTitulo,
+          developerId: process.env.TINY_DEVELOPER_ID || undefined,
+        });
+        return res.json({ resultados });
+      }
+
       const resultados: TinyPushResult[] = [];
 
       for (const prod of produtos) {
