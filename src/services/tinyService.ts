@@ -49,6 +49,8 @@ export interface TinyPushProduct {
   seoDescription?: string;
   seoKeywords?: string;
   imagens?: string[];
+  /** Imagem principal própria; vira o urlImagem do mapeamento quando o item é variação. */
+  urlImagem?: string;
 }
 
 // Per-group outcome: 'ok' (sent — differed from Tiny), 'sem alteração' (local data

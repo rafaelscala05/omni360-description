@@ -5,6 +5,7 @@
 import { buildProductPutBody } from '../server/tinyAgent.ts';
 import { tinyV2CallRaw, buildV2AlterarPayload, normalizeV2Product } from '../server/tinyV2.ts';
 import { normalizeWebhookPayload } from '../server/tinyWebhook.ts';
+import { urlImagemPropria } from '../src/services/tinyVariantImage.ts';
 
 let failures = 0;
 function check(label, actual, expected) {
@@ -285,6 +286,17 @@ check('Variações com ||', webhook.variacoes[1].variacaoGrade, 'Cor: Azul||Tama
 check('grade vazia não grava Variações', webhook.variacoes[2].variacaoGrade, undefined);
 check('SKU da variante continua o código', webhook.variacoes[0].sku, 'COB-1');
 check('variante aponta para o SKU do pai', webhook.variacoes[0].codigoPai, 'COB');
+
+// --- 6. urlImagemPropria: variante sem imagem própria fica sem imagem ------
+const paiImg = { 'Código (SKU)': 'COB', _selectedImage: 'https://img/pai.jpg' };
+check('produto simples leva a própria imagem', urlImagemPropria({ _selectedImage: 'https://img/a.jpg' }), 'https://img/a.jpg');
+check('sem _selectedImage usa URL imagem 1', urlImagemPropria({ 'URL imagem 1': 'https://img/b.jpg' }), 'https://img/b.jpg');
+check('variante com imagem própria', urlImagemPropria({ 'Código do pai': 'COB', _selectedImage: 'https://img/rosa.jpg' }, paiImg), 'https://img/rosa.jpg');
+check('imagem igual à do pai conta como herdada', urlImagemPropria({ 'Código do pai': 'COB', _selectedImage: 'https://img/pai.jpg' }, paiImg), undefined);
+check('herdada também quando o pai só tem URL imagem 1', urlImagemPropria({ 'Código do pai': 'COB', 'URL imagem 1': 'https://img/p1.jpg' }, { 'URL imagem 1': 'https://img/p1.jpg' }), undefined);
+check('variante sem imagem', urlImagemPropria({ 'Código do pai': 'COB' }, paiImg), undefined);
+check('imagem não pública (data:) não vale', urlImagemPropria({ _selectedImage: 'data:image/png;base64,AAA' }), undefined);
+check('produto sem pai não é comparado', urlImagemPropria({ _selectedImage: 'https://img/pai.jpg' }, paiImg), 'https://img/pai.jpg');
 
 console.log(failures === 0 ? '\nTudo certo.' : `\n${failures} falha(s).`);
 process.exit(failures === 0 ? 0 : 1);

@@ -49,6 +49,7 @@ import { wakeStatus, wakePush } from './services/wakeService';
 import type { WakeNormalizedProduct, WakePushProduct, WakePushResult } from './services/wakeService';
 import { tinyStatus, tinyPush } from './services/tinyService';
 import type { TinyPushProduct, TinyPushResult } from './services/tinyService';
+import { urlImagemPropria } from './services/tinyVariantImage';
 import { type BlingPushFields } from './components/integrations/BlingConnector';
 import { blingStatus, blingPush } from './services/blingService';
 import type { BlingPushProduct, BlingPushResult } from './services/blingService';
@@ -1844,16 +1845,22 @@ export default function App() {
   // local values come from spreadsheets/AI enrichment and were silently
   // overwriting Tiny's tax data. The server still diffs each field against Tiny's
   // live record and only writes what actually differs.
-  const tinyPushPayloadOf = (p: Product): TinyPushProduct => ({
-    tinyId: p._tinyProductId!,
-    sku: p['Código (SKU)'],
-    nome: p['Descrição'],
-    descricaoHtml: p['Descrição complementar'],
-    seoTitle: p['Título SEO'],
-    seoDescription: p['Descrição SEO'],
-    seoKeywords: p['Palavras chave SEO'],
-    imagens: collectTinyImages(p),
-  });
+  const tinyPushPayloadOf = (p: Product): TinyPushProduct => {
+    const paiSku = p['Código do pai'];
+    const pai = paiSku ? productsRef.current.find((x) => x['Código (SKU)'] === paiSku) : undefined;
+    return {
+      tinyId: p._tinyProductId!,
+      sku: p['Código (SKU)'],
+      nome: p['Descrição'],
+      descricaoHtml: p['Descrição complementar'],
+      seoTitle: p['Título SEO'],
+      seoDescription: p['Descrição SEO'],
+      seoKeywords: p['Palavras chave SEO'],
+      imagens: collectTinyImages(p),
+      // Só a imagem própria: é o que o servidor grava no mapeamento de uma variante.
+      urlImagem: urlImagemPropria(p, pai),
+    };
+  };
 
   const buildTinyPushPayload = async (): Promise<TinyPushProduct[]> =>
     tinySelectedProducts(productsRef.current).map(tinyPushPayloadOf);
@@ -2221,17 +2228,10 @@ export default function App() {
         _isDirty: true
       });
 
+      // Só o próprio produto. Variante não herda a imagem do pai: ela vai para o
+      // mapeamento da variação no Tiny, e a do pai gravaria a foto errada lá
+      // (docs/superpowers/specs/2026-09-15-tiny-variantes-imagem-mapeamento-design.md).
       updated[idx] = updateProduct(updated[idx]);
-
-      // Also update children if any
-      const parentSku = updated[idx]['Código (SKU)'];
-      if (parentSku) {
-        for (let i = 0; i < updated.length; i++) {
-          if (updated[i]['Código do pai'] === parentSku) {
-            updated[i] = updateProduct(updated[i]);
-          }
-        }
-      }
 
       return updated;
     });

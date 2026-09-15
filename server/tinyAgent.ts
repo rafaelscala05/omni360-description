@@ -250,6 +250,9 @@ export interface TinyPushProduct {
   seoKeywords?: string;
   // Public image URLs to attach as product anexos.
   imagens?: string[];
+  // Imagem principal própria (sem a herdada do pai). Só usada quando o Tiny diz
+  // que o item é variação: vira o urlImagem do mapeamento, gravado pelo pai.
+  urlImagem?: string;
 }
 
 // Per-group outcome of a push attempt: 'ok' (sent — differed from Tiny's current
