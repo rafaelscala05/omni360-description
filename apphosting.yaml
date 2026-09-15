@@ -67,6 +67,10 @@ env:
       /tiny/oauth/callback"
   - variable: TINY_CLIENT_SECRET
     secret: tiny-client-secret
+  # Developer-Id do app parceiro no Tiny (API v2): habilita gravar mapeamentos
+  # (urlImagem das variações). Valor no Secret Manager (tiny-developer-id).
+  - variable: TINY_DEVELOPER_ID
+    secret: tiny-developer-id
 
   # Mercado Livre — leitura pública de produto de catálogo (GET /products/{id})
   # via token de app (client_credentials), sem autorização por vendedor. Usado
