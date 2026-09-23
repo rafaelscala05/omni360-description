@@ -1,28 +1,19 @@
 import type express from 'express';
-import { GoogleGenAI, VideoGenerationReferenceType } from '@google/genai';
+import { VideoGenerationReferenceType } from '@google/genai';
 import sharp from 'sharp';
 import opentype from 'opentype.js';
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import ffmpegPath from 'ffmpeg-static';
 import { adminDb, adminStorage } from './firebaseAdmin';
-import { CREDIT_ACTIONS, resolveCreditCost } from '../src/credits';
-import type { CreditAction } from '../src/credits';
+import { CREDIT_ACTIONS } from '../src/credits';
 import { FieldValue } from 'firebase-admin/firestore';
-import firebaseAppletConfig from '../firebase-applet-config.json';
-
-const STORAGE_BUCKET = firebaseAppletConfig.storageBucket;
-const GCP_PROJECT = firebaseAppletConfig.projectId;
-const VEO_MODEL = 'veo-3.1-fast-generate-001';
-const TEXT_MODEL = 'gemini-2.5-flash';
-
-// Output video is always 9:16 (vertical/portrait) for marketplace product pages.
-// The product photo is passed WHOLE (no crop) as a Veo reference image; the
-// aspect ratio of the output is controlled by VIDEO_ASPECT_RATIO alone.
-const VIDEO_ASPECT_RATIO = '9:16';
-const REFERENCE_MAX_DIM = 1024;
+import {
+  STORAGE_BUCKET, GCP_PROJECT, VEO_MODEL, TEXT_MODEL, VIDEO_ASPECT_RATIO, REFERENCE_MAX_DIM,
+  getGeminiClient, getVeoClient, now, sendError, fetchImageAsBase64, resizeForReference,
+  runFfmpeg, runVeoOperation, formatAttributes, debitCreditsAdmin, refundCreditsAdmin,
+} from './videoShared';
 
 // Background music + TTS voice for the final mix. The audio is added AFTER the
 // video is generated (segments are generated MUTE), so there is never any lip
@@ -63,72 +54,6 @@ interface VideoScript {
 
 interface VideoDeps {
   verifyFirebaseToken: (req: express.Request) => Promise<import('firebase-admin/auth').DecodedIdToken>;
-}
-
-function getGeminiClient() {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw Object.assign(new Error('GEMINI_API_KEY não configurada'), { status: 500 });
-  return new GoogleGenAI({ apiKey });
-}
-
-function getVeoClient() {
-  return new GoogleGenAI({
-    vertexai: true,
-    project: GCP_PROJECT,
-    location: 'us-central1',
-  });
-}
-
-function now() {
-  return new Date().toISOString();
-}
-
-function sendError(res: express.Response, err: unknown) {
-  const status = (err as any)?.status ?? 500;
-  const message = err instanceof Error ? err.message : String(err);
-  res.status(status).json({ error: message });
-}
-
-async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeType: string }> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Falha ao buscar imagem: ${response.statusText}`);
-  const buffer = await response.arrayBuffer();
-  const base64 = Buffer.from(buffer).toString('base64');
-  const mimeType = response.headers.get('content-type') || 'image/jpeg';
-  return { base64, mimeType };
-}
-
-// Downscales the product photo keeping its original aspect ratio — nothing is
-// cropped — so the whole product stays visible in the Veo reference image.
-async function resizeForReference(inputBuffer: Buffer): Promise<{ base64: string; mimeType: string }> {
-  const resized = await sharp(inputBuffer)
-    .resize({
-      width: REFERENCE_MAX_DIM,
-      height: REFERENCE_MAX_DIM,
-      fit: 'inside',
-      withoutEnlargement: true,
-    })
-    .jpeg({ quality: 90 })
-    .toBuffer();
-  return { base64: resized.toString('base64'), mimeType: 'image/jpeg' };
-}
-
-// ---------------------------------------------------------------------------
-// ffmpeg helpers (uses the bundled ffmpeg-static binary, no system install)
-// ---------------------------------------------------------------------------
-
-function runFfmpeg(args: string[]): Promise<void> {
-  if (!ffmpegPath) throw new Error('ffmpeg-static não encontrado');
-  return new Promise((resolve, reject) => {
-    const proc = spawn(ffmpegPath as string, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-    let stderr = '';
-    proc.stderr.on('data', (d) => { stderr += d.toString(); });
-    proc.on('error', reject);
-    proc.on('close', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`ffmpeg saiu com código ${code}: ${stderr.slice(-800)}`));
-    });
-  });
 }
 
 // Quebra uma legenda em linhas curtas (para caber no quadro 9:16).
@@ -296,64 +221,6 @@ async function synthesizeNarration(text: string): Promise<Buffer> {
   return Buffer.from(resp.audioContent as Uint8Array);
 }
 
-async function debitCreditsAdmin(
-  uid: string,
-  action: CreditAction,
-  meta: { productName?: string; userName?: string } = {},
-): Promise<number> {
-  const configSnap = await adminDb.collection('config').doc('credits').get();
-  const costs: Record<string, number> = configSnap.exists ? (configSnap.data() as any) : {};
-  const cost = resolveCreditCost(costs, action.key);
-
-  const userRef = adminDb.collection('users').doc(uid);
-  return adminDb.runTransaction(async (tx) => {
-    const snap = await tx.get(userRef);
-    const current: number = snap.exists ? (snap.data()?.credits ?? 0) : 0;
-    if (current < cost) throw Object.assign(new Error('Créditos insuficientes'), { status: 402 });
-    const logRef = adminDb.collection('users').doc(uid).collection('credit_logs').doc();
-    tx.update(userRef, { credits: FieldValue.increment(-cost) });
-    tx.set(logRef, {
-      actionType: action.label,
-      actionKey: action.key,
-      productName: meta.productName || 'N/A',
-      sku: 'N/A',
-      userName: meta.userName ?? '',
-      creditsConsumed: cost,
-      timestamp: new Date().toISOString(),
-    });
-    return cost;
-  });
-}
-
-async function refundCreditsAdmin(
-  uid: string,
-  cost: number,
-  meta: { productName?: string; userName?: string } = {},
-): Promise<void> {
-  const userRef = adminDb.collection('users').doc(uid);
-  const logRef = adminDb.collection('users').doc(uid).collection('credit_logs').doc();
-  await adminDb.runTransaction(async (tx) => {
-    tx.update(userRef, { credits: FieldValue.increment(cost) });
-    tx.set(logRef, {
-      type: 'bonus',
-      actionType: 'Estorno — Geração de Vídeo',
-      actionKey: 'video_generation_refund',
-      productName: meta.productName || 'N/A',
-      sku: 'N/A',
-      userName: meta.userName ?? '',
-      creditsConsumed: 0,
-      creditsAdded: cost,
-      timestamp: new Date().toISOString(),
-    });
-  });
-}
-
-function formatAttributes(attributes: Record<string, string>): string {
-  const entries = Object.entries(attributes ?? {}).filter(([, v]) => v && v.trim());
-  if (entries.length === 0) return '(nenhum atributo estruturado informado — extraia da descrição e da imagem)';
-  return entries.map(([k, v]) => `- ${k}: ${v}`).join('\n');
-}
-
 async function generateScript(
   params: {
     description: string;
@@ -433,67 +300,6 @@ Retorne APENAS um JSON válido neste formato exato (sem markdown, sem texto extr
     throw new Error('Roteiro gerado inválido — campos obrigatórios ausentes');
   }
   return parsed;
-}
-
-const VEO_RETRYABLE_PATTERNS = /high load|high demand|try again|overload|quota/i;
-const VEO_MAX_RETRIES = 3;
-// Backoff delays in ms: 30s, 60s, 120s
-const VEO_RETRY_DELAYS = [30_000, 60_000, 120_000];
-
-function isVeoRetryable(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return VEO_RETRYABLE_PATTERNS.test(msg);
-}
-
-// Runs a Veo generateVideos operation and polls until it completes, returning
-// the produced video bytes. Retries up to VEO_MAX_RETRIES times on transient
-// errors (high load, quota) with exponential backoff.
-async function runVeoOperation(
-  ai: GoogleGenAI,
-  jobId: string,
-  label: string,
-  request: Parameters<GoogleGenAI['models']['generateVideos']>[0],
-): Promise<string> {
-  let lastError: unknown;
-
-  for (let attempt = 0; attempt <= VEO_MAX_RETRIES; attempt++) {
-    if (attempt > 0) {
-      const delay = VEO_RETRY_DELAYS[attempt - 1];
-      console.log(`[video] ${label} retry attempt=${attempt} after=${delay / 1000}s jobId=${jobId}`);
-      await new Promise((r) => setTimeout(r, delay));
-    }
-
-    try {
-      let operation = await ai.models.generateVideos(request);
-
-      // Poll until done — each Veo shot typically takes 2–5 minutes
-      let pollCount = 0;
-      while (!operation.done) {
-        await new Promise((r) => setTimeout(r, 15000));
-        operation = await ai.operations.getVideosOperation({ operation });
-        pollCount++;
-        console.log(`[video] polling jobId=${jobId} ${label} attempt=${pollCount} done=${operation.done}`);
-      }
-
-      if (operation.error) {
-        throw new Error(String((operation.error as any).message ?? operation.error));
-      }
-
-      const videoBytes = operation.response?.generatedVideos?.[0]?.video?.videoBytes;
-      if (!videoBytes) throw new Error(`Veo não retornou bytes de vídeo (${label})`);
-      console.log(`[video] ${label} done jobId=${jobId} polls=${pollCount}`);
-      return videoBytes;
-    } catch (err) {
-      lastError = err;
-      if (attempt < VEO_MAX_RETRIES && isVeoRetryable(err)) {
-        console.warn(`[video] ${label} transient error, will retry (${attempt + 1}/${VEO_MAX_RETRIES}) jobId=${jobId}:`, (err as Error).message);
-        continue;
-      }
-      throw err;
-    }
-  }
-
-  throw lastError;
 }
 
 async function runVideoJob(
