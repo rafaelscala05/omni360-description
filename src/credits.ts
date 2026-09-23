@@ -27,6 +27,8 @@ export const CREDIT_ACTIONS = {
   contentImage: { key: 'content_image', label: 'Geração de Imagem de Capa' },
   contentPublish: { key: 'content_publish', label: 'Publicação no WordPress' },
   videoGeneration: { key: 'video_generation', label: 'Geração de Vídeo de Produto' },
+  avatarCreation: { key: 'avatar_creation', label: 'Criação de Avatar' },
+  ugcVideoGeneration: { key: 'video_ugc_generation', label: 'Geração de Vídeo UGC com Avatar' },
   // Agente Operacional (ações executadas em e-commerce/ERP)
   agentAction: { key: 'agent_action', label: 'Ação do Agente Operacional' },
   // Auditoria de SEO (SE Ranking)
@@ -52,6 +54,8 @@ export const DEFAULT_CREDIT_COSTS: Record<string, number> = {
   content_image: 1,
   content_publish: 1,
   video_generation: 5,
+  avatar_creation: 1,
+  video_ugc_generation: 8,
   // Crawl técnico desativado por ora (CRAWL_ENABLED em server/seoAgent.ts) — só
   // Domain Analysis roda hoje (overview/history/keywords/gap + expansão do catálogo).
   seo_audit: 3,

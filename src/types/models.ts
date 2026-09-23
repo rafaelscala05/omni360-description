@@ -20,6 +20,14 @@ export interface Category {
   updatedAt: string;
 }
 
+export interface Avatar {
+  id: string;
+  nome: string;
+  descricao: string;
+  referenceImageUrl: string;
+  createdAt: string;
+}
+
 export type AttributeType = "text" | "select" | "multiselect" | "checkbox" | "number" | "boolean";
 
 export interface AttributeDefinition {
@@ -143,6 +151,12 @@ export interface Product {
   _videoUrl?: string;
   _videoSelectedImage?: string;
   _videoError?: string;
+  _ugcVideoScript?: unknown; // TODO(Task 6): import('../services/ugcVideoService').UgcVideoScript once that module exists
+  _ugcVideoJobId?: string;
+  _ugcVideoStatus?: 'idle' | 'generating_script' | 'script_ready' | 'queued' | 'processing' | 'done' | 'error';
+  _ugcVideoUrl?: string;
+  _ugcAvatarId?: string;
+  _ugcVideoError?: string;
 
   // Wake Commerce integration
   _wakeProductId?: string;      // produtoId na Wake — chave de merge
