@@ -5,6 +5,7 @@ import { suggestProductAttributes, generateDescriptionText, defaultTemplate, typ
 import { trackAttributesGenerated } from '../../analytics';
 import { listReusableArticles } from '../../services/contentService';
 import VideoGenerationTab from './VideoGenerationTab';
+import UgcVideoGenerationTab from './UgcVideoGenerationTab';
 import {
   Sparkles,
   Save,
@@ -227,15 +228,18 @@ interface ProductEditModalProps {
   getIdToken?: () => Promise<string>;
   onVideoGenerated?: (productId: string, videoUrl: string, jobId: string) => void;
   onVideoJobStarted?: (productId: string, jobId: string) => void;
+  onUgcVideoGenerated?: (productId: string, videoUrl: string, jobId: string) => void;
+  onUgcVideoJobStarted?: (productId: string, jobId: string, avatarId: string) => void;
 }
 
-export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal, templates = [], selectedTemplateId, uid = '', hasContentAgent = false, hasVideoModule = false, activeVideoProductId, getIdToken, onVideoGenerated, onVideoJobStarted }: ProductEditModalProps) {
+export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal, templates = [], selectedTemplateId, uid = '', hasContentAgent = false, hasVideoModule = false, activeVideoProductId, getIdToken, onVideoGenerated, onVideoJobStarted, onUgcVideoGenerated, onUgcVideoJobStarted }: ProductEditModalProps) {
   // Template escolhido para (re)gerar a descrição. Inicia no template padrão da
   // aplicação e pode ser trocado pelo usuário antes de gerar novamente.
   const [chosenTemplateId, setChosenTemplateId] = useState<string>(selectedTemplateId || defaultTemplate.id);
   const [editedProduct, setEditedProduct] = useState<Product>({ ...product });
   const [initialProduct, setInitialProduct] = useState<Product>({ ...product });
   const [activeTab, setActiveTab] = useState<ProductModalTab>(initialTab);
+  const [videoMode, setVideoMode] = useState<'classic' | 'ugc'>('classic');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGeneratingIA, setIsGeneratingIA] = useState(false);
   const [suggestedAttributes, setSuggestedAttributes] = useState<any[]>([]);
@@ -1006,23 +1010,62 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
               {activeTab === 'video' && (
                 <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-300 pb-20">
                   {uid && getIdToken ? (
-                    <VideoGenerationTab
-                      product={editedProduct}
-                      uid={uid}
-                      getIdToken={getIdToken}
-                      activeVideoProductId={activeVideoProductId}
-                      onVideoGenerated={(productId, videoUrl, jobId) => {
-                        setEditedProduct((prev) => ({
-                          ...prev,
-                          _videoUrl: videoUrl,
-                          _videoJobId: jobId,
-                          _videoStatus: 'done',
-                        }));
-                        onVideoGenerated?.(productId, videoUrl, jobId);
-                      }}
-                      onVideoJobStarted={onVideoJobStarted}
-                      onNavigateToTab={(tab) => setActiveTab(tab)}
-                    />
+                    <>
+                      <div className="flex gap-2 p-1 bg-slate-100 rounded-xl w-fit">
+                        <button
+                          type="button"
+                          onClick={() => setVideoMode('classic')}
+                          className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${videoMode === 'classic' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500'}`}
+                        >
+                          Vídeo clássico
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setVideoMode('ugc')}
+                          className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${videoMode === 'ugc' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500'}`}
+                        >
+                          UGC com avatar
+                        </button>
+                      </div>
+
+                      {videoMode === 'classic' ? (
+                        <VideoGenerationTab
+                          product={editedProduct}
+                          uid={uid}
+                          getIdToken={getIdToken}
+                          activeVideoProductId={activeVideoProductId}
+                          onVideoGenerated={(productId, videoUrl, jobId) => {
+                            setEditedProduct((prev) => ({
+                              ...prev,
+                              _videoUrl: videoUrl,
+                              _videoJobId: jobId,
+                              _videoStatus: 'done',
+                            }));
+                            onVideoGenerated?.(productId, videoUrl, jobId);
+                          }}
+                          onVideoJobStarted={onVideoJobStarted}
+                          onNavigateToTab={(tab) => setActiveTab(tab)}
+                        />
+                      ) : (
+                        <UgcVideoGenerationTab
+                          product={editedProduct}
+                          uid={uid}
+                          getIdToken={getIdToken}
+                          activeVideoProductId={activeVideoProductId}
+                          onUgcVideoGenerated={(productId, videoUrl, jobId) => {
+                            setEditedProduct((prev) => ({
+                              ...prev,
+                              _ugcVideoUrl: videoUrl,
+                              _ugcVideoJobId: jobId,
+                              _ugcVideoStatus: 'done',
+                            }));
+                            onUgcVideoGenerated?.(productId, videoUrl, jobId);
+                          }}
+                          onUgcVideoJobStarted={onUgcVideoJobStarted}
+                          onNavigateToTab={(tab) => setActiveTab(tab)}
+                        />
+                      )}
+                    </>
                   ) : (
                     <div className="flex items-center justify-center py-16 text-slate-400 text-sm">
                       Autenticação necessária para gerar vídeos.
