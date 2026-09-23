@@ -225,6 +225,7 @@ interface ProductEditModalProps {
   hasContentAgent?: boolean;
   hasVideoModule?: boolean;
   activeVideoProductId?: string;
+  activeVideoKind?: 'classic' | 'ugc';
   getIdToken?: () => Promise<string>;
   onVideoGenerated?: (productId: string, videoUrl: string, jobId: string) => void;
   onVideoJobStarted?: (productId: string, jobId: string) => void;
@@ -232,7 +233,7 @@ interface ProductEditModalProps {
   onUgcVideoJobStarted?: (productId: string, jobId: string, avatarId: string) => void;
 }
 
-export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal, templates = [], selectedTemplateId, uid = '', hasContentAgent = false, hasVideoModule = false, activeVideoProductId, getIdToken, onVideoGenerated, onVideoJobStarted, onUgcVideoGenerated, onUgcVideoJobStarted }: ProductEditModalProps) {
+export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal, templates = [], selectedTemplateId, uid = '', hasContentAgent = false, hasVideoModule = false, activeVideoProductId, activeVideoKind, getIdToken, onVideoGenerated, onVideoJobStarted, onUgcVideoGenerated, onUgcVideoJobStarted }: ProductEditModalProps) {
   // Template escolhido para (re)gerar a descrição. Inicia no template padrão da
   // aplicação e pode ser trocado pelo usuário antes de gerar novamente.
   const [chosenTemplateId, setChosenTemplateId] = useState<string>(selectedTemplateId || defaultTemplate.id);
@@ -240,6 +241,13 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
   const [initialProduct, setInitialProduct] = useState<Product>({ ...product });
   const [activeTab, setActiveTab] = useState<ProductModalTab>(initialTab);
   const [videoMode, setVideoMode] = useState<'classic' | 'ugc'>('classic');
+  // Classic and UGC share one Veo quota. Each wizard already blocks on a job for a
+  // DIFFERENT product; this covers the same product, where only the job's kind
+  // (not just its product id) tells whether the running job belongs to the other mode.
+  const otherVideoModeBusyHere = !!activeVideoProductId
+    && activeVideoProductId === editedProduct._id
+    && !!activeVideoKind
+    && activeVideoKind !== videoMode;
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGeneratingIA, setIsGeneratingIA] = useState(false);
   const [suggestedAttributes, setSuggestedAttributes] = useState<any[]>([]);
@@ -1028,7 +1036,15 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                         </button>
                       </div>
 
-                      {videoMode === 'classic' ? (
+                      {otherVideoModeBusyHere ? (
+                        <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
+                          <p className="font-bold text-slate-800 text-lg">Vídeo em produção</p>
+                          <p className="text-sm text-slate-500 max-w-sm leading-relaxed">
+                            Este produto já tem um vídeo {activeVideoKind === 'ugc' ? 'UGC com avatar' : 'clássico'} sendo gerado.
+                            Aguarde a conclusão para iniciar outro.
+                          </p>
+                        </div>
+                      ) : videoMode === 'classic' ? (
                         <VideoGenerationTab
                           product={editedProduct}
                           uid={uid}

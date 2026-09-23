@@ -750,6 +750,35 @@ export default function App() {
     }
   };
 
+  const handleUgcVideoJobStarted = async (productId: string, jobId: string, avatarId: string) => {
+    setProducts((prev) =>
+      prev.map((p) =>
+        p._id === productId
+          ? { ...p, _ugcVideoJobId: jobId, _ugcVideoStatus: 'queued' as const, _ugcAvatarId: avatarId }
+          : p,
+      ),
+    );
+    if (user) {
+      try {
+        const productRef = doc(db, `users/${user.uid}/products/${productId}`);
+        await updateDoc(productRef, { _ugcVideoJobId: jobId, _ugcVideoStatus: 'queued', _ugcAvatarId: avatarId });
+      } catch (err) {
+        console.error('Erro ao persistir jobId do vídeo UGC:', err);
+      }
+    }
+  };
+
+  // Classic and UGC video both hit the same Veo quota, so they share ONE
+  // "active video job" gate. Returns the first product with a queued/processing
+  // job of either kind (UGC wins if a product somehow has both).
+  const getActiveVideo = (): { productId: string; kind: 'classic' | 'ugc' } | null => {
+    for (const p of products) {
+      if (p._ugcVideoStatus === 'queued' || p._ugcVideoStatus === 'processing') return { productId: p._id, kind: 'ugc' };
+      if (p._videoStatus === 'queued' || p._videoStatus === 'processing') return { productId: p._id, kind: 'classic' };
+    }
+    return null;
+  };
+
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -4631,7 +4660,8 @@ Retorne APENAS um JSON válido no seguinte formato:
             uid={user?.uid ?? ''}
             hasContentAgent={hasContentAgent}
             hasVideoModule={hasVideoModule}
-            activeVideoProductId={products.find(p => p._videoStatus === 'queued' || p._videoStatus === 'processing')?._id}
+            activeVideoProductId={getActiveVideo()?.productId}
+            activeVideoKind={getActiveVideo()?.kind}
             getIdToken={async () => {
               const currentUser = auth.currentUser;
               if (!currentUser) throw new Error('Não autenticado');
@@ -4643,6 +4673,21 @@ Retorne APENAS um JSON válido no seguinte formato:
                 const updated = prev.map((p) =>
                   p._id === productId
                     ? { ...p, _videoUrl: videoUrl, _videoJobId: jobId, _videoStatus: 'done' as const }
+                    : p,
+                );
+                const prod = prev.find(p => p._id === productId);
+                const name = prod?.['Descrição'] ?? prod?.['Título SEO'] ?? 'Produto';
+                setVideoReadyNotification({ productId, productName: name, videoUrl });
+                setTimeout(() => setVideoReadyNotification(null), 12000);
+                return updated;
+              });
+            }}
+            onUgcVideoJobStarted={handleUgcVideoJobStarted}
+            onUgcVideoGenerated={(productId, videoUrl, jobId) => {
+              setProducts((prev) => {
+                const updated = prev.map((p) =>
+                  p._id === productId
+                    ? { ...p, _ugcVideoUrl: videoUrl, _ugcVideoJobId: jobId, _ugcVideoStatus: 'done' as const }
                     : p,
                 );
                 const prod = prev.find(p => p._id === productId);

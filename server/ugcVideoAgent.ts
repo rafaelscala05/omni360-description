@@ -277,6 +277,12 @@ async function runUgcVideoJob(
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[ugc-video] runUgcVideoJob failed jobId=${jobId}:`, err);
     await jobRef.update({ status: 'error', error: message, updatedAt: now() }).catch(() => {});
+    // The client persisted _ugcVideoStatus: 'queued' when the job started. Without this,
+    // a failed job leaves the product "queued" forever and the shared active-video gate
+    // (classic + UGC) would block every other video job after a reload.
+    await adminDb.collection('users').doc(uid).collection('products').doc(productId)
+      .update({ _ugcVideoStatus: 'error', _ugcVideoError: message, updatedAt: now() })
+      .catch(() => {});
     if (creditCost > 0) {
       await refundCreditsAdmin(uid, creditCost, meta, UGC_REFUND).catch((refundErr) => {
         console.error(`[ugc-video] refund failed uid=${uid} jobId=${jobId}:`, refundErr);
