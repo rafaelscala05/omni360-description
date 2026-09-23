@@ -12,7 +12,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import {
   STORAGE_BUCKET, GCP_PROJECT, VEO_MODEL, TEXT_MODEL, VIDEO_ASPECT_RATIO, REFERENCE_MAX_DIM,
   getGeminiClient, getVeoClient, now, sendError, fetchImageAsBase64, resizeForReference,
-  runFfmpeg, runVeoOperation, formatAttributes, debitCreditsAdmin, refundCreditsAdmin,
+  runFfmpeg, runVeoOperation, formatAttributes, debitCreditsAdmin, refundCreditsAdmin, assertNoActiveVideoJob,
 } from './videoShared';
 
 // Background music + TTS voice for the final mix. The audio is added AFTER the
@@ -478,6 +478,8 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
       if (!productId || !script || !Array.isArray(shotImageUrls) || shotImageUrls.length !== SHOTS.length) {
         return res.status(400).json({ error: `productId, script e shotImageUrls (${SHOTS.length} imagens) são obrigatórios` });
       }
+
+      await assertNoActiveVideoJob(decoded.uid);
 
       const creditMeta = { productName, userName: decoded.name ?? decoded.email ?? '' };
       const creditCost = await debitCreditsAdmin(decoded.uid, CREDIT_ACTIONS.videoGeneration, creditMeta);

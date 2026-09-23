@@ -15,7 +15,7 @@ import {
   getGeminiClient, TEXT_MODEL, fetchImageAsBase64, formatAttributes, sendError,
   VEO_MODEL, VIDEO_ASPECT_RATIO, VideoGenerationReferenceType,
   getVeoClient, resizeForReference, runVeoOperation, runFfmpeg,
-  debitCreditsAdmin, refundCreditsAdmin, now, STORAGE_BUCKET,
+  debitCreditsAdmin, refundCreditsAdmin, assertNoActiveVideoJob, now, STORAGE_BUCKET,
 } from './videoShared';
 import type { GoogleGenAI } from '@google/genai';
 
@@ -141,13 +141,42 @@ export async function generateUgcScript(
 
 const UGC_REFUND = { label: 'Estorno — Geração de Vídeo UGC', actionKey: 'video_ugc_generation_refund' };
 
+// Each clip is an independent Veo generation, so the avatar's description
+// (appearance AND voice) must be in every clip's prompt — the reference image
+// only anchors the face, nothing else keeps the voice consistent across cuts.
+export function buildUgcClipPrompt(params: {
+  cena: string;
+  avatarDescricao: string;
+  clip: UgcVideoClip;
+}): { prompt: string; negativePrompt: string } {
+  const { cena, avatarDescricao, clip } = params;
+  const styleLine = 'Formato: vertical 9:16, estilo UGC autêntico (câmera na mão ou tripé caseiro, iluminação natural, estética espontânea-realista, não é produção de estúdio comercial).';
+  const rulesLine = 'O AVATAR aparece em quadro, olha diretamente para a câmera e FALA a fala abaixo em português do Brasil, com sincronia labial. Interage naturalmente com o produto enquanto fala.';
+  const fidelityLine = 'FIDELIDADE OBRIGATÓRIA: o avatar deve ser IDÊNTICO à imagem de referência de pessoa (mesmo rosto, cabelo, tom de pele, roupa). O produto deve ser IDÊNTICO à imagem de referência de produto (mesmas cores, proporções, logotipo, materiais). Nunca redesenhe nenhum dos dois.';
+  const negativePrompt = "avatar diferente da referência, rosto diferente, produto diferente da referência, cores alteradas, logotipo modificado, voz robótica, fala fora de sincronia, texto na tela, legendas, marca d'água, distorções, baixa qualidade";
+
+  const prompt = [
+    `Cena: ${cena}`,
+    `Avatar (aparência e voz — a MESMA em todos os clipes): ${avatarDescricao}`,
+    'Mantenha exatamente a mesma voz (timbre, tom, energia e sotaque) em todos os clipes deste vídeo.',
+    `Papel do clipe: ${clip.papel} (~8s)`,
+    `Ação visual: ${clip.acaoVisual}`,
+    `Fala do avatar (dita olhando para a câmera): "${clip.fala}"`,
+    styleLine,
+    rulesLine,
+    fidelityLine,
+  ].join('\n');
+
+  return { prompt, negativePrompt };
+}
+
 async function generateUgcClip(
   ai: GoogleGenAI,
   jobId: string,
-  jobRef: FirebaseFirestore.DocumentReference,
   index: number,
   clip: UgcVideoClip,
   cena: string,
+  avatarDescricao: string,
   avatarImage: { base64: string; mimeType: string },
   productImage: { base64: string; mimeType: string },
   workDir: string,
@@ -156,21 +185,7 @@ async function generateUgcClip(
     resizeForReference(Buffer.from(avatarImage.base64, 'base64')),
     resizeForReference(Buffer.from(productImage.base64, 'base64')),
   ]);
-
-  const styleLine = 'Formato: vertical 9:16, estilo UGC autêntico (câmera na mão ou tripé caseiro, iluminação natural, estética espontânea-realista, não é produção de estúdio comercial).';
-  const rulesLine = 'O AVATAR aparece em quadro, olha diretamente para a câmera e FALA a fala abaixo em português do Brasil, com sincronia labial. Interage naturalmente com o produto enquanto fala.';
-  const fidelityLine = 'FIDELIDADE OBRIGATÓRIA: o avatar deve ser IDÊNTICO à imagem de referência de pessoa (mesmo rosto, cabelo, tom de pele, roupa). O produto deve ser IDÊNTICO à imagem de referência de produto (mesmas cores, proporções, logotipo, materiais). Nunca redesenhe nenhum dos dois.';
-  const negativePrompt = "avatar diferente da referência, rosto diferente, produto diferente da referência, cores alteradas, logotipo modificado, voz robótica, fala fora de sincronia, texto na tela, legendas, marca d'água, distorções, baixa qualidade";
-
-  const prompt = [
-    `Cena: ${cena}`,
-    `Papel do clipe: ${clip.papel} (~8s)`,
-    `Ação visual: ${clip.acaoVisual}`,
-    `Fala do avatar (dita olhando para a câmera): "${clip.fala}"`,
-    styleLine,
-    rulesLine,
-    fidelityLine,
-  ].join('\n');
+  const { prompt, negativePrompt } = buildUgcClipPrompt({ cena, avatarDescricao, clip });
 
   console.log(`[ugc-video] clip ${index + 1} (${clip.papel}) generate jobId=${jobId}`);
   const videoBytes = await runVeoOperation(ai, jobId, `clip#${index + 1}`, {
@@ -238,7 +253,7 @@ async function runUgcVideoJob(
     let clipsDone = 0;
     const segmentPaths = await Promise.all(
       script.clipes.map(async (clip, i) => {
-        const segPath = await generateUgcClip(ai, jobId, jobRef, i, clip, script.cena, avatarImage, productImage, workDir);
+        const segPath = await generateUgcClip(ai, jobId, i, clip, script.cena, script.avatarDescricao, avatarImage, productImage, workDir);
         clipsDone += 1;
         await jobRef.update({ clipsDone, updatedAt: now() });
         return segPath;
@@ -356,6 +371,8 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
         return res.status(400).json({ error: 'script inválido' });
       }
 
+      await assertNoActiveVideoJob(decoded.uid);
+
       const creditMeta = { productName, userName: decoded.name ?? decoded.email ?? '' };
       const creditCost = await debitCreditsAdmin(decoded.uid, CREDIT_ACTIONS.ugcVideoGeneration, creditMeta);
 
@@ -383,6 +400,14 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
         }).catch(() => {});
         throw prepErr;
       }
+
+      // The server owns the persisted product status for the whole job lifecycle
+      // (queued here, done/error in runUgcVideoJob). If the client wrote 'queued'
+      // itself after receiving the jobId, a fast server-side 'error' could land
+      // first and then be overwritten back to 'queued'.
+      await adminDb.collection('users').doc(decoded.uid).collection('products').doc(productId)
+        .update({ _ugcVideoJobId: jobId, _ugcVideoStatus: 'queued', updatedAt: now() })
+        .catch(() => {});
 
       res.setHeader('Content-Type', 'application/json');
       res.write(JSON.stringify({ jobId }));

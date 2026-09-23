@@ -3,7 +3,7 @@
 // Verificação da lógica pura de roteiro UGC (server/ugcVideoAgent.ts).
 // Não chama Gemini nem sobe servidor.
 // Rodar com: npx tsx scripts/verify-ugc-video-script.mjs
-import { buildUgcScriptPrompt, validateUgcScript } from '../server/ugcVideoAgent.ts';
+import { buildUgcScriptPrompt, validateUgcScript, buildUgcClipPrompt } from '../server/ugcVideoAgent.ts';
 
 let failures = 0;
 function check(label, actual, expected) {
@@ -86,6 +86,18 @@ check('rejeita sem cena', validateUgcScript({
     { papel: 'demonstracao', fala: 'a', acaoVisual: 'b' },
   ],
 }), false);
+
+// Prompt do Veo por clipe: aparência E voz do avatar precisam chegar ao modelo,
+// senão cada clipe (gerado de forma independente) pode ter uma voz diferente.
+const clipPrompt = buildUgcClipPrompt({
+  cena: 'quarto iluminado',
+  avatarDescricao: 'mulher, 28 anos, tom de voz animado',
+  clip: { papel: 'gancho', fala: 'Olha só isso', acaoVisual: 'levanta o fone' },
+});
+check('prompt do clipe inclui a descrição do avatar (aparência e voz)', clipPrompt.prompt.includes('mulher, 28 anos, tom de voz animado'), true);
+check('prompt do clipe inclui a fala', clipPrompt.prompt.includes('Olha só isso'), true);
+check('prompt do clipe pede a mesma voz em todos os clipes', clipPrompt.prompt.includes('mesma voz'), true);
+check('negativePrompt existe e barra voz robótica', clipPrompt.negativePrompt.includes('voz robótica'), true);
 
 console.log(failures === 0 ? '\nTodas as verificações passaram.' : `\n${failures} verificação(ões) falharam.`);
 process.exit(failures === 0 ? 0 : 1);

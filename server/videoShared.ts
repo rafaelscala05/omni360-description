@@ -15,6 +15,7 @@ import { resolveCreditCost } from '../src/credits';
 import type { CreditAction } from '../src/credits';
 import { FieldValue } from 'firebase-admin/firestore';
 import firebaseAppletConfig from '../firebase-applet-config.json';
+import { assertSafeImageUrl } from './safeUrl';
 
 export { VideoGenerationReferenceType };
 
@@ -49,10 +50,20 @@ export function sendError(res: express.Response, err: unknown) {
   res.status(status).json({ error: message });
 }
 
+// Same Storage cap as the client upload rule (15 MB) — a larger body is never a real photo.
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+
+// The video routes fetch image URLs sent by the client, so this refuses internal
+// destinations (SSRF) and redirects — a safe host must not bounce us to an internal one
+// after the DNS check — and caps the body size.
 export async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeType: string }> {
-  const response = await fetch(url);
+  await assertSafeImageUrl(url);
+  const response = await fetch(url, { redirect: 'error' });
   if (!response.ok) throw new Error(`Falha ao buscar imagem: ${response.statusText}`);
   const buffer = await response.arrayBuffer();
+  if (buffer.byteLength > MAX_IMAGE_BYTES) {
+    throw Object.assign(new Error('Imagem muito grande (máximo 15 MB).'), { status: 400 });
+  }
   const base64 = Buffer.from(buffer).toString('base64');
   const mimeType = response.headers.get('content-type') || 'image/jpeg';
   return { base64, mimeType };
@@ -140,6 +151,42 @@ export async function runVeoOperation(
   }
 
   throw lastError;
+}
+
+// A queued/processing job whose doc hasn't been touched for this long is treated as
+// dead (the server instance that ran it was killed): jobs write to their doc on every
+// clip/step, so a healthy one never goes this quiet. Keeps a crashed job from locking
+// the user out of video generation forever.
+export const VIDEO_JOB_STALE_MS = 30 * 60 * 1000;
+
+export function isVideoJobActive(
+  job: { status?: string; updatedAt?: string },
+  nowMs: number = Date.now(),
+): boolean {
+  if (job.status !== 'queued' && job.status !== 'processing') return false;
+  const updated = Date.parse(job.updatedAt ?? '');
+  if (Number.isNaN(updated)) return false;
+  return nowMs - updated < VIDEO_JOB_STALE_MS;
+}
+
+// Classic and UGC video both hit the same Veo quota: only one job (of either kind) may
+// run per user at a time. Decided from the JOB docs, which the server owns and always
+// finishes as done/error — unlike the product-level flags the client persists, which
+// the classic pipeline never clears.
+export async function assertNoActiveVideoJob(uid: string): Promise<void> {
+  const userRef = adminDb.collection('users').doc(uid);
+  const snaps = await Promise.all(
+    ['videoJobs', 'ugcVideoJobs'].map((col) =>
+      userRef.collection(col).where('status', 'in', ['queued', 'processing']).get(),
+    ),
+  );
+  const active = snaps.some((snap) => snap.docs.some((d) => isVideoJobActive(d.data() as any)));
+  if (active) {
+    throw Object.assign(
+      new Error('Já existe um vídeo em produção. Aguarde a conclusão para iniciar outro.'),
+      { status: 409 },
+    );
+  }
 }
 
 export async function debitCreditsAdmin(

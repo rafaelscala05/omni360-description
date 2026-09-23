@@ -10,6 +10,7 @@ import {
 } from '../../services/ugcVideoService';
 import { cn, PrereqItem } from './videoWizardShared';
 import AvatarLibrary from './AvatarLibrary';
+import type { CreditAction } from '../../credits';
 
 export interface UgcVideoGenerationTabProps {
   product: Product;
@@ -17,8 +18,11 @@ export interface UgcVideoGenerationTabProps {
   getIdToken: () => Promise<string>;
   onUgcVideoGenerated: (productId: string, videoUrl: string, jobId: string) => void;
   onUgcVideoJobStarted?: (productId: string, jobId: string, avatarId: string) => void;
+  onUgcVideoFailed?: (productId: string) => void;
   onNavigateToTab: (tab: 'imagem' | 'ia') => void;
   activeVideoProductId?: string;
+  ensureCredits: (action: CreditAction) => boolean;
+  consumeCredit: (action: CreditAction, productName?: string) => Promise<boolean>;
 }
 
 type Stage = 'prereqs' | 'select-avatar' | 'script' | 'generate';
@@ -30,7 +34,8 @@ const ROLE_LABELS: Record<UgcVideoScript['clipes'][number]['papel'], string> = {
 };
 
 export default function UgcVideoGenerationTab({
-  product, uid, getIdToken, onUgcVideoGenerated, onUgcVideoJobStarted, onNavigateToTab, activeVideoProductId,
+  product, uid, getIdToken, onUgcVideoGenerated, onUgcVideoJobStarted, onUgcVideoFailed, onNavigateToTab,
+  activeVideoProductId, ensureCredits, consumeCredit,
 }: UgcVideoGenerationTabProps) {
   const hasDescription = !!product['Descrição complementar']?.trim();
   const hasSeoTitle = !!product['Título SEO']?.trim();
@@ -56,6 +61,9 @@ export default function UgcVideoGenerationTab({
       setJob(j);
       if (j.status === 'done' && j.videoUrl) {
         onUgcVideoGenerated(product._id, j.videoUrl, jobId);
+      }
+      if (j.status === 'error') {
+        onUgcVideoFailed?.(product._id);
       }
     });
     return () => { unsubRef.current?.(); };
@@ -149,7 +157,7 @@ export default function UgcVideoGenerationTab({
         <div className="max-w-sm">
           <p className="font-bold text-slate-800 text-lg mb-2">Vídeo em produção</p>
           <p className="text-sm text-slate-500 leading-relaxed">
-            Já estamos com um vídeo em produção (clássico ou UGC). Aguarde a conclusão para iniciar outro.
+            Já estamos com um vídeo UGC em produção. Aguarde a conclusão para iniciar outro.
           </p>
         </div>
       </div>
@@ -214,7 +222,7 @@ export default function UgcVideoGenerationTab({
           </h2>
           <p className="text-sm text-slate-500 mb-6">Selecione um avatar salvo ou crie um novo. Ele reaparece nos próximos vídeos.</p>
 
-          <AvatarLibrary uid={uid} selectedAvatarId={avatar?.id} onSelect={handleSelectAvatar} />
+          <AvatarLibrary uid={uid} selectedAvatarId={avatar?.id} onSelect={handleSelectAvatar} ensureCredits={ensureCredits} consumeCredit={consumeCredit} />
 
           <div className="flex gap-3 flex-wrap mt-6">
             <button type="button" onClick={() => setStage('prereqs')} className="px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50">

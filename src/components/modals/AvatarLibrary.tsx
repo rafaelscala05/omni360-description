@@ -3,16 +3,21 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Loader2, AlertCircle, CheckCircle2, User, RefreshCw } from 'lucide-react';
 import type { Avatar } from '../../types/models';
 import { listAvatars, generateAvatarPortrait, uploadAvatarImage, saveAvatar } from '../../services/avatarService';
+import { CREDIT_ACTIONS, type CreditAction } from '../../credits';
 
 export interface AvatarLibraryProps {
   uid: string;
   selectedAvatarId?: string;
   onSelect: (avatar: Avatar) => void;
+  // Required (not optional) so a caller can never render the library without
+  // charging for portraits. Same contract as App.tsx's ensureCredits/consumeCredit.
+  ensureCredits: (action: CreditAction) => boolean;
+  consumeCredit: (action: CreditAction, productName?: string) => Promise<boolean>;
 }
 
 type FormState = { nome: string; descricao: string; previewDataUrl: string | null };
 
-export default function AvatarLibrary({ uid, selectedAvatarId, onSelect }: AvatarLibraryProps) {
+export default function AvatarLibrary({ uid, selectedAvatarId, onSelect, ensureCredits, consumeCredit }: AvatarLibraryProps) {
   const [avatars, setAvatars] = useState<Avatar[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -35,10 +40,19 @@ export default function AvatarLibrary({ uid, selectedAvatarId, onSelect }: Avata
 
   async function handleGeneratePreview() {
     if (!form.descricao.trim()) return;
+    // Every generated portrait costs credits (a regenerate is a new generation).
+    if (!ensureCredits(CREDIT_ACTIONS.avatarCreation)) return;
     setGenerating(true);
     setGenError(null);
     try {
       const dataUrl = await generateAvatarPortrait(form.descricao);
+      // Debit only after the image was generated successfully, so a blocked or
+      // failed generation never costs the user credits (same rule as ambient images).
+      const paid = await consumeCredit(CREDIT_ACTIONS.avatarCreation, form.nome.trim() || 'Avatar');
+      if (!paid) {
+        setGenError('Não foi possível debitar os créditos do avatar. Tente novamente.');
+        return;
+      }
       setForm((f) => ({ ...f, previewDataUrl: dataUrl }));
     } catch (err) {
       setGenError(err instanceof Error ? err.message : 'Erro ao gerar retrato do avatar');

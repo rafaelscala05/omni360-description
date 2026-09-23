@@ -750,6 +750,10 @@ export default function App() {
     }
   };
 
+  // The SERVER owns the persisted job id/status for UGC (it writes 'queued' before
+  // responding and 'done'/'error' when the job ends). Writing 'queued' from here too
+  // could overwrite a fast server-side 'error', so only local state + the avatar id
+  // (which the server doesn't know) are written from the client.
   const handleUgcVideoJobStarted = async (productId: string, jobId: string, avatarId: string) => {
     setProducts((prev) =>
       prev.map((p) =>
@@ -761,22 +765,23 @@ export default function App() {
     if (user) {
       try {
         const productRef = doc(db, `users/${user.uid}/products/${productId}`);
-        await updateDoc(productRef, { _ugcVideoJobId: jobId, _ugcVideoStatus: 'queued', _ugcAvatarId: avatarId });
+        await updateDoc(productRef, { _ugcAvatarId: avatarId });
       } catch (err) {
-        console.error('Erro ao persistir jobId do vídeo UGC:', err);
+        console.error('Erro ao persistir avatar do vídeo UGC:', err);
       }
     }
   };
 
-  // Classic and UGC video both hit the same Veo quota, so they share ONE
-  // "active video job" gate. Returns the first product with a queued/processing
-  // job of either kind (UGC wins if a product somehow has both).
-  const getActiveVideo = (): { productId: string; kind: 'classic' | 'ugc' } | null => {
-    for (const p of products) {
-      if (p._ugcVideoStatus === 'queued' || p._ugcVideoStatus === 'processing') return { productId: p._id, kind: 'ugc' };
-      if (p._videoStatus === 'queued' || p._videoStatus === 'processing') return { productId: p._id, kind: 'classic' };
-    }
-    return null;
+  // Server already persisted _ugcVideoStatus: 'error'; mirror it locally so the UGC gate
+  // doesn't stay locked on this product until the next reload.
+  const handleUgcVideoFailed = (productId: string) => {
+    setProducts((prev) =>
+      prev.map((p) =>
+        p._id === productId && p._ugcVideoStatus !== 'error'
+          ? { ...p, _ugcVideoStatus: 'error' as const }
+          : p,
+      ),
+    );
   };
 
   const handleLogout = async () => {
@@ -4660,8 +4665,11 @@ Retorne APENAS um JSON válido no seguinte formato:
             uid={user?.uid ?? ''}
             hasContentAgent={hasContentAgent}
             hasVideoModule={hasVideoModule}
-            activeVideoProductId={getActiveVideo()?.productId}
-            activeVideoKind={getActiveVideo()?.kind}
+            activeVideoProductId={products.find(p => p._videoStatus === 'queued' || p._videoStatus === 'processing')?._id}
+            activeUgcVideoProductId={products.find(p => p._ugcVideoStatus === 'queued' || p._ugcVideoStatus === 'processing')?._id}
+            ensureCredits={ensureCredits}
+            consumeCredit={consumeCredit}
+            onUgcVideoFailed={handleUgcVideoFailed}
             getIdToken={async () => {
               const currentUser = auth.currentUser;
               if (!currentUser) throw new Error('Não autenticado');

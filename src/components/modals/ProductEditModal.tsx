@@ -6,6 +6,7 @@ import { trackAttributesGenerated } from '../../analytics';
 import { listReusableArticles } from '../../services/contentService';
 import VideoGenerationTab from './VideoGenerationTab';
 import UgcVideoGenerationTab from './UgcVideoGenerationTab';
+import type { CreditAction } from '../../credits';
 import {
   Sparkles,
   Save,
@@ -225,15 +226,20 @@ interface ProductEditModalProps {
   hasContentAgent?: boolean;
   hasVideoModule?: boolean;
   activeVideoProductId?: string;
-  activeVideoKind?: 'classic' | 'ugc';
+  // Gate for the UGC wizard, from UGC job flags only (the classic flag can be stale in
+  // Firestore). Cross-mode "one video at a time" is enforced by the server (409).
+  activeUgcVideoProductId?: string;
   getIdToken?: () => Promise<string>;
   onVideoGenerated?: (productId: string, videoUrl: string, jobId: string) => void;
   onVideoJobStarted?: (productId: string, jobId: string) => void;
   onUgcVideoGenerated?: (productId: string, videoUrl: string, jobId: string) => void;
   onUgcVideoJobStarted?: (productId: string, jobId: string, avatarId: string) => void;
+  onUgcVideoFailed?: (productId: string) => void;
+  ensureCredits: (action: CreditAction) => boolean;
+  consumeCredit: (action: CreditAction, productName?: string) => Promise<boolean>;
 }
 
-export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal, templates = [], selectedTemplateId, uid = '', hasContentAgent = false, hasVideoModule = false, activeVideoProductId, activeVideoKind, getIdToken, onVideoGenerated, onVideoJobStarted, onUgcVideoGenerated, onUgcVideoJobStarted }: ProductEditModalProps) {
+export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal, templates = [], selectedTemplateId, uid = '', hasContentAgent = false, hasVideoModule = false, activeVideoProductId, activeUgcVideoProductId, getIdToken, onVideoGenerated, onVideoJobStarted, onUgcVideoGenerated, onUgcVideoJobStarted, onUgcVideoFailed, ensureCredits, consumeCredit }: ProductEditModalProps) {
   // Template escolhido para (re)gerar a descrição. Inicia no template padrão da
   // aplicação e pode ser trocado pelo usuário antes de gerar novamente.
   const [chosenTemplateId, setChosenTemplateId] = useState<string>(selectedTemplateId || defaultTemplate.id);
@@ -241,13 +247,6 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
   const [initialProduct, setInitialProduct] = useState<Product>({ ...product });
   const [activeTab, setActiveTab] = useState<ProductModalTab>(initialTab);
   const [videoMode, setVideoMode] = useState<'classic' | 'ugc'>('classic');
-  // Classic and UGC share one Veo quota. Each wizard already blocks on a job for a
-  // DIFFERENT product; this covers the same product, where only the job's kind
-  // (not just its product id) tells whether the running job belongs to the other mode.
-  const otherVideoModeBusyHere = !!activeVideoProductId
-    && activeVideoProductId === editedProduct._id
-    && !!activeVideoKind
-    && activeVideoKind !== videoMode;
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGeneratingIA, setIsGeneratingIA] = useState(false);
   const [suggestedAttributes, setSuggestedAttributes] = useState<any[]>([]);
@@ -1036,15 +1035,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                         </button>
                       </div>
 
-                      {otherVideoModeBusyHere ? (
-                        <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
-                          <p className="font-bold text-slate-800 text-lg">Vídeo em produção</p>
-                          <p className="text-sm text-slate-500 max-w-sm leading-relaxed">
-                            Este produto já tem um vídeo {activeVideoKind === 'ugc' ? 'UGC com avatar' : 'clássico'} sendo gerado.
-                            Aguarde a conclusão para iniciar outro.
-                          </p>
-                        </div>
-                      ) : videoMode === 'classic' ? (
+                      {videoMode === 'classic' ? (
                         <VideoGenerationTab
                           product={editedProduct}
                           uid={uid}
@@ -1067,7 +1058,10 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                           product={editedProduct}
                           uid={uid}
                           getIdToken={getIdToken}
-                          activeVideoProductId={activeVideoProductId}
+                          activeVideoProductId={activeUgcVideoProductId}
+                          ensureCredits={ensureCredits}
+                          consumeCredit={consumeCredit}
+                          onUgcVideoFailed={onUgcVideoFailed}
                           onUgcVideoGenerated={(productId, videoUrl, jobId) => {
                             setEditedProduct((prev) => ({
                               ...prev,
@@ -1077,7 +1071,18 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                             }));
                             onUgcVideoGenerated?.(productId, videoUrl, jobId);
                           }}
-                          onUgcVideoJobStarted={onUgcVideoJobStarted}
+                          onUgcVideoJobStarted={(productId, jobId, avatarId) => {
+                            // editedProduct is a copy taken when the modal opened. Without this, toggling
+                            // modes/tabs remounts the wizard from stale data (no job id -> it looks idle and
+                            // can start another paid job, or replays an OLD finished video).
+                            setEditedProduct((prev) => ({
+                              ...prev,
+                              _ugcVideoJobId: jobId,
+                              _ugcVideoStatus: 'queued',
+                              _ugcAvatarId: avatarId,
+                            }));
+                            onUgcVideoJobStarted?.(productId, jobId, avatarId);
+                          }}
                           onNavigateToTab={(tab) => setActiveTab(tab)}
                         />
                       )}
