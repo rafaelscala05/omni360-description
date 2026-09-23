@@ -2,7 +2,8 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Loader2, AlertCircle, CheckCircle2, User, RefreshCw } from 'lucide-react';
 import type { Avatar } from '../../types/models';
-import { listAvatars, generateAvatarPortrait, uploadAvatarImage, saveAvatar } from '../../services/avatarService';
+import { listAvatars, generateAvatarPortrait, uploadAvatarImage, saveAvatar, buildAvatarDescription } from '../../services/avatarService';
+import type { AvatarTraits } from '../../services/avatarPrompt';
 import { CREDIT_ACTIONS, type CreditAction } from '../../credits';
 
 export interface AvatarLibraryProps {
@@ -15,7 +16,18 @@ export interface AvatarLibraryProps {
   consumeCredit: (action: CreditAction, productName?: string) => Promise<boolean>;
 }
 
-type FormState = { nome: string; descricao: string; previewDataUrl: string | null };
+type FormState = { nome: string; detalhes: string; traits: AvatarTraits; previewDataUrl: string | null };
+
+const TRAIT_OPTIONS: Array<{ key: keyof AvatarTraits; label: string; options: string[] }> = [
+  { key: 'faixaEtaria', label: 'Faixa etária', options: ['18–24 anos', '25–34 anos', '35–44 anos', '45–54 anos', '55+ anos'] },
+  { key: 'genero', label: 'Gênero', options: ['Mulher', 'Homem', 'Pessoa não binária'] },
+  { key: 'etnia', label: 'Etnia/aparência', options: ['Pessoa negra', 'Pessoa branca', 'Pessoa asiática', 'Pessoa parda', 'Pessoa indígena'] },
+  { key: 'estilo', label: 'Estilo', options: ['Casual descontraído', 'Elegante sofisticado', 'Fitness e esportivo', 'Criativo e moderno', 'Profissional'] },
+  { key: 'tomDeVoz', label: 'Tom de voz', options: ['Animado e espontâneo', 'Calmo e acolhedor', 'Confiante e especialista', 'Divertido e próximo', 'Sofisticado e sereno'] },
+];
+
+const EMPTY_TRAITS: AvatarTraits = { faixaEtaria: '', genero: '', etnia: '', estilo: '', tomDeVoz: '' };
+const emptyForm = (): FormState => ({ nome: '', detalhes: '', traits: { ...EMPTY_TRAITS }, previewDataUrl: null });
 
 export default function AvatarLibrary({ uid, selectedAvatarId, onSelect, ensureCredits, consumeCredit }: AvatarLibraryProps) {
   const [avatars, setAvatars] = useState<Avatar[]>([]);
@@ -23,7 +35,7 @@ export default function AvatarLibrary({ uid, selectedAvatarId, onSelect, ensureC
   const [listError, setListError] = useState<string | null>(null);
 
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState<FormState>({ nome: '', descricao: '', previewDataUrl: null });
+  const [form, setForm] = useState<FormState>(emptyForm);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -39,13 +51,14 @@ export default function AvatarLibrary({ uid, selectedAvatarId, onSelect, ensureC
   }, [uid]);
 
   async function handleGeneratePreview() {
-    if (!form.descricao.trim()) return;
+    const descricao = buildAvatarDescription(form.traits, form.detalhes);
+    if (!descricao) return;
     // Every generated portrait costs credits (a regenerate is a new generation).
     if (!ensureCredits(CREDIT_ACTIONS.avatarCreation)) return;
     setGenerating(true);
     setGenError(null);
     try {
-      const dataUrl = await generateAvatarPortrait(form.descricao);
+      const dataUrl = await generateAvatarPortrait(descricao);
       // Debit only after the image was generated successfully, so a blocked or
       // failed generation never costs the user credits (same rule as ambient images).
       const paid = await consumeCredit(CREDIT_ACTIONS.avatarCreation, form.nome.trim() || 'Avatar');
@@ -67,16 +80,23 @@ export default function AvatarLibrary({ uid, selectedAvatarId, onSelect, ensureC
     try {
       const tempId = crypto.randomUUID();
       const referenceImageUrl = await uploadAvatarImage(uid, form.previewDataUrl, tempId);
-      const avatar = await saveAvatar(uid, { nome: form.nome.trim(), descricao: form.descricao.trim(), referenceImageUrl }, tempId);
+      const descricao = buildAvatarDescription(form.traits, form.detalhes);
+      const avatar = await saveAvatar(uid, { nome: form.nome.trim(), descricao, referenceImageUrl }, tempId);
       setAvatars((prev) => [...prev, avatar]);
       onSelect(avatar);
       setCreating(false);
-      setForm({ nome: '', descricao: '', previewDataUrl: null });
+      setForm(emptyForm());
     } catch (err) {
       setGenError(err instanceof Error ? err.message : 'Erro ao salvar avatar');
     } finally {
       setSaving(false);
     }
+  }
+
+  const descricaoCompleta = buildAvatarDescription(form.traits, form.detalhes);
+
+  function updateTrait(key: keyof AvatarTraits, value: string) {
+    setForm((f) => ({ ...f, traits: { ...f.traits, [key]: value }, previewDataUrl: null }));
   }
 
   if (loading) {
@@ -154,14 +174,30 @@ export default function AvatarLibrary({ uid, selectedAvatarId, onSelect, ensureC
 
           <div className="space-y-1.5">
             <label className="text-sm font-bold text-slate-800">Características</label>
-            <p className="text-xs text-slate-400">Idade, gênero, etnia, estilo, tom — quanto mais específico, mais consistente o avatar fica entre vídeos.</p>
+            <p className="text-xs text-slate-400">Escolha uma opção em cada campo. Elas serão usadas no retrato e na personalidade e voz do vídeo UGC.</p>
+            <div className="space-y-3 pt-1">
+              {TRAIT_OPTIONS.map(({ key, label, options }) => (
+                <div key={key}>
+                  <label className="block text-xs font-bold text-slate-600 mb-1.5">{label}</label>
+                  <select
+                    value={form.traits[key]}
+                    onChange={(e) => updateTrait(key, e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                  >
+                    <option value="">Selecionar</option>
+                    {options.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
             <textarea
-              value={form.descricao}
-              onChange={(e) => setForm((f) => ({ ...f, descricao: e.target.value, previewDataUrl: null }))}
-              rows={3}
-              placeholder="Ex.: mulher, 28 anos, cabelo cacheado castanho, estilo casual descontraído, tom de voz animado"
+              value={form.detalhes}
+              onChange={(e) => setForm((f) => ({ ...f, detalhes: e.target.value, previewDataUrl: null }))}
+              rows={2}
+              placeholder="Detalhes adicionais (opcional): cabelo cacheado castanho, usa óculos..."
               className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 resize-none outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
             />
+            {descricaoCompleta && <p className="text-xs text-slate-500 bg-violet-50 border border-violet-100 rounded-lg p-2.5"><span className="font-bold text-violet-700">Resumo para IA: </span>{descricaoCompleta}</p>}
           </div>
 
           {genError && (
@@ -179,7 +215,7 @@ export default function AvatarLibrary({ uid, selectedAvatarId, onSelect, ensureC
           <div className="flex gap-3 flex-wrap">
             <button
               type="button"
-              onClick={() => { setCreating(false); setForm({ nome: '', descricao: '', previewDataUrl: null }); setGenError(null); }}
+              onClick={() => { setCreating(false); setForm(emptyForm()); setGenError(null); }}
               className="px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50"
             >
               Cancelar
@@ -187,7 +223,7 @@ export default function AvatarLibrary({ uid, selectedAvatarId, onSelect, ensureC
             <button
               type="button"
               onClick={handleGeneratePreview}
-              disabled={!form.descricao.trim() || generating}
+              disabled={!descricaoCompleta || generating}
               className="px-4 py-2.5 border border-violet-200 text-violet-700 rounded-xl text-sm font-bold hover:bg-violet-50 disabled:opacity-40 flex items-center gap-2"
             >
               {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}

@@ -14,7 +14,7 @@ import type { Avatar } from '../types/models';
 import { generateImageFromText } from './aiService';
 import { getAvatarsPath, buildAvatarDoc, buildAvatarPortraitPrompt } from './avatarPrompt';
 
-export { getAvatarsPath, buildAvatarDoc, buildAvatarPortraitPrompt };
+export { getAvatarsPath, buildAvatarDoc, buildAvatarPortraitPrompt, buildAvatarDescription } from './avatarPrompt';
 
 // Returns a data URL — nothing is persisted yet. Mirrors generateImage()/
 // runGenerateAmbient() in ImageSearchModal.tsx, which only upload on save.

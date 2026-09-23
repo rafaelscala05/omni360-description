@@ -10,6 +10,32 @@ import type { Avatar } from '../types/models';
 
 export const getAvatarsPath = (uid: string) => `users/${uid}/avatars`;
 
+export interface AvatarTraits {
+  faixaEtaria: string;
+  genero: string;
+  etnia: string;
+  estilo: string;
+  tomDeVoz: string;
+}
+
+// Persist a readable description instead of UI-specific fields. This exact text
+// is used for both portrait generation and all later UGC video prompts.
+export function buildAvatarDescription(traits: AvatarTraits, detalhes = ''): string {
+  const fields: Array<[string, string]> = [
+    ['Faixa etária', traits.faixaEtaria],
+    ['Gênero', traits.genero],
+    ['Etnia/aparência', traits.etnia],
+    ['Estilo', traits.estilo],
+    ['Tom de voz', traits.tomDeVoz],
+  ];
+  const selections = fields
+    .filter(([, value]) => value && value !== 'Não especificar')
+    .map(([label, value]) => `${label}: ${value}`);
+
+  if (detalhes.trim()) selections.push(`Detalhes adicionais: ${detalhes.trim()}`);
+  return selections.join('. ');
+}
+
 // Builds the Firestore document for an avatar, stripping `undefined` values
 // (Firestore's setDoc rejects them — this db isn't configured with
 // ignoreUndefinedProperties) and preserving createdAt across updates.

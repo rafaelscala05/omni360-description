@@ -6,7 +6,7 @@
 // que puxa src/firebase.ts — App Check + reCAPTCHA Enterprise fazem setup de
 // DOM no carregamento do módulo e derrubam qualquer runtime fora do browser.
 // Rodar com: npx tsx scripts/verify-avatar-service.mjs
-import { getAvatarsPath, buildAvatarDoc, buildAvatarPortraitPrompt } from '../src/services/avatarPrompt.ts';
+import { getAvatarsPath, buildAvatarDoc, buildAvatarPortraitPrompt, buildAvatarDescription } from '../src/services/avatarPrompt.ts';
 
 let failures = 0;
 function check(label, actual, expected) {
@@ -29,6 +29,14 @@ check('chave undefined é removida antes de gravar', 'referenceImageUrl' in doc2
 const prompt = buildAvatarPortraitPrompt('mulher jovem, 25 anos, estilo casual');
 check('prompt de retrato inclui a descrição fornecida', prompt.includes('mulher jovem, 25 anos, estilo casual'), true);
 check('prompt pede fundo neutro', prompt.includes('Fundo neutro'), true);
+
+const description = buildAvatarDescription({
+  faixaEtaria: '25–34 anos', genero: 'Mulher', etnia: 'Pessoa negra',
+  estilo: 'Casual descontraído', tomDeVoz: 'Animado e espontâneo',
+}, 'cabelo cacheado');
+check('descrição inclui faixa etária selecionada', description.includes('Faixa etária: 25–34 anos'), true);
+check('descrição inclui tom de voz selecionado', description.includes('Tom de voz: Animado e espontâneo'), true);
+check('descrição inclui detalhes livres', description.includes('Detalhes adicionais: cabelo cacheado'), true);
 
 console.log(failures === 0 ? '\nTodas as verificações passaram.' : `\n${failures} verificação(ões) falharam.`);
 process.exit(failures === 0 ? 0 : 1);
