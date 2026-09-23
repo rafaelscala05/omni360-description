@@ -6,9 +6,18 @@
 // generic Veo/ffmpeg/credit helpers from server/videoShared.ts.
 // See docs/superpowers/specs/2026-09-23-ugc-avatar-video-design.md.
 import type express from 'express';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { adminDb, adminStorage } from './firebaseAdmin';
+import { CREDIT_ACTIONS } from '../src/credits';
 import {
   getGeminiClient, TEXT_MODEL, fetchImageAsBase64, formatAttributes, sendError,
+  VEO_MODEL, VIDEO_ASPECT_RATIO, VideoGenerationReferenceType,
+  getVeoClient, resizeForReference, runVeoOperation, runFfmpeg,
+  debitCreditsAdmin, refundCreditsAdmin, now, STORAGE_BUCKET,
 } from './videoShared';
+import type { GoogleGenAI } from '@google/genai';
 
 export interface UgcVideoClip {
   papel: 'gancho' | 'demonstracao' | 'cta';
@@ -130,6 +139,155 @@ export async function generateUgcScript(
   return parsed;
 }
 
+const UGC_REFUND = { label: 'Estorno — Geração de Vídeo UGC', actionKey: 'video_ugc_generation_refund' };
+
+async function generateUgcClip(
+  ai: GoogleGenAI,
+  jobId: string,
+  jobRef: FirebaseFirestore.DocumentReference,
+  index: number,
+  clip: UgcVideoClip,
+  cena: string,
+  avatarImage: { base64: string; mimeType: string },
+  productImage: { base64: string; mimeType: string },
+  workDir: string,
+): Promise<string> {
+  const [avatarResized, productResized] = await Promise.all([
+    resizeForReference(Buffer.from(avatarImage.base64, 'base64')),
+    resizeForReference(Buffer.from(productImage.base64, 'base64')),
+  ]);
+
+  const styleLine = 'Formato: vertical 9:16, estilo UGC autêntico (câmera na mão ou tripé caseiro, iluminação natural, estética espontânea-realista, não é produção de estúdio comercial).';
+  const rulesLine = 'O AVATAR aparece em quadro, olha diretamente para a câmera e FALA a fala abaixo em português do Brasil, com sincronia labial. Interage naturalmente com o produto enquanto fala.';
+  const fidelityLine = 'FIDELIDADE OBRIGATÓRIA: o avatar deve ser IDÊNTICO à imagem de referência de pessoa (mesmo rosto, cabelo, tom de pele, roupa). O produto deve ser IDÊNTICO à imagem de referência de produto (mesmas cores, proporções, logotipo, materiais). Nunca redesenhe nenhum dos dois.';
+  const negativePrompt = "avatar diferente da referência, rosto diferente, produto diferente da referência, cores alteradas, logotipo modificado, voz robótica, fala fora de sincronia, texto na tela, legendas, marca d'água, distorções, baixa qualidade";
+
+  const prompt = [
+    `Cena: ${cena}`,
+    `Papel do clipe: ${clip.papel} (~8s)`,
+    `Ação visual: ${clip.acaoVisual}`,
+    `Fala do avatar (dita olhando para a câmera): "${clip.fala}"`,
+    styleLine,
+    rulesLine,
+    fidelityLine,
+  ].join('\n');
+
+  console.log(`[ugc-video] clip ${index + 1} (${clip.papel}) generate jobId=${jobId}`);
+  const videoBytes = await runVeoOperation(ai, jobId, `clip#${index + 1}`, {
+    model: VEO_MODEL,
+    prompt,
+    config: {
+      numberOfVideos: 1,
+      durationSeconds: 8,
+      aspectRatio: VIDEO_ASPECT_RATIO,
+      personGeneration: 'allow_adult',
+      generateAudio: true,
+      negativePrompt,
+      referenceImages: [
+        { image: { imageBytes: avatarResized.base64, mimeType: avatarResized.mimeType }, referenceType: VideoGenerationReferenceType.ASSET },
+        { image: { imageBytes: productResized.base64, mimeType: productResized.mimeType }, referenceType: VideoGenerationReferenceType.ASSET },
+      ],
+    },
+  });
+
+  const segPath = path.join(workDir, `clip${index}.mp4`);
+  await fs.writeFile(segPath, Buffer.from(videoBytes, 'base64'));
+  return segPath;
+}
+
+// Concatenates the clips with a re-encode (concat filter, not stream copy) —
+// each clip is an independent Veo generation and may differ in timebase/SAR,
+// same reasoning as assembleFinalVideo() in videoAgent.ts. Each clip keeps
+// its own native audio track (the avatar's dialogue), so both video and
+// audio streams are concatenated in order — no separate narration/music mix.
+async function concatClips(segmentPaths: string[], outPath: string): Promise<void> {
+  const inputs: string[] = [];
+  segmentPaths.forEach((p) => { inputs.push('-i', p); });
+  const filterParts = segmentPaths.map((_, i) => `[${i}:v:0][${i}:a:0]`).join('');
+  const filter = `${filterParts}concat=n=${segmentPaths.length}:v=1:a=1[v][a]`;
+
+  await runFfmpeg([
+    '-y', ...inputs,
+    '-filter_complex', filter,
+    '-map', '[v]', '-map', '[a]',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '192k',
+    outPath,
+  ]);
+}
+
+async function runUgcVideoJob(
+  uid: string,
+  jobId: string,
+  productId: string,
+  script: UgcVideoScript,
+  avatarImage: { base64: string; mimeType: string },
+  productImage: { base64: string; mimeType: string },
+  creditCost: number,
+  meta: { productName?: string; userName?: string } = {},
+): Promise<void> {
+  const jobRef = adminDb.collection('users').doc(uid).collection('ugcVideoJobs').doc(jobId);
+  console.log(`[ugc-video] runUgcVideoJob start uid=${uid} jobId=${jobId} productId=${productId}`);
+
+  const workDir = await fs.mkdtemp(path.join(os.tmpdir(), `ugc-video-${jobId}-`));
+
+  try {
+    await jobRef.update({ status: 'processing', clipsDone: 0, totalClips: script.clipes.length, step: 'clip', updatedAt: now() });
+
+    const ai = getVeoClient();
+    let clipsDone = 0;
+    const segmentPaths = await Promise.all(
+      script.clipes.map(async (clip, i) => {
+        const segPath = await generateUgcClip(ai, jobId, jobRef, i, clip, script.cena, avatarImage, productImage, workDir);
+        clipsDone += 1;
+        await jobRef.update({ clipsDone, updatedAt: now() });
+        return segPath;
+      }),
+    );
+
+    await jobRef.update({ step: 'post', updatedAt: now() });
+    const finalPath = path.join(workDir, 'final.mp4');
+    await concatClips(segmentPaths, finalPath);
+    console.log(`[ugc-video] post-production done jobId=${jobId}`);
+
+    await jobRef.update({ step: 'uploading', updatedAt: now() });
+
+    const bucket = adminStorage.bucket(STORAGE_BUCKET);
+    const storagePath = `product-videos/${uid}/${productId}/ugc_${jobId}.mp4`;
+    const downloadToken = crypto.randomUUID();
+    await bucket.upload(finalPath, {
+      destination: storagePath,
+      contentType: 'video/mp4',
+      metadata: {
+        cacheControl: 'public, max-age=31536000',
+        metadata: { firebaseStorageDownloadTokens: downloadToken },
+      },
+    });
+    const videoUrl = `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
+
+    console.log(`[ugc-video] uploaded jobId=${jobId} url=${videoUrl}`);
+    await jobRef.update({ status: 'done', videoUrl, updatedAt: now() });
+
+    const productRef = adminDb.collection('users').doc(uid).collection('products').doc(productId);
+    const prodSnap = await productRef.get();
+    if (prodSnap.exists) {
+      await productRef.update({ _ugcVideoUrl: videoUrl, _ugcVideoJobId: jobId, _ugcVideoStatus: 'done', updatedAt: now() });
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[ugc-video] runUgcVideoJob failed jobId=${jobId}:`, err);
+    await jobRef.update({ status: 'error', error: message, updatedAt: now() }).catch(() => {});
+    if (creditCost > 0) {
+      await refundCreditsAdmin(uid, creditCost, meta, UGC_REFUND).catch((refundErr) => {
+        console.error(`[ugc-video] refund failed uid=${uid} jobId=${jobId}:`, refundErr);
+      });
+      console.log(`[ugc-video] refunded ${creditCost} credits uid=${uid} jobId=${jobId}`);
+    }
+  } finally {
+    await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps): void {
   const { verifyFirebaseToken } = deps;
 
@@ -175,5 +333,61 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
     }
   });
 
-  // Task 7 adds `app.post('/api/video/ugc/start-job', ...)` to this same function.
+  app.post('/api/video/ugc/start-job', async (req, res) => {
+    try {
+      const decoded = await verifyFirebaseToken(req);
+      const { productId, productName, script, avatarImageUrl, productImageUrl } = req.body as {
+        productId: string;
+        productName: string;
+        script: UgcVideoScript;
+        avatarImageUrl: string;
+        productImageUrl: string;
+      };
+      if (!productId || !script || !avatarImageUrl || !productImageUrl) {
+        return res.status(400).json({ error: 'productId, script, avatarImageUrl e productImageUrl são obrigatórios' });
+      }
+      if (!validateUgcScript(script)) {
+        return res.status(400).json({ error: 'script inválido' });
+      }
+
+      const creditMeta = { productName, userName: decoded.name ?? decoded.email ?? '' };
+      const creditCost = await debitCreditsAdmin(decoded.uid, CREDIT_ACTIONS.ugcVideoGeneration, creditMeta);
+
+      const jobRef = adminDb.collection('users').doc(decoded.uid).collection('ugcVideoJobs').doc();
+      const jobId = jobRef.id;
+
+      let avatarImage: { base64: string; mimeType: string };
+      let productImage: { base64: string; mimeType: string };
+      try {
+        await jobRef.set({
+          jobId, productId, status: 'queued', videoUrl: null, error: null, createdAt: now(), updatedAt: now(),
+        });
+        [avatarImage, productImage] = await Promise.all([
+          fetchImageAsBase64(avatarImageUrl),
+          fetchImageAsBase64(productImageUrl),
+        ]);
+      } catch (prepErr) {
+        if (creditCost > 0) {
+          await refundCreditsAdmin(decoded.uid, creditCost, creditMeta, UGC_REFUND).catch(() => {});
+        }
+        await jobRef.update({
+          status: 'error',
+          error: prepErr instanceof Error ? prepErr.message : String(prepErr),
+          updatedAt: now(),
+        }).catch(() => {});
+        throw prepErr;
+      }
+
+      res.setHeader('Content-Type', 'application/json');
+      res.write(JSON.stringify({ jobId }));
+
+      try {
+        await runUgcVideoJob(decoded.uid, jobId, productId, script, avatarImage, productImage, creditCost, creditMeta);
+      } finally {
+        res.end();
+      }
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
 }

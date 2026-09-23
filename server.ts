@@ -14,6 +14,7 @@ const STORAGE_BUCKET = firebaseAppletConfig.storageBucket;
 import { registerContentRoutes, startContentScheduler } from "./server/contentAgent";
 import { registerSeoRoutes } from "./server/seoAgent";
 import { registerVideoRoutes } from "./server/videoAgent";
+import { registerUgcVideoRoutes } from "./server/ugcVideoAgent";
 import { registerWakeRoutes } from "./server/wakeAgent";
 import { registerTinyRoutes } from "./server/tinyAgent";
 import { registerTinyImportRoutes, startTinyScheduler } from "./server/tinyImportWorker";
@@ -146,6 +147,7 @@ async function startServer() {
   registerContentRoutes(app, { verifyFirebaseToken });
   registerSeoRoutes(app, { verifyFirebaseToken });
   registerVideoRoutes(app, { verifyFirebaseToken });
+  registerUgcVideoRoutes(app, { verifyFirebaseToken });
   registerWakeRoutes(app, { verifyFirebaseToken });
   registerTinyRoutes(app, { verifyFirebaseToken });
   registerTinyProviderRoutes(app, { verifyFirebaseToken });

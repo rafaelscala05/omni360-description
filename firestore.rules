@@ -300,6 +300,13 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // UGC video generation jobs. Written server-side via Admin SDK; the
+      // client only reads to track progress via onSnapshot. Mirrors videoJobs.
+      match /ugcVideoJobs/{jobId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+
       // Agência de Criação de Conteúdo (Alfred). The owner manages projects and
       // their clusters/calendar from the client; the AI pipeline + credit debit
       // run server-side via the Admin SDK (which bypasses these rules).
