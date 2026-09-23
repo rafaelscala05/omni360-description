@@ -242,3 +242,25 @@ export async function generateImage(base64Data: string, mimeType: string, prompt
   if (aspectRatio === '1:1') return reencodeAsJpeg(raw);
   return cropToAspectRatio(raw, aspectRatio);
 }
+
+// Generates an image purely from a text prompt (no input image) — used for avatar
+// portraits. Mirrors generateImage() but omits the inlineData part: gemini-2.5-flash-image
+// also supports text-to-image generation, not just image editing.
+export async function generateImageFromText(prompt: string, aspectRatio: string = '3:4'): Promise<string> {
+  const model = getGenerativeModel(ai, {
+    model: IMAGE_MODEL,
+    generationConfig: {
+      responseModalities: [ResponseModality.TEXT, ResponseModality.IMAGE],
+    },
+    safetySettings: IMAGE_SAFETY_SETTINGS,
+  });
+
+  const result = await withRetry(() => model.generateContent([{ text: prompt }] as any));
+
+  const imageData = extractImage(result);
+  if (!imageData) throw new Error('O modelo não retornou uma imagem. Tente novamente.');
+  const raw = `data:image/png;base64,${imageData}`;
+
+  if (aspectRatio === '1:1') return reencodeAsJpeg(raw);
+  return cropToAspectRatio(raw, aspectRatio);
+}

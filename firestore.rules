@@ -103,6 +103,15 @@ service cloud.firestore {
              (!('updatedAt' in data) || data.updatedAt is string);
     }
 
+    function isValidAvatar() {
+      let data = request.resource.data;
+      return (!('id' in data) || data.id is string) &&
+             (!('nome' in data) || data.nome is string) &&
+             (!('descricao' in data) || data.descricao is string) &&
+             (!('referenceImageUrl' in data) || data.referenceImageUrl is string) &&
+             (!('createdAt' in data) || data.createdAt is string);
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -243,7 +252,16 @@ service cloud.firestore {
         allow update: if isOwner(userId) && isValidCategory();
         allow delete: if isOwner(userId);
       }
-      
+
+      // Biblioteca de avatares por usuário para o vídeo UGC. 100% client-owned,
+      // sem gestão de admin — mesmo padrão de categories.
+      match /avatars/{avatarId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidAvatar();
+        allow update: if isOwner(userId) && isValidAvatar();
+        allow delete: if isOwner(userId);
+      }
+
       match /products/{productId} {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) && 
