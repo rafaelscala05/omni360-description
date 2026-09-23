@@ -151,7 +151,7 @@ export interface Product {
   _videoUrl?: string;
   _videoSelectedImage?: string;
   _videoError?: string;
-  _ugcVideoScript?: unknown; // TODO(Task 6): import('../services/ugcVideoService').UgcVideoScript once that module exists
+  _ugcVideoScript?: import('../services/ugcVideoService').UgcVideoScript;
   _ugcVideoJobId?: string;
   _ugcVideoStatus?: 'idle' | 'generating_script' | 'script_ready' | 'queued' | 'processing' | 'done' | 'error';
   _ugcVideoUrl?: string;
