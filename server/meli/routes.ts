@@ -39,7 +39,16 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
       });
       return res.status(200).send(oauthPopupHtml('Conta conectada.', true));
     } catch (error) {
-      return res.status(400).send(oauthPopupHtml(sanitizeError(error), false));
+      const message = sanitizeError(error);
+      // Never log code/state or the callback URL: both are credentials. The
+      // sanitized provider message and status are sufficient to diagnose PKCE,
+      // redirect URI, invalid_grant and operator-account failures.
+      console.warn('[meli-oauth] callback failed', {
+        status: statusCode(error),
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+        message,
+      });
+      return res.status(400).send(oauthPopupHtml(message, false));
     }
   });
 

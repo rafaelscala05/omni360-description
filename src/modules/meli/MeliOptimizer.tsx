@@ -79,8 +79,8 @@ export default function MeliOptimizer() {
   const connect = async () => {
     setBusy(true); setError(null);
     try {
-      const ok = await connectMeli();
-      if (!ok) throw new Error('A autorização não foi concluída.');
+      const result = await connectMeli();
+      if (!result.ok) throw new Error(result.message || 'A autorização não foi concluída.');
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Falha ao conectar.');

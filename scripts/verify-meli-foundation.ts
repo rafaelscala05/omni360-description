@@ -19,5 +19,6 @@ const encrypted = encryptSecret('APP_USR-sensitive-token');
 assert.notEqual(encrypted.ciphertext, 'APP_USR-sensitive-token');
 assert.equal(decryptSecret(encrypted), 'APP_USR-sensitive-token');
 assert.equal(sanitizeError(new Error('Authorization: Bearer APP_USR-secret-value')), 'Authorization: Bearer [REDACTED]');
+assert.equal(sanitizeError(new Error('refresh_token=TG-sensitive-value')), 'refresh_token=[REDACTED_TOKEN]');
 
 console.log('MELI foundation verification passed.');

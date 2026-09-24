@@ -66,7 +66,12 @@ export async function meliConnection(): Promise<MeliConnection> {
   return payload.connections[0];
 }
 
-export async function connectMeli(): Promise<boolean> {
+export interface MeliOAuthResult {
+  ok: boolean;
+  message?: string;
+}
+
+export async function connectMeli(): Promise<MeliOAuthResult> {
   const response = await fetch('/api/integrations/meli/oauth/start', { method: 'POST', headers: await headers() });
   const { url } = await handle<{ url: string }>(response);
   const popup = window.open(url, 'meli-oauth', 'width=600,height=760');
@@ -74,19 +79,24 @@ export async function connectMeli(): Promise<boolean> {
 
   return new Promise((resolve) => {
     let settled = false;
-    const finish = (ok: boolean) => {
+    const finish = (result: MeliOAuthResult) => {
       if (settled) return;
       settled = true;
       clearInterval(poll);
       window.removeEventListener('message', onMessage);
-      resolve(ok);
+      resolve(result);
     };
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin || event.data?.source !== 'meli-oauth') return;
-      finish(Boolean(event.data.ok));
+      finish({
+        ok: Boolean(event.data.ok),
+        message: typeof event.data.message === 'string' ? event.data.message : undefined,
+      });
     };
     window.addEventListener('message', onMessage);
-    const poll = window.setInterval(() => { if (popup.closed) finish(false); }, 800);
+    const poll = window.setInterval(() => {
+      if (popup.closed) finish({ ok: false, message: 'A janela de autorização foi fechada antes da conclusão.' });
+    }, 800);
   });
 }
 
