@@ -79,6 +79,7 @@ export async function connectMeli(): Promise<MeliOAuthResult> {
 
   return new Promise((resolve) => {
     let settled = false;
+    let checkingClosedPopup = false;
     const finish = (result: MeliOAuthResult) => {
       if (settled) return;
       settled = true;
@@ -94,8 +95,22 @@ export async function connectMeli(): Promise<MeliOAuthResult> {
       });
     };
     window.addEventListener('message', onMessage);
-    const poll = window.setInterval(() => {
-      if (popup.closed) finish({ ok: false, message: 'A janela de autorização foi fechada antes da conclusão.' });
+    const poll = window.setInterval(async () => {
+      if (!popup.closed || checkingClosedPopup || settled) return;
+      checkingClosedPopup = true;
+      try {
+        // Some OAuth providers isolate the popup with Cross-Origin-Opener-Policy,
+        // which can suppress window.opener/postMessage even though the callback
+        // completed. The backend connection is the source of truth.
+        const connection = await meliConnection();
+        if (connection.connected) {
+          finish({ ok: true, message: 'Conta conectada com sucesso.' });
+          return;
+        }
+        finish({ ok: false, message: 'A janela de autorização foi fechada antes da conclusão.' });
+      } catch {
+        finish({ ok: false, message: 'Não foi possível confirmar a conexão após o fechamento da janela.' });
+      }
     }, 800);
   });
 }
