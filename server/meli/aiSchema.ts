@@ -26,13 +26,23 @@ const STATE_EXPANDING_KEYWORDS = new Set([
 ]);
 
 export function simplifyServingJsonSchema<T>(value: T): T {
-  if (Array.isArray(value)) return value.map((entry) => simplifyServingJsonSchema(entry)) as T;
+  return simplifySchemaNode(value, false);
+}
+
+function simplifySchemaNode<T>(value: T, propertyMap: boolean): T {
+  if (Array.isArray(value)) return value.map((entry) => simplifySchemaNode(entry, false)) as T;
   if (!value || typeof value !== 'object') return value;
 
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
-      .filter(([key]) => !STATE_EXPANDING_KEYWORDS.has(key))
-      .map(([key, nested]) => [key, simplifyServingJsonSchema(nested)]),
+      // Keys under `properties`/`$defs` are business field names, not JSON
+      // Schema keywords. A field named "title" must survive even though the
+      // descriptive keyword `title` is removed inside an actual schema node.
+      .filter(([key]) => propertyMap || !STATE_EXPANDING_KEYWORDS.has(key))
+      .map(([key, nested]) => [
+        key,
+        simplifySchemaNode(nested, key === 'properties' || key === '$defs' || key === 'definitions'),
+      ]),
   ) as T;
 }
 
@@ -40,7 +50,7 @@ export function isServingSchemaComplexityError(error: unknown): boolean {
   const message = error instanceof Error
     ? messageWithCause(error)
     : safeStringify(error);
-  return /too many states|specified schema produces a constraint|schema.*complex/i.test(message);
+  return /too many states|specified schema produces a constraint|schema.*complex|schema.*requires unspecified property|invalid.*schema/i.test(message);
 }
 
 function messageWithCause(error: Error): string {

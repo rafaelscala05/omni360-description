@@ -62,6 +62,14 @@ const servingSchema = simplifyServingJsonSchema({
   type: 'object',
   maxProperties: 20,
   properties: {
+    score_components: {
+      type: 'object',
+      properties: {
+        title: { type: 'number', title: 'Nota do título', minimum: 0, maximum: 100 },
+        description: { type: 'number', description: 'Nota da descrição', minimum: 0, maximum: 100 },
+      },
+      required: ['title', 'description'],
+    },
     findings: {
       type: 'array',
       maxItems: 40,
@@ -72,7 +80,11 @@ const servingSchema = simplifyServingJsonSchema({
 assert.equal('maxProperties' in servingSchema, false);
 assert.equal('maxItems' in servingSchema.properties.findings, false);
 assert.deepEqual(servingSchema.properties.findings.items.properties.confidence, { type: 'number' });
+assert.deepEqual(Object.keys(servingSchema.properties.score_components.properties), ['title', 'description']);
+assert.deepEqual(servingSchema.properties.score_components.properties.title, { type: 'number' });
+assert.deepEqual(servingSchema.properties.score_components.required, ['title', 'description']);
 assert.equal(isServingSchemaComplexityError(new Error('The specified schema produces a constraint that has too many states for serving.')), true);
+assert.equal(isServingSchemaComplexityError(new Error("schema at properties.score_components requires unspecified property 'title'")), true);
 assert.equal(isServingSchemaComplexityError(new Error('Unauthorized')), false);
 
 console.log('MELI audit verification passed.');
