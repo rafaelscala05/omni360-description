@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'react';
-import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, Link as LinkIcon, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3, Plug, GraduationCap, Gift, Building2, Zap, Target } from 'lucide-react';
+import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, Link as LinkIcon, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3, Plug, GraduationCap, Gift, Building2, Zap, Target, Store } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import logoAlfreds from './assets/brand/logo-alfreds-produtos.png';
 import AgentHomeScreen from './modules/agent/AgentHomeScreen';
@@ -38,6 +38,7 @@ const CategoryManager = lazy(() => import('./components/categories/CategoryManag
 const CategoryImportModal = lazy(() => import('./components/modals/CategoryImportModal'));
 const ProductEditModal = lazy(() => import('./components/modals/ProductEditModal'));
 const ContentApp = lazy(() => import('./modules/content/ContentApp'));
+const MeliOptimizer = lazy(() => import('./modules/meli/MeliOptimizer'));
 import CreditPurchaseModal from './components/modals/CreditPurchaseModal';
 import { Category, Product, AttributeValue, getProductStatusFlags, ProductModalTab } from './types/models';
 import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate, suggestProductAttributes } from './services/productService';
@@ -218,7 +219,7 @@ export default function App() {
   useEffect(() => { productsRef.current = products; }, [products]);
   const [originalHeaders, setOriginalHeaders] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [mainView, setMainView] = useState<'home' | 'products' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company' | 'missoes'>('products');
+  const [mainView, setMainView] = useState<'home' | 'products' | 'meli' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company' | 'missoes'>('products');
   // Top-level workspace: the Product agent (this App) or the Content agency module.
   const [workspace, setWorkspace] = useState<'product' | 'content'>('product');
   const [exportModel, setExportModel] = useState<'standard' | 'tinyerp'>('standard');
@@ -3393,6 +3394,13 @@ Retorne APENAS um JSON válido no seguinte formato:
             <Layout className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Produtos'}
           </button>
           <button
+            onClick={() => { setMainView('meli'); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'meli' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FFE600] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
+            title="Agente MELI"
+          >
+            <Store className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Agente MELI'}
+          </button>
+          <button
             onClick={() => { setMainView('categories'); setIsSidebarOpen(false); }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'categories' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
             title="Categorias"
@@ -3648,6 +3656,10 @@ Retorne APENAS um JSON válido no seguinte formato:
             </div>
           ) : mainView === 'history' ? (
             renderHistoryView()
+          ) : mainView === 'meli' ? (
+            <Suspense fallback={<div className="h-full flex items-center justify-center text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
+              <MeliOptimizer />
+            </Suspense>
           ) : mainView === 'integrations' ? (
             <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} onTinyImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getTinyPushPayload={buildTinyPushPayload} tinyPushCandidateCount={tinySelectedProducts(products).length} onBlingImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getBlingPushPayload={buildBlingPushPayload} getBlingPushCandidates={getBlingPushCandidates} onBlingPushed={handleBlingPushed} onIdworksImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getIdworksPushPayload={buildIdworksPushPayload} getIdworksPushCandidates={getIdworksPushCandidates} onIdworksPushed={handleIdworksPushed} />
           ) : mainView === 'tutorial' ? (

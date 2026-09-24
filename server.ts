@@ -27,6 +27,7 @@ import { registerIdworksRoutes } from "./server/idworksAgent";
 import { registerIdworksImportRoutes, startIdworksScheduler } from "./server/idworksImportWorker";
 import { registerIdworksWebhookRoutes } from "./server/idworksWebhook";
 import { registerMercadoLivreWebhookRoutes } from "./server/mercadoLivreWebhook";
+import { registerMeliRoutes } from "./server/meli/routes";
 import { registerBlogPublic } from "./server/blogPublic";
 import { registerBlogAdminRoutes } from "./server/blogAdmin";
 import { registerMetaEventsRoutes } from "./server/metaEvents";
@@ -160,6 +161,7 @@ async function startServer() {
   registerIdworksImportRoutes(app, { verifyFirebaseToken });
   registerIdworksWebhookRoutes(app, { verifyFirebaseToken });
   registerMercadoLivreWebhookRoutes(app);
+  registerMeliRoutes(app, { verifyFirebaseToken });
   registerMetaEventsRoutes(app);
   registerTiktokEventsRoutes(app);
 

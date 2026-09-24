@@ -81,6 +81,14 @@ env:
     value: "4101535881673673"
   - variable: MERCADOLIVRE_CLIENT_SECRET
     secret: mercadolivre-client-secret
+  # Agente MELI — usa o mesmo aplicativo, agora com OAuth de vendedores. A URI
+  # abaixo precisa ser cadastrada exatamente assim no DevCenter.
+  - variable: MELI_REDIRECT_URI
+    value: "https://alfreds--project-95918f0d-50bb-4f66-a0d.us-east4.hosted.app/api/integrations/meli/oauth/callback"
+  - variable: MELI_PKCE_ENABLED
+    value: "true"
+  - variable: MELI_TOKEN_ENCRYPTION_KEY
+    secret: meli-token-encryption-key
 
   # CRM admin (/admin). Allowlist de bootstrap do acesso — resolve o ovo-e-galinha
   # do custom claim, que só pode ser concedido com uma service account.

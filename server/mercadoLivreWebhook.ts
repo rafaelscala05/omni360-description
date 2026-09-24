@@ -8,7 +8,14 @@ import express from 'express';
 
 export function registerMercadoLivreWebhookRoutes(app: express.Express): void {
   app.post('/api/mercadolivre/webhook', (req, res) => {
-    console.log('[mercadolivre-webhook] notificação recebida (ainda não processada):', JSON.stringify(req.body));
+    // Acknowledge quickly. Never log the entire external payload: only the
+    // routing fields needed to diagnose delivery. Processing will be wired to
+    // the incremental sync worker in a later phase.
+    console.log('[mercadolivre-webhook] notificação recebida', {
+      topic: typeof req.body?.topic === 'string' ? req.body.topic : null,
+      userId: req.body?.user_id != null ? String(req.body.user_id) : null,
+      resource: typeof req.body?.resource === 'string' ? req.body.resource.slice(0, 160) : null,
+    });
     res.status(200).end();
   });
 }

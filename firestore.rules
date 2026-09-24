@@ -240,6 +240,24 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      // Agente MELI. Todas as leituras e escritas passam pelos endpoints
+      // autenticados do backend; snapshots/auditoria são imutáveis no cliente.
+      match /meli_listings/{itemId} {
+        allow read, write: if false;
+      }
+      match /meli_listing_snapshots/{snapshotId} {
+        allow read, write: if false;
+      }
+      match /meli_category_schemas/{categoryId} {
+        allow read, write: if false;
+      }
+      match /meli_jobs/{jobId} {
+        allow read, write: if false;
+      }
+      match /meli_audit_events/{eventId} {
+        allow read, write: if false;
+      }
+
       match /credit_logs/{logId} {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId);

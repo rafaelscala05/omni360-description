@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "verify:meli": "node --import tsx scripts/verify-meli-foundation.ts",
     "dev:content-agent": "langgraphjs dev --host localhost --port 8123"
   },
   "dependencies": {
