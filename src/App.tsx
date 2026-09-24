@@ -281,6 +281,7 @@ export default function App() {
   const [hasOperationsAgent, setHasOperationsAgent] = useState<boolean>(false);
   const [hasVideoModule, setHasVideoModule] = useState<boolean>(false);
   const [hasBlogModule, setHasBlogModule] = useState<boolean>(false);
+  const [hasMeliListingOptimizer, setHasMeliListingOptimizer] = useState<boolean>(false);
   // Coorte da jornada de missão (users/{uid}.cohort). null = ainda não lida ou conta legada.
   const [cohort, setCohort] = useState<string | null>(null);
   const [missao, setMissao] = useState<MissionState | null>(null);
@@ -443,6 +444,13 @@ export default function App() {
   const mainViewRef = useRef(mainView);
   mainViewRef.current = mainView;
 
+  // A permissão é observada em tempo real. Se ela for removida enquanto o
+  // usuário estiver no módulo, volta ao catálogo sem manter a tela protegida
+  // montada no client.
+  useEffect(() => {
+    if (mainView === 'meli' && !hasMeliListingOptimizer) setMainView('products');
+  }, [hasMeliListingOptimizer, mainView]);
+
   // Aterrissagem na trilha: quem é da coorte e já concluiu a primeira missão
   // abre na trilha — uma vez por sessão. `jornadaConcluida` chega de forma
   // assíncrona (snapshot do Firestore), então o usuário pode já ter saído da
@@ -535,6 +543,7 @@ export default function App() {
               setHasOperationsAgent(snap.data().modules?.operationsAgent === true);
               setHasVideoModule(snap.data().modules?.video === true);
               setHasBlogModule(snap.data().modules?.blog === true);
+              setHasMeliListingOptimizer(snap.data().modules?.meliListingOptimizer === true);
               setCohort(snap.data().cohort ?? null);
               setOnboardingCompleted(snap.data().onboarding?.completed === true);
               setProductOnboardingPromptShown(snap.data().productOnboarding?.promptShown === true);
@@ -3393,13 +3402,15 @@ Retorne APENAS um JSON válido no seguinte formato:
           >
             <Layout className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Produtos'}
           </button>
-          <button
-            onClick={() => { setMainView('meli'); setIsSidebarOpen(false); }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'meli' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FFE600] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
-            title="Agente MELI"
-          >
-            <Store className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Agente MELI'}
-          </button>
+          {hasMeliListingOptimizer && (
+            <button
+              onClick={() => { setMainView('meli'); setIsSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'meli' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FFE600] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
+              title="Agente MELI"
+            >
+              <Store className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Agente MELI'}
+            </button>
+          )}
           <button
             onClick={() => { setMainView('categories'); setIsSidebarOpen(false); }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'categories' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
@@ -3656,7 +3667,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             </div>
           ) : mainView === 'history' ? (
             renderHistoryView()
-          ) : mainView === 'meli' ? (
+          ) : mainView === 'meli' && hasMeliListingOptimizer ? (
             <Suspense fallback={<div className="h-full flex items-center justify-center text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
               <MeliOptimizer />
             </Suspense>

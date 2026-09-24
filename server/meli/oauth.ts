@@ -10,6 +10,8 @@ export const MELI_SECRET_REF = (uid: string) =>
   adminDb.collection('users').doc(uid).collection('integration_secrets').doc('meli');
 export const MELI_STATUS_REF = (uid: string) =>
   adminDb.collection('users').doc(uid).collection('settings').doc('meli');
+export const MELI_SELLER_REGISTRY_REF = (sellerId: string) =>
+  adminDb.collection('meli_seller_connections').doc(sellerId);
 const OAUTH_STATE_REF = (state: string) => adminDb.collection('oauth_states').doc(`meli_${state}`);
 
 interface TokenResponse {
@@ -55,17 +57,20 @@ async function persistTokens(uid: string, tokens: TokenResponse, siteId: string,
     createdAt: existingCreatedAt || now,
     updatedAt: now,
   };
-  await MELI_SECRET_REF(uid).set(secret);
-  await MELI_STATUS_REF(uid).set({
-    connected: true,
-    validated: true,
-    sellerId: secret.sellerId,
-    siteId,
-    scopes: secret.scopes,
-    status: 'active',
-    mode: 'audit_only',
-    updatedAt: now,
-  }, { merge: true });
+  const batch = adminDb.batch();
+  batch.set(MELI_SECRET_REF(uid), secret);
+  batch.set(MELI_STATUS_REF(uid), {
+      connected: true,
+      validated: true,
+      sellerId: secret.sellerId,
+      siteId,
+      scopes: secret.scopes,
+      status: 'active',
+      mode: 'audit_only',
+      updatedAt: now,
+    }, { merge: true });
+  batch.set(MELI_SELLER_REGISTRY_REF(secret.sellerId), { uid, sellerId: secret.sellerId, siteId, status: 'active', updatedAt: now });
+  await batch.commit();
 }
 
 async function fetchCurrentUser(accessToken: string): Promise<{ id: number | string; site_id?: string }> {

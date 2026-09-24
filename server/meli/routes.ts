@@ -1,10 +1,13 @@
 import type express from 'express';
 import { adminDb } from '../firebaseAdmin';
 import { meliConfigured } from './config';
-import { completeAuthorization, createAuthorizationUrl, MELI_SECRET_REF, MELI_STATUS_REF, oauthPopupHtml, type VerifyFirebaseToken } from './oauth';
-import { createSyncJob, MELI_JOBS_REF, recordAudit, runSyncJob } from './sync';
+import { completeAuthorization, createAuthorizationUrl, MELI_SECRET_REF, MELI_SELLER_REGISTRY_REF, MELI_STATUS_REF, oauthPopupHtml, type VerifyFirebaseToken } from './oauth';
+import { createSyncJob, MELI_JOBS_REF, recordAudit, scheduleSyncJob } from './sync';
 import type { MeliConnectionSecret, MeliListingStatus } from './types';
 import { sanitizeError } from './utils';
+import { createAnalysis, getLatestAnalysis, scheduleAnalysis } from './analysis';
+import { createProposal, decideChange, getLatestProposal, getProposal } from './proposals';
+import { getMeliOperationalMetrics } from './operations';
 
 interface Deps { verifyFirebaseToken: VerifyFirebaseToken }
 
@@ -17,9 +20,18 @@ function statusCode(error: any): number {
 }
 
 export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }: Deps): void {
+  const verifyMeliModule = async (req: express.Request) => {
+    const auth = await verifyFirebaseToken(req);
+    const user = await adminDb.collection('users').doc(auth.uid).get();
+    if (user.data()?.modules?.meliListingOptimizer !== true) {
+      throw Object.assign(new Error('Módulo de otimização MELI não habilitado para esta conta.'), { status: 403 });
+    }
+    return auth;
+  };
+
   app.post('/api/integrations/meli/oauth/start', async (req, res) => {
     try {
-      const { uid } = await verifyFirebaseToken(req);
+      const { uid } = await verifyMeliModule(req);
       return res.json({ url: await createAuthorizationUrl(uid) });
     } catch (error) {
       return res.status(statusCode(error)).json({ message: sanitizeError(error) });
@@ -54,7 +66,7 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
 
   app.get('/api/integrations/meli/connections', async (req, res) => {
     try {
-      const { uid } = await verifyFirebaseToken(req);
+      const { uid } = await verifyMeliModule(req);
       const [secretSnap, statusSnap] = await Promise.all([MELI_SECRET_REF(uid).get(), MELI_STATUS_REF(uid).get()]);
       const secret = secretSnap.data() as MeliConnectionSecret | undefined;
       const status = statusSnap.data() || {};
@@ -76,15 +88,20 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
 
   app.delete('/api/integrations/meli/connections/:connectionId', async (req, res) => {
     try {
-      const { uid } = await verifyFirebaseToken(req);
+      const { uid } = await verifyMeliModule(req);
       if (req.params.connectionId !== 'primary') return res.status(404).json({ message: 'Conexão não encontrada.' });
-      await MELI_SECRET_REF(uid).delete();
-      await MELI_STATUS_REF(uid).set({
+      const existing = await MELI_SECRET_REF(uid).get();
+      const sellerId = existing.data()?.sellerId ? String(existing.data()?.sellerId) : null;
+      const batch = adminDb.batch();
+      batch.delete(MELI_SECRET_REF(uid));
+      batch.set(MELI_STATUS_REF(uid), {
         connected: false,
         validated: false,
         status: 'revoked',
         updatedAt: new Date().toISOString(),
       }, { merge: true });
+      if (sellerId) batch.delete(MELI_SELLER_REGISTRY_REF(sellerId));
+      await batch.commit();
       await recordAudit(uid, 'meli.connection.disconnected', 'meli_connection', 'primary');
       return res.json({ ok: true });
     } catch (error) {
@@ -94,11 +111,11 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
 
   app.post('/api/meli/sync', async (req, res) => {
     try {
-      const { uid } = await verifyFirebaseToken(req);
+      const { uid } = await verifyMeliModule(req);
       const requested = Array.isArray(req.body?.statuses) ? req.body.statuses : [];
       const statuses = requested.filter((value: unknown): value is MeliListingStatus => allowedStatuses.has(value as MeliListingStatus));
       const job = await createSyncJob(uid, { statuses: statuses.length ? statuses : undefined });
-      setImmediate(() => void runSyncJob(uid, job.id));
+      scheduleSyncJob(uid, job.id);
       return res.status(202).json({ job });
     } catch (error) {
       return res.status(statusCode(error)).json({ message: sanitizeError(error) });
@@ -107,9 +124,9 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
 
   app.post('/api/meli/listings/:itemId/sync', async (req, res) => {
     try {
-      const { uid } = await verifyFirebaseToken(req);
+      const { uid } = await verifyMeliModule(req);
       const job = await createSyncJob(uid, { itemId: req.params.itemId });
-      setImmediate(() => void runSyncJob(uid, job.id));
+      scheduleSyncJob(uid, job.id);
       return res.status(202).json({ job });
     } catch (error) {
       return res.status(statusCode(error)).json({ message: sanitizeError(error) });
@@ -118,7 +135,7 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
 
   app.get('/api/meli/listings', async (req, res) => {
     try {
-      const { uid } = await verifyFirebaseToken(req);
+      const { uid } = await verifyMeliModule(req);
       const status = typeof req.query.status === 'string' ? req.query.status : '';
       const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
       const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 100));
@@ -135,7 +152,7 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
 
   app.get('/api/meli/listings/:itemId', async (req, res) => {
     try {
-      const { uid } = await verifyFirebaseToken(req);
+      const { uid } = await verifyMeliModule(req);
       const snap = await LISTINGS_REF(uid).doc(req.params.itemId.toUpperCase()).get();
       if (!snap.exists) return res.status(404).json({ message: 'Anúncio não encontrado.' });
       return res.json({ listing: snap.data() });
@@ -144,12 +161,89 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
     }
   });
 
+  app.post('/api/meli/listings/:itemId/analyses', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      const analysis = await createAnalysis(uid, req.params.itemId);
+      scheduleAnalysis(uid, analysis.id);
+      await recordAudit(uid, 'meli.analysis.requested', 'meli_listing_analysis', analysis.id, { listingId: analysis.listingId });
+      return res.status(202).json({ analysis });
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
+  app.get('/api/meli/listings/:itemId/analyses/latest', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      const analysis = await getLatestAnalysis(uid, req.params.itemId);
+      if (!analysis) return res.status(404).json({ message: 'Nenhuma análise encontrada para este anúncio.' });
+      return res.json({ analysis });
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
+  app.post('/api/meli/listings/:itemId/proposals', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      const analysisId = typeof req.body?.analysisId === 'string' ? req.body.analysisId : undefined;
+      return res.status(201).json(await createProposal(uid, req.params.itemId, analysisId));
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
+  app.get('/api/meli/listings/:itemId/proposals/latest', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      const result = await getLatestProposal(uid, req.params.itemId);
+      if (!result) return res.status(404).json({ message: 'Nenhuma proposta encontrada para este anúncio.' });
+      return res.json(result);
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
+  app.get('/api/meli/proposals/:proposalId', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      const result = await getProposal(uid, req.params.proposalId);
+      if (!result) return res.status(404).json({ message: 'Proposta não encontrada.' });
+      return res.json(result);
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
+  app.patch('/api/meli/proposals/:proposalId/changes/:changeId', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      const approvalStatus = req.body?.approvalStatus;
+      if (approvalStatus !== 'approved' && approvalStatus !== 'rejected') {
+        return res.status(422).json({ message: 'approvalStatus deve ser approved ou rejected.' });
+      }
+      return res.json(await decideChange(uid, req.params.proposalId, req.params.changeId, approvalStatus, req.body?.confirmed === true));
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
   app.get('/api/meli/jobs/:jobId', async (req, res) => {
     try {
-      const { uid } = await verifyFirebaseToken(req);
+      const { uid } = await verifyMeliModule(req);
       const snap = await MELI_JOBS_REF(uid).doc(req.params.jobId).get();
       if (!snap.exists) return res.status(404).json({ message: 'Job não encontrado.' });
       return res.json({ job: snap.data() });
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
+  app.get('/api/meli/operations/metrics', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      return res.json({ metrics: await getMeliOperationalMetrics(uid) });
     } catch (error) {
       return res.status(statusCode(error)).json({ message: sanitizeError(error) });
     }

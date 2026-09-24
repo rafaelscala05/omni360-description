@@ -67,12 +67,32 @@ export interface MeliListingRecord {
   shipping: unknown;
   performance: unknown | null;
   catalogQuality: unknown | null;
+  userProduct?: unknown | null;
+  userProductFamily?: unknown | null;
+  relatedItemIds?: string[];
   rawItem: unknown;
   contentHash: string;
   sourceLastUpdatedAt: string | null;
   lastSyncedAt: string;
   createdAt: string;
   updatedAt: string;
+  analysisSummary?: {
+    analysisId: string;
+    status: string;
+    alfredsScore: number;
+    riskLevel: 'low' | 'medium' | 'high' | 'blocked';
+    findingCount: number;
+    completedAt: string;
+    contentHash: string;
+  };
+  proposalSummary?: {
+    proposalId: string;
+    version: number;
+    status: MeliProposalStatus;
+    changeCount: number;
+    updatedAt: string;
+  };
+  proposalVersion?: number;
 }
 
 export interface MeliSyncJob {
@@ -91,4 +111,137 @@ export interface MeliSyncJob {
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
+  processingLeaseId?: string | null;
+  processingLeaseUntil?: number | null;
+}
+
+export type MeliFindingSeverity = 'info' | 'low' | 'medium' | 'high' | 'blocked';
+export type MeliFindingSource = 'listing' | 'category_schema' | 'meli_performance' | 'image' | 'operator' | 'ai';
+
+export interface MeliAnalysisFinding {
+  code: string;
+  fieldPath: string;
+  severity: MeliFindingSeverity;
+  message: string;
+  evidence: string[];
+  source: MeliFindingSource;
+  confidence: number;
+  requiresConfirmation: boolean;
+}
+
+export interface MeliAnalysisQuestion {
+  fieldPath: string;
+  question: string;
+  reason: string;
+}
+
+export interface MeliScoreComponents {
+  title: number;
+  description: number;
+  technicalCompleteness: number;
+  consistency: number;
+  images: number;
+}
+
+export interface MeliImageDiagnostic {
+  pictureId: string;
+  order: number;
+  url: string | null;
+  width: number | null;
+  height: number | null;
+  perceptualHash: string | null;
+  action: 'keep' | 'reorder' | 'remove' | 'replace' | 'create' | 'needs_review';
+  issues: string[];
+  strengths: string[];
+  confidence: number;
+}
+
+export interface MeliAnalysisRecord {
+  id: string;
+  listingId: string;
+  snapshotId: string | null;
+  contentHash: string;
+  rulesetVersion: string;
+  modelProvider: string | null;
+  modelName: string | null;
+  promptVersion: string | null;
+  officialScore: number | null;
+  alfredsScore: number | null;
+  scoreComponents: MeliScoreComponents | null;
+  riskLevel: 'low' | 'medium' | 'high' | 'blocked';
+  summary: string;
+  findings: MeliAnalysisFinding[];
+  questions: MeliAnalysisQuestion[];
+  suggestions: {
+    title: string | null;
+    descriptionPlainText: string | null;
+    attributes: Array<{ id: string; valueName: string; valueId: string | null; reason: string; evidence: string[] }>;
+    saleTerms: Array<{ id: string; valueName: string; valueId: string | null; reason: string; evidence: string[] }>;
+    picturePlan: Array<{ pictureId: string | null; action: MeliImageDiagnostic['action']; reason: string }>;
+  };
+  imageDiagnostics: MeliImageDiagnostic[];
+  aiStatus: 'pending' | 'completed' | 'failed' | 'not_configured';
+  aiError: string | null;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'stale';
+  createdAt: string;
+  completedAt: string | null;
+  processingLeaseId?: string | null;
+  processingLeaseUntil?: number | null;
+}
+
+export type MeliProposalStatus =
+  | 'draft'
+  | 'awaiting_review'
+  | 'partially_approved'
+  | 'approved'
+  | 'rejected'
+  | 'stale';
+export type MeliChangeRisk = 'low' | 'medium' | 'high' | 'blocked';
+export type MeliApprovalStatus = 'pending' | 'approved' | 'rejected';
+
+export interface MeliProposalImpactScope {
+  userProductId: string | null;
+  familyId: string | null;
+  catalogProductId: string | null;
+  variationCount: number;
+  relatedItemIds: string[];
+  catalogControlledFields: string[];
+  warnings: string[];
+}
+
+export interface MeliListingChange {
+  id: string;
+  proposalId: string;
+  fieldPath: string;
+  resource: 'item' | 'description';
+  changeType: 'add' | 'replace' | 'remove' | 'reorder';
+  oldValue: unknown;
+  newValue: unknown;
+  reason: string;
+  evidence: string[];
+  confidence: number;
+  riskLevel: MeliChangeRisk;
+  requiresConfirmation: boolean;
+  approvalStatus: MeliApprovalStatus;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  createdAt: string;
+}
+
+export interface MeliListingProposal {
+  id: string;
+  listingId: string;
+  analysisId: string;
+  baseSnapshotId: string | null;
+  baseContentHash: string;
+  version: number;
+  status: MeliProposalStatus;
+  summary: string;
+  impactScope: MeliProposalImpactScope;
+  createdByType: 'user' | 'ai' | 'rule';
+  changeCount: number;
+  approvedCount: number;
+  rejectedCount: number;
+  createdAt: string;
+  updatedAt: string;
 }

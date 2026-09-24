@@ -28,6 +28,7 @@ import { registerIdworksImportRoutes, startIdworksScheduler } from "./server/idw
 import { registerIdworksWebhookRoutes } from "./server/idworksWebhook";
 import { registerMercadoLivreWebhookRoutes } from "./server/mercadoLivreWebhook";
 import { registerMeliRoutes } from "./server/meli/routes";
+import { startMeliScheduler } from "./server/meli/scheduler";
 import { registerBlogPublic } from "./server/blogPublic";
 import { registerBlogAdminRoutes } from "./server/blogAdmin";
 import { registerMetaEventsRoutes } from "./server/metaEvents";
@@ -538,6 +539,9 @@ async function startServer() {
   // IdWorks background import/sync worker (production also backed by Cloud Scheduler
   // hitting /api/idworks/cron/tick).
   startIdworksScheduler();
+
+  // MELI: retoma jobs/análises sem lease válido após restart e mantém a fila limitada.
+  startMeliScheduler();
 
   // CRM: reconcilia os marcos da jornada a partir do estado do Firestore.
   startCrmScheduler();

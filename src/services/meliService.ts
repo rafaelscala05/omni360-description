@@ -34,6 +34,138 @@ export interface MeliListing {
   userProductId: string | null;
   catalogProductId: string | null;
   lastSyncedAt: string;
+  analysisSummary?: {
+    analysisId: string;
+    status: string;
+    alfredsScore: number;
+    riskLevel: MeliRiskLevel;
+    findingCount: number;
+    completedAt: string;
+    contentHash: string;
+  };
+  proposalSummary?: {
+    proposalId: string;
+    version: number;
+    status: MeliProposalStatus;
+    changeCount: number;
+    updatedAt: string;
+  };
+}
+
+export type MeliRiskLevel = 'low' | 'medium' | 'high' | 'blocked';
+export type MeliFindingSeverity = 'info' | 'low' | 'medium' | 'high' | 'blocked';
+
+export interface MeliAnalysisFinding {
+  code: string;
+  fieldPath: string;
+  severity: MeliFindingSeverity;
+  message: string;
+  evidence: string[];
+  source: string;
+  confidence: number;
+  requiresConfirmation: boolean;
+}
+
+export interface MeliAnalysis {
+  id: string;
+  listingId: string;
+  contentHash: string;
+  officialScore: number | null;
+  alfredsScore: number | null;
+  scoreComponents: {
+    title: number;
+    description: number;
+    technicalCompleteness: number;
+    consistency: number;
+    images: number;
+  } | null;
+  riskLevel: MeliRiskLevel;
+  summary: string;
+  findings: MeliAnalysisFinding[];
+  questions: Array<{ fieldPath: string; question: string; reason: string }>;
+  suggestions: {
+    title: string | null;
+    descriptionPlainText: string | null;
+    attributes: Array<{ id: string; valueName: string; valueId: string | null; reason: string; evidence: string[] }>;
+    saleTerms: Array<{ id: string; valueName: string; valueId: string | null; reason: string; evidence: string[] }>;
+    picturePlan: Array<{ pictureId: string | null; action: string; reason: string }>;
+  };
+  imageDiagnostics: Array<{
+    pictureId: string;
+    order: number;
+    url: string | null;
+    width: number | null;
+    height: number | null;
+    action: string;
+    issues: string[];
+    strengths: string[];
+    confidence: number;
+  }>;
+  aiStatus: 'pending' | 'completed' | 'failed' | 'not_configured';
+  aiError: string | null;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'stale';
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export type MeliProposalStatus = 'draft' | 'awaiting_review' | 'partially_approved' | 'approved' | 'rejected' | 'stale';
+export type MeliChangeRisk = 'low' | 'medium' | 'high' | 'blocked';
+export type MeliApprovalStatus = 'pending' | 'approved' | 'rejected';
+
+export interface MeliProposal {
+  id: string;
+  listingId: string;
+  analysisId: string;
+  baseSnapshotId: string | null;
+  baseContentHash: string;
+  version: number;
+  status: MeliProposalStatus;
+  summary: string;
+  impactScope: {
+    userProductId: string | null;
+    familyId: string | null;
+    catalogProductId: string | null;
+    variationCount: number;
+    relatedItemIds: string[];
+    catalogControlledFields: string[];
+    warnings: string[];
+  };
+  changeCount: number;
+  approvedCount: number;
+  rejectedCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MeliProposalChange {
+  id: string;
+  proposalId: string;
+  fieldPath: string;
+  resource: 'item' | 'description';
+  changeType: 'add' | 'replace' | 'remove' | 'reorder';
+  oldValue: unknown;
+  newValue: unknown;
+  reason: string;
+  evidence: string[];
+  confidence: number;
+  riskLevel: MeliChangeRisk;
+  requiresConfirmation: boolean;
+  approvalStatus: MeliApprovalStatus;
+  approvedBy: string | null;
+  approvedAt: string | null;
+}
+
+export interface MeliProposalResult { proposal: MeliProposal; changes: MeliProposalChange[] }
+
+export interface MeliOperationalMetrics {
+  listings: { total: number; byStatus: Record<string, number> };
+  jobs: { total: number; byStatus: Record<string, number> };
+  analyses: { total: number; byStatus: Record<string, number> };
+  proposals: { total: number; byStatus: Record<string, number> };
+  webhooks: { total: number; byStatus: Record<string, number>; byTopic: Record<string, number> };
+  apiToday: { calls: number; retries: number; rateLimited: number; averageLatencyMs: number };
+  limiter: { active: number; limit: number; queued: number; cooldownUntil: number };
+  generatedAt: string;
 }
 
 export interface MeliSyncJob {
@@ -139,4 +271,47 @@ export async function listMeliListings(filters: { status?: string; search?: stri
   params.set('limit', '200');
   const response = await fetch(`/api/meli/listings?${params.toString()}`, { headers: await headers() });
   return handle(response);
+}
+
+export async function startMeliAnalysis(itemId: string): Promise<MeliAnalysis> {
+  const response = await fetch(`/api/meli/listings/${encodeURIComponent(itemId)}/analyses`, {
+    method: 'POST', headers: await headers(),
+  });
+  return (await handle<{ analysis: MeliAnalysis }>(response)).analysis;
+}
+
+export async function getLatestMeliAnalysis(itemId: string): Promise<MeliAnalysis | null> {
+  const response = await fetch(`/api/meli/listings/${encodeURIComponent(itemId)}/analyses/latest`, { headers: await headers() });
+  if (response.status === 404) return null;
+  return (await handle<{ analysis: MeliAnalysis }>(response)).analysis;
+}
+
+export async function createMeliProposal(itemId: string, analysisId?: string): Promise<MeliProposalResult> {
+  const response = await fetch(`/api/meli/listings/${encodeURIComponent(itemId)}/proposals`, {
+    method: 'POST', headers: await headers(), body: JSON.stringify({ analysisId }),
+  });
+  return handle(response);
+}
+
+export async function getLatestMeliProposal(itemId: string): Promise<MeliProposalResult | null> {
+  const response = await fetch(`/api/meli/listings/${encodeURIComponent(itemId)}/proposals/latest`, { headers: await headers() });
+  if (response.status === 404) return null;
+  return handle(response);
+}
+
+export async function decideMeliProposalChange(
+  proposalId: string,
+  changeId: string,
+  approvalStatus: Exclude<MeliApprovalStatus, 'pending'>,
+  confirmed = false,
+): Promise<MeliProposalResult> {
+  const response = await fetch(`/api/meli/proposals/${encodeURIComponent(proposalId)}/changes/${encodeURIComponent(changeId)}`, {
+    method: 'PATCH', headers: await headers(), body: JSON.stringify({ approvalStatus, confirmed }),
+  });
+  return handle(response);
+}
+
+export async function getMeliOperationalMetrics(): Promise<MeliOperationalMetrics> {
+  const response = await fetch('/api/meli/operations/metrics', { headers: await headers() });
+  return (await handle<{ metrics: MeliOperationalMetrics }>(response)).metrics;
 }
