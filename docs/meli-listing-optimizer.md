@@ -19,6 +19,8 @@ Não há rota de escrita em anúncios nesta fase.
   descrição, imagens, variações, catálogo, User Products e warnings.
 - Score Alfreds separado do score oficial, com cinco componentes ponderados.
 - Análise textual estruturada por Gemini, validada com JSON Schema e Zod.
+- Schema de serving simplificado para evitar rejeição por complexidade; o
+  contrato Zod completo continua validando a resposta e há retry em JSON mode.
 - Diagnóstico visual de até seis imagens por chamada, com resolução, hash
   perceptual, duplicidade e plano de melhoria.
 - Sugestões candidatas de título, descrição, atributos, termos e imagens.
@@ -28,6 +30,9 @@ Não há rota de escrita em anúncios nesta fase.
 - Fila local com no máximo duas análises simultâneas e auditoria do resultado.
 - Propostas versionadas vinculadas ao snapshot e `contentHash` da auditoria.
 - Diff atual versus proposto para descrição, título, atributos, termos e plano de imagens.
+- Elegibilidade compartilhada entre UI e backend: valores iguais e ações apenas
+  diagnósticas não viram mudanças; limpezas seguras de HTML e título podem ser
+  propostas deterministicamente mesmo quando a IA estiver indisponível.
 - Matriz de risco, confirmação factual e aprovação/rejeição auditada por campo.
 - Invalidação imediata de propostas quando o anúncio sincronizado muda.
 - Alcance calculado para catálogo, variações, User Product e anúncios relacionados.

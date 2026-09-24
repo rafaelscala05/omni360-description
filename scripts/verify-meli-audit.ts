@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { isServingSchemaComplexityError, simplifyServingJsonSchema } from '../server/meli/aiSchema';
 import { collectSchemaAttributes, evidenceSupportsValue, runListingRules, validateSuggestedDescription, validateSuggestedTitle } from '../server/meli/rules';
 import type { MeliListingRecord } from '../server/meli/types';
 
@@ -56,5 +57,22 @@ assert.equal(validateSuggestedDescription('<b>Tênis</b>', listing), null);
 assert.equal(validateSuggestedDescription('Tênis impermeável tamanho 42.', listing), null);
 assert.equal(validateSuggestedTitle('Tênis Acme Runner 42', listing), 'Tênis Acme Runner 42');
 assert.equal(validateSuggestedTitle('Tênis Acme Premium 42', listing), null);
+
+const servingSchema = simplifyServingJsonSchema({
+  type: 'object',
+  maxProperties: 20,
+  properties: {
+    findings: {
+      type: 'array',
+      maxItems: 40,
+      items: { type: 'object', properties: { confidence: { type: 'number', minimum: 0, maximum: 1 } } },
+    },
+  },
+});
+assert.equal('maxProperties' in servingSchema, false);
+assert.equal('maxItems' in servingSchema.properties.findings, false);
+assert.deepEqual(servingSchema.properties.findings.items.properties.confidence, { type: 'number' });
+assert.equal(isServingSchemaComplexityError(new Error('The specified schema produces a constraint that has too many states for serving.')), true);
+assert.equal(isServingSchemaComplexityError(new Error('Unauthorized')), false);
 
 console.log('MELI audit verification passed.');

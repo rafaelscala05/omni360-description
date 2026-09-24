@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { parseMeliWebhookNotification } from '../server/mercadoLivreWebhook';
 import { proposalStatus, riskForChange } from '../server/meli/proposals';
 import { acquireMeliSlot, meliLimiterSnapshot, reportMeliResponse } from '../server/meli/rateLimit';
+import { cleanTitleCandidate, collectProposalCandidates, countProposalCandidates, plainTextDescriptionCandidate } from '../src/modules/meli/proposalCandidates';
 
 assert.deepEqual(riskForChange('title'), { riskLevel: 'high', requiresConfirmation: true });
 assert.deepEqual(riskForChange('attributes.GTIN'), { riskLevel: 'high', requiresConfirmation: true });
@@ -12,6 +13,26 @@ assert.equal(proposalStatus(['rejected', 'pending']), 'awaiting_review');
 assert.equal(proposalStatus(['approved', 'rejected']), 'partially_approved');
 assert.equal(proposalStatus(['rejected', 'rejected']), 'rejected');
 assert.equal(proposalStatus(['approved', 'approved']), 'approved');
+
+assert.equal(cleanTitleCandidate('Oferta Tênis Acme!!! ⭐'), 'Tênis Acme');
+assert.equal(plainTextDescriptionCandidate('<p>Marca: Acme &amp; Cia</p><p>Modelo 42</p>'), 'Marca: Acme & Cia\nModelo 42');
+const deterministicCandidates = collectProposalCandidates({
+  title: 'Oferta Tênis Acme!!! ⭐', soldQuantity: 0,
+  descriptionPlainText: '<p>Marca: Acme</p>', attributes: [], saleTerms: [],
+}, {
+  findings: [{ code: 'TITLE_PROMOTIONAL_LANGUAGE' }, { code: 'DESCRIPTION_CONTAINS_HTML' }],
+  suggestions: { title: null, descriptionPlainText: null, attributes: [], saleTerms: [], picturePlan: [{ pictureId: '1', action: 'needs_review', reason: 'Revisar' }] },
+});
+assert.equal(deterministicCandidates.title?.value, 'Tênis Acme');
+assert.equal(deterministicCandidates.description?.value, 'Marca: Acme');
+assert.equal(deterministicCandidates.picturePlan.length, 0);
+assert.equal(countProposalCandidates({ title: 'Produto', soldQuantity: 0, descriptionPlainText: 'Texto', attributes: [{ id: 'BRAND', value_name: 'Acme' }], saleTerms: [] }, {
+  findings: [], suggestions: {
+    title: 'Produto', descriptionPlainText: 'Texto',
+    attributes: [{ id: 'BRAND', valueName: 'Acme', valueId: null, reason: 'Mesmo valor', evidence: ['Acme'] }],
+    saleTerms: [], picturePlan: [],
+  },
+}), 0);
 
 const notification = parseMeliWebhookNotification({
   resource: '/items/MLB123456', user_id: 42, topic: 'items', application_id: 99,

@@ -13,6 +13,7 @@ import {
   type MeliRiskLevel, type MeliSyncJob,
 } from '../../services/meliService';
 import ProposalReview from './ProposalReview';
+import { countProposalCandidates } from './proposalCandidates';
 
 const STATUS_LABEL: Record<string, string> = { active: 'Ativo', paused: 'Pausado', closed: 'Encerrado' };
 const terminalJobs = new Set(['succeeded', 'partial', 'failed', 'cancelled']);
@@ -159,6 +160,9 @@ export default function MeliOptimizer() {
     const query = search.trim().toLowerCase();
     return !query || listing.title.toLowerCase().includes(query) || listing.itemId.toLowerCase().includes(query);
   }), [filter, listings, search]);
+  const proposalCandidateCount = selected && analysis?.status === 'completed'
+    ? countProposalCandidates(selected, analysis)
+    : 0;
 
   const connect = async () => { setBusy(true); setError(null); try { const result = await connectMeli(); if (!result.ok) throw new Error(result.message || 'A autorização não foi concluída.'); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao conectar.'); } finally { setBusy(false); } };
   const disconnect = async () => { setBusy(true); setError(null); try { await disconnectMeli(); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao desconectar.'); } finally { setBusy(false); } };
@@ -216,7 +220,8 @@ export default function MeliOptimizer() {
       {analysis?.status === 'stale' && <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">O anúncio mudou. Execute uma nova auditoria.</div>}
       {analysis?.status === 'failed' && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">A auditoria falhou. {analysis.aiError}</div>}
       {analysis?.status === 'completed' && <AnalysisResult analysis={analysis} />}
-      {analysis?.status === 'completed' && !proposalResult && <div className="flex items-center justify-between gap-3 border border-blue-200 bg-blue-50/50 rounded-xl p-4"><div><p className="text-sm font-bold text-slate-900">Transformar sugestões em proposta</p><p className="text-xs text-slate-500 mt-0.5">Cria um diff versionado com risco, alcance e decisão por campo.</p></div><button onClick={createProposal} disabled={proposalBusy} className="inline-flex items-center gap-2 bg-slate-900 text-white text-sm font-bold px-4 py-2.5 rounded-xl disabled:opacity-50">{proposalBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Criar proposta</button></div>}
+      {analysis?.status === 'completed' && !proposalResult && proposalCandidateCount > 0 && <div className="flex items-center justify-between gap-3 border border-blue-200 bg-blue-50/50 rounded-xl p-4"><div><p className="text-sm font-bold text-slate-900">Transformar sugestões em proposta</p><p className="text-xs text-slate-500 mt-0.5">Cria um diff versionado com {proposalCandidateCount} mudança(s), risco, alcance e decisão por campo.</p></div><button onClick={createProposal} disabled={proposalBusy} className="inline-flex items-center gap-2 bg-slate-900 text-white text-sm font-bold px-4 py-2.5 rounded-xl disabled:opacity-50">{proposalBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Criar proposta</button></div>}
+      {analysis?.status === 'completed' && !proposalResult && proposalCandidateCount === 0 && <div className="flex items-center justify-between gap-3 border border-amber-200 bg-amber-50/60 rounded-xl p-4"><div><p className="text-sm font-bold text-slate-900">Nenhuma mudança segura disponível</p><p className="text-xs text-slate-600 mt-0.5">{analysis.aiStatus === 'failed' ? 'A camada determinística encontrou problemas, mas a IA não produziu os novos valores. Refaça a auditoria para gerar sugestões.' : analysis.questions.length ? 'Confirme as informações factuais pendentes antes de gerar valores para estes campos.' : 'As sugestões são iguais ao anúncio atual ou servem apenas como diagnóstico.'}</p></div>{analysis.aiStatus === 'failed' && <button onClick={analyze} disabled={analysisLoading} className="shrink-0 inline-flex items-center gap-2 bg-slate-900 text-white text-sm font-bold px-4 py-2.5 rounded-xl disabled:opacity-50">{analysisLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} Reanalisar</button>}</div>}
       {proposalResult && <ProposalReview result={proposalResult} busy={proposalBusy} onDecide={decideChange} onApproveLowRisk={approveLowRisk} />}
       {!analysis && !analysisLoading && <><div><h3 className="text-sm font-bold mb-2">Descrição atual</h3><div className="whitespace-pre-wrap text-sm text-slate-600 bg-slate-50 border rounded-xl p-4 max-h-64 overflow-y-auto">{selected.descriptionPlainText || 'Sem descrição.'}</div></div>{qualityMissing(selected).length > 0 && <div><h3 className="text-sm font-bold mb-2">Ausências apontadas pelo Mercado Livre</h3><div className="flex flex-wrap gap-1.5">{qualityMissing(selected).map((id) => <span key={id} className="text-xs bg-amber-50 text-amber-800 border border-amber-200 rounded-full px-2 py-1">{id}</span>)}</div></div>}</>}
       {selected.permalink && <a href={selected.permalink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600"><ExternalLink className="w-4 h-4" /> Abrir anúncio no Mercado Livre</a>}

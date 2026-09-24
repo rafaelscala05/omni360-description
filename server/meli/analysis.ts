@@ -22,9 +22,10 @@ import type {
   MeliScoreComponents,
 } from './types';
 import { jsonSafe, sanitizeError } from './utils';
+import { isServingSchemaComplexityError, simplifyServingJsonSchema } from './aiSchema';
 
 const RULESET_VERSION = '2026-09-24.1';
-const PROMPT_VERSION = 'meli-audit-2026-09-24.1';
+const PROMPT_VERSION = 'meli-audit-2026-09-24.2';
 const MODEL = process.env.MELI_ANALYSIS_MODEL || 'gemini-2.5-flash';
 const MAX_IMAGES = 6;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -258,20 +259,36 @@ async function runAiAnalysis(
     'Cada atributo ou termo sugerido precisa citar evidência literal que contenha o valor proposto.',
     'Avalie imagens quanto a resolução, nitidez, iluminação, fundo, texto promocional, marca d’água, duplicidade, coerência e cobertura. Não afirme com certeza o que não estiver visível.',
     'Não recomende publicar ou editar automaticamente. Sua saída será validada e usada apenas como auditoria assistida.',
+    'Responda com um objeto JSON contendo exatamente: summary, score_components, findings, questions, suggestions e image_diagnostics. score_components contém title, description, technical_completeness, consistency e images. suggestions contém title, description_plain_text, attributes, sale_terms e picture_plan.',
   ].join(' ');
   const parts: any[] = images.filter((image) => image.base64).slice(0, MAX_IMAGES)
     .map((image) => ({ inlineData: { mimeType: image.mimeType!, data: image.base64! } }));
   parts.push({ text: `Analise o contexto JSON a seguir. A ordem das imagens anexadas corresponde aos registros pictures com available_to_model=true.\n${JSON.stringify(aiContext(listing, schemaRecord, images))}` });
-  const response = await ai.models.generateContent({
+  const baseRequest = {
     model: MODEL,
     contents: [{ role: 'user', parts }],
-    config: {
-      systemInstruction,
-      temperature: 0.15,
-      responseMimeType: 'application/json',
-      responseJsonSchema: z.toJSONSchema(AiOutputSchema),
-    },
-  });
+  };
+  const baseConfig = {
+    systemInstruction,
+    temperature: 0.15,
+    responseMimeType: 'application/json' as const,
+  };
+  let response;
+  try {
+    response = await ai.models.generateContent({
+      ...baseRequest,
+      config: {
+        ...baseConfig,
+        responseJsonSchema: simplifyServingJsonSchema(z.toJSONSchema(AiOutputSchema)),
+      },
+    });
+  } catch (error) {
+    if (!isServingSchemaComplexityError(error)) throw error;
+    // JSON mode still constrains the transport format. The complete Zod schema
+    // below remains authoritative and rejects incomplete or invented shapes.
+    console.warn('[meli-analysis] schema estruturado rejeitado por complexidade; repetindo em JSON mode.', { model: MODEL });
+    response = await ai.models.generateContent({ ...baseRequest, config: baseConfig });
+  }
   const parsed = JSON.parse(response.text || '{}');
   return AiOutputSchema.parse(parsed);
 }

@@ -27,6 +27,7 @@ export interface MeliListing {
   availableQuantity: number;
   descriptionPlainText: string;
   attributes: Array<{ id?: string; name?: string; value_name?: string; value_id?: string }>;
+  saleTerms: Array<{ id?: string; name?: string; value_name?: string; value_id?: string }>;
   pictures: Array<{ id?: string; url?: string; secure_url?: string }>;
   variations: unknown[];
   performance: { score?: number; level_wording?: string; buckets?: unknown[] } | null;

@@ -9,6 +9,8 @@ import type {
   MeliProposalStatus,
 } from './types';
 import { jsonSafe } from './utils';
+import { collectProposalCandidates } from '../../src/modules/meli/proposalCandidates';
+import { validateSuggestedDescription, validateSuggestedTitle } from './rules';
 
 const LISTINGS_REF = (uid: string) => adminDb.collection('users').doc(uid).collection('meli_listings');
 const ANALYSES_REF = (uid: string) => adminDb.collection('users').doc(uid).collection('meli_listing_analyses');
@@ -89,23 +91,34 @@ async function impactScope(uid: string, listing: MeliListingRecord) {
 
 function changeDrafts(listing: MeliListingRecord, analysis: MeliAnalysisRecord): Array<Omit<MeliListingChange, 'id' | 'proposalId' | 'createdAt'>> {
   const changes: Array<Omit<MeliListingChange, 'id' | 'proposalId' | 'createdAt'>> = [];
+  const candidates = collectProposalCandidates(listing, analysis);
   const add = (draft: Omit<MeliListingChange, 'id' | 'proposalId' | 'createdAt' | 'riskLevel' | 'requiresConfirmation'>) => {
     const risk = riskForChange(draft.fieldPath, draft.reason);
     changes.push({ ...draft, ...risk });
   };
-  if (analysis.suggestions.title && analysis.suggestions.title !== listing.title) add({
+  const title = candidates.title ? validateSuggestedTitle(candidates.title.value, listing) : null;
+  if (title) add({
     fieldPath: 'title', resource: 'item', changeType: 'replace', oldValue: listing.title,
-    newValue: analysis.suggestions.title, reason: 'Título reorganizado a partir dos fatos sincronizados.',
-    evidence: [listing.title], confidence: 0.8, approvalStatus: 'pending', approvedBy: null, approvedAt: null,
+    newValue: title,
+    reason: candidates.title?.source === 'rule'
+      ? 'Remoção determinística de linguagem promocional ou símbolos ornamentais.'
+      : 'Título reorganizado a partir dos fatos sincronizados.',
+    evidence: [listing.title], confidence: candidates.title?.source === 'rule' ? 1 : 0.8,
+    approvalStatus: 'pending', approvedBy: null, approvedAt: null,
   });
-  if (analysis.suggestions.descriptionPlainText && analysis.suggestions.descriptionPlainText !== listing.descriptionPlainText) add({
+  const description = candidates.description ? validateSuggestedDescription(candidates.description.value, listing) : null;
+  if (description) add({
     fieldPath: 'description.plain_text', resource: 'description',
     changeType: listing.descriptionPlainText ? 'replace' : 'add', oldValue: listing.descriptionPlainText || null,
-    newValue: analysis.suggestions.descriptionPlainText, reason: 'Descrição estruturada somente com fatos validados.',
+    newValue: description,
+    reason: candidates.description?.source === 'rule'
+      ? 'Conversão determinística do HTML atual para texto simples, sem acrescentar fatos.'
+      : 'Descrição estruturada somente com fatos validados.',
     evidence: analysis.findings.filter((finding) => finding.fieldPath.startsWith('description')).flatMap((finding) => finding.evidence).slice(0, 8),
-    confidence: 0.85, approvalStatus: 'pending', approvedBy: null, approvedAt: null,
+    confidence: candidates.description?.source === 'rule' ? 1 : 0.85,
+    approvalStatus: 'pending', approvedBy: null, approvedAt: null,
   });
-  analysis.suggestions.attributes.forEach((suggestion) => add({
+  candidates.attributes.forEach((suggestion) => add({
     fieldPath: `attributes.${suggestion.id}`, resource: 'item',
     changeType: currentValue(listing.attributes, suggestion.id) ? 'replace' : 'add',
     oldValue: currentValue(listing.attributes, suggestion.id),
@@ -113,7 +126,7 @@ function changeDrafts(listing: MeliListingRecord, analysis: MeliAnalysisRecord):
     reason: suggestion.reason, evidence: suggestion.evidence, confidence: 0.9,
     approvalStatus: 'pending', approvedBy: null, approvedAt: null,
   }));
-  analysis.suggestions.saleTerms.forEach((suggestion) => add({
+  candidates.saleTerms.forEach((suggestion) => add({
     fieldPath: `sale_terms.${suggestion.id}`, resource: 'item',
     changeType: currentValue(listing.saleTerms, suggestion.id) ? 'replace' : 'add',
     oldValue: currentValue(listing.saleTerms, suggestion.id),
@@ -121,9 +134,9 @@ function changeDrafts(listing: MeliListingRecord, analysis: MeliAnalysisRecord):
     reason: suggestion.reason, evidence: suggestion.evidence, confidence: 0.9,
     approvalStatus: 'pending', approvedBy: null, approvedAt: null,
   }));
-  analysis.suggestions.picturePlan.filter((plan) => plan.action !== 'keep').forEach((plan, index) => add({
+  candidates.picturePlan.forEach((plan, index) => add({
     fieldPath: plan.pictureId ? `pictures.${plan.pictureId}` : `pictures.plan.${index}`,
-    resource: 'item', changeType: plan.action === 'reorder' ? 'reorder' : plan.action === 'remove' ? 'remove' : 'replace',
+    resource: 'item', changeType: plan.action === 'reorder' ? 'reorder' : plan.action === 'remove' ? 'remove' : plan.action === 'create' ? 'add' : 'replace',
     oldValue: plan.pictureId ? asObjects(listing.pictures).find((picture) => String(picture.id) === plan.pictureId) || null : null,
     newValue: { action: plan.action, pictureId: plan.pictureId }, reason: plan.reason, evidence: [], confidence: 0.7,
     approvalStatus: 'pending', approvedBy: null, approvedAt: null,
@@ -153,7 +166,14 @@ export async function createProposal(uid: string, itemId: string, requestedAnaly
   }
   if (analysis.contentHash !== listing.contentHash) throw Object.assign(new Error('A auditoria está desatualizada. Sincronize e analise novamente.'), { status: 409 });
   const drafts = changeDrafts(listing, analysis);
-  if (!drafts.length) throw Object.assign(new Error('A auditoria não produziu mudanças elegíveis para proposta.'), { status: 422 });
+  if (!drafts.length) {
+    const message = analysis.aiStatus === 'failed'
+      ? 'A auditoria foi concluída sem sugestões da IA. Execute “Analisar novamente” antes de criar a proposta.'
+      : analysis.questions.length
+        ? 'Não há mudanças seguras enquanto as informações factuais pendentes não forem confirmadas.'
+        : 'A auditoria não identificou alterações seguras e diferentes do anúncio atual.';
+    throw Object.assign(new Error(message), { status: analysis.aiStatus === 'failed' ? 409 : 422 });
+  }
 
   const existing = await PROPOSALS_REF(uid).where('listingId', '==', normalizedId).get();
   const version = await adminDb.runTransaction(async (tx) => {
