@@ -13,6 +13,7 @@
     "verify:meli": "node --import tsx scripts/verify-meli-foundation.ts",
     "verify:meli:audit": "node --import tsx scripts/verify-meli-audit.ts",
     "verify:meli:review": "node --import tsx scripts/verify-meli-review-robustness.ts",
+    "verify:meli:write": "node --import tsx scripts/verify-meli-write.ts",
     "dev:content-agent": "langgraphjs dev --host localhost --port 8123"
   },
   "dependencies": {

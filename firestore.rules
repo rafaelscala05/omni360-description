@@ -280,6 +280,9 @@ service cloud.firestore {
       match /meli_listing_changes/{changeId} {
         allow read, write: if false;
       }
+      match /meli_mutation_runs/{runId} {
+        allow read, write: if false;
+      }
       match /meli_category_schemas/{categoryId} {
         allow read, write: if false;
       }

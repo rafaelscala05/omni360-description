@@ -5,11 +5,11 @@ import {
   TriangleAlert, Unplug, WandSparkles, X,
 } from 'lucide-react';
 import {
-  connectMeli, createMeliProposal, decideMeliProposalChange, disconnectMeli,
-  getLatestMeliAnalysis, getLatestMeliProposal, getMeliJob, getMeliOperationalMetrics, listMeliListings,
+  applyMeliProposal, connectMeli, createMeliProposal, createMeliRollbackProposal, decideMeliProposalChange, disconnectMeli,
+  editMeliProposalChange, getLatestMeliAnalysis, getLatestMeliProposal, getMeliJob, getMeliMutationRun, getMeliOperationalMetrics, listMeliListings,
   meliConnection, startMeliAnalysis, startMeliSync, type MeliAnalysis,
   type MeliAnalysisFinding, type MeliConnection, type MeliListing,
-  type MeliListingStatus, type MeliOperationalMetrics, type MeliProposalChange, type MeliProposalResult,
+  type MeliListingStatus, type MeliMutationRun, type MeliOperationalMetrics, type MeliProposalChange, type MeliProposalResult,
   type MeliRiskLevel, type MeliSyncJob,
 } from '../../services/meliService';
 import ProposalReview from './ProposalReview';
@@ -104,6 +104,7 @@ export default function MeliOptimizer() {
   const [analysis, setAnalysis] = useState<MeliAnalysis | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [proposalResult, setProposalResult] = useState<MeliProposalResult | null>(null);
+  const [mutationRun, setMutationRun] = useState<MeliMutationRun | null>(null);
   const [proposalBusy, setProposalBusy] = useState(false);
   const [metrics, setMetrics] = useState<MeliOperationalMetrics | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -134,16 +135,38 @@ export default function MeliOptimizer() {
   useEffect(() => {
     setAnalysis(null);
     setProposalResult(null);
+    setMutationRun(null);
     if (!selected) return;
     let cancelled = false;
     setAnalysisLoading(true);
     getLatestMeliAnalysis(selected.itemId).then((result) => { if (!cancelled) setAnalysis(result); })
       .catch((reason) => { if (!cancelled) setError(reason instanceof Error ? reason.message : 'Falha ao carregar análise.'); })
       .finally(() => { if (!cancelled) setAnalysisLoading(false); });
-    getLatestMeliProposal(selected.itemId).then((result) => { if (!cancelled) setProposalResult(result); })
+    getLatestMeliProposal(selected.itemId).then(async (result) => {
+      if (cancelled) return;
+      setProposalResult(result);
+      if (result?.proposal.lastMutationRunId) {
+        const run = await getMeliMutationRun(result.proposal.lastMutationRunId).catch(() => null);
+        if (!cancelled) setMutationRun(run);
+      }
+    })
       .catch((reason) => { if (!cancelled) setError(reason instanceof Error ? reason.message : 'Falha ao carregar proposta.'); });
     return () => { cancelled = true; };
   }, [selected?.itemId]);
+  useEffect(() => {
+    if (!mutationRun || !['queued', 'running', 'verifying'].includes(mutationRun.status)) return;
+    const timer = window.setInterval(async () => {
+      const next = await getMeliMutationRun(mutationRun.id).catch(() => null);
+      if (!next) return;
+      setMutationRun(next);
+      if (!['queued', 'running', 'verifying'].includes(next.status) && selected) {
+        const proposal = await getLatestMeliProposal(selected.itemId).catch(() => null);
+        if (proposal) setProposalResult(proposal);
+        await load().catch(() => undefined);
+      }
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [mutationRun?.id, mutationRun?.status, selected?.itemId]);
   useEffect(() => {
     if (!selected || !analysis || terminalAnalyses.has(analysis.status)) return;
     const timer = window.setInterval(async () => {
@@ -199,6 +222,32 @@ export default function MeliOptimizer() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha na aprovação em lote.'); }
     finally { setProposalBusy(false); }
   };
+  const editChange = async (change: MeliProposalChange, value: unknown) => {
+    if (!proposalResult) return;
+    setProposalBusy(true); setError(null);
+    try { setProposalResult(await editMeliProposalChange(proposalResult.proposal.id, change.id, value)); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao editar a mudança.'); }
+    finally { setProposalBusy(false); }
+  };
+  const applyProposal = async () => {
+    if (!proposalResult) return;
+    const confirmed = window.confirm('As mudanças aprovadas serão publicadas no Mercado Livre. Deseja continuar?');
+    if (!confirmed) return;
+    setProposalBusy(true); setError(null);
+    try {
+      const run = await applyMeliProposal(proposalResult.proposal.id);
+      setMutationRun(run);
+      setProposalResult({ ...proposalResult, proposal: { ...proposalResult.proposal, status: 'applying', lastMutationRunId: run.id } });
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao iniciar a publicação.'); }
+    finally { setProposalBusy(false); }
+  };
+  const createRollback = async () => {
+    if (!proposalResult) return;
+    setProposalBusy(true); setError(null);
+    try { setProposalResult(await createMeliRollbackProposal(proposalResult.proposal.id)); setMutationRun(null); await load(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao criar proposta de reversão.'); }
+    finally { setProposalBusy(false); }
+  };
 
   if (loading) return <div className="h-full flex items-center justify-center text-slate-500"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Abrindo Agente MELI…</div>;
   return <div className="max-w-6xl mx-auto space-y-5 animate-in fade-in">
@@ -208,7 +257,7 @@ export default function MeliOptimizer() {
     {error && <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3"><AlertCircle className="w-4 h-4 mt-0.5 shrink-0" /><span>{error}</span></div>}
     {!connection?.configured ? <section className="bg-white border border-amber-200 rounded-2xl p-6 shadow-sm"><h2 className="font-bold text-slate-900">Configuração do servidor pendente</h2><p className="text-sm text-slate-600 mt-2 max-w-3xl">Configure o App ID, Secret Key, redirect URI e a chave de criptografia nos secrets do ambiente.</p></section>
       : !connection.connected ? <section className="bg-white border border-slate-200 rounded-2xl p-7 shadow-sm"><ShieldCheck className="w-8 h-8 text-blue-600 mb-3" /><h2 className="text-lg font-bold text-slate-900">Conecte a conta principal do vendedor</h2><p className="text-sm text-slate-600 mt-2">Os tokens ficam cifrados no backend e nunca são devolvidos para o navegador.</p><button onClick={connect} disabled={busy} className="mt-5 inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2.5 rounded-xl disabled:opacity-50">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />} Conectar Mercado Livre</button></section>
-        : <>{metrics && <section className="grid grid-cols-2 md:grid-cols-5 gap-2"><div className="bg-white border rounded-xl p-3"><p className="text-[10px] text-slate-400">Anúncios</p><p className="text-lg font-black">{metrics.listings.total}</p></div><div className="bg-white border rounded-xl p-3"><p className="text-[10px] text-slate-400">Análises concluídas</p><p className="text-lg font-black">{metrics.analyses.byStatus.completed || 0}</p></div><div className="bg-white border rounded-xl p-3"><p className="text-[10px] text-slate-400">Propostas</p><p className="text-lg font-black">{metrics.proposals.total}</p></div><div className="bg-white border rounded-xl p-3"><p className="text-[10px] text-slate-400">Webhooks</p><p className="text-lg font-black">{metrics.webhooks.total}</p></div><div className="bg-white border rounded-xl p-3"><p className="text-[10px] text-slate-400">API hoje · 429</p><p className="text-lg font-black">{metrics.apiToday.calls} · <span className={metrics.apiToday.rateLimited ? 'text-red-600' : 'text-emerald-600'}>{metrics.apiToday.rateLimited}</span></p></div></section>}
+        : <>{metrics && <section className="grid grid-cols-2 md:grid-cols-6 gap-2"><div className="bg-white border rounded-xl p-3"><p className="text-[10px] text-slate-400">Anúncios</p><p className="text-lg font-black">{metrics.listings.total}</p></div><div className="bg-white border rounded-xl p-3"><p className="text-[10px] text-slate-400">Análises concluídas</p><p className="text-lg font-black">{metrics.analyses.byStatus.completed || 0}</p></div><div className="bg-white border rounded-xl p-3"><p className="text-[10px] text-slate-400">Propostas</p><p className="text-lg font-black">{metrics.proposals.total}</p></div><div className="bg-white border rounded-xl p-3"><p className="text-[10px] text-slate-400">Publicações</p><p className="text-lg font-black">{metrics.mutations.total}</p></div><div className="bg-white border rounded-xl p-3"><p className="text-[10px] text-slate-400">Webhooks</p><p className="text-lg font-black">{metrics.webhooks.total}</p></div><div className="bg-white border rounded-xl p-3"><p className="text-[10px] text-slate-400">API hoje · 429</p><p className="text-lg font-black">{metrics.apiToday.calls} · <span className={metrics.apiToday.rateLimited ? 'text-red-600' : 'text-emerald-600'}>{metrics.apiToday.rateLimited}</span></p></div></section>}
           <section className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-4"><div className="flex flex-col md:flex-row md:items-center gap-3 justify-between"><div className="relative flex-1 max-w-lg"><Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por título ou MLB…" className="w-full border border-slate-200 bg-slate-50 rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-blue-400" /></div><button onClick={sync} disabled={busy || Boolean(job && !terminalJobs.has(job.status))} className="inline-flex justify-center items-center gap-2 bg-[#FFE600] hover:bg-[#f1d900] text-slate-900 text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-50">{job && !terminalJobs.has(job.status) ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Sincronizar anúncios</button></div><div className="flex items-center gap-2 overflow-x-auto">{(['', 'active', 'paused', 'closed'] as const).map((value) => <button key={value || 'all'} onClick={() => setFilter(value)} className={`text-xs font-semibold px-3 py-1.5 rounded-full border whitespace-nowrap ${filter === value ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-200 text-slate-600'}`}>{value ? STATUS_LABEL[value] : 'Todos'} ({value ? listings.filter((item) => item.status === value).length : listings.length})</button>)}{connection.lastSyncedAt && <span className="ml-auto text-[11px] text-slate-400 whitespace-nowrap">Última sync: {new Date(connection.lastSyncedAt).toLocaleString('pt-BR')}</span>}</div>{job && <div className={`rounded-xl border p-3 ${job.status === 'failed' ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-100'}`}><div className="flex justify-between text-xs font-semibold text-slate-700"><span>{job.lastStep}</span><span>{job.progress}%</span></div><div className="h-1.5 bg-white rounded-full overflow-hidden mt-2"><div className="h-full bg-blue-600 rounded-full transition-all" style={{ width: `${job.progress}%` }} /></div></div>}</section>
           <section className="space-y-2">{visible.length === 0 ? <div className="bg-white border border-dashed border-slate-300 rounded-2xl py-14 text-center text-sm text-slate-500">Nenhum anúncio sincronizado neste filtro.</div> : visible.map((listing) => <button key={listing.itemId} onClick={() => setSelected(listing)} className="w-full text-left bg-white border border-slate-200 hover:border-blue-300 rounded-2xl p-4 shadow-sm transition-colors flex items-center gap-4"><div className="w-16 h-16 rounded-xl bg-slate-100 overflow-hidden shrink-0">{listing.thumbnail && <img src={listing.thumbnail} alt="" className="w-full h-full object-contain" />}</div><div className="min-w-0 flex-1"><div className="flex gap-2 items-center"><span className="text-[10px] font-bold uppercase text-slate-400">{listing.itemId}</span><span className="text-[10px] font-semibold text-slate-600 bg-slate-100 rounded px-1.5 py-0.5">{STATUS_LABEL[listing.status] || listing.status}</span>{listing.analysisSummary && <RiskBadge risk={listing.analysisSummary.riskLevel} />}</div><h3 className="text-sm font-bold text-slate-900 truncate mt-1">{listing.title}</h3><p className="text-xs mt-1 text-slate-400">{listing.analysisSummary ? `${listing.analysisSummary.findingCount} achado(s) na auditoria Alfreds` : `${listing.pictures?.length || 0} imagens · ${listing.attributes?.length || 0} atributos`}</p></div><div className="flex items-center gap-5"><Score value={listing.performance?.score} label="Oficial" /><Score value={listing.analysisSummary?.alfredsScore} label="Alfreds" /></div><ChevronRight className="w-4 h-4 text-slate-300 shrink-0" /></button>)}</section></>}
     {selected && <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/35" onMouseDown={() => setSelected(null)}><aside className="w-full max-w-2xl h-full bg-white shadow-2xl overflow-y-auto" onMouseDown={(event) => event.stopPropagation()}><div className="sticky top-0 bg-white/95 backdrop-blur border-b border-slate-200 p-4 flex items-center justify-between z-10"><div><p className="text-[10px] font-bold text-slate-400">{selected.itemId}</p><h2 className="font-bold text-slate-900 line-clamp-1">{selected.title}</h2></div><button onClick={() => setSelected(null)} className="p-2 hover:bg-slate-100 rounded-full"><X className="w-4 h-4" /></button></div><div className="p-5 space-y-5">
@@ -222,10 +271,10 @@ export default function MeliOptimizer() {
       {analysis?.status === 'completed' && <AnalysisResult analysis={analysis} />}
       {analysis?.status === 'completed' && !proposalResult && proposalCandidateCount > 0 && <div className="flex items-center justify-between gap-3 border border-blue-200 bg-blue-50/50 rounded-xl p-4"><div><p className="text-sm font-bold text-slate-900">Transformar sugestões em proposta</p><p className="text-xs text-slate-500 mt-0.5">Cria um diff versionado com {proposalCandidateCount} mudança(s), risco, alcance e decisão por campo.</p></div><button onClick={createProposal} disabled={proposalBusy} className="inline-flex items-center gap-2 bg-slate-900 text-white text-sm font-bold px-4 py-2.5 rounded-xl disabled:opacity-50">{proposalBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Criar proposta</button></div>}
       {analysis?.status === 'completed' && !proposalResult && proposalCandidateCount === 0 && <div className="flex items-center justify-between gap-3 border border-amber-200 bg-amber-50/60 rounded-xl p-4"><div><p className="text-sm font-bold text-slate-900">Nenhuma mudança segura disponível</p><p className="text-xs text-slate-600 mt-0.5">{analysis.aiStatus === 'failed' ? 'A camada determinística encontrou problemas, mas a IA não produziu os novos valores. Refaça a auditoria para gerar sugestões.' : analysis.questions.length ? 'Confirme as informações factuais pendentes antes de gerar valores para estes campos.' : 'As sugestões são iguais ao anúncio atual ou servem apenas como diagnóstico.'}</p></div>{analysis.aiStatus === 'failed' && <button onClick={analyze} disabled={analysisLoading} className="shrink-0 inline-flex items-center gap-2 bg-slate-900 text-white text-sm font-bold px-4 py-2.5 rounded-xl disabled:opacity-50">{analysisLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} Reanalisar</button>}</div>}
-      {proposalResult && <ProposalReview result={proposalResult} busy={proposalBusy} onDecide={decideChange} onApproveLowRisk={approveLowRisk} />}
+      {proposalResult && <ProposalReview result={proposalResult} busy={proposalBusy} writeEnabled={connection?.mode === 'assisted_write'} mutationRun={mutationRun} onDecide={decideChange} onEdit={editChange} onApproveLowRisk={approveLowRisk} onApply={applyProposal} onRollback={createRollback} />}
       {!analysis && !analysisLoading && <><div><h3 className="text-sm font-bold mb-2">Descrição atual</h3><div className="whitespace-pre-wrap text-sm text-slate-600 bg-slate-50 border rounded-xl p-4 max-h-64 overflow-y-auto">{selected.descriptionPlainText || 'Sem descrição.'}</div></div>{qualityMissing(selected).length > 0 && <div><h3 className="text-sm font-bold mb-2">Ausências apontadas pelo Mercado Livre</h3><div className="flex flex-wrap gap-1.5">{qualityMissing(selected).map((id) => <span key={id} className="text-xs bg-amber-50 text-amber-800 border border-amber-200 rounded-full px-2 py-1">{id}</span>)}</div></div>}</>}
       {selected.permalink && <a href={selected.permalink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600"><ExternalLink className="w-4 h-4" /> Abrir anúncio no Mercado Livre</a>}
-      <div className="bg-slate-50 border text-slate-600 rounded-xl p-3 text-xs"><strong>Modo seguro:</strong> aprovações são auditadas, mas ainda não existe endpoint de publicação. Aplicação, verificação e rollback pertencem à Fase D.</div>
+      <div className="bg-slate-50 border text-slate-600 rounded-xl p-3 text-xs"><strong>Escrita assistida:</strong> somente campos aprovados são enviados. Cada publicação cria snapshots antes/depois, relê o anúncio para confirmar o resultado e permite gerar uma nova proposta de reversão.</div>
     </div></aside></div>}
   </div>;
 }

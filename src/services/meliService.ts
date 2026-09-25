@@ -11,7 +11,7 @@ export interface MeliConnection {
   siteId: string | null;
   scopes: string[];
   status: MeliConnectionStatus;
-  mode: 'audit_only';
+  mode: 'audit_only' | 'assisted_write';
   lastSyncedAt: string | null;
 }
 
@@ -89,7 +89,7 @@ export interface MeliAnalysis {
     descriptionPlainText: string | null;
     attributes: Array<{ id: string; valueName: string; valueId: string | null; reason: string; evidence: string[] }>;
     saleTerms: Array<{ id: string; valueName: string; valueId: string | null; reason: string; evidence: string[] }>;
-    picturePlan: Array<{ pictureId: string | null; action: string; reason: string }>;
+    picturePlan: Array<{ pictureId: string | null; action: string; targetOrder?: number | null; reason: string }>;
   };
   imageDiagnostics: Array<{
     pictureId: string;
@@ -109,7 +109,7 @@ export interface MeliAnalysis {
   completedAt: string | null;
 }
 
-export type MeliProposalStatus = 'draft' | 'awaiting_review' | 'partially_approved' | 'approved' | 'rejected' | 'stale';
+export type MeliProposalStatus = 'draft' | 'awaiting_review' | 'partially_approved' | 'approved' | 'rejected' | 'applying' | 'applied' | 'partially_applied' | 'failed' | 'stale';
 export type MeliChangeRisk = 'low' | 'medium' | 'high' | 'blocked';
 export type MeliApprovalStatus = 'pending' | 'approved' | 'rejected';
 
@@ -134,6 +134,8 @@ export interface MeliProposal {
   changeCount: number;
   approvedCount: number;
   rejectedCount: number;
+  rollbackOfProposalId?: string | null;
+  lastMutationRunId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -154,15 +156,35 @@ export interface MeliProposalChange {
   approvalStatus: MeliApprovalStatus;
   approvedBy: string | null;
   approvedAt: string | null;
+  editedBy?: string | null;
+  editedAt?: string | null;
 }
 
 export interface MeliProposalResult { proposal: MeliProposal; changes: MeliProposalChange[] }
+
+export interface MeliMutationRun {
+  id: string;
+  proposalId: string;
+  listingId: string;
+  status: 'queued' | 'running' | 'verifying' | 'succeeded' | 'partial' | 'failed' | 'rolled_back';
+  warnings: string[];
+  differences: string[];
+  approvedChangeIds: string[];
+  appliedChangeIds: string[];
+  verifiedChangeIds: string[];
+  beforeSnapshotId: string | null;
+  afterSnapshotId: string | null;
+  error: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
 
 export interface MeliOperationalMetrics {
   listings: { total: number; byStatus: Record<string, number> };
   jobs: { total: number; byStatus: Record<string, number> };
   analyses: { total: number; byStatus: Record<string, number> };
   proposals: { total: number; byStatus: Record<string, number> };
+  mutations: { total: number; byStatus: Record<string, number> };
   webhooks: { total: number; byStatus: Record<string, number>; byTopic: Record<string, number> };
   apiToday: { calls: number; retries: number; rateLimited: number; averageLatencyMs: number };
   limiter: { active: number; limit: number; queued: number; cooldownUntil: number };
@@ -308,6 +330,37 @@ export async function decideMeliProposalChange(
 ): Promise<MeliProposalResult> {
   const response = await fetch(`/api/meli/proposals/${encodeURIComponent(proposalId)}/changes/${encodeURIComponent(changeId)}`, {
     method: 'PATCH', headers: await headers(), body: JSON.stringify({ approvalStatus, confirmed }),
+  });
+  return handle(response);
+}
+
+export async function editMeliProposalChange(
+  proposalId: string,
+  changeId: string,
+  newValue: unknown,
+): Promise<MeliProposalResult> {
+  const response = await fetch(`/api/meli/proposals/${encodeURIComponent(proposalId)}/changes/${encodeURIComponent(changeId)}`, {
+    method: 'PUT', headers: await headers(), body: JSON.stringify({ newValue }),
+  });
+  return handle(response);
+}
+
+export async function applyMeliProposal(proposalId: string): Promise<MeliMutationRun> {
+  const idempotencyKey = globalThis.crypto?.randomUUID?.() || `${proposalId}-${Date.now()}`;
+  const response = await fetch(`/api/meli/proposals/${encodeURIComponent(proposalId)}/apply`, {
+    method: 'POST', headers: await headers(), body: JSON.stringify({ idempotencyKey }),
+  });
+  return (await handle<{ mutationRun: MeliMutationRun }>(response)).mutationRun;
+}
+
+export async function getMeliMutationRun(runId: string): Promise<MeliMutationRun> {
+  const response = await fetch(`/api/meli/mutations/${encodeURIComponent(runId)}`, { headers: await headers() });
+  return (await handle<{ mutationRun: MeliMutationRun }>(response)).mutationRun;
+}
+
+export async function createMeliRollbackProposal(proposalId: string): Promise<MeliProposalResult> {
+  const response = await fetch(`/api/meli/proposals/${encodeURIComponent(proposalId)}/rollback-proposal`, {
+    method: 'POST', headers: await headers(),
   });
   return handle(response);
 }

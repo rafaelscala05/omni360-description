@@ -57,6 +57,7 @@ async function persistTokens(uid: string, tokens: TokenResponse, siteId: string,
     createdAt: existingCreatedAt || now,
     updatedAt: now,
   };
+  const mode = secret.scopes.some((scope) => scope.toLowerCase() === 'write') ? 'assisted_write' : 'audit_only';
   const batch = adminDb.batch();
   batch.set(MELI_SECRET_REF(uid), secret);
   batch.set(MELI_STATUS_REF(uid), {
@@ -66,7 +67,7 @@ async function persistTokens(uid: string, tokens: TokenResponse, siteId: string,
       siteId,
       scopes: secret.scopes,
       status: 'active',
-      mode: 'audit_only',
+      mode,
       updatedAt: now,
     }, { merge: true });
   batch.set(MELI_SELLER_REGISTRY_REF(secret.sellerId), { uid, sellerId: secret.sellerId, siteId, status: 'active', updatedAt: now });

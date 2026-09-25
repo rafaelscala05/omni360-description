@@ -11,10 +11,19 @@ export class MeliApiClient {
     return this.request<T>('GET', path, options);
   }
 
+  async post<T>(path: string, body: unknown): Promise<T> {
+    return this.request<T>('POST', path, {}, body) as Promise<T>;
+  }
+
+  async put<T>(path: string, body: unknown): Promise<T> {
+    return this.request<T>('PUT', path, {}, body) as Promise<T>;
+  }
+
   private async request<T>(
-    method: 'GET',
+    method: 'GET' | 'POST' | 'PUT',
     path: string,
     options: { allowNotFound?: boolean },
+    body?: unknown,
     attempt = 0,
     refreshed = false,
   ): Promise<T | null> {
@@ -30,16 +39,23 @@ export class MeliApiClient {
     try {
       response = await fetch(`${MELI_API_BASE}${path}`, {
         method,
-        headers: { accept: 'application/json', Authorization: `Bearer ${accessToken}` },
+        headers: {
+          accept: 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: controller.signal,
       });
     } catch (error) {
       clearTimeout(timeout);
       release();
       recordMeliApiCall(this.uid, endpoint, 0, Date.now() - startedAt, attempt > 0);
-      if (attempt < 3) {
+      // GETs are safe to retry. Mutations are not retried after an ambiguous
+      // network failure because the provider may already have applied them.
+      if (method === 'GET' && attempt < 3) {
         await new Promise((resolve) => setTimeout(resolve, retryDelayMs(attempt, null)));
-        return this.request<T>(method, path, options, attempt + 1, refreshed);
+        return this.request<T>(method, path, options, body, attempt + 1, refreshed);
       }
       throw new Error(`Falha de rede na API MELI: ${sanitizeError(error)}`);
     } finally {
@@ -52,12 +68,12 @@ export class MeliApiClient {
     recordMeliApiCall(this.uid, endpoint, response.status, Date.now() - startedAt, attempt > 0);
 
     if ((response.status === 401 || response.status === 403) && !refreshed) {
-      return this.request<T>(method, path, options, attempt, true);
+      return this.request<T>(method, path, options, body, attempt, true);
     }
     if (response.status === 404 && options.allowNotFound) return null;
-    if ((response.status === 429 || response.status >= 500) && attempt < 4) {
+    if (method === 'GET' && (response.status === 429 || response.status >= 500) && attempt < 4) {
       await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
-      return this.request<T>(method, path, options, attempt + 1, refreshed);
+      return this.request<T>(method, path, options, body, attempt + 1, refreshed);
     }
 
     const text = await response.text();

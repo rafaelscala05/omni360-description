@@ -6,8 +6,9 @@ import { createSyncJob, MELI_JOBS_REF, recordAudit, scheduleSyncJob } from './sy
 import type { MeliConnectionSecret, MeliListingStatus } from './types';
 import { sanitizeError } from './utils';
 import { createAnalysis, getLatestAnalysis, scheduleAnalysis } from './analysis';
-import { createProposal, decideChange, getLatestProposal, getProposal } from './proposals';
+import { createProposal, decideChange, editChange, getLatestProposal, getProposal } from './proposals';
 import { getMeliOperationalMetrics } from './operations';
+import { createMutationRun, createRollbackProposal, getMutationRun, scheduleMutation } from './mutations';
 
 interface Deps { verifyFirebaseToken: VerifyFirebaseToken }
 
@@ -47,7 +48,7 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
       await recordAudit(connected.uid, 'meli.connection.created', 'meli_connection', 'primary', {
         sellerId: connected.sellerId,
         siteId: connected.siteId,
-        mode: 'audit_only',
+        mode: 'scope_dependent',
       });
       return res.status(200).send(oauthPopupHtml('Conta conectada.', true));
     } catch (error) {
@@ -78,7 +79,7 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
         siteId: secret?.siteId || null,
         scopes: secret?.scopes || [],
         status: secret?.status || 'disconnected',
-        mode: 'audit_only',
+        mode: secret?.scopes?.some((scope) => String(scope).toLowerCase() === 'write') ? 'assisted_write' : 'audit_only',
         lastSyncedAt: status.lastSyncedAt || null,
       }] });
     } catch (error) {
@@ -224,6 +225,49 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
         return res.status(422).json({ message: 'approvalStatus deve ser approved ou rejected.' });
       }
       return res.json(await decideChange(uid, req.params.proposalId, req.params.changeId, approvalStatus, req.body?.confirmed === true));
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
+  app.put('/api/meli/proposals/:proposalId/changes/:changeId', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      if (!Object.prototype.hasOwnProperty.call(req.body || {}, 'newValue')) {
+        return res.status(422).json({ message: 'newValue é obrigatório.' });
+      }
+      return res.json(await editChange(uid, req.params.proposalId, req.params.changeId, req.body.newValue));
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
+  app.post('/api/meli/proposals/:proposalId/apply', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      const run = await createMutationRun(uid, req.params.proposalId, req.body?.idempotencyKey);
+      scheduleMutation(uid, run.id);
+      return res.status(202).json({ mutationRun: run });
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
+  app.post('/api/meli/proposals/:proposalId/rollback-proposal', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      return res.status(201).json(await createRollbackProposal(uid, req.params.proposalId));
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
+  app.get('/api/meli/mutations/:runId', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      const run = await getMutationRun(uid, req.params.runId);
+      if (!run) return res.status(404).json({ message: 'Execução de publicação não encontrada.' });
+      return res.json({ mutationRun: run });
     } catch (error) {
       return res.status(statusCode(error)).json({ message: sanitizeError(error) });
     }

@@ -206,6 +206,19 @@ async function persistListing(
   if (changed) await enqueueAnalysisIfNeeded(uid, itemId, hash);
 }
 
+export async function refreshListingNow(uid: string, itemId: string): Promise<MeliListingRecord> {
+  const connectionData = await connection(uid);
+  const normalizedId = itemId.toUpperCase();
+  const client = new MeliApiClient(uid);
+  const item = await client.get<Record<string, any>>(`/items/${encodeURIComponent(normalizedId)}?include_attributes=all`);
+  if (!item || String(item.seller_id) !== connectionData.sellerId) {
+    throw Object.assign(new Error('O anúncio não pertence ao seller autenticado.'), { status: 403 });
+  }
+  await persistListing(uid, connectionData, client, item);
+  const refreshed = await LISTINGS_REF(uid).doc(normalizedId).get();
+  return refreshed.data() as MeliListingRecord;
+}
+
 async function updateJob(uid: string, jobId: string, patch: Partial<MeliSyncJob>): Promise<void> {
   const terminal = patch.status && ['succeeded', 'partial', 'failed', 'cancelled'].includes(patch.status);
   await MELI_JOBS_REF(uid).doc(jobId).set({

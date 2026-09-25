@@ -63,6 +63,7 @@ const SuggestedValueSchema = z.object({
 const PicturePlanSchema = z.object({
   picture_id: z.string().max(200).nullable(),
   action: z.enum(['keep', 'reorder', 'remove', 'replace', 'create', 'needs_review']),
+  target_order: z.number().int().min(1).max(30).nullable(),
   reason: z.string().min(1).max(500),
 }).strict();
 
@@ -258,6 +259,7 @@ async function runAiAnalysis(
     'description_plain_text deve ser texto simples, sem HTML, URLs, contato, preço, estoque ou promessa sem evidência.',
     'Cada atributo ou termo sugerido precisa citar evidência literal que contenha o valor proposto.',
     'Avalie imagens quanto a resolução, nitidez, iluminação, fundo, texto promocional, marca d’água, duplicidade, coerência e cobertura. Não afirme com certeza o que não estiver visível.',
+    'Para action=reorder, informe target_order começando em 1. Para as demais ações use target_order=null. Nunca invente uma URL de imagem.',
     'Não recomende publicar ou editar automaticamente. Sua saída será validada e usada apenas como auditoria assistida.',
     'Responda com um objeto JSON contendo exatamente: summary, score_components, findings, questions, suggestions e image_diagnostics. score_components contém title, description, technical_completeness, consistency e images. suggestions contém title, description_plain_text, attributes, sale_terms e picture_plan.',
   ].join(' ');
@@ -542,6 +544,7 @@ export async function runAnalysis(uid: string, analysisId: string): Promise<void
           return {
             pictureId: item.picture_id,
             action: linkedRemoval ? 'needs_review' : item.action,
+            targetOrder: item.target_order,
             reason: linkedRemoval ? `${item.reason} A imagem está vinculada a uma variação.` : item.reason,
           };
         }),

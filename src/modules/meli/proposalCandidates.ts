@@ -17,6 +17,7 @@ interface ValueSuggestion {
 interface PictureSuggestion {
   pictureId: string | null;
   action: string;
+  targetOrder?: number | null;
   reason: string;
 }
 

@@ -33,15 +33,17 @@ function countBy<T extends Record<string, any>>(values: T[], key: keyof T): Reco
 
 export async function getMeliOperationalMetrics(uid: string) {
   const root = adminDb.collection('users').doc(uid);
-  const [listings, jobs, analyses, proposals, webhooks, today] = await Promise.all([
+  const [listings, jobs, analyses, proposals, mutations, webhooks, today] = await Promise.all([
     root.collection('meli_listings').get(), root.collection('meli_jobs').get(),
     root.collection('meli_listing_analyses').get(), root.collection('meli_listing_proposals').get(),
+    root.collection('meli_mutation_runs').get(),
     root.collection('meli_webhook_events').get(), METRICS_REF(uid).doc(dayKey()).get(),
   ]);
   const listingValues = listings.docs.map((doc) => doc.data());
   const jobValues = jobs.docs.map((doc) => doc.data());
   const analysisValues = analyses.docs.map((doc) => doc.data());
   const proposalValues = proposals.docs.map((doc) => doc.data());
+  const mutationValues = mutations.docs.map((doc) => doc.data());
   const webhookValues = webhooks.docs.map((doc) => doc.data());
   const api = today.data() || {};
   const calls = Number(api.calls || 0);
@@ -50,6 +52,7 @@ export async function getMeliOperationalMetrics(uid: string) {
     jobs: { total: jobs.size, byStatus: countBy(jobValues, 'status') },
     analyses: { total: analyses.size, byStatus: countBy(analysisValues, 'status') },
     proposals: { total: proposals.size, byStatus: countBy(proposalValues, 'status') },
+    mutations: { total: mutations.size, byStatus: countBy(mutationValues, 'status') },
     webhooks: { total: webhooks.size, byStatus: countBy(webhookValues, 'status'), byTopic: countBy(webhookValues, 'topic') },
     apiToday: {
       calls, retries: Number(api.retries || 0), rateLimited: Number(api.rateLimited || 0),

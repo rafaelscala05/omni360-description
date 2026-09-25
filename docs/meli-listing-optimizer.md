@@ -1,7 +1,7 @@
 # Agente MELI — guia de configuração e operação
 
-Implementação atual: **Fases A, B, C e E**, sempre em `audit_only`.
-Não há rota de escrita em anúncios nesta fase.
+Implementação atual: **Fases A, B, C, D e E**. Contas com escopo OAuth `write`
+operam em `assisted_write`; conexões somente leitura permanecem em `audit_only`.
 
 ## O que já está implementado
 
@@ -34,6 +34,7 @@ Não há rota de escrita em anúncios nesta fase.
   diagnósticas não viram mudanças; limpezas seguras de HTML e título podem ser
   propostas deterministicamente mesmo quando a IA estiver indisponível.
 - Matriz de risco, confirmação factual e aprovação/rejeição auditada por campo.
+- Edição manual do valor proposto, com a aprovação do campo reiniciada após cada ajuste.
 - Invalidação imediata de propostas quando o anúncio sincronizado muda.
 - Alcance calculado para catálogo, variações, User Product e anúncios relacionados.
 - Webhooks `items`, `user_products` e `user_products_families` processados com
@@ -42,6 +43,10 @@ Não há rota de escrita em anúncios nesta fase.
 - Limite adaptativo por vendedor; HTTP 429 reduz concorrência e abre cooldown.
 - Leases de processamento e scheduler para retomar jobs/análises após restart.
 - Métricas diárias da API e painel operacional resumido no módulo.
+- Aplicação idempotente somente das mudanças aprovadas, separada por item e descrição.
+- Snapshots `before_mutation` e `after_mutation`, releitura obrigatória e comparação por campo.
+- Preservação de atributos, termos, imagens não alteradas e vínculos de imagens com variações.
+- Propostas de reversão com nova revisão e aprovação humana; nenhuma reversão é automática.
 
 ## Permissão do módulo
 
@@ -60,7 +65,7 @@ Sem essa permissão, a navegação não exibe a aba e os endpoints respondem `40
 
 ## Configuração do aplicativo no DevCenter
 
-1. Habilitar a permissão **Leitura e escrita**. A Fase A só usa leitura, mas as fases de aplicação assistida dependerão de escrita.
+1. Habilitar a permissão **Leitura e escrita**. Sem o escopo `write`, auditoria e revisão continuam disponíveis, mas o botão de publicação fica desabilitado.
 2. Habilitar **PKCE** (recomendado). Se o aplicativo permanecer sem PKCE, configurar `MELI_PKCE_ENABLED=false`.
 3. Cadastrar exatamente esta redirect URI de produção:
 
@@ -109,6 +114,10 @@ POST   /api/meli/listings/:itemId/proposals
 GET    /api/meli/listings/:itemId/proposals/latest
 GET    /api/meli/proposals/:proposalId
 PATCH  /api/meli/proposals/:proposalId/changes/:changeId
+PUT    /api/meli/proposals/:proposalId/changes/:changeId
+POST   /api/meli/proposals/:proposalId/apply
+POST   /api/meli/proposals/:proposalId/rollback-proposal
+GET    /api/meli/mutations/:runId
 GET    /api/meli/jobs/:jobId
 GET    /api/meli/operations/metrics
 POST   /api/mercadolivre/webhook
@@ -125,9 +134,12 @@ Todos, exceto o callback OAuth, exigem um Firebase ID token. Tokens MELI nunca a
 - **Falha transitória na renovação:** o lease é liberado e a conexão não é revogada; repetir a operação.
 - **Troca da chave de criptografia:** requer migração/reautorização planejada. Não trocar o secret diretamente enquanto houver conexões armazenadas.
 
-## Limites atuais e próxima fase
+## Limites atuais
 
-- Fase D: escrita assistida, snapshots pré/pós-operação, verificação e rollback por nova proposta.
+- Preço, estoque e categoria continuam bloqueados e nunca entram no payload de escrita.
+- Criação ou substituição de imagem exige que o operador informe uma URL HTTPS.
+- A reversão é uma nova proposta e pode ser recusada pelo Mercado Livre caso o campo
+  tenha se tornado imutável, controlado por catálogo ou incompatível com o schema atual.
 
 As filas permanecem em processo, mas os jobs são duráveis no Firestore e usam
 leases: após restart, o scheduler reenfileira trabalhos sem lease válido. Uma
@@ -141,9 +153,9 @@ ignorados por hash e sellers ainda não mapeados ficam em quarentena. Para
 habilitar o fluxo completo no DevCenter, assinar os tópicos `items`,
 `user_products` e `user_products_families`.
 
-Como a Fase D ainda não existe, a reconciliação de User Products cobre leitura,
-webhooks e sincronização de escopo. A reconciliação pós-publicação será ligada
-aos mesmos mecanismos quando o executor de mudanças for implementado.
+A reconciliação de User Products cobre leitura, webhooks, sincronização de escopo
+e releitura após publicação. Propagação assíncrona continua sinalizada no alcance
+da proposta e pode exigir uma sincronização posterior dos anúncios relacionados.
 
 ## Verificação local
 
@@ -151,5 +163,10 @@ aos mesmos mecanismos quando o executor de mudanças for implementado.
 npm run verify:meli
 npm run verify:meli:audit
 npm run verify:meli:review
+npm run verify:meli:write
 npm run build
 ```
+
+Antes de habilitar a escrita em produção, publicar também as regras e os índices
+versionados (`firestore.rules` e `firestore.indexes.json`), incluindo o índice de
+recuperação de `meli_mutation_runs`.

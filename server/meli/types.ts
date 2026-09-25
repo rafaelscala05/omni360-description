@@ -39,7 +39,7 @@ export interface MeliConnectionView {
   siteId: string | null;
   scopes: string[];
   status: MeliConnectionStatus | 'disconnected';
-  mode: 'audit_only';
+  mode: 'audit_only' | 'assisted_write';
   lastSyncedAt: string | null;
 }
 
@@ -177,7 +177,7 @@ export interface MeliAnalysisRecord {
     descriptionPlainText: string | null;
     attributes: Array<{ id: string; valueName: string; valueId: string | null; reason: string; evidence: string[] }>;
     saleTerms: Array<{ id: string; valueName: string; valueId: string | null; reason: string; evidence: string[] }>;
-    picturePlan: Array<{ pictureId: string | null; action: MeliImageDiagnostic['action']; reason: string }>;
+    picturePlan: Array<{ pictureId: string | null; action: MeliImageDiagnostic['action']; targetOrder?: number | null; reason: string }>;
   };
   imageDiagnostics: MeliImageDiagnostic[];
   aiStatus: 'pending' | 'completed' | 'failed' | 'not_configured';
@@ -195,6 +195,10 @@ export type MeliProposalStatus =
   | 'partially_approved'
   | 'approved'
   | 'rejected'
+  | 'applying'
+  | 'applied'
+  | 'partially_applied'
+  | 'failed'
   | 'stale';
 export type MeliChangeRisk = 'low' | 'medium' | 'high' | 'blocked';
 export type MeliApprovalStatus = 'pending' | 'approved' | 'rejected';
@@ -225,6 +229,8 @@ export interface MeliListingChange {
   approvalStatus: MeliApprovalStatus;
   approvedBy: string | null;
   approvedAt: string | null;
+  editedBy?: string | null;
+  editedAt?: string | null;
   createdAt: string;
 }
 
@@ -242,6 +248,34 @@ export interface MeliListingProposal {
   changeCount: number;
   approvedCount: number;
   rejectedCount: number;
+  rollbackOfProposalId?: string | null;
+  lastMutationRunId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MeliMutationStatus = 'queued' | 'running' | 'verifying' | 'succeeded' | 'partial' | 'failed' | 'rolled_back';
+
+export interface MeliMutationRun {
+  id: string;
+  proposalId: string;
+  listingId: string;
+  idempotencyKey: string;
+  status: MeliMutationStatus;
+  sanitizedRequest: Record<string, unknown>;
+  sanitizedResponse: Record<string, unknown> | null;
+  warnings: string[];
+  differences: string[];
+  approvedChangeIds: string[];
+  appliedChangeIds: string[];
+  verifiedChangeIds: string[];
+  beforeSnapshotId: string | null;
+  afterSnapshotId: string | null;
+  error: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  processingLeaseId?: string | null;
+  processingLeaseUntil?: number | null;
   createdAt: string;
   updatedAt: string;
 }

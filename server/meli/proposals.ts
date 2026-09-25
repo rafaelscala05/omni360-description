@@ -138,7 +138,7 @@ function changeDrafts(listing: MeliListingRecord, analysis: MeliAnalysisRecord):
     fieldPath: plan.pictureId ? `pictures.${plan.pictureId}` : `pictures.plan.${index}`,
     resource: 'item', changeType: plan.action === 'reorder' ? 'reorder' : plan.action === 'remove' ? 'remove' : plan.action === 'create' ? 'add' : 'replace',
     oldValue: plan.pictureId ? asObjects(listing.pictures).find((picture) => String(picture.id) === plan.pictureId) || null : null,
-    newValue: { action: plan.action, pictureId: plan.pictureId }, reason: plan.reason, evidence: [], confidence: 0.7,
+    newValue: { action: plan.action, pictureId: plan.pictureId, ...(plan.targetOrder ? { targetOrder: plan.targetOrder } : {}) }, reason: plan.reason, evidence: [], confidence: 0.7,
     approvalStatus: 'pending', approvedBy: null, approvedAt: null,
   }));
   return changes;
@@ -229,7 +229,8 @@ export async function getProposal(uid: string, proposalId: string): Promise<{ pr
   if (!proposalSnap.exists) return null;
   let proposal = proposalSnap.data() as MeliListingProposal;
   const listing = await LISTINGS_REF(uid).doc(proposal.listingId).get();
-  if (listing.exists && listing.data()?.contentHash !== proposal.baseContentHash && proposal.status !== 'stale') {
+  if (listing.exists && listing.data()?.contentHash !== proposal.baseContentHash
+    && !['stale', 'applied', 'partially_applied', 'failed', 'rejected'].includes(proposal.status)) {
     proposal = { ...proposal, status: 'stale', updatedAt: new Date().toISOString() };
     await proposalSnap.ref.set({ status: 'stale', updatedAt: proposal.updatedAt }, { merge: true });
   }
@@ -249,7 +250,9 @@ export async function markListingProposalsStale(uid: string, itemId: string): Pr
   const batch = adminDb.batch();
   snap.docs.forEach((doc) => {
     const status = (doc.data() as MeliListingProposal).status;
-    if (status !== 'stale') batch.set(doc.ref, { status: 'stale', updatedAt: now }, { merge: true });
+    if (!['stale', 'applied', 'partially_applied', 'failed', 'rejected'].includes(status)) {
+      batch.set(doc.ref, { status: 'stale', updatedAt: now }, { merge: true });
+    }
   });
   await batch.commit();
 }
@@ -280,13 +283,18 @@ export async function decideChange(
     const proposal = proposalSnap.data() as MeliListingProposal;
     const change = changeSnap.data() as MeliListingChange;
     if (change.proposalId !== proposalId) throw Object.assign(new Error('A mudança não pertence à proposta.'), { status: 409 });
-    if (proposal.status === 'stale') throw Object.assign(new Error('A proposta está desatualizada e não pode ser revisada.'), { status: 409 });
+    if (['stale', 'applying', 'applied', 'partially_applied'].includes(proposal.status)) {
+      throw Object.assign(new Error('Esta proposta não pode mais ser revisada neste estado.'), { status: 409 });
+    }
     if (!listingSnap.exists || listingSnap.data()?.contentHash !== proposal.baseContentHash) {
       tx.set(proposalRef, { status: 'stale', updatedAt: new Date().toISOString() }, { merge: true });
       return 'stale' as const;
     }
     if (change.riskLevel === 'blocked' && approvalStatus === 'approved') throw Object.assign(new Error('Mudanças bloqueadas não podem ser aprovadas.'), { status: 422 });
     if (change.requiresConfirmation && approvalStatus === 'approved' && !confirmed) throw Object.assign(new Error('Esta mudança exige confirmação factual explícita.'), { status: 422 });
+    if (approvalStatus === 'approved' && change.fieldPath.startsWith('pictures.')) {
+      normalizeEditedValue(change.fieldPath, change.newValue, listingSnap.data() as MeliListingRecord);
+    }
     const now = new Date().toISOString();
     const statuses = changesSnap.docs.map((doc) => doc.id === changeId ? approvalStatus : (doc.data() as MeliListingChange).approvalStatus);
     const status = proposalStatus(statuses);
@@ -308,5 +316,114 @@ export async function decideChange(
   await LISTINGS_REF(uid).doc(result.proposal.listingId).set({
     proposalSummary: { proposalId, version: result.proposal.version, status: result.proposal.status, changeCount: result.changes.length, updatedAt: result.proposal.updatedAt },
   }, { merge: true });
+  return result;
+}
+
+function normalizeEditedValue(fieldPath: string, value: unknown, listing: MeliListingRecord): unknown {
+  if (fieldPath === 'title') {
+    if (listing.soldQuantity > 0) throw Object.assign(new Error('O título não pode ser editado após o anúncio registrar vendas.'), { status: 422 });
+    if (listing.catalogProductId) throw Object.assign(new Error('O título deste anúncio pode ser controlado pelo catálogo.'), { status: 422 });
+    const title = typeof value === 'string' ? value.trim() : '';
+    if (!title || title.length > 300 || /<[^>]+>|https?:\/\/|www\.|\b(?:whats|telefone|e-mail|email)\b/i.test(title)) {
+      throw Object.assign(new Error('Informe um título válido, sem HTML, URL ou contato.'), { status: 422 });
+    }
+    return title;
+  }
+  if (fieldPath === 'description.plain_text') {
+    const description = typeof value === 'string' ? value.trim() : '';
+    if (!description || description.length > 10_000 || /<\/?[a-z][^>]*>|https?:\/\/|www\.|\b(?:whats|telefone|e-mail|email)\b/i.test(description)) {
+      throw Object.assign(new Error('Informe uma descrição em texto simples, sem HTML, URL ou contato.'), { status: 422 });
+    }
+    return description;
+  }
+  if (fieldPath.startsWith('attributes.') || fieldPath.startsWith('sale_terms.')) {
+    const id = fieldPath.split('.').slice(1).join('.');
+    const candidate = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+    const valueName = typeof candidate.valueName === 'string' ? candidate.valueName.trim() : '';
+    const valueId = typeof candidate.valueId === 'string' && candidate.valueId.trim() ? candidate.valueId.trim() : null;
+    if (!id || !valueName || valueName.length > 500) throw Object.assign(new Error('Informe um valor válido para o campo.'), { status: 422 });
+    return { id, valueId, valueName };
+  }
+  if (fieldPath.startsWith('pictures.')) {
+    const candidate = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+    const action = String(candidate.action || '');
+    if (!['reorder', 'remove', 'replace', 'create', 'restore'].includes(action)) {
+      throw Object.assign(new Error('Ação de imagem inválida.'), { status: 422 });
+    }
+    const source = typeof candidate.source === 'string' ? candidate.source.trim() : '';
+    if ((action === 'create' || action === 'replace') && !/^https:\/\//i.test(source)) {
+      throw Object.assign(new Error('Criação e substituição de imagem exigem uma URL HTTPS.'), { status: 422 });
+    }
+    const targetOrder = Number(candidate.targetOrder);
+    if (action === 'reorder' && (!Number.isInteger(targetOrder) || targetOrder < 1)) {
+      throw Object.assign(new Error('Informe uma posição de imagem válida, começando em 1.'), { status: 422 });
+    }
+    const pictures = action === 'restore' && Array.isArray(candidate.pictures)
+      ? candidate.pictures.map((picture) => ({ id: String((picture as any)?.id || '') })).filter((picture) => picture.id)
+      : undefined;
+    if (action === 'restore' && !pictures?.length) throw Object.assign(new Error('O conjunto de imagens para restauração está vazio.'), { status: 422 });
+    return {
+      action,
+      pictureId: candidate.pictureId ? String(candidate.pictureId) : null,
+      ...(source ? { source } : {}),
+      ...(action === 'reorder' ? { targetOrder } : {}),
+      ...(pictures ? { pictures } : {}),
+    };
+  }
+  throw Object.assign(new Error('Este campo não pode ser editado na proposta.'), { status: 422 });
+}
+
+export async function editChange(
+  uid: string,
+  proposalId: string,
+  changeId: string,
+  newValue: unknown,
+): Promise<{ proposal: MeliListingProposal; changes: MeliListingChange[] }> {
+  const proposalRef = PROPOSALS_REF(uid).doc(proposalId);
+  const changeRef = CHANGES_REF(uid).doc(changeId);
+  await adminDb.runTransaction(async (tx) => {
+    const [proposalSnap, changeSnap, changesSnap] = await Promise.all([
+      tx.get(proposalRef), tx.get(changeRef), tx.get(CHANGES_REF(uid).where('proposalId', '==', proposalId)),
+    ]);
+    if (!proposalSnap.exists || !changeSnap.exists) throw Object.assign(new Error('Proposta ou mudança não encontrada.'), { status: 404 });
+    const proposal = proposalSnap.data() as MeliListingProposal;
+    const change = changeSnap.data() as MeliListingChange;
+    if (change.proposalId !== proposalId) throw Object.assign(new Error('A mudança não pertence à proposta.'), { status: 409 });
+    if (['stale', 'applying', 'applied', 'partially_applied'].includes(proposal.status)) {
+      throw Object.assign(new Error('Esta proposta não pode mais ser editada neste estado.'), { status: 409 });
+    }
+    const listingSnap = await tx.get(LISTINGS_REF(uid).doc(proposal.listingId));
+    if (!listingSnap.exists || listingSnap.data()?.contentHash !== proposal.baseContentHash) {
+      tx.set(proposalRef, { status: 'stale', updatedAt: new Date().toISOString() }, { merge: true });
+      return;
+    }
+    const normalized = normalizeEditedValue(change.fieldPath, newValue, listingSnap.data() as MeliListingRecord);
+    const now = new Date().toISOString();
+    const statuses = changesSnap.docs.map((doc) => doc.id === changeId ? 'pending' as const : (doc.data() as MeliListingChange).approvalStatus);
+    const baseRisk = riskForChange(change.fieldPath, `Edição manual pelo operador. ${JSON.stringify(normalized)}`);
+    const manuallyConfirmedField = change.fieldPath === 'description.plain_text'
+      || change.fieldPath.startsWith('attributes.') || change.fieldPath.startsWith('sale_terms.');
+    tx.set(changeRef, {
+      newValue: jsonSafe(normalized),
+      reason: `${change.reason} Valor ajustado manualmente pelo operador.`,
+      approvalStatus: 'pending', approvedBy: null, approvedAt: null,
+      editedBy: uid, editedAt: now,
+      riskLevel: manuallyConfirmedField && baseRisk.riskLevel === 'medium' ? 'high' : baseRisk.riskLevel,
+      requiresConfirmation: baseRisk.requiresConfirmation || manuallyConfirmedField,
+    }, { merge: true });
+    tx.set(proposalRef, {
+      status: proposalStatus(statuses),
+      approvedCount: statuses.filter((status) => status === 'approved').length,
+      rejectedCount: statuses.filter((status) => status === 'rejected').length,
+      updatedAt: now,
+    }, { merge: true });
+    tx.set(AUDIT_REF(uid).doc(), {
+      actorType: 'user', actorId: uid, action: 'meli.change.edited',
+      resourceType: 'meli_listing_change', resourceId: changeId,
+      metadata: { proposalId, fieldPath: change.fieldPath }, createdAt: now,
+    });
+  });
+  const result = await getProposal(uid, proposalId);
+  if (!result) throw Object.assign(new Error('Proposta não encontrada após a edição.'), { status: 404 });
   return result;
 }
