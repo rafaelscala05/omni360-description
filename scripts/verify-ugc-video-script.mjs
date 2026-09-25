@@ -21,6 +21,8 @@ const prompt = buildUgcScriptPrompt({
   avatarDescricao: 'Mulher jovem, 25 anos, estilo casual',
 });
 check('prompt inclui a descrição do avatar', prompt.includes('Mulher jovem, 25 anos, estilo casual'), true);
+check('prompt exige ângulo de câmera diferente por clipe', prompt.includes('DINÂMICA DE CÂMERA') && prompt.includes('Câmera: <ângulo>'), true);
+check('prompt mantém o rosto do avatar em quadro ao variar o ângulo', prompt.includes('rosto dele precisa ficar visível'), true);
 check('prompt inclui o nome do produto', prompt.includes('Fone XPTO'), true);
 check('prompt pede de 2 a 3 clipes', prompt.includes('2 a 3 clipes'), true);
 
@@ -96,6 +98,7 @@ const clipPrompt = buildUgcClipPrompt({
 });
 check('prompt do clipe inclui a descrição do avatar (aparência e voz)', clipPrompt.prompt.includes('mulher, 28 anos, tom de voz animado'), true);
 check('prompt do clipe inclui a fala', clipPrompt.prompt.includes('Olha só isso'), true);
+check('prompt do clipe manda seguir o ângulo de câmera', clipPrompt.prompt.includes('ângulo e o movimento de câmera'), true);
 check('prompt do clipe pede a mesma voz em todos os clipes', clipPrompt.prompt.includes('mesma voz'), true);
 check('negativePrompt existe e barra voz robótica', clipPrompt.negativePrompt.includes('voz robótica'), true);
 

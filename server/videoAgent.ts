@@ -13,7 +13,7 @@ import {
   STORAGE_BUCKET, GCP_PROJECT, VEO_MODEL, TEXT_MODEL, VIDEO_ASPECT_RATIO, REFERENCE_MAX_DIM,
   getGeminiClient, getVeoClient, now, sendError, fetchImageAsBase64, resizeForReference,
   runFfmpeg, runVeoOperation, formatAttributes, debitCreditsAdmin, refundCreditsAdmin, assertNoActiveVideoJob,
-  PRODUCT_REFERENCE_PROMPT_LINE, PRODUCT_REFERENCE_NEGATIVE,
+  PRODUCT_REFERENCE_PROMPT_LINE, PRODUCT_REFERENCE_NEGATIVE, CAMERA_VARIETY_RULE,
 } from './videoShared';
 
 // Background music + TTS voice for the final mix. The audio is added AFTER the
@@ -259,6 +259,7 @@ ${formatAttributes(attributes)}
   2) MEIO/uso (~8s): produto em uso real, funcionamento, manipulação rica.
   3) MEIO/benefícios (~8s): close-ups destacando 2–3 atributos/benefícios.
   4) FIM (~8s): fechamento com chamada para ação (ex.: "Garanta o seu agora").
+${CAMERA_VARIETY_RULE}
 - Sem texto na tela. Sem efeitos artificiais. Realista, luz natural ou de estúdio.
 - NARRAÇÃO CURTA: cada "narracao" deve ter no máximo ~16 palavras (o total será lido em ~32s).
 
@@ -266,7 +267,7 @@ ${formatAttributes(attributes)}
 - cena: ambientação/visual geral, coerente em todos os shots, baseada na imagem (máx. 120 caracteres).
 - trilha: mood da música de fundo (ex.: "moderna, leve e otimista") (máx. 60 caracteres).
 - inicio, meioDemonstracao, meioBeneficios, fim: cada um com:
-   - acao: o que acontece visualmente (câmera + manipulação) (máx. 200 caracteres).
+   - acao: "Câmera: <ângulo> + <movimento>." seguido do que acontece visualmente (manipulação) (máx. 260 caracteres).
    - narracao: a locução em off desse trecho (frase curta, máx. ~16 palavras).
 
 Retorne APENAS um JSON válido neste formato exato (sem markdown, sem texto extra):
@@ -314,7 +315,7 @@ async function runVideoJob(
   meta: { productName?: string; userName?: string } = {},
 ): Promise<void> {
   const jobRef = adminDb.collection('users').doc(uid).collection('videoJobs').doc(jobId);
-  console.log(`[video] runVideoJob start uid=${uid} jobId=${jobId} productId=${productId}`);
+  console.log(`[video] runVideoJob start uid=${uid} jobId=${jobId} productId=${productId} productReference=${productReference ? 'yes' : 'no'}`);
 
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), `video-${jobId}-`));
 
@@ -343,6 +344,7 @@ async function runVideoJob(
       const prompt = [
         `Cena: ${script.cena}`,
         `Ato (${shot.ato}, ~${shot.seconds}s): ${shotScript.acao}`,
+        'Siga EXATAMENTE o ângulo e o movimento de câmera descritos no ato.',
         styleLine,
         rulesLine,
         fidelityLine,

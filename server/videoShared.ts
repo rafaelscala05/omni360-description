@@ -32,6 +32,13 @@ export const REFERENCE_MAX_DIM = 1024;
 // Veo tends to reproduce the grid/labels on screen.
 export const PRODUCT_REFERENCE_PROMPT_LINE =
   'REFERÊNCIA DO PRODUTO: uma das imagens de referência é uma folha técnica com o produto em vários ângulos e close-ups dos detalhes. Use-a só para reproduzir o produto com fidelidade total em qualquer ângulo (formato, cores, logotipos, textos, materiais, cada detalhe). Nunca mostre a folha, a grade, os rótulos nem o fundo branco dela no vídeo.';
+// Shared by both script prompts: each shot/clip is an independent Veo generation
+// joined by hard cuts, so the only thing that makes the cut feel dynamic is a
+// different camera angle per shot — and Veo only sees the angle if the script's
+// action text states it.
+export const CAMERA_VARIETY_RULE = `- DINÂMICA DE CÂMERA (obrigatório): cada shot/clipe usa um ÂNGULO e um MOVIMENTO de câmera DIFERENTES dos outros — nunca repita o mesmo enquadramento em dois cortes seguidos. Varie entre: close-up/plano detalhe, plano médio, plano aberto, ângulo de cima (top-down/plongée), ângulo baixo (contra-plongée), lateral/perfil, 3/4, sobre o ombro (POV), e movimentos como travelling lateral, dolly-in (aproximação), dolly-out, órbita ao redor do produto, pan, tilt ou câmera na mão.
+- O texto da ação de cada shot/clipe COMEÇA pelo enquadramento, no formato "Câmera: <ângulo> + <movimento>. <o que acontece>" (ex.: "Câmera: close-up de cima, dolly-in lento. Mãos giram a tampa e revelam o bico.").`;
+
 export const PRODUCT_REFERENCE_NEGATIVE = 'colagem, grade de imagens, folha de referência na tela, rótulos de texto, fundo branco de estúdio';
 
 export function getGeminiClient() {

@@ -16,7 +16,7 @@ import {
   VEO_MODEL, VIDEO_ASPECT_RATIO, VideoGenerationReferenceType,
   getVeoClient, resizeForReference, runVeoOperation, runFfmpeg,
   debitCreditsAdmin, refundCreditsAdmin, assertNoActiveVideoJob, now, STORAGE_BUCKET,
-  PRODUCT_REFERENCE_PROMPT_LINE, PRODUCT_REFERENCE_NEGATIVE,
+  PRODUCT_REFERENCE_PROMPT_LINE, PRODUCT_REFERENCE_NEGATIVE, CAMERA_VARIETY_RULE,
 } from './videoShared';
 import type { GoogleGenAI } from '@google/genai';
 
@@ -80,7 +80,9 @@ ${formatAttributes(attributes)}
   2) "demonstracao": o avatar usa/mostra o produto, citando 1 a 2 atributos reais (nunca invente características).
   3) "cta" (opcional, só inclua se o roteiro tiver 3 clipes): fechamento com chamada para ação.
 - "fala": o que o avatar diz, em português do Brasil, tom espontâneo e conversacional (nunca comercial engessado), no máximo ~20 palavras (cabe em ~8s falado).
-- "acaoVisual": o que acontece na cena além da fala (gestos, ângulo de câmera, manipulação do produto).
+- "acaoVisual": começa por "Câmera: <ângulo> + <movimento>." e depois descreve o que acontece na cena além da fala (gestos, manipulação do produto).
+${CAMERA_VARIETY_RULE}
+- Como o avatar FALA em todos os clipes, o rosto dele precisa ficar visível em todos: varie o enquadramento sem tirar o rosto de quadro (ex.: selfie em close no gancho; plano médio com o produto em primeiro plano ou câmera por cima do ombro mostrando produto e rosto na demonstração; ângulo lateral/3/4 com leve aproximação no fechamento).
 - Nunca invente atributos que não estejam na lista de atributos ou na descrição.
 
 **CAMPOS (responda em pt-BR):**
@@ -164,6 +166,7 @@ export function buildUgcClipPrompt(params: {
     'Mantenha exatamente a mesma voz (timbre, tom, energia e sotaque) em todos os clipes deste vídeo.',
     `Papel do clipe: ${clip.papel} (~8s)`,
     `Ação visual: ${clip.acaoVisual}`,
+    'Siga EXATAMENTE o ângulo e o movimento de câmera descritos na ação visual.',
     `Fala do avatar (dita olhando para a câmera): "${clip.fala}"`,
     styleLine,
     rulesLine,
@@ -253,7 +256,7 @@ async function runUgcVideoJob(
   meta: { productName?: string; userName?: string } = {},
 ): Promise<void> {
   const jobRef = adminDb.collection('users').doc(uid).collection('ugcVideoJobs').doc(jobId);
-  console.log(`[ugc-video] runUgcVideoJob start uid=${uid} jobId=${jobId} productId=${productId}`);
+  console.log(`[ugc-video] runUgcVideoJob start uid=${uid} jobId=${jobId} productId=${productId} productReference=${productReference ? 'yes' : 'no'}`);
 
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), `ugc-video-${jobId}-`));
 
