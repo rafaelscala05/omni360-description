@@ -60,7 +60,10 @@ export async function generateUgcVideoScript(
 
 export async function startUgcVideoJob(
   idToken: string,
-  params: { productId: string; productName: string; script: UgcVideoScript; avatarImageUrl: string; productImageUrl: string },
+  params: {
+    productId: string; productName: string; script: UgcVideoScript; avatarImageUrl: string; productImageUrl: string;
+    productReferenceUrl: string;
+  },
 ): Promise<string> {
   const res = await fetch('/api/video/ugc/start-job', {
     method: 'POST',

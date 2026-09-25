@@ -10,6 +10,7 @@ import {
 } from '../../services/ugcVideoService';
 import { cn, PrereqItem } from './videoWizardShared';
 import AvatarLibrary from './AvatarLibrary';
+import { collectProductPhotos } from '../../services/productReferencePrompt';
 import type { CreditAction } from '../../credits';
 
 export interface UgcVideoGenerationTabProps {
@@ -23,6 +24,9 @@ export interface UgcVideoGenerationTabProps {
   activeVideoProductId?: string;
   ensureCredits: (action: CreditAction) => boolean;
   consumeCredit: (action: CreditAction, productName?: string) => Promise<boolean>;
+  // Saved Product Reference sheet — required to start a new video.
+  productReferenceUrl?: string;
+  onEditReference: () => void;
 }
 
 type Stage = 'prereqs' | 'select-avatar' | 'script' | 'generate';
@@ -35,12 +39,15 @@ const ROLE_LABELS: Record<UgcVideoScript['clipes'][number]['papel'], string> = {
 
 export default function UgcVideoGenerationTab({
   product, uid, getIdToken, onUgcVideoGenerated, onUgcVideoJobStarted, onUgcVideoFailed, onNavigateToTab,
-  activeVideoProductId, ensureCredits, consumeCredit,
+  activeVideoProductId, ensureCredits, consumeCredit, productReferenceUrl, onEditReference,
 }: UgcVideoGenerationTabProps) {
   const hasDescription = !!product['Descrição complementar']?.trim();
   const hasSeoTitle = !!product['Título SEO']?.trim();
-  const hasImages = (product._ambientImages?.length ?? 0) > 0;
-  const prereqsMet = hasDescription && hasSeoTitle && hasImages;
+  const hasReference = !!productReferenceUrl;
+  const prereqsMet = hasDescription && hasSeoTitle && hasReference;
+  // Real photo sent alongside the reference sheet: the sheet carries every angle,
+  // the photo carries the true look (lighting, texture) of the product.
+  const mainPhoto = collectProductPhotos(product)[0] ?? productReferenceUrl ?? null;
 
   const [stage, setStage] = useState<Stage>('prereqs');
   const [avatar, setAvatar] = useState<Avatar | null>(null);
@@ -89,7 +96,8 @@ export default function UgcVideoGenerationTab({
 
   async function handleGenerateScript() {
     if (!avatar) return;
-    const productImage = product._selectedImage ?? product._ambientImages?.[0] ?? null;
+    // The script model reads the sheet: it shows every angle and labelled detail.
+    const productImage = productReferenceUrl ?? mainPhoto;
     if (!productImage) return;
     setScriptLoading(true);
     setScriptError(null);
@@ -115,9 +123,7 @@ export default function UgcVideoGenerationTab({
   }
 
   async function handleStartJob() {
-    if (!script || !avatar) return;
-    const productImage = product._selectedImage ?? product._ambientImages?.[0] ?? null;
-    if (!productImage) return;
+    if (!script || !avatar || !productReferenceUrl || !mainPhoto) return;
     setJobLoading(true);
     setJobError(null);
     try {
@@ -127,7 +133,8 @@ export default function UgcVideoGenerationTab({
         productName: product['Descrição'] ?? product._id,
         script,
         avatarImageUrl: avatar.referenceImageUrl,
-        productImageUrl: productImage,
+        productImageUrl: mainPhoto,
+        productReferenceUrl,
       });
       setJobId(id);
       onUgcVideoJobStarted?.(product._id, id, avatar.id);
@@ -194,13 +201,13 @@ export default function UgcVideoGenerationTab({
             <span className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-xs font-bold uppercase tracking-wide">Beta</span>
           </h2>
           <p className="text-sm text-slate-500 mb-6 leading-relaxed">
-            Um avatar seu (ou criado por você) fala para a câmera e interage com o produto. Precisa das mesmas informações do vídeo clássico.
+            Um avatar seu (ou criado por você) fala para a câmera e interage com o produto. O produto segue a referência salva em todas as cenas.
           </p>
 
           <div className="space-y-3 mb-6">
             <PrereqItem ok={hasDescription} label="Descrição complementar gerada" onFix={() => onNavigateToTab('ia')} fixLabel="Ir para IA" />
             <PrereqItem ok={hasSeoTitle} label="Título SEO preenchido" onFix={() => onNavigateToTab('ia')} fixLabel="Ir para IA" />
-            <PrereqItem ok={hasImages} label="Imagens ambientadas geradas (mínimo 1)" onFix={() => onNavigateToTab('imagem')} fixLabel="Ir para Imagens" />
+            <PrereqItem ok={hasReference} label="Referência do produto salva" onFix={onEditReference} fixLabel="Criar referência" />
           </div>
 
           <button
@@ -352,7 +359,7 @@ export default function UgcVideoGenerationTab({
                 </a>
                 <button
                   type="button"
-                  onClick={() => { setStage('select-avatar'); setJob(null); setJobId(null); setScript(null); setJobLoading(false); }}
+                  onClick={() => { setStage(prereqsMet ? 'select-avatar' : 'prereqs'); setJob(null); setJobId(null); setScript(null); setJobLoading(false); }}
                   className="px-5 py-2.5 border border-violet-200 text-violet-700 rounded-xl text-sm font-bold hover:bg-violet-50 flex items-center gap-2"
                 >
                   <RefreshCw className="w-4 h-4" /> Gerar Novo Vídeo
@@ -367,7 +374,7 @@ export default function UgcVideoGenerationTab({
                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                 <div><p className="font-bold mb-1">Falha na geração do vídeo</p><p>{job.error ?? 'Erro desconhecido'}</p></div>
               </div>
-              <button type="button" onClick={() => { setStage('select-avatar'); setJob(null); setJobId(null); setJobLoading(false); }} className="px-5 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 flex items-center gap-2">
+              <button type="button" onClick={() => { setStage(prereqsMet ? 'select-avatar' : 'prereqs'); setJob(null); setJobId(null); setJobLoading(false); }} className="px-5 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 flex items-center gap-2">
                 <RefreshCw className="w-4 h-4" /> Tentar Novamente
               </button>
             </div>

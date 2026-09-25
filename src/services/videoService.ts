@@ -73,6 +73,8 @@ export async function startVideoJob(
     productName: string;
     script: VideoScript;
     shotImageUrls: string[];
+    /** Folha de referência do produto (vários ângulos) — enviada ao Veo em todos os shots */
+    productReferenceUrl: string;
   },
 ): Promise<string> {
   const res = await fetch('/api/video/start-job', {

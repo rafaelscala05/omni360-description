@@ -9,6 +9,7 @@ import {
   type VideoScript, type VideoJob, type VideoJobStep,
 } from '../../services/videoService';
 import { cn, PrereqItem } from './videoWizardShared';
+import { collectProductPhotos } from '../../services/productReferencePrompt';
 
 export interface VideoGenerationTabProps {
   product: Product;
@@ -18,6 +19,9 @@ export interface VideoGenerationTabProps {
   onVideoJobStarted?: (productId: string, jobId: string) => void;
   onNavigateToTab: (tab: 'imagem' | 'ia') => void;
   activeVideoProductId?: string;
+  // Saved Product Reference sheet — required to start a new video.
+  productReferenceUrl?: string;
+  onEditReference: () => void;
 }
 
 type Stage = 'prereqs' | 'select-image' | 'script' | 'generate';
@@ -51,10 +55,12 @@ const SHOT_FIELDS: Array<{
 ];
 
 // Monta 1 imagem de referência por shot, na ordem canônica dos SHOT_FIELDS,
-// escolhendo a cena ambientada mais coerente com fallback gracioso.
+// escolhendo a cena ambientada mais coerente com fallback gracioso. Imagem
+// ambientada é opcional: sem ela, cada shot usa a foto real do produto (a
+// fidelidade vem da referência do produto, enviada junto em todos os shots).
 function buildShotImageUrls(product: Product): string[] {
   const ambient = product._ambientImages ?? [];
-  const original = product._selectedImage ?? '';
+  const original = collectProductPhotos(product)[0] ?? '';
   const available = [original, ...ambient].filter(Boolean);
   const firstAvailable = available[0] ?? '';
   const pick = (preferred?: string) => preferred || original || firstAvailable;
@@ -69,11 +75,12 @@ function buildShotImageUrls(product: Product): string[] {
 
 export default function VideoGenerationTab({
   product, uid, getIdToken, onVideoGenerated, onVideoJobStarted, onNavigateToTab, activeVideoProductId,
+  productReferenceUrl, onEditReference,
 }: VideoGenerationTabProps) {
   const hasDescription = !!product['Descrição complementar']?.trim();
   const hasSeoTitle = !!product['Título SEO']?.trim();
-  const hasImages = (product._ambientImages?.length ?? 0) > 0;
-  const prereqsMet = hasDescription && hasSeoTitle && hasImages;
+  const hasReference = !!productReferenceUrl;
+  const prereqsMet = hasDescription && hasSeoTitle && hasReference;
 
   const [stage, setStage] = useState<Stage>('prereqs');
   const [script, setScript] = useState<VideoScript | null>(null);
@@ -121,7 +128,8 @@ export default function VideoGenerationTab({
   }
 
   async function handleGenerateScript() {
-    const primaryImage = product._selectedImage ?? product._ambientImages?.[0] ?? null;
+    // The script model reads the sheet: it shows every angle and labelled detail.
+    const primaryImage = productReferenceUrl ?? collectProductPhotos(product)[0] ?? null;
     if (!primaryImage) return;
     setScriptLoading(true);
     setScriptError(null);
@@ -145,7 +153,7 @@ export default function VideoGenerationTab({
   }
 
   async function handleStartJob() {
-    if (!script) return;
+    if (!script || !productReferenceUrl) return;
     setJobLoading(true);
     setJobError(null);
     try {
@@ -155,6 +163,7 @@ export default function VideoGenerationTab({
         productName: product['Descrição'] ?? product._id,
         script,
         shotImageUrls: buildShotImageUrls(product),
+        productReferenceUrl,
       });
       setJobId(id);
       onVideoJobStarted?.(product._id, id);
@@ -248,10 +257,10 @@ export default function VideoGenerationTab({
               fixLabel="Ir para IA"
             />
             <PrereqItem
-              ok={hasImages}
-              label="Imagens ambientadas geradas (mínimo 1)"
-              onFix={() => onNavigateToTab('imagem')}
-              fixLabel="Ir para Imagens"
+              ok={hasReference}
+              label="Referência do produto salva"
+              onFix={onEditReference}
+              fixLabel="Criar referência"
             />
           </div>
 
@@ -281,10 +290,19 @@ export default function VideoGenerationTab({
             Imagens do vídeo
           </h2>
           <p className="text-sm text-slate-500 mb-4">
-            Cada trecho do vídeo usa a cena mais coerente como referência. As imagens são
-            recortadas no formato vertical (9:16). A narração de cada trecho aparece como
-            legenda na tela.
+            Cada trecho do vídeo usa a cena mais coerente como referência, sempre junto com a
+            referência do produto para manter a integridade dele. As imagens são recortadas no
+            formato vertical (9:16). A narração de cada trecho aparece como legenda na tela.
           </p>
+
+          {productReferenceUrl && (
+            <div className="flex items-center gap-3 p-3 mb-4 rounded-xl border border-violet-100 bg-violet-50/50">
+              <img src={productReferenceUrl} alt="Referência do produto" className="w-16 h-12 rounded-lg object-cover border border-white bg-white shrink-0" referrerPolicy="no-referrer" />
+              <p className="text-xs text-violet-800 font-medium leading-relaxed">
+                A referência do produto acompanha todos os trechos abaixo.
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
             {SHOT_FIELDS.map(({ key, title, badge }, i) => {
@@ -456,7 +474,7 @@ export default function VideoGenerationTab({
                 <button
                   type="button"
                   onClick={() => {
-                    setStage('select-image');
+                    setStage(prereqsMet ? 'select-image' : 'prereqs');
                     setJob(null);
                     setJobId(null);
                     setScript(null);
@@ -483,7 +501,7 @@ export default function VideoGenerationTab({
               <button
                 type="button"
                 onClick={() => {
-                  setStage('select-image');
+                  setStage(prereqsMet ? 'select-image' : 'prereqs');
                   setJob(null);
                   setJobId(null);
                   setJobLoading(false);

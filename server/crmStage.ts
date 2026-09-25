@@ -44,6 +44,7 @@ export const IMAGE_ACTION_KEYS = [
   'regenerate_image',
   'content_image',
   'video_generation',
+  'product_reference',
 ];
 
 export const GENERATION_ACTION_KEYS = [...TEXT_ACTION_KEYS, ...IMAGE_ACTION_KEYS];

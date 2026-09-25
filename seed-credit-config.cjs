@@ -48,6 +48,7 @@ const CREDIT_COSTS = {
   content_article: 5,
   content_image: 1,
   content_publish: 1,
+  product_reference: 1,
 };
 
 const app = initializeApp({ projectId: args['project'] }, 'seed-credits');

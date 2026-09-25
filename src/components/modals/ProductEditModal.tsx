@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Product, Category, AttributeDefinition, ProductModalTab, getProductStatusFlags } from '../../types/models';
+import { Product, Category, AttributeDefinition, ProductModalTab, ProductReference, getProductStatusFlags } from '../../types/models';
 import { getEffectiveAttributes } from '../../services/categoryService';
 import { suggestProductAttributes, generateDescriptionText, defaultTemplate, type Template } from '../../services/productService';
 import { trackAttributesGenerated } from '../../analytics';
 import { listReusableArticles } from '../../services/contentService';
 import VideoGenerationTab from './VideoGenerationTab';
 import UgcVideoGenerationTab from './UgcVideoGenerationTab';
+import ProductReferenceStep from './ProductReferenceStep';
 import type { CreditAction } from '../../credits';
 import {
   Sparkles,
@@ -30,6 +31,7 @@ import {
   Eye,
   Code,
   Video,
+  Users,
 } from 'lucide-react';
 
 const cn = (...classes: (string | boolean | undefined)[]) => classes.filter(Boolean).join(' ');
@@ -235,18 +237,21 @@ interface ProductEditModalProps {
   onUgcVideoGenerated?: (productId: string, videoUrl: string, jobId: string) => void;
   onUgcVideoJobStarted?: (productId: string, jobId: string, avatarId: string) => void;
   onUgcVideoFailed?: (productId: string) => void;
+  onProductReferenceSaved?: (productId: string, reference: ProductReference) => void;
   ensureCredits: (action: CreditAction) => boolean;
   consumeCredit: (action: CreditAction, productName?: string) => Promise<boolean>;
 }
 
-export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal, templates = [], selectedTemplateId, uid = '', hasContentAgent = false, hasVideoModule = false, activeVideoProductId, activeUgcVideoProductId, getIdToken, onVideoGenerated, onVideoJobStarted, onUgcVideoGenerated, onUgcVideoJobStarted, onUgcVideoFailed, ensureCredits, consumeCredit }: ProductEditModalProps) {
+export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal, templates = [], selectedTemplateId, uid = '', hasContentAgent = false, hasVideoModule = false, activeVideoProductId, activeUgcVideoProductId, getIdToken, onVideoGenerated, onVideoJobStarted, onUgcVideoGenerated, onUgcVideoJobStarted, onUgcVideoFailed, onProductReferenceSaved, ensureCredits, consumeCredit }: ProductEditModalProps) {
   // Template escolhido para (re)gerar a descrição. Inicia no template padrão da
   // aplicação e pode ser trocado pelo usuário antes de gerar novamente.
   const [chosenTemplateId, setChosenTemplateId] = useState<string>(selectedTemplateId || defaultTemplate.id);
   const [editedProduct, setEditedProduct] = useState<Product>({ ...product });
   const [initialProduct, setInitialProduct] = useState<Product>({ ...product });
   const [activeTab, setActiveTab] = useState<ProductModalTab>(initialTab);
-  const [videoMode, setVideoMode] = useState<'classic' | 'ugc'>('classic');
+  // null = the user still has to pick the video type (after the Product Reference step).
+  const [videoMode, setVideoMode] = useState<'classic' | 'ugc' | null>(null);
+  const [editingReference, setEditingReference] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGeneratingIA, setIsGeneratingIA] = useState(false);
   const [suggestedAttributes, setSuggestedAttributes] = useState<any[]>([]);
@@ -1016,8 +1021,78 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
 
               {activeTab === 'video' && (
                 <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-300 pb-20">
-                  {uid && getIdToken ? (
+                  {uid && getIdToken ? (() => {
+                    const reference = editedProduct._productReference;
+                    // A product that already has a video job keeps reaching its wizard (to follow
+                    // or replay it) even without a reference; any NEW video needs one — the
+                    // wizards block their own start until it exists.
+                    const hasVideoJob = !!editedProduct._videoJobId || !!editedProduct._ugcVideoJobId;
+                    if (editingReference || (!reference && !hasVideoJob)) {
+                      return (
+                        <ProductReferenceStep
+                          product={editedProduct}
+                          uid={uid}
+                          ensureCredits={ensureCredits}
+                          consumeCredit={consumeCredit}
+                          onNavigateToTab={(tab) => setActiveTab(tab)}
+                          onCancel={reference ? () => setEditingReference(false) : undefined}
+                          onSaved={(saved) => {
+                            // Persisted directly by the parent, so it must not count as an unsaved edit.
+                            setEditedProduct((prev) => ({ ...prev, _productReference: saved }));
+                            setInitialProduct((prev) => ({ ...prev, _productReference: saved }));
+                            onProductReferenceSaved?.(editedProduct._id, saved);
+                            setEditingReference(false);
+                          }}
+                        />
+                      );
+                    }
+                    return (
                     <>
+                      {reference && (
+                        <div className="flex items-center gap-4 p-3 bg-white rounded-2xl border border-slate-200 shadow-sm">
+                          <img src={reference.imageUrl} alt="Referência do produto" className="w-20 h-14 rounded-lg object-cover border border-slate-100 bg-slate-50 shrink-0" referrerPolicy="no-referrer" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                              <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" /> Referência do produto salva
+                            </p>
+                            <p className="text-xs text-slate-500 truncate">Usada em todas as cenas para manter o produto fiel ao original.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setEditingReference(true)}
+                            className="shrink-0 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50"
+                          >
+                            Editar referência
+                          </button>
+                        </div>
+                      )}
+
+                      {videoMode === null ? (
+                        <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                          <h2 className="text-lg font-bold text-slate-900 mb-2">Escolha o tipo de vídeo</h2>
+                          <p className="text-sm text-slate-500 mb-6">Os dois usam a referência do produto para manter a integridade dele em cena.</p>
+                          <div className="grid sm:grid-cols-2 gap-4">
+                            {([
+                              { mode: 'classic' as const, icon: Video, title: 'Vídeo clássico', text: 'Mãos demonstram o produto em cenas cinematográficas, com narração, legendas e música. ~32s.' },
+                              { mode: 'ugc' as const, icon: Users, title: 'UGC com avatar', text: 'Um avatar fala para a câmera e usa o produto, no estilo de conteúdo gerado por usuário.' },
+                            ]).map(({ mode, icon: Icon, title, text }) => (
+                              <button
+                                key={mode}
+                                type="button"
+                                onClick={() => setVideoMode(mode)}
+                                className="text-left p-5 rounded-2xl border-2 border-slate-200 hover:border-violet-500 hover:bg-violet-50/40 transition-all group"
+                              >
+                                <div className="w-10 h-10 rounded-xl bg-violet-100 text-violet-600 flex items-center justify-center mb-3 group-hover:bg-violet-600 group-hover:text-white transition-colors">
+                                  <Icon className="w-5 h-5" />
+                                </div>
+                                <p className="font-bold text-slate-900 mb-1">{title}</p>
+                                <p className="text-sm text-slate-500 leading-relaxed">{text}</p>
+                              </button>
+                            ))}
+                          </div>
+                        </section>
+                      ) : (
+                      <>
                       <div className="flex gap-2 p-1 bg-slate-100 rounded-xl w-fit">
                         <button
                           type="button"
@@ -1041,6 +1116,8 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                           uid={uid}
                           getIdToken={getIdToken}
                           activeVideoProductId={activeVideoProductId}
+                          productReferenceUrl={reference?.imageUrl}
+                          onEditReference={() => setEditingReference(true)}
                           onVideoGenerated={(productId, videoUrl, jobId) => {
                             setEditedProduct((prev) => ({
                               ...prev,
@@ -1059,6 +1136,8 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                           uid={uid}
                           getIdToken={getIdToken}
                           activeVideoProductId={activeUgcVideoProductId}
+                          productReferenceUrl={reference?.imageUrl}
+                          onEditReference={() => setEditingReference(true)}
                           ensureCredits={ensureCredits}
                           consumeCredit={consumeCredit}
                           onUgcVideoFailed={onUgcVideoFailed}
@@ -1086,8 +1165,11 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                           onNavigateToTab={(tab) => setActiveTab(tab)}
                         />
                       )}
+                      </>
+                      )}
                     </>
-                  ) : (
+                    );
+                  })() : (
                     <div className="flex items-center justify-center py-16 text-slate-400 text-sm">
                       Autenticação necessária para gerar vídeos.
                     </div>

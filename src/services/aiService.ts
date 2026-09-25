@@ -195,11 +195,10 @@ function cropToAspectRatio(dataUrl: string, aspectRatio: string): Promise<string
 
 // Re-encodes a data URL as JPEG, capped at 1024px on the longest side, without cropping.
 // Used for the 1:1 case, which previously returned the model's raw (large) PNG untouched.
-function reencodeAsJpeg(dataUrl: string): Promise<string> {
+function reencodeAsJpeg(dataUrl: string, maxDim = 1024): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
-      const maxDim = 1024;
       const scale = Math.min(maxDim / img.naturalWidth, maxDim / img.naturalHeight, 1);
       const canvas = document.createElement('canvas');
       canvas.width = Math.round(img.naturalWidth * scale);
@@ -263,4 +262,34 @@ export async function generateImageFromText(prompt: string, aspectRatio: string 
 
   if (aspectRatio === '1:1') return reencodeAsJpeg(raw);
   return cropToAspectRatio(raw, aspectRatio);
+}
+
+// Generates one image from SEVERAL input images + prompt — used for the Product
+// Reference sheet, which composes multiple real photos of the same product.
+// Never cropped: the sheet is a grid of views, and a center crop would cut the
+// outer views off. Re-encoded to JPEG at up to 1536px so the detail close-ups
+// stay legible as a video reference.
+export async function generateImageFromImages(
+  images: Array<{ base64Data: string; mimeType: string }>,
+  prompt: string,
+): Promise<string> {
+  const model = getGenerativeModel(ai, {
+    model: IMAGE_MODEL,
+    generationConfig: {
+      responseModalities: [ResponseModality.TEXT, ResponseModality.IMAGE],
+    },
+    safetySettings: IMAGE_SAFETY_SETTINGS,
+  });
+
+  const parts = images.map(({ base64Data, mimeType }) => ({
+    inlineData: {
+      mimeType: mimeType || 'image/jpeg',
+      data: base64Data.includes(',') ? base64Data.split(',')[1] : base64Data,
+    },
+  }));
+  const result = await withRetry(() => model.generateContent([...parts, { text: prompt }] as any));
+
+  const imageData = extractImage(result);
+  if (!imageData) throw new Error('O modelo não retornou uma imagem. Tente novamente.');
+  return reencodeAsJpeg(`data:image/png;base64,${imageData}`, 1536);
 }

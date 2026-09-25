@@ -28,6 +28,17 @@ export interface Avatar {
   createdAt: string;
 }
 
+// Folha de referência do produto (vários ângulos + detalhes), gerada a partir das
+// fotos reais antes de qualquer vídeo. Os dois pipelines (clássico e UGC) mandam
+// esta imagem ao Veo como referência de asset para manter o produto fiel.
+export interface ProductReference {
+  imageUrl: string;
+  sourceImages: string[];
+  caracteristicas?: string;
+  ajustes?: string[];
+  createdAt: string;
+}
+
 export type AttributeType = "text" | "select" | "multiselect" | "checkbox" | "number" | "boolean";
 
 export interface AttributeDefinition {
@@ -157,6 +168,7 @@ export interface Product {
   _ugcVideoUrl?: string;
   _ugcAvatarId?: string;
   _ugcVideoError?: string;
+  _productReference?: ProductReference;
 
   // Wake Commerce integration
   _wakeProductId?: string;      // produtoId na Wake — chave de merge

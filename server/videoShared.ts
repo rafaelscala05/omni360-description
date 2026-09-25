@@ -26,6 +26,14 @@ export const TEXT_MODEL = 'gemini-2.5-flash';
 export const VIDEO_ASPECT_RATIO = '9:16';
 export const REFERENCE_MAX_DIM = 1024;
 
+// Product Reference sheet (src/services/productReferenceService.ts): a grid of the
+// product from several angles + labelled detail close-ups, sent to Veo as an extra
+// ASSET reference by both pipelines. It is a map, not a shot — without these lines
+// Veo tends to reproduce the grid/labels on screen.
+export const PRODUCT_REFERENCE_PROMPT_LINE =
+  'REFERÊNCIA DO PRODUTO: uma das imagens de referência é uma folha técnica com o produto em vários ângulos e close-ups dos detalhes. Use-a só para reproduzir o produto com fidelidade total em qualquer ângulo (formato, cores, logotipos, textos, materiais, cada detalhe). Nunca mostre a folha, a grade, os rótulos nem o fundo branco dela no vídeo.';
+export const PRODUCT_REFERENCE_NEGATIVE = 'colagem, grade de imagens, folha de referência na tela, rótulos de texto, fundo branco de estúdio';
+
 export function getGeminiClient() {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw Object.assign(new Error('GEMINI_API_KEY não configurada'), { status: 500 });

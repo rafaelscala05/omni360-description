@@ -40,7 +40,7 @@ const ProductEditModal = lazy(() => import('./components/modals/ProductEditModal
 const ContentApp = lazy(() => import('./modules/content/ContentApp'));
 const MeliOptimizer = lazy(() => import('./modules/meli/MeliOptimizer'));
 import CreditPurchaseModal from './components/modals/CreditPurchaseModal';
-import { Category, Product, AttributeValue, getProductStatusFlags, ProductModalTab } from './types/models';
+import { Category, Product, AttributeValue, getProductStatusFlags, ProductModalTab, ProductReference } from './types/models';
 import { generateAttributesFromImage, generateProductAttributes, generateDescriptionText, defaultTemplate, suggestProductAttributes } from './services/productService';
 import { fetchCategories, generateCategoryHierarchy, flattenHierarchy, getEffectiveAttributes, addAttributeToCategory, saveCategory } from './services/categoryService';
 import IntegrationsView from './components/integrations/IntegrationsView';
@@ -778,6 +778,19 @@ export default function App() {
         await updateDoc(productRef, { _ugcAvatarId: avatarId });
       } catch (err) {
         console.error('Erro ao persistir avatar do vídeo UGC:', err);
+      }
+    }
+  };
+
+  // The Product Reference is persisted as soon as it is saved in the video tab —
+  // the video jobs read it right away, so it can't wait for the modal's "Salvar".
+  const handleProductReferenceSaved = async (productId: string, reference: ProductReference) => {
+    setProducts((prev) => prev.map((p) => (p._id === productId ? { ...p, _productReference: reference } : p)));
+    if (user) {
+      try {
+        await updateDoc(doc(db, `users/${user.uid}/products/${productId}`), { _productReference: reference });
+      } catch (err) {
+        console.error('Erro ao salvar a referência do produto:', err);
       }
     }
   };
@@ -4693,6 +4706,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             ensureCredits={ensureCredits}
             consumeCredit={consumeCredit}
             onUgcVideoFailed={handleUgcVideoFailed}
+            onProductReferenceSaved={handleProductReferenceSaved}
             getIdToken={async () => {
               const currentUser = auth.currentUser;
               if (!currentUser) throw new Error('Não autenticado');

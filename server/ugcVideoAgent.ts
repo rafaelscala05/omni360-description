@@ -16,6 +16,7 @@ import {
   VEO_MODEL, VIDEO_ASPECT_RATIO, VideoGenerationReferenceType,
   getVeoClient, resizeForReference, runVeoOperation, runFfmpeg,
   debitCreditsAdmin, refundCreditsAdmin, assertNoActiveVideoJob, now, STORAGE_BUCKET,
+  PRODUCT_REFERENCE_PROMPT_LINE, PRODUCT_REFERENCE_NEGATIVE,
 } from './videoShared';
 import type { GoogleGenAI } from '@google/genai';
 
@@ -148,12 +149,14 @@ export function buildUgcClipPrompt(params: {
   cena: string;
   avatarDescricao: string;
   clip: UgcVideoClip;
+  hasProductReference?: boolean;
 }): { prompt: string; negativePrompt: string } {
-  const { cena, avatarDescricao, clip } = params;
+  const { cena, avatarDescricao, clip, hasProductReference } = params;
   const styleLine = 'Formato: vertical 9:16, estilo UGC autêntico (câmera na mão ou tripé caseiro, iluminação natural, estética espontânea-realista, não é produção de estúdio comercial).';
   const rulesLine = 'O AVATAR aparece em quadro, olha diretamente para a câmera e FALA a fala abaixo em português do Brasil, com sincronia labial. Interage naturalmente com o produto enquanto fala.';
   const fidelityLine = 'FIDELIDADE OBRIGATÓRIA: o avatar deve ser IDÊNTICO à imagem de referência de pessoa (mesmo rosto, cabelo, tom de pele, roupa). O produto deve ser IDÊNTICO à imagem de referência de produto (mesmas cores, proporções, logotipo, materiais). Nunca redesenhe nenhum dos dois.';
-  const negativePrompt = "avatar diferente da referência, rosto diferente, produto diferente da referência, cores alteradas, logotipo modificado, voz robótica, fala fora de sincronia, texto na tela, legendas, marca d'água, distorções, baixa qualidade";
+  const baseNegative = "avatar diferente da referência, rosto diferente, produto diferente da referência, cores alteradas, logotipo modificado, voz robótica, fala fora de sincronia, texto na tela, legendas, marca d'água, distorções, baixa qualidade";
+  const negativePrompt = hasProductReference ? `${baseNegative}, ${PRODUCT_REFERENCE_NEGATIVE}` : baseNegative;
 
   const prompt = [
     `Cena: ${cena}`,
@@ -165,6 +168,7 @@ export function buildUgcClipPrompt(params: {
     styleLine,
     rulesLine,
     fidelityLine,
+    ...(hasProductReference ? [PRODUCT_REFERENCE_PROMPT_LINE] : []),
   ].join('\n');
 
   return { prompt, negativePrompt };
@@ -179,13 +183,15 @@ async function generateUgcClip(
   avatarDescricao: string,
   avatarImage: { base64: string; mimeType: string },
   productImage: { base64: string; mimeType: string },
+  productReference: { base64: string; mimeType: string } | null,
   workDir: string,
 ): Promise<string> {
-  const [avatarResized, productResized] = await Promise.all([
+  const [avatarResized, productResized, referenceResized] = await Promise.all([
     resizeForReference(Buffer.from(avatarImage.base64, 'base64')),
     resizeForReference(Buffer.from(productImage.base64, 'base64')),
+    productReference ? resizeForReference(Buffer.from(productReference.base64, 'base64')) : Promise.resolve(null),
   ]);
-  const { prompt, negativePrompt } = buildUgcClipPrompt({ cena, avatarDescricao, clip });
+  const { prompt, negativePrompt } = buildUgcClipPrompt({ cena, avatarDescricao, clip, hasProductReference: !!referenceResized });
 
   console.log(`[ugc-video] clip ${index + 1} (${clip.papel}) generate jobId=${jobId}`);
   const videoBytes = await runVeoOperation(ai, jobId, `clip#${index + 1}`, {
@@ -201,6 +207,10 @@ async function generateUgcClip(
       referenceImages: [
         { image: { imageBytes: avatarResized.base64, mimeType: avatarResized.mimeType }, referenceType: VideoGenerationReferenceType.ASSET },
         { image: { imageBytes: productResized.base64, mimeType: productResized.mimeType }, referenceType: VideoGenerationReferenceType.ASSET },
+        // Veo 3.1 takes up to 3 ASSET references: avatar + real photo + reference sheet.
+        ...(referenceResized
+          ? [{ image: { imageBytes: referenceResized.base64, mimeType: referenceResized.mimeType }, referenceType: VideoGenerationReferenceType.ASSET }]
+          : []),
       ],
     },
   });
@@ -238,6 +248,7 @@ async function runUgcVideoJob(
   script: UgcVideoScript,
   avatarImage: { base64: string; mimeType: string },
   productImage: { base64: string; mimeType: string },
+  productReference: { base64: string; mimeType: string } | null,
   creditCost: number,
   meta: { productName?: string; userName?: string } = {},
 ): Promise<void> {
@@ -253,7 +264,7 @@ async function runUgcVideoJob(
     let clipsDone = 0;
     const segmentPaths = await Promise.all(
       script.clipes.map(async (clip, i) => {
-        const segPath = await generateUgcClip(ai, jobId, i, clip, script.cena, script.avatarDescricao, avatarImage, productImage, workDir);
+        const segPath = await generateUgcClip(ai, jobId, i, clip, script.cena, script.avatarDescricao, avatarImage, productImage, productReference, workDir);
         clipsDone += 1;
         await jobRef.update({ clipsDone, updatedAt: now() });
         return segPath;
@@ -357,12 +368,14 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
   app.post('/api/video/ugc/start-job', async (req, res) => {
     try {
       const decoded = await verifyFirebaseToken(req);
-      const { productId, productName, script, avatarImageUrl, productImageUrl } = req.body as {
+      const { productId, productName, script, avatarImageUrl, productImageUrl, productReferenceUrl } = req.body as {
         productId: string;
         productName: string;
         script: UgcVideoScript;
         avatarImageUrl: string;
         productImageUrl: string;
+        // Optional so older clients keep working; the current UI always sends it.
+        productReferenceUrl?: string;
       };
       if (!productId || !script || !avatarImageUrl || !productImageUrl) {
         return res.status(400).json({ error: 'productId, script, avatarImageUrl e productImageUrl são obrigatórios' });
@@ -381,13 +394,15 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
 
       let avatarImage: { base64: string; mimeType: string };
       let productImage: { base64: string; mimeType: string };
+      let productReference: { base64: string; mimeType: string } | null = null;
       try {
         await jobRef.set({
           jobId, productId, status: 'queued', videoUrl: null, error: null, createdAt: now(), updatedAt: now(),
         });
-        [avatarImage, productImage] = await Promise.all([
+        [avatarImage, productImage, productReference] = await Promise.all([
           fetchImageAsBase64(avatarImageUrl),
           fetchImageAsBase64(productImageUrl),
+          productReferenceUrl ? fetchImageAsBase64(productReferenceUrl) : Promise.resolve(null),
         ]);
       } catch (prepErr) {
         if (creditCost > 0) {
@@ -413,7 +428,7 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
       res.write(JSON.stringify({ jobId }));
 
       try {
-        await runUgcVideoJob(decoded.uid, jobId, productId, script, avatarImage, productImage, creditCost, creditMeta);
+        await runUgcVideoJob(decoded.uid, jobId, productId, script, avatarImage, productImage, productReference, creditCost, creditMeta);
       } finally {
         res.end();
       }

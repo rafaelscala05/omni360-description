@@ -13,6 +13,7 @@ import {
   STORAGE_BUCKET, GCP_PROJECT, VEO_MODEL, TEXT_MODEL, VIDEO_ASPECT_RATIO, REFERENCE_MAX_DIM,
   getGeminiClient, getVeoClient, now, sendError, fetchImageAsBase64, resizeForReference,
   runFfmpeg, runVeoOperation, formatAttributes, debitCreditsAdmin, refundCreditsAdmin, assertNoActiveVideoJob,
+  PRODUCT_REFERENCE_PROMPT_LINE, PRODUCT_REFERENCE_NEGATIVE,
 } from './videoShared';
 
 // Background music + TTS voice for the final mix. The audio is added AFTER the
@@ -308,6 +309,7 @@ async function runVideoJob(
   productId: string,
   script: VideoScript,
   shotImages: Array<{ base64: string; mimeType: string }>,
+  productReference: { base64: string; mimeType: string } | null,
   creditCost: number,
   meta: { productName?: string; userName?: string } = {},
 ): Promise<void> {
@@ -323,7 +325,12 @@ async function runVideoJob(
     const styleLine = 'Formato: vertical 9:16, comercial e explicativo para página de produto, luz natural ou de estúdio, câmera fluida, realista, alta qualidade.';
     const rulesLine = 'As mãos devem MANIPULAR o produto de forma rica (girar, abrir, acionar, demonstrar o uso). Nenhuma pessoa falando para a câmera. Sem texto na tela. Sem efeitos artificiais.';
     const fidelityLine = 'FIDELIDADE OBRIGATÓRIA: o produto no vídeo deve ser IDÊNTICO à imagem de referência — mesmas cores, proporções, logotipos, materiais e acabamento. Nunca redesenhe, recolora ou altere o produto.';
-    const negativePrompt = 'produto diferente da referência, cores alteradas, logotipo modificado, proporções distorcidas, texto na tela, legendas, marca d\'água, pessoa falando para a câmera, lip sync, distorções, baixa qualidade';
+    const baseNegative = 'produto diferente da referência, cores alteradas, logotipo modificado, proporções distorcidas, texto na tela, legendas, marca d\'água, pessoa falando para a câmera, lip sync, distorções, baixa qualidade';
+    const negativePrompt = productReference ? `${baseNegative}, ${PRODUCT_REFERENCE_NEGATIVE}` : baseNegative;
+    // Resized once — the same sheet goes along with every shot.
+    const referenceSheet = productReference
+      ? await resizeForReference(Buffer.from(productReference.base64, 'base64'))
+      : null;
 
     // All four shots run in PARALLEL — each uses its own reference image,
     // mapped to the most cohesive scene for that shot's role in the narrative.
@@ -339,6 +346,7 @@ async function runVideoJob(
         styleLine,
         rulesLine,
         fidelityLine,
+        ...(referenceSheet ? [PRODUCT_REFERENCE_PROMPT_LINE] : []),
       ].join('\n');
 
       console.log(`[video] shot ${i + 1}/${SHOTS.length} (${shot.key}) generate jobId=${jobId}`);
@@ -357,6 +365,10 @@ async function runVideoJob(
               image: { imageBytes: referenceImage.base64, mimeType: referenceImage.mimeType },
               referenceType: VideoGenerationReferenceType.ASSET,
             },
+            ...(referenceSheet ? [{
+              image: { imageBytes: referenceSheet.base64, mimeType: referenceSheet.mimeType },
+              referenceType: VideoGenerationReferenceType.ASSET,
+            }] : []),
           ],
         },
       });
@@ -469,11 +481,13 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
   app.post('/api/video/start-job', async (req, res) => {
     try {
       const decoded = await verifyFirebaseToken(req);
-      const { productId, productName, script, shotImageUrls } = req.body as {
+      const { productId, productName, script, shotImageUrls, productReferenceUrl } = req.body as {
         productId: string;
         productName: string;
         script: VideoScript;
         shotImageUrls: string[];
+        // Optional so older clients keep working; the current UI always sends it.
+        productReferenceUrl?: string;
       };
       if (!productId || !script || !Array.isArray(shotImageUrls) || shotImageUrls.length !== SHOTS.length) {
         return res.status(400).json({ error: `productId, script e shotImageUrls (${SHOTS.length} imagens) são obrigatórios` });
@@ -492,6 +506,7 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
       const jobId = jobRef.id;
 
       let shotImages: Array<{ base64: string; mimeType: string }>;
+      let productReference: { base64: string; mimeType: string } | null = null;
       try {
         await jobRef.set({
           jobId,
@@ -511,6 +526,7 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
           fetched.set(url, await fetchImageAsBase64(url));
         }));
         shotImages = shotImageUrls.map((url) => fetched.get(url)!);
+        if (productReferenceUrl) productReference = await fetchImageAsBase64(productReferenceUrl);
       } catch (prepErr) {
         // Refund + mark the job errored so credits aren't lost and it isn't orphaned in 'queued'.
         if (creditCost > 0) {
@@ -533,7 +549,7 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
       res.write(JSON.stringify({ jobId }));
 
       try {
-        await runVideoJob(decoded.uid, jobId, productId, script, shotImages, creditCost, creditMeta);
+        await runVideoJob(decoded.uid, jobId, productId, script, shotImages, productReference, creditCost, creditMeta);
       } finally {
         res.end();
       }
