@@ -7,6 +7,7 @@ import { adminDb } from '../firebaseAdmin';
 import { assertSafeImageUrl } from '../safeUrl';
 import {
   evidenceSupportsValue,
+  descriptionRejectionReason,
   runListingRules,
   validateSuggestedDescription,
   validateSuggestedTitle,
@@ -537,6 +538,9 @@ export async function runAnalysis(uid: string, analysisId: string): Promise<void
       suggestions: {
         title: titleSuggestion,
         descriptionPlainText: descriptionSuggestion,
+        discardedDescription: ai?.suggestions.description_plain_text && !descriptionSuggestion
+          ? { value: ai.suggestions.description_plain_text, reason: descriptionRejectionReason(ai.suggestions.description_plain_text, listing) || 'Rejeitada pelo validador.' }
+          : null,
         attributes: suggestedAttributes,
         saleTerms: suggestedTerms,
         picturePlan: (ai?.suggestions.picture_plan || []).map((item) => {

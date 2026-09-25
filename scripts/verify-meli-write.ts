@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { buildPictures, hasWriteScope, mergeMeliEntries, mutationFingerprint } from '../server/meli/mutations';
-import type { MeliListingChange } from '../server/meli/types';
+import type { MeliAnalysisRecord, MeliListingChange, MeliListingRecord } from '../server/meli/types';
+import { manualDrafts } from '../server/meli/proposals';
+import { descriptionRejectionReason, validateSuggestedDescription } from '../server/meli/rules';
 
 function change(patch: Partial<MeliListingChange>): MeliListingChange {
   return {
@@ -51,3 +53,18 @@ const same = mutationFingerprint({
 assert.deepEqual(base, same);
 
 console.log('MELI controlled write verification passed.');
+
+// Manual seeds: an audit with nothing safe still yields operator-editable, high-risk drafts.
+const emptyListing = { title: 'Kit 5 Micro:bit V2', soldQuantity: 0, catalogProductId: null, descriptionPlainText: '', attributes: [], saleTerms: [] } as unknown as MeliListingRecord;
+const discarded = { value: 'Acompanha cabos USB.', reason: 'Afirma algo sobre "acompanha" que não consta no anúncio.' };
+const audit = { suggestions: { discardedDescription: discarded } } as unknown as MeliAnalysisRecord;
+assert.equal(descriptionRejectionReason('Acompanha cabos.', emptyListing)?.includes('acompanha'), true);
+assert.equal(validateSuggestedDescription('Acompanha cabos.', emptyListing), null);
+assert.equal(validateSuggestedDescription('Kit com 5 placas Micro:bit V2.', emptyListing), 'Kit com 5 placas Micro:bit V2.');
+const seeds = manualDrafts(emptyListing, audit, []);
+assert.deepEqual(seeds.map((seed) => seed.fieldPath), ['description.plain_text', 'title']);
+assert.equal(seeds[0].newValue, discarded.value);
+assert.ok(seeds.every((seed) => seed.riskLevel === 'high' && seed.requiresConfirmation && seed.approvalStatus === 'pending'));
+assert.deepEqual(manualDrafts(emptyListing, audit, [{ fieldPath: 'title' }, { fieldPath: 'description.plain_text' }]), []);
+assert.deepEqual(manualDrafts({ ...emptyListing, soldQuantity: 3 } as MeliListingRecord, audit, []).map((seed) => seed.fieldPath), ['description.plain_text']);
+console.log('MELI manual draft verification passed.');

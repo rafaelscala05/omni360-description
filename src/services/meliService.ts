@@ -87,6 +87,7 @@ export interface MeliAnalysis {
   suggestions: {
     title: string | null;
     descriptionPlainText: string | null;
+    discardedDescription?: { value: string; reason: string } | null;
     attributes: Array<{ id: string; valueName: string; valueId: string | null; reason: string; evidence: string[] }>;
     saleTerms: Array<{ id: string; valueName: string; valueId: string | null; reason: string; evidence: string[] }>;
     picturePlan: Array<{ pictureId: string | null; action: string; targetOrder?: number | null; reason: string }>;
@@ -309,9 +310,9 @@ export async function getLatestMeliAnalysis(itemId: string): Promise<MeliAnalysi
   return (await handle<{ analysis: MeliAnalysis }>(response)).analysis;
 }
 
-export async function createMeliProposal(itemId: string, analysisId?: string): Promise<MeliProposalResult> {
+export async function createMeliProposal(itemId: string, analysisId?: string, manual = false): Promise<MeliProposalResult> {
   const response = await fetch(`/api/meli/listings/${encodeURIComponent(itemId)}/proposals`, {
-    method: 'POST', headers: await headers(), body: JSON.stringify({ analysisId }),
+    method: 'POST', headers: await headers(), body: JSON.stringify({ analysisId, manual }),
   });
   return handle(response);
 }

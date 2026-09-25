@@ -189,7 +189,7 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
     try {
       const { uid } = await verifyMeliModule(req);
       const analysisId = typeof req.body?.analysisId === 'string' ? req.body.analysisId : undefined;
-      return res.status(201).json(await createProposal(uid, req.params.itemId, analysisId));
+      return res.status(201).json(await createProposal(uid, req.params.itemId, analysisId, { manual: req.body?.manual === true }));
     } catch (error) {
       return res.status(statusCode(error)).json({ message: sanitizeError(error) });
     }

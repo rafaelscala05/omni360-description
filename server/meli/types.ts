@@ -175,6 +175,7 @@ export interface MeliAnalysisRecord {
   suggestions: {
     title: string | null;
     descriptionPlainText: string | null;
+    discardedDescription?: { value: string; reason: string } | null;
     attributes: Array<{ id: string; valueName: string; valueId: string | null; reason: string; evidence: string[] }>;
     saleTerms: Array<{ id: string; valueName: string; valueId: string | null; reason: string; evidence: string[] }>;
     picturePlan: Array<{ pictureId: string | null; action: MeliImageDiagnostic['action']; targetOrder?: number | null; reason: string }>;

@@ -360,9 +360,9 @@ export function runListingRules(
   return { findings, questions, scoreComponents: components, score, riskLevel };
 }
 
-export function validateSuggestedDescription(description: string | null, listing: MeliListingRecord): string | null {
+export function descriptionRejectionReason(description: string | null, listing: MeliListingRecord): string | null {
   if (!description) return null;
-  if (HTML_PATTERN.test(description) || /https?:\/\/|www\.|\b(?:whats|telefone|e-mail|email)\b/i.test(description)) return null;
+  if (HTML_PATTERN.test(description) || /https?:\/\/|www\.|\b(?:whats|telefone|e-mail|email)\b/i.test(description)) return 'Contém HTML, link ou contato.';
   const source = [
     listing.title,
     listing.descriptionPlainText,
@@ -371,12 +371,17 @@ export function validateSuggestedDescription(description: string | null, listing
   ].filter(Boolean).join(' ');
   const knownNumbers = new Set(source.match(/\b\d+(?:[.,]\d+)?\b/g) || []);
   const inventedNumber = (description.match(/\b\d+(?:[.,]\d+)?\b/g) || []).some((number) => !knownNumbers.has(number));
-  if (inventedNumber) return null;
+  if (inventedNumber) return 'Cita números que não constam no anúncio.';
   const sensitiveClaims = ['garantia', 'compativ', 'certific', 'anatel', 'material', 'potencia', 'voltagem', 'peso', 'dimens', 'acompanha', 'embalagem', 'impermeavel'];
   const normalizedSource = normalize(source);
   const normalizedDescription = normalize(description);
-  const inventedClaim = sensitiveClaims.some((stem) => normalizedDescription.includes(stem) && !normalizedSource.includes(stem));
-  return inventedClaim ? null : description.trim();
+  const claim = sensitiveClaims.find((stem) => normalizedDescription.includes(stem) && !normalizedSource.includes(stem));
+  return claim ? `Afirma algo sobre "${claim}" que não consta no anúncio.` : null;
+}
+
+export function validateSuggestedDescription(description: string | null, listing: MeliListingRecord): string | null {
+  if (!description || descriptionRejectionReason(description, listing)) return null;
+  return description.trim();
 }
 
 export function validateSuggestedTitle(title: string | null, listing: MeliListingRecord): string | null {

@@ -151,7 +151,39 @@ async function latestCompletedAnalysis(uid: string, itemId: string): Promise<Mel
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] || null;
 }
 
-export async function createProposal(uid: string, itemId: string, requestedAnalysisId?: string): Promise<{ proposal: MeliListingProposal; changes: MeliListingChange[] }> {
+// Operator-authored starting points for when the audit produced nothing safe to
+// propose. Every seed is high risk and needs an explicit factual confirmation,
+// and the operator edits it through the normal editChange path.
+export function manualDrafts(
+  listing: MeliListingRecord,
+  analysis: MeliAnalysisRecord,
+  existing: Array<{ fieldPath: string }>,
+): Array<Omit<MeliListingChange, 'id' | 'proposalId' | 'createdAt'>> {
+  const drafts: Array<Omit<MeliListingChange, 'id' | 'proposalId' | 'createdAt'>> = [];
+  const base = { resource: 'item' as const, confidence: 0, riskLevel: 'high' as const, requiresConfirmation: true,
+    approvalStatus: 'pending' as const, approvedBy: null, approvedAt: null };
+  if (!existing.some((change) => change.fieldPath === 'description.plain_text')) {
+    const discarded = analysis.suggestions.discardedDescription;
+    drafts.push({
+      ...base, fieldPath: 'description.plain_text', resource: 'description',
+      changeType: listing.descriptionPlainText ? 'replace' : 'add', oldValue: listing.descriptionPlainText || null,
+      newValue: discarded?.value || listing.descriptionPlainText || '',
+      reason: discarded
+        ? `Rascunho da IA descartado pela validação (${discarded.reason}) e devolvido para revisão manual. Remova ou confirme cada afirmação.`
+        : 'Ponto de partida para escrita manual. Preencha somente com fatos que você pode confirmar.',
+      evidence: [],
+    });
+  }
+  if (!existing.some((change) => change.fieldPath === 'title') && listing.soldQuantity === 0 && !listing.catalogProductId) {
+    drafts.push({
+      ...base, fieldPath: 'title', changeType: 'replace', oldValue: listing.title, newValue: listing.title,
+      reason: 'Ponto de partida para escrita manual do título. Rejeite se não quiser alterá-lo.', evidence: [listing.title],
+    });
+  }
+  return drafts;
+}
+
+export async function createProposal(uid: string, itemId: string, requestedAnalysisId?: string, options: { manual?: boolean } = {}): Promise<{ proposal: MeliListingProposal; changes: MeliListingChange[] }> {
   const normalizedId = itemId.toUpperCase();
   const listingSnap = await LISTINGS_REF(uid).doc(normalizedId).get();
   if (!listingSnap.exists) throw Object.assign(new Error('Anúncio não encontrado.'), { status: 404 });
@@ -166,6 +198,7 @@ export async function createProposal(uid: string, itemId: string, requestedAnaly
   }
   if (analysis.contentHash !== listing.contentHash) throw Object.assign(new Error('A auditoria está desatualizada. Sincronize e analise novamente.'), { status: 409 });
   const drafts = changeDrafts(listing, analysis);
+  if (options.manual) drafts.push(...manualDrafts(listing, analysis, drafts));
   if (!drafts.length) {
     const message = analysis.aiStatus === 'failed'
       ? 'A auditoria foi concluída sem sugestões da IA. Execute “Analisar novamente” antes de criar a proposta.'
