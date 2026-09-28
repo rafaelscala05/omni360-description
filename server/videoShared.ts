@@ -19,6 +19,28 @@ import { assertSafeImageUrl } from './safeUrl';
 
 export { VideoGenerationReferenceType };
 
+import type { VideoProvider } from '../src/types/crm';
+export type { VideoProvider };
+
+// Formato de entrada comum aos dois providers (Veo, Kling) — cada agente
+// (videoAgent.ts, ugcVideoAgent.ts) monta isto uma vez por shot/clipe; o
+// dispatcher runClipGeneration (server/videoProviders.ts) decide o que
+// repassar pra Veo ou pra Kling.
+export interface ClipReferenceImage {
+  url: string;       // sempre presente — é o que a Kling usa (image_url)
+  base64?: string;   // presente quando o provider é 'veo' (fetch/resize já feito)
+  mimeType?: string;
+}
+
+export interface ClipGenerationRequest {
+  prompt: string;
+  negativePrompt?: string; // ignorado pela Kling — sem campo equivalente na API do OpenRouter
+  durationSeconds: number;
+  aspectRatio: string;
+  generateAudio: boolean;
+  referenceImages: ClipReferenceImage[];
+}
+
 export const STORAGE_BUCKET = firebaseAppletConfig.storageBucket;
 export const GCP_PROJECT = firebaseAppletConfig.projectId;
 export const VEO_MODEL = 'veo-3.1-fast-generate-001';
@@ -53,6 +75,32 @@ export function getVeoClient() {
     project: GCP_PROJECT,
     location: 'us-central1',
   });
+}
+
+export function buildVeoRequest(
+  request: ClipGenerationRequest,
+): Parameters<GoogleGenAI['models']['generateVideos']>[0] {
+  return {
+    model: VEO_MODEL,
+    prompt: request.prompt,
+    config: {
+      numberOfVideos: 1,
+      durationSeconds: request.durationSeconds,
+      aspectRatio: request.aspectRatio,
+      personGeneration: 'allow_adult',
+      generateAudio: request.generateAudio,
+      negativePrompt: request.negativePrompt,
+      referenceImages: request.referenceImages.map((img) => {
+        if (!img.base64 || !img.mimeType) {
+          throw new Error('imagem de referência sem base64/mimeType — obrigatório para o provider Veo');
+        }
+        return {
+          image: { imageBytes: img.base64, mimeType: img.mimeType },
+          referenceType: VideoGenerationReferenceType.ASSET,
+        };
+      }),
+    },
+  };
 }
 
 export function now() {

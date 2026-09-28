@@ -322,3 +322,14 @@ export function defaultAutomation(stage: CrmStage): Omit<CrmAutomation, 'id'> {
     updatedBy: null,
   };
 }
+
+// Provider de geração de vídeo de produto (server/videoAgent.ts,
+// server/ugcVideoAgent.ts). Escolhido centralmente pelo admin, nunca por
+// usuário/produto — ver docs/superpowers/specs/2026-09-28-video-provider-kling-design.md.
+export type VideoProvider = 'veo' | 'kling';
+
+export interface VideoPlatformSettings {
+  defaultProvider: VideoProvider;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
