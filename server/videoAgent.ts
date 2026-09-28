@@ -1,5 +1,4 @@
 import type express from 'express';
-import { VideoGenerationReferenceType } from '@google/genai';
 import sharp from 'sharp';
 import opentype from 'opentype.js';
 import { spawn } from 'node:child_process';
@@ -10,11 +9,13 @@ import { adminDb, adminStorage } from './firebaseAdmin';
 import { CREDIT_ACTIONS } from '../src/credits';
 import { FieldValue } from 'firebase-admin/firestore';
 import {
-  STORAGE_BUCKET, GCP_PROJECT, VEO_MODEL, TEXT_MODEL, VIDEO_ASPECT_RATIO, REFERENCE_MAX_DIM,
+  STORAGE_BUCKET, GCP_PROJECT, TEXT_MODEL, VIDEO_ASPECT_RATIO, REFERENCE_MAX_DIM,
   getGeminiClient, getVeoClient, now, sendError, fetchImageAsBase64, resizeForReference,
-  runFfmpeg, runVeoOperation, formatAttributes, debitCreditsAdmin, refundCreditsAdmin, assertNoActiveVideoJob,
-  PRODUCT_REFERENCE_PROMPT_LINE, PRODUCT_REFERENCE_NEGATIVE, CAMERA_VARIETY_RULE,
+  runFfmpeg, formatAttributes, debitCreditsAdmin, refundCreditsAdmin, assertNoActiveVideoJob,
+  getDefaultVideoProvider, PRODUCT_REFERENCE_PROMPT_LINE, PRODUCT_REFERENCE_NEGATIVE, CAMERA_VARIETY_RULE,
+  type ClipReferenceImage, type VideoProvider,
 } from './videoShared';
+import { runClipGeneration } from './videoProviders';
 
 // Background music + TTS voice for the final mix. The audio is added AFTER the
 // video is generated (segments are generated MUTE), so there is never any lip
@@ -309,10 +310,11 @@ async function runVideoJob(
   jobId: string,
   productId: string,
   script: VideoScript,
-  shotImages: Array<{ base64: string; mimeType: string }>,
-  productReference: { base64: string; mimeType: string } | null,
+  shotImages: Array<{ base64: string; mimeType: string; url: string }>,
+  productReference: { base64: string; mimeType: string; url: string } | null,
   creditCost: number,
   meta: { productName?: string; userName?: string } = {},
+  provider: VideoProvider,
 ): Promise<void> {
   const jobRef = adminDb.collection('users').doc(uid).collection('videoJobs').doc(jobId);
   console.log(`[video] runVideoJob start uid=${uid} jobId=${jobId} productId=${productId} productReference=${productReference ? 'yes' : 'no'}`);
@@ -330,7 +332,7 @@ async function runVideoJob(
     const negativePrompt = productReference ? `${baseNegative}, ${PRODUCT_REFERENCE_NEGATIVE}` : baseNegative;
     // Resized once — the same sheet goes along with every shot.
     const referenceSheet = productReference
-      ? await resizeForReference(Buffer.from(productReference.base64, 'base64'))
+      ? { ...(await resizeForReference(Buffer.from(productReference.base64, 'base64'))), url: productReference.url }
       : null;
 
     // All four shots run in PARALLEL — each uses its own reference image,
@@ -351,28 +353,19 @@ async function runVideoJob(
         ...(referenceSheet ? [PRODUCT_REFERENCE_PROMPT_LINE] : []),
       ].join('\n');
 
-      console.log(`[video] shot ${i + 1}/${SHOTS.length} (${shot.key}) generate jobId=${jobId}`);
-      const videoBytes = await runVeoOperation(ai, jobId, `shot#${i + 1}`, {
-        model: VEO_MODEL,
+      const referenceImages: ClipReferenceImage[] = [
+        { url: src.url, base64: referenceImage.base64, mimeType: referenceImage.mimeType },
+        ...(referenceSheet ? [{ url: referenceSheet.url, base64: referenceSheet.base64, mimeType: referenceSheet.mimeType }] : []),
+      ];
+
+      console.log(`[video] shot ${i + 1}/${SHOTS.length} (${shot.key}) generate jobId=${jobId} provider=${provider}`);
+      const videoBytes = await runClipGeneration(provider, ai, jobId, `shot#${i + 1}`, {
         prompt,
-        config: {
-          numberOfVideos: 1,
-          durationSeconds: shot.seconds,
-          aspectRatio: VIDEO_ASPECT_RATIO,
-          personGeneration: 'allow_adult',
-          generateAudio: false,
-          negativePrompt,
-          referenceImages: [
-            {
-              image: { imageBytes: referenceImage.base64, mimeType: referenceImage.mimeType },
-              referenceType: VideoGenerationReferenceType.ASSET,
-            },
-            ...(referenceSheet ? [{
-              image: { imageBytes: referenceSheet.base64, mimeType: referenceSheet.mimeType },
-              referenceType: VideoGenerationReferenceType.ASSET,
-            }] : []),
-          ],
-        },
+        negativePrompt,
+        durationSeconds: shot.seconds,
+        aspectRatio: VIDEO_ASPECT_RATIO,
+        generateAudio: false,
+        referenceImages,
       });
 
       const segPath = path.join(workDir, `seg${i}.mp4`);
@@ -507,13 +500,16 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
         .doc();
       const jobId = jobRef.id;
 
-      let shotImages: Array<{ base64: string; mimeType: string }>;
-      let productReference: { base64: string; mimeType: string } | null = null;
+      let shotImages: Array<{ base64: string; mimeType: string; url: string }>;
+      let productReference: { base64: string; mimeType: string; url: string } | null = null;
+      let provider: VideoProvider;
       try {
+        provider = await getDefaultVideoProvider();
         await jobRef.set({
           jobId,
           productId,
           status: 'queued',
+          provider,
           videoUrl: null,
           error: null,
           createdAt: now(),
@@ -523,12 +519,14 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
         // Fetch each shot's reference image, deduplicating repeated URLs so the
         // same scene driving two shots is only downloaded once.
         const uniqueUrls = Array.from(new Set(shotImageUrls));
-        const fetched = new Map<string, { base64: string; mimeType: string }>();
+        const fetched = new Map<string, { base64: string; mimeType: string; url: string }>();
         await Promise.all(uniqueUrls.map(async (url) => {
-          fetched.set(url, await fetchImageAsBase64(url));
+          fetched.set(url, { ...(await fetchImageAsBase64(url)), url });
         }));
         shotImages = shotImageUrls.map((url) => fetched.get(url)!);
-        if (productReferenceUrl) productReference = await fetchImageAsBase64(productReferenceUrl);
+        if (productReferenceUrl) {
+          productReference = { ...(await fetchImageAsBase64(productReferenceUrl)), url: productReferenceUrl };
+        }
       } catch (prepErr) {
         // Refund + mark the job errored so credits aren't lost and it isn't orphaned in 'queued'.
         if (creditCost > 0) {
@@ -551,7 +549,7 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
       res.write(JSON.stringify({ jobId }));
 
       try {
-        await runVideoJob(decoded.uid, jobId, productId, script, shotImages, productReference, creditCost, creditMeta);
+        await runVideoJob(decoded.uid, jobId, productId, script, shotImages, productReference, creditCost, creditMeta, provider);
       } finally {
         res.end();
       }

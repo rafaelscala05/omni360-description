@@ -451,6 +451,11 @@ export default function VideoGenerationTab({
               <div className="flex items-center gap-2 text-green-700 bg-green-50 px-4 py-3 rounded-xl text-sm font-bold border border-green-200">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
                 Vídeo gerado com sucesso!
+                {job.provider && (
+                  <span className="ml-auto text-xs font-semibold text-green-600 bg-white/60 px-2 py-0.5 rounded-full">
+                    {job.provider === 'kling' ? 'Kling' : 'Veo 3'}
+                  </span>
+                )}
               </div>
               <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-black">
                 <video

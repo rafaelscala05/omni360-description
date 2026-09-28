@@ -26,6 +26,7 @@ export interface VideoJob {
   jobId: string;
   productId: string;
   status: VideoJobStatus;
+  provider?: 'veo' | 'kling';
   videoUrl?: string;
   error?: string;
   createdAt: string;
