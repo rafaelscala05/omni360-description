@@ -10,7 +10,7 @@ import { GoogleGenAI, VideoGenerationReferenceType } from '@google/genai';
 import sharp from 'sharp';
 import { spawn } from 'node:child_process';
 import ffmpegPath from 'ffmpeg-static';
-import { adminDb } from './firebaseAdmin';
+import { adminDb, adminStorage } from './firebaseAdmin';
 import { resolveCreditCost } from '../src/credits';
 import type { CreditAction } from '../src/credits';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -22,19 +22,26 @@ export { VideoGenerationReferenceType };
 import type { VideoProvider } from '../src/types/crm';
 export type { VideoProvider };
 
-// Formato de entrada comum aos dois providers (Veo, Kling) — cada agente
+// Formato de entrada comum aos dois providers (Veo, Seedance) — cada agente
 // (videoAgent.ts, ugcVideoAgent.ts) monta isto uma vez por shot/clipe; o
 // dispatcher runClipGeneration (server/videoProviders.ts) decide o que
-// repassar pra Veo ou pra Kling.
+// repassar pra Veo ou pra Seedance.
 export interface ClipReferenceImage {
-  url: string;       // sempre presente — é o que a Kling usa (image_url)
+  // É o que o Seedance usa (image_url, HTTPS público — a cópia feita por
+  // stageReferenceImages). Ausente só em imagens montadas no servidor que vão
+  // apenas para o Veo (o painel de fotos de buildPhotoPanel).
+  url?: string;
   base64?: string;   // presente quando o provider é 'veo' (fetch/resize já feito)
   mimeType?: string;
+  // O que a imagem é ("avatar", "foto real do produto"…). O Seedance só vê a
+  // ordem do array; buildSeedanceRequestBody transforma isto em "@Image1 = …"
+  // no prompt para o modelo saber qual referência é a pessoa e qual o produto.
+  papel: string;
 }
 
 export interface ClipGenerationRequest {
   prompt: string;
-  negativePrompt?: string; // ignorado pela Kling — sem campo equivalente na API do OpenRouter
+  negativePrompt?: string; // Seedance não tem campo — vira uma linha "EVITE:" no prompt
   durationSeconds: number;
   aspectRatio: string;
   generateAudio: boolean;
@@ -54,12 +61,43 @@ export const REFERENCE_MAX_DIM = 1024;
 // Veo tends to reproduce the grid/labels on screen.
 export const PRODUCT_REFERENCE_PROMPT_LINE =
   'REFERÊNCIA DO PRODUTO: uma das imagens de referência é uma folha técnica com o produto em vários ângulos e close-ups dos detalhes. Use-a só para reproduzir o produto com fidelidade total em qualquer ângulo (formato, cores, logotipos, textos, materiais, cada detalhe). Nunca mostre a folha, a grade, os rótulos nem o fundo branco dela no vídeo.';
-// Shared by both script prompts: each shot/clip is an independent Veo generation
-// joined by hard cuts, so the only thing that makes the cut feel dynamic is a
-// different camera angle per shot — and Veo only sees the angle if the script's
-// action text states it.
-export const CAMERA_VARIETY_RULE = `- DINÂMICA DE CÂMERA (obrigatório): cada shot/clipe usa um ÂNGULO e um MOVIMENTO de câmera DIFERENTES dos outros — nunca repita o mesmo enquadramento em dois cortes seguidos. Varie entre: close-up/plano detalhe, plano médio, plano aberto, ângulo de cima (top-down/plongée), ângulo baixo (contra-plongée), lateral/perfil, 3/4, sobre o ombro (POV), e movimentos como travelling lateral, dolly-in (aproximação), dolly-out, órbita ao redor do produto, pan, tilt ou câmera na mão.
-- O texto da ação de cada shot/clipe COMEÇA pelo enquadramento, no formato "Câmera: <ângulo> + <movimento>. <o que acontece>" (ex.: "Câmera: close-up de cima, dolly-in lento. Mãos giram a tampa e revelam o bico.").`;
+// Shared by both script prompts: each shot/clip is joined by hard cuts, so the
+// only thing that makes the cut feel dynamic is a different camera angle per
+// shot — and the video model only sees the angle if the script's action text
+// states it. The variety is bounded by PRODUCT_COVERAGE_RULE: an angle no real
+// photo shows (top, back, underside) forces the model to invent that side of
+// the product, which is exactly the failure this whole flow exists to avoid.
+export const CAMERA_VARIETY_RULE = `- DINÂMICA DE CÂMERA (obrigatório): cada shot/clipe usa um ENQUADRAMENTO e um MOVIMENTO de câmera DIFERENTES dos outros — nunca repita o mesmo em dois cortes seguidos. Varie a DISTÂNCIA (close-up/plano detalhe, plano médio, plano aberto) e o MOVIMENTO (dolly-in, dolly-out, travelling lateral curto, pan, tilt, câmera na mão), mas o LADO do produto voltado para a câmera só pode ser um dos lados que aparecem nas FOTOS REAIS anexadas (frente, lateral, 3/4, cima… apenas se houver foto desse lado). Nunca use órbita/giro completo, vista de cima, de baixo ou de trás se nenhuma foto mostra o produto por esse lado.
+- O texto da ação de cada shot/clipe COMEÇA pelo enquadramento, no formato "Câmera: <ângulo> + <movimento>. <o que acontece>" (ex.: "Câmera: close-up frontal, dolly-in lento. A mão aponta o detalhe do logotipo.").`;
+
+// O produto só pode aparecer como as fotos reais o mostram: tudo que não foi
+// fotografado (verso, fundo, interior, o produto aberto/ligado/montado) o
+// modelo de vídeo precisa inventar — e inventa errado.
+export const PRODUCT_COVERAGE_RULE = `- SÓ O QUE FOI FOTOGRAFADO (obrigatório): mostre o produto apenas nos lados, partes e estados que aparecem nas FOTOS REAIS anexadas. Nunca revele o verso, o fundo, a parte de baixo ou o interior se nenhuma foto os mostra. Nunca peça para abrir, destampar, desmontar, dobrar, desdobrar, montar, vestir, encaixar, ligar ou acionar o produto se as fotos não mostram esse estado — nesse caso a interação é segurar, aproximar, apontar detalhes visíveis e posicionar o produto em cena.`;
+
+// Versão de uma linha para o prompt de cada clipe (o modelo de vídeo, não o roteirista).
+export const PRODUCT_COVERAGE_CLIP_LINE =
+  'LIMITE DO PRODUTO: mostre o produto somente pelos lados e nos estados que aparecem nas fotos reais de referência. Nunca revele partes não fotografadas (verso, fundo, interior) nem mude o estado do produto (abrir, desmontar, ligar, dobrar) se isso não aparece nas fotos.';
+export const PRODUCT_COVERAGE_NEGATIVE =
+  'lado do produto não mostrado nas fotos, verso inventado, interior inventado, produto aberto ou desmontado sem referência';
+
+// Veo 3.1 aceita no máximo 3 referências ASSET por geração; o painel junta
+// todas as fotos reais escolhidas numa vaga só.
+export const VEO_MAX_REFERENCE_IMAGES = 3;
+export const PHOTO_PANEL_PROMPT_LINE =
+  'FOTOS REAIS: uma das imagens de referência é um painel com fotos reais do produto lado a lado. Use-o como a verdade sobre a aparência do produto (cores, materiais, logotipos, proporções). Nunca mostre o painel, a grade nem as bordas dele no vídeo.';
+export const PHOTO_PANEL_NEGATIVE = 'painel de fotos na tela, grade de fotos, mosaico';
+
+// Fotos reais que o cliente pode mandar por job (a UI limita a seleção ao mesmo número).
+export const MAX_PRODUCT_PHOTOS = 8;
+
+// Fotos vindas do cliente: só strings não vazias, sem repetição, no máximo
+// MAX_PRODUCT_PHOTOS (a UI já limita — isto é o teto do servidor).
+export function sanitizePhotoUrls(urls: unknown): string[] {
+  if (!Array.isArray(urls)) return [];
+  const clean = urls.filter((u): u is string => typeof u === 'string' && !!u.trim()).map((u) => u.trim());
+  return Array.from(new Set(clean)).slice(0, MAX_PRODUCT_PHOTOS);
+}
 
 export const PRODUCT_REFERENCE_NEGATIVE = 'colagem, grade de imagens, folha de referência na tela, rótulos de texto, fundo branco de estúdio';
 
@@ -138,6 +176,92 @@ export async function resizeForReference(inputBuffer: Buffer): Promise<{ base64:
     .jpeg({ quality: 90 })
     .toBuffer();
   return { base64: resized.toString('base64'), mimeType: 'image/jpeg' };
+}
+
+// Imagem de referência pronta para qualquer provider: já baixada (com a
+// proteção SSRF de fetchImageAsBase64), reduzida para JPEG e, quando o
+// provider lê por URL, copiada para o nosso Storage.
+export interface PreparedImage {
+  base64: string;
+  mimeType: string;
+  url: string; // a cópia no Storage (Seedance) ou a URL original (Veo, que usa só os bytes)
+}
+
+// Baixa e reduz cada URL uma vez só, mesmo que apareça repetida (a mesma
+// cena em dois shots), devolvendo um Map pela URL original.
+export async function prepareReferenceImages(urls: string[]): Promise<Map<string, PreparedImage>> {
+  const unique = Array.from(new Set(urls.filter(Boolean)));
+  const out = new Map<string, PreparedImage>();
+  await Promise.all(unique.map(async (url) => {
+    const fetched = await fetchImageAsBase64(url);
+    const resized = await resizeForReference(Buffer.from(fetched.base64, 'base64'));
+    out.set(url, { ...resized, url });
+  }));
+  return out;
+}
+
+const STAGED_REFERENCES_PREFIX = 'video-refs';
+
+// O Seedance (via OpenRouter) baixa as referências sozinho e só aceita HTTPS
+// público, direto, sem redirect/cookie/anti-bot. As fotos do produto vêm de
+// qualquer lugar (CDN do ERP, da loja, http://…), então cada imagem já
+// reduzida é regravada no nosso bucket e é essa URL que vai para o provider.
+// A URL com token de download não depende das rules nem do IAM do bucket.
+// Troca o `url` de cada imagem pela cópia, no próprio Map.
+export async function stageReferenceImages(uid: string, jobId: string, images: Map<string, PreparedImage>): Promise<void> {
+  const bucket = adminStorage.bucket(STORAGE_BUCKET);
+  let index = 0;
+  await Promise.all(Array.from(images.values()).map(async (img) => {
+    const storagePath = `${STAGED_REFERENCES_PREFIX}/${uid}/${jobId}/${index++}.jpg`;
+    const token = crypto.randomUUID();
+    await bucket.file(storagePath).save(Buffer.from(img.base64, 'base64'), {
+      contentType: img.mimeType,
+      resumable: false,
+      metadata: { metadata: { firebaseStorageDownloadTokens: token } },
+    });
+    img.url = `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
+  }));
+}
+
+// Chamado no fim do job (sucesso ou erro): depois que o vídeo foi baixado o
+// provider não precisa mais das cópias.
+export async function deleteStagedReferences(uid: string, jobId: string): Promise<void> {
+  await adminStorage.bucket(STORAGE_BUCKET)
+    .deleteFiles({ prefix: `${STAGED_REFERENCES_PREFIX}/${uid}/${jobId}/` })
+    .catch((err) => console.warn(`[video] falha ao apagar referências temporárias jobId=${jobId}:`, err));
+}
+
+// Junta as fotos reais numa grade (fundo branco, cada foto inteira na sua
+// célula) para caber numa única vaga de referência do Veo. Com uma foto só,
+// devolve a própria foto.
+export async function buildPhotoPanel(photos: PreparedImage[]): Promise<{ base64: string; mimeType: string }> {
+  if (photos.length === 0) throw new Error('buildPhotoPanel precisa de ao menos uma foto');
+  if (photos.length === 1) return { base64: photos[0].base64, mimeType: photos[0].mimeType };
+  const cols = Math.ceil(Math.sqrt(photos.length));
+  const rows = Math.ceil(photos.length / cols);
+  const cell = 512;
+  const gap = 16;
+  const cells = await Promise.all(photos.map((p) =>
+    sharp(Buffer.from(p.base64, 'base64'))
+      .resize({ width: cell, height: cell, fit: 'contain', background: '#ffffff' })
+      .jpeg({ quality: 90 })
+      .toBuffer()));
+  const panel = await sharp({
+    create: {
+      width: cols * cell + (cols + 1) * gap,
+      height: rows * cell + (rows + 1) * gap,
+      channels: 3,
+      background: '#ffffff',
+    },
+  })
+    .composite(cells.map((input, i) => ({
+      input,
+      left: gap + (i % cols) * (cell + gap),
+      top: gap + Math.floor(i / cols) * (cell + gap),
+    })))
+    .jpeg({ quality: 90 })
+    .toBuffer();
+  return resizeForReference(panel);
 }
 
 export function runFfmpeg(args: string[]): Promise<void> {
@@ -255,8 +379,12 @@ export async function assertNoActiveVideoJob(uid: string): Promise<void> {
 // Lê users/platform_settings/video no client seria negado pelas rules (não há
 // nenhum match cobrindo essa coleção) — só o Admin SDK acessa. Ausência do doc
 // (instalação nova) ou de valor reconhecido cai em 'veo', o provider seguro.
+// 'kling' é o valor legado de quando o provider alternativo era a Kling — foi
+// substituída pelo Seedance no mesmo lugar, então quem escolheu Kling no admin
+// passa a gerar com Seedance sem precisar reescolher.
 export function resolveVideoProvider(data?: { defaultProvider?: unknown }): VideoProvider {
-  return data?.defaultProvider === 'kling' ? 'kling' : 'veo';
+  const value = data?.defaultProvider;
+  return value === 'seedance' || value === 'kling' ? 'seedance' : 'veo';
 }
 
 export async function getDefaultVideoProvider(): Promise<VideoProvider> {

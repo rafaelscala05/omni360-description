@@ -8,7 +8,7 @@ import {
   generateUgcVideoScript, startUgcVideoJob, listenUgcVideoJob, computeUgcVideoProgress,
   type UgcVideoScript, type UgcVideoJob,
 } from '../../services/ugcVideoService';
-import { cn, PrereqItem } from './videoWizardShared';
+import { cn, PrereqItem, ProductPhotoPicker, defaultVideoPhotoSelection, collectVideoPhotos } from './videoWizardShared';
 import AvatarLibrary from './AvatarLibrary';
 import { collectProductPhotos } from '../../services/productReferencePrompt';
 import type { CreditAction } from '../../credits';
@@ -26,6 +26,8 @@ export interface UgcVideoGenerationTabProps {
   consumeCredit: (action: CreditAction, productName?: string) => Promise<boolean>;
   // Saved Product Reference sheet — required to start a new video.
   productReferenceUrl?: string;
+  // Fotos usadas para criar a referência (inclui as adicionadas naquela etapa).
+  referenceSourceImages?: string[];
   onEditReference: () => void;
 }
 
@@ -39,15 +41,16 @@ const ROLE_LABELS: Record<UgcVideoScript['clipes'][number]['papel'], string> = {
 
 export default function UgcVideoGenerationTab({
   product, uid, getIdToken, onUgcVideoGenerated, onUgcVideoJobStarted, onUgcVideoFailed, onNavigateToTab,
-  activeVideoProductId, ensureCredits, consumeCredit, productReferenceUrl, onEditReference,
+  activeVideoProductId, ensureCredits, consumeCredit, productReferenceUrl, referenceSourceImages, onEditReference,
 }: UgcVideoGenerationTabProps) {
   const hasDescription = !!product['Descrição complementar']?.trim();
   const hasSeoTitle = !!product['Título SEO']?.trim();
   const hasReference = !!productReferenceUrl;
   const prereqsMet = hasDescription && hasSeoTitle && hasReference;
-  // Real photo sent alongside the reference sheet: the sheet carries every angle,
-  // the photo carries the true look (lighting, texture) of the product.
-  const mainPhoto = collectProductPhotos(product)[0] ?? productReferenceUrl ?? null;
+  // Real photos sent alongside the reference sheet: the sheet carries every angle,
+  // the photos carry the true look (lighting, texture) of the product.
+  const productPhotos = collectVideoPhotos(collectProductPhotos(product), referenceSourceImages);
+  const [selectedPhotos, setSelectedPhotos] = useState<string[]>(() => defaultVideoPhotoSelection(productPhotos));
 
   const [stage, setStage] = useState<Stage>('prereqs');
   const [avatar, setAvatar] = useState<Avatar | null>(null);
@@ -97,7 +100,7 @@ export default function UgcVideoGenerationTab({
   async function handleGenerateScript() {
     if (!avatar) return;
     // The script model reads the sheet: it shows every angle and labelled detail.
-    const productImage = productReferenceUrl ?? mainPhoto;
+    const productImage = productReferenceUrl ?? selectedPhotos[0];
     if (!productImage) return;
     setScriptLoading(true);
     setScriptError(null);
@@ -107,6 +110,7 @@ export default function UgcVideoGenerationTab({
         description: product['Descrição complementar'] ?? product['Descrição'] ?? '',
         brand: product['Marca'] ?? '',
         productImageUrl: productImage,
+        photoUrls: selectedPhotos,
         avatarImageUrl: avatar.referenceImageUrl,
         avatarDescricao: avatar.descricao,
         productName: product['Título SEO'] ?? product['Descrição'] ?? '',
@@ -123,7 +127,7 @@ export default function UgcVideoGenerationTab({
   }
 
   async function handleStartJob() {
-    if (!script || !avatar || !productReferenceUrl || !mainPhoto) return;
+    if (!script || !avatar || !productReferenceUrl || selectedPhotos.length === 0) return;
     setJobLoading(true);
     setJobError(null);
     try {
@@ -133,7 +137,7 @@ export default function UgcVideoGenerationTab({
         productName: product['Descrição'] ?? product._id,
         script,
         avatarImageUrl: avatar.referenceImageUrl,
-        productImageUrl: mainPhoto,
+        productPhotoUrls: selectedPhotos,
         productReferenceUrl,
       });
       setJobId(id);
@@ -230,6 +234,18 @@ export default function UgcVideoGenerationTab({
           <p className="text-sm text-slate-500 mb-6">Selecione um avatar salvo ou crie um novo. Ele reaparece nos próximos vídeos.</p>
 
           <AvatarLibrary uid={uid} selectedAvatarId={avatar?.id} onSelect={handleSelectAvatar} ensureCredits={ensureCredits} consumeCredit={consumeCredit} />
+
+          <div className="mt-6">
+            <ProductPhotoPicker
+              photos={productPhotos}
+              selected={selectedPhotos}
+              onChange={(next) => {
+                setSelectedPhotos(next);
+                // O roteiro foi escrito para os ângulos das fotos antigas.
+                setScript(null);
+              }}
+            />
+          </div>
 
           <div className="flex gap-3 flex-wrap mt-6">
             <button type="button" onClick={() => setStage('prereqs')} className="px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50">
@@ -351,7 +367,7 @@ export default function UgcVideoGenerationTab({
                 <CheckCircle2 className="w-4 h-4 shrink-0" /> Vídeo gerado com sucesso!
                 {job.provider && (
                   <span className="ml-auto text-xs font-semibold text-green-600 bg-white/60 px-2 py-0.5 rounded-full">
-                    {job.provider === 'kling' ? 'Kling' : 'Veo 3'}
+                    {job.provider === 'seedance' ? 'Seedance' : job.provider === 'kling' ? 'Kling' : 'Veo 3'}
                   </span>
                 )}
               </div>
@@ -421,7 +437,9 @@ function UgcVideoProgressDisplay({ job }: { job: UgcVideoJob | null }) {
           </div>
         )}
         <p className="text-xs text-slate-400 leading-relaxed">
-          O Veo 3.1 gera os clipes em paralelo, com o avatar falando. Esse processo geralmente leva de 2 a 4 minutos.
+          {total === 1
+            ? 'O vídeo é gerado inteiro de uma vez, com o avatar falando. Esse processo geralmente leva de 3 a 8 minutos.'
+            : 'O Veo 3.1 gera os clipes em paralelo, com o avatar falando. Esse processo geralmente leva de 2 a 4 minutos.'}
         </p>
       </div>
     </div>

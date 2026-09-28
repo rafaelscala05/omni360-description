@@ -1117,6 +1117,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                           getIdToken={getIdToken}
                           activeVideoProductId={activeVideoProductId}
                           productReferenceUrl={reference?.imageUrl}
+                          referenceSourceImages={reference?.sourceImages}
                           onEditReference={() => setEditingReference(true)}
                           onVideoGenerated={(productId, videoUrl, jobId) => {
                             setEditedProduct((prev) => ({
@@ -1137,6 +1138,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                           getIdToken={getIdToken}
                           activeVideoProductId={activeUgcVideoProductId}
                           productReferenceUrl={reference?.imageUrl}
+                          referenceSourceImages={reference?.sourceImages}
                           onEditReference={() => setEditingReference(true)}
                           ensureCredits={ensureCredits}
                           consumeCredit={consumeCredit}

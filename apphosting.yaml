@@ -28,9 +28,9 @@ env:
     value: https://api.asaas.com/v3
   - variable: GEMINI_API_KEY
     secret: gemini-api-key
-  # Kling (geração de vídeo alternativa ao Veo 3.1) via OpenRouter — chave
-  # única, sem JWT. Provider padrão escolhido em /admin/video; sem esta
-  # variável, selecionar Kling ali faz os jobs falharem com erro claro.
+  # Seedance 2.5 (geração de vídeo alternativa ao Veo 3.1) via OpenRouter —
+  # chave única, sem JWT. Provider padrão escolhido em /admin/video; sem esta
+  # variável, selecionar Seedance ali faz os jobs falharem com erro claro.
   - variable: OPENROUTER_API_KEY
     secret: openrouter-api-key
   - variable: CONTENT_CRON_SECRET

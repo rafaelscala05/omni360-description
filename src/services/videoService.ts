@@ -26,14 +26,14 @@ export interface VideoJob {
   jobId: string;
   productId: string;
   status: VideoJobStatus;
-  provider?: 'veo' | 'kling';
+  provider?: 'veo' | 'seedance' | 'kling'; // 'kling' = jobs antigos
   videoUrl?: string;
   error?: string;
   createdAt: string;
   updatedAt: string;
   /** Number of shots already generated (shots run in parallel), written by the server */
   shotsDone?: number;
-  /** Total number of shots (always 4) */
+  /** Total number of shots (4 on Veo, 1 on Seedance — a single long clip) */
   totalShots?: number;
   /** Current pipeline step */
   step?: VideoJobStep;
@@ -45,6 +45,8 @@ export async function generateVideoScript(
     description: string;
     brand?: string;
     imageUrl: string;
+    /** Fotos reais escolhidas — o roteiro só usa os lados/estados que elas mostram */
+    photoUrls?: string[];
     productName?: string;
     category?: string;
     /** Atributos do produto (rótulo → valor) para enriquecer o roteiro */
@@ -74,8 +76,10 @@ export async function startVideoJob(
     productName: string;
     script: VideoScript;
     shotImageUrls: string[];
-    /** Folha de referência do produto (vários ângulos) — enviada ao Veo em todos os shots */
+    /** Folha de referência do produto (vários ângulos) — enviada em todos os shots */
     productReferenceUrl: string;
+    /** Fotos reais escolhidas no wizard (todas marcadas por padrão) */
+    productPhotoUrls: string[];
   },
 ): Promise<string> {
   const res = await fetch('/api/video/start-job', {

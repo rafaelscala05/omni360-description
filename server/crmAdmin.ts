@@ -11,6 +11,7 @@ import { resolveParams } from './crmAutomationRules';
 import { isConfigured, listTemplates, sendTemplate } from './whatsappProvider';
 import { isConfigured as emailIsConfigured } from './emailProvider';
 import { recordEvent } from './crmEvents';
+import { resolveVideoProvider } from './videoShared';
 import {
   CRM_STAGES,
   PIPELINE_STATUSES,
@@ -726,7 +727,7 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
     }
   });
 
-  // Provider padrão de geração de vídeo (Veo/Kling) — um doc só, plataforma
+  // Provider padrão de geração de vídeo (Veo/Seedance) — um doc só, plataforma
   // inteira. Lido uma vez por job em videoAgent.ts/ugcVideoAgent.ts via
   // getDefaultVideoProvider(); trocar aqui não afeta jobs já em andamento.
   app.get('/api/admin/video-settings', async (req, res) => {
@@ -735,7 +736,7 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
       const snap = await adminDb.collection('platform_settings').doc('video').get();
       const data = snap.exists ? (snap.data() as VideoPlatformSettings) : undefined;
       res.json({
-        defaultProvider: data?.defaultProvider === 'kling' ? 'kling' : 'veo',
+        defaultProvider: resolveVideoProvider(data),
         updatedAt: data?.updatedAt ?? null,
         updatedBy: data?.updatedBy ?? null,
       });
@@ -748,9 +749,9 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
     try {
       const admin = await requireAdmin(req);
       const body = req.body ?? {};
-      const defaultProvider = body.defaultProvider === 'kling' ? 'kling' : body.defaultProvider === 'veo' ? 'veo' : null;
+      const defaultProvider = body.defaultProvider === 'seedance' ? 'seedance' : body.defaultProvider === 'veo' ? 'veo' : null;
       if (!defaultProvider) {
-        throw Object.assign(new Error('defaultProvider deve ser "veo" ou "kling"'), { status: 422 });
+        throw Object.assign(new Error('defaultProvider deve ser "veo" ou "seedance"'), { status: 422 });
       }
 
       const settings: VideoPlatformSettings = {

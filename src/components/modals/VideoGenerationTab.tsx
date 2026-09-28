@@ -8,7 +8,7 @@ import {
   generateVideoScript, startVideoJob, listenVideoJob,
   type VideoScript, type VideoJob, type VideoJobStep,
 } from '../../services/videoService';
-import { cn, PrereqItem } from './videoWizardShared';
+import { cn, PrereqItem, ProductPhotoPicker, defaultVideoPhotoSelection, collectVideoPhotos } from './videoWizardShared';
 import { collectProductPhotos } from '../../services/productReferencePrompt';
 
 export interface VideoGenerationTabProps {
@@ -21,6 +21,8 @@ export interface VideoGenerationTabProps {
   activeVideoProductId?: string;
   // Saved Product Reference sheet — required to start a new video.
   productReferenceUrl?: string;
+  // Fotos usadas para criar a referência (inclui as adicionadas naquela etapa).
+  referenceSourceImages?: string[];
   onEditReference: () => void;
 }
 
@@ -75,13 +77,15 @@ function buildShotImageUrls(product: Product): string[] {
 
 export default function VideoGenerationTab({
   product, uid, getIdToken, onVideoGenerated, onVideoJobStarted, onNavigateToTab, activeVideoProductId,
-  productReferenceUrl, onEditReference,
+  productReferenceUrl, referenceSourceImages, onEditReference,
 }: VideoGenerationTabProps) {
   const hasDescription = !!product['Descrição complementar']?.trim();
   const hasSeoTitle = !!product['Título SEO']?.trim();
   const hasReference = !!productReferenceUrl;
   const prereqsMet = hasDescription && hasSeoTitle && hasReference;
 
+  const productPhotos = collectVideoPhotos(collectProductPhotos(product), referenceSourceImages);
+  const [selectedPhotos, setSelectedPhotos] = useState<string[]>(() => defaultVideoPhotoSelection(productPhotos));
   const [stage, setStage] = useState<Stage>('prereqs');
   const [script, setScript] = useState<VideoScript | null>(null);
   const [scriptLoading, setScriptLoading] = useState(false);
@@ -139,6 +143,7 @@ export default function VideoGenerationTab({
         description: product['Descrição complementar'] ?? product['Descrição'] ?? '',
         brand: product['Marca'] ?? '',
         imageUrl: primaryImage,
+        photoUrls: selectedPhotos,
         productName: product['Título SEO'] ?? product['Descrição'] ?? '',
         category: product['Categoria'] ?? (product.categoryPath?.join(' > ') ?? ''),
         attributes: collectAttributes(),
@@ -164,6 +169,7 @@ export default function VideoGenerationTab({
         script,
         shotImageUrls: buildShotImageUrls(product),
         productReferenceUrl,
+        productPhotoUrls: selectedPhotos,
       });
       setJobId(id);
       onVideoJobStarted?.(product._id, id);
@@ -325,6 +331,18 @@ export default function VideoGenerationTab({
             })}
           </div>
 
+          <div className="mb-6">
+            <ProductPhotoPicker
+              photos={productPhotos}
+              selected={selectedPhotos}
+              onChange={(next) => {
+                setSelectedPhotos(next);
+                // O roteiro foi escrito para os ângulos das fotos antigas.
+                setScript(null);
+              }}
+            />
+          </div>
+
           <div className="flex gap-3 flex-wrap">
             <button
               type="button"
@@ -359,7 +377,7 @@ export default function VideoGenerationTab({
             Roteiro gerado pela IA
           </h2>
           <p className="text-sm text-slate-500 mb-6 leading-relaxed">
-            Revise e edite o roteiro antes de gerar o vídeo vertical (9:16) de ~32 segundos,
+            Revise e edite o roteiro antes de gerar o vídeo vertical (9:16) de ~30 segundos,
             com estrutura <strong>Início → Meio → Fim</strong>. A narração é uma locução em off
             (voz por cima) com música de fundo — não há ninguém falando na tela.
           </p>
@@ -453,7 +471,7 @@ export default function VideoGenerationTab({
                 Vídeo gerado com sucesso!
                 {job.provider && (
                   <span className="ml-auto text-xs font-semibold text-green-600 bg-white/60 px-2 py-0.5 rounded-full">
-                    {job.provider === 'kling' ? 'Kling' : 'Veo 3'}
+                    {job.provider === 'seedance' ? 'Seedance' : job.provider === 'kling' ? 'Kling' : 'Veo 3'}
                   </span>
                 )}
               </div>
@@ -551,7 +569,10 @@ function computeVideoProgress(job: VideoJob | null): { pct: number; label: strin
   if (!step || step === 'shot') {
     // Shots run in parallel; the bar tracks how many finished (range 5-85%)
     const pct = Math.min(5 + Math.round((done / total) * 80), 85);
-    const label = `${done} de ${total} trechos prontos — aguarde 2 a 5 min`;
+    // Seedance gera o vídeo inteiro numa tomada só (totalShots = 1).
+    const label = total === 1
+      ? 'Gerando o vídeo em uma tomada só — aguarde 3 a 8 min'
+      : `${done} de ${total} trechos prontos — aguarde 2 a 5 min`;
     return { pct, label };
   }
 
@@ -607,7 +628,9 @@ function VideoProgressDisplay({ job }: { job: VideoJob | null }) {
         )}
 
         <p className="text-xs text-slate-400 leading-relaxed">
-          O Veo 3.1 gera os 4 trechos em paralelo e monta narração + música. Esse processo geralmente leva de 2 a 5 minutos.
+          {total === 1
+            ? 'O vídeo é gerado inteiro de uma vez e depois recebe narração + música. Esse processo geralmente leva de 3 a 8 minutos.'
+            : `O Veo 3.1 gera os ${total} trechos em paralelo e monta narração + música. Esse processo geralmente leva de 2 a 5 minutos.`}
           Você pode fechar essa janela — o vídeo ficará disponível aqui quando pronto.
         </p>
       </div>

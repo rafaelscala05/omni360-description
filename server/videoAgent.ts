@@ -9,13 +9,18 @@ import { adminDb, adminStorage } from './firebaseAdmin';
 import { CREDIT_ACTIONS } from '../src/credits';
 import { FieldValue } from 'firebase-admin/firestore';
 import {
-  STORAGE_BUCKET, GCP_PROJECT, TEXT_MODEL, VIDEO_ASPECT_RATIO, REFERENCE_MAX_DIM,
-  getGeminiClient, getVeoClient, now, sendError, fetchImageAsBase64, resizeForReference,
+  STORAGE_BUCKET, GCP_PROJECT, TEXT_MODEL, VIDEO_ASPECT_RATIO,
+  getGeminiClient, getVeoClient, now, sendError, fetchImageAsBase64,
   runFfmpeg, formatAttributes, debitCreditsAdmin, refundCreditsAdmin, assertNoActiveVideoJob,
   getDefaultVideoProvider, PRODUCT_REFERENCE_PROMPT_LINE, PRODUCT_REFERENCE_NEGATIVE, CAMERA_VARIETY_RULE,
-  type ClipReferenceImage, type VideoProvider,
+  PRODUCT_COVERAGE_RULE, PRODUCT_COVERAGE_CLIP_LINE, PRODUCT_COVERAGE_NEGATIVE,
+  PHOTO_PANEL_PROMPT_LINE, PHOTO_PANEL_NEGATIVE, sanitizePhotoUrls,
+  prepareReferenceImages, stageReferenceImages, deleteStagedReferences, buildPhotoPanel,
+  type ClipReferenceImage, type PreparedImage, type VideoProvider,
 } from './videoShared';
-import { runClipGeneration, getOpenRouterApiKey } from './videoProviders';
+import {
+  runClipGeneration, getOpenRouterApiKey, SEEDANCE_MAX_DURATION_SECONDS, SEEDANCE_MAX_REFERENCE_IMAGES,
+} from './videoProviders';
 
 // Background music + TTS voice for the final mix. The audio is added AFTER the
 // video is generated (segments are generated MUTE), so there is never any lip
@@ -29,8 +34,11 @@ const FONT_PATH = path.join(process.cwd(), 'server', 'assets', 'fonts', 'Anton-R
 const CANVAS_W = 720;
 const CANVAS_H = 1280;
 
-// In reference_to_video mode the Veo 3.1 API only accepts 8s clips, so all four
-// shots are 8s (total ~32s). The shots follow an e-commerce 3-act structure:
+// In reference_to_video mode the Veo 3.1 API only accepts 8s clips, so on Veo
+// all four shots are 8s (total ~32s), generated separately and joined by hard
+// cuts. On Seedance the same four acts go into ONE clip of
+// SEEDANCE_MAX_DURATION_SECONDS (one generation keeps the product consistent
+// across the whole video instead of re-inventing it per shot). The shots follow an e-commerce 3-act structure:
 // Início (hook) → Meio (uso + benefícios) → Fim (CTA). Every shot is anchored to
 // the same product reference image, so there is no frame-to-frame seeding.
 const SHOTS = [
@@ -138,12 +146,16 @@ async function assembleFinalVideo(
   workDir: string,
   outPath: string,
   captions: string[],
+  // Duração de cada ato (a legenda i fica de i*shotSeconds até (i+1)*shotSeconds):
+  // 8s no Veo (um segmento por ato), SEEDANCE_MAX_DURATION_SECONDS/4 no Seedance
+  // (um segmento só com os quatro atos).
+  shotSeconds: number,
 ): Promise<void> {
   const listPath = path.join(workDir, 'concat.txt');
   const list = segmentPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n');
   await fs.writeFile(listPath, list, 'utf8');
 
-  const SHOT_SECONDS = 8;
+  const SHOT_SECONDS = shotSeconds;
   const lastIndex = captions.length - 1;
 
   // Renderiza cada legenda não vazia como PNG (ordem = ordem de input no ffmpeg).
@@ -167,7 +179,7 @@ async function assembleFinalVideo(
   // confirmed empirically with this vendorized binary). Bounding the looped
   // input's read duration to the total video length (+ margin) keeps it
   // finite and lets -shortest do the final trim as before.
-  const totalSeconds = segmentPaths.length * SHOT_SECONDS + 5;
+  const totalSeconds = captions.length * SHOT_SECONDS + 5;
   inputs.push('-stream_loop', '-1', '-t', String(totalSeconds), '-i', musicPath);
   inputs.push('-i', narrationPath);
 
@@ -231,8 +243,9 @@ async function generateScript(
     category: string;
     attributes: Record<string, string>;
   },
-  imageBase64: string,
-  mimeType: string,
+  // [folha de referência, ...fotos reais escolhidas] — o roteirista precisa
+  // ver as fotos para saber quais lados/estados do produto existem.
+  images: Array<{ base64: string; mimeType: string }>,
 ): Promise<VideoScript> {
   const ai = getGeminiClient();
   const { description, brand, productName, category, attributes } = params;
@@ -241,7 +254,7 @@ async function generateScript(
 
 Crie um roteiro de VÍDEO COMERCIAL E EXPLICATIVO, VERTICAL (9:16), com cerca de 32 segundos, estruturado em INÍCIO, MEIO e FIM, seguindo as melhores práticas de vídeo para e-commerce.
 
-Analise CUIDADOSAMENTE a imagem fornecida antes de escrever.
+Analise CUIDADOSAMENTE as imagens anexadas antes de escrever. A PRIMEIRA é a folha de referência do produto (vários ângulos e detalhes); as DEMAIS são FOTOS REAIS do produto. Os lados, partes e estados do produto que aparecem nessas imagens são os ÚNICOS que o vídeo pode mostrar.
 
 **Informações do produto:**
 ${productName ? `Nome: ${productName}\n` : ''}${category ? `Categoria: ${category}\n` : ''}${brand ? `Marca: ${brand}\n` : ''}Descrição: ${description}
@@ -253,7 +266,7 @@ ${formatAttributes(attributes)}
 - Formato VERTICAL (9:16): produto grande e centralizado, pensado para tela de celular.
 - Tom COMERCIAL e EXPLICATIVO: mostre o que o produto é, do que é feito e por que vale a pena.
 - Cite naturalmente de 2 a 3 ATRIBUTOS REAIS (da lista acima ou visíveis na imagem). Nunca invente características.
-- As mãos devem MANIPULAR o produto de forma rica e realista: pegar, girar para mostrar ângulos/detalhes, abrir/fechar, acionar botões/zíperes/tampas, demonstrar o uso real, apontar partes específicas. Evite gestos passivos.
+- As mãos devem MANIPULAR o produto de forma realista: pegar, aproximar da câmera, apontar detalhes, posicionar em cena, demonstrar o uso. Abrir/fechar, acionar botões/zíperes/tampas ou mostrar o produto em funcionamento SÓ se as fotos mostram esse estado. Evite gestos passivos.
 - A NARRAÇÃO é uma locução em OFF (voice-over): ninguém aparece falando para a câmera, não há diálogo, não há lip sync. Há música de fundo.
 - Estrutura de 4 shots INDEPENDENTES unidos por CORTES SECOS (padrão de shorts/TikTok): cada shot deve abrir já com o produto em quadro e funcionar sozinho, sem depender visualmente do shot anterior. A "cena" compartilhada garante a coerência de ambientação entre eles:
   1) INÍCIO (~8s): gancho que prende a atenção nos 3 primeiros segundos + apresentação do produto.
@@ -261,6 +274,7 @@ ${formatAttributes(attributes)}
   3) MEIO/benefícios (~8s): close-ups destacando 2–3 atributos/benefícios.
   4) FIM (~8s): fechamento com chamada para ação (ex.: "Garanta o seu agora").
 ${CAMERA_VARIETY_RULE}
+${PRODUCT_COVERAGE_RULE}
 - Sem texto na tela. Sem efeitos artificiais. Realista, luz natural ou de estúdio.
 - NARRAÇÃO CURTA: cada "narracao" deve ter no máximo ~16 palavras (o total será lido em ~32s).
 
@@ -287,7 +301,7 @@ Retorne APENAS um JSON válido neste formato exato (sem markdown, sem texto extr
       {
         role: 'user',
         parts: [
-          { inlineData: { mimeType, data: imageBase64 } },
+          ...images.map((img) => ({ inlineData: { mimeType: img.mimeType, data: img.base64 } })),
           { text: prompt },
         ],
       },
@@ -305,74 +319,176 @@ Retorne APENAS um JSON válido neste formato exato (sem markdown, sem texto extr
   return parsed;
 }
 
+const CLASSIC_STYLE_LINE = 'Formato: vertical 9:16, comercial e explicativo para página de produto, luz natural ou de estúdio, câmera fluida, realista, alta qualidade.';
+const CLASSIC_RULES_LINE = 'As mãos MANIPULAM o produto de forma realista (pegar, aproximar, apontar detalhes, demonstrar o uso). Nenhuma pessoa falando para a câmera. Sem texto na tela. Sem efeitos artificiais.';
+const CLASSIC_FIDELITY_LINE = 'FIDELIDADE OBRIGATÓRIA: o produto no vídeo deve ser IDÊNTICO às fotos reais de referência — mesmas cores, proporções, logotipos, materiais e acabamento. Nunca redesenhe, recolore ou altere o produto.';
+const CLASSIC_BASE_NEGATIVE = 'produto diferente da referência, cores alteradas, logotipo modificado, proporções distorcidas, texto na tela, legendas, marca d\'água, pessoa falando para a câmera, lip sync, distorções, baixa qualidade';
+const SHEET_PAPEL = 'FOLHA DE REFERÊNCIA do mesmo produto em vários ângulos — só para fidelidade, nunca aparece no vídeo';
+
+export function buildClassicNegativePrompt(opts: { hasSheet: boolean; hasPhotoPanel: boolean }): string {
+  return [
+    CLASSIC_BASE_NEGATIVE,
+    PRODUCT_COVERAGE_NEGATIVE,
+    ...(opts.hasSheet ? [PRODUCT_REFERENCE_NEGATIVE] : []),
+    ...(opts.hasPhotoPanel ? [PHOTO_PANEL_NEGATIVE] : []),
+  ].join(', ');
+}
+
+// Veo: um prompt por shot (cada shot é uma geração separada de 8s).
+export function buildClassicShotPrompt(script: VideoScript, shotIndex: number, opts: { hasSheet: boolean; hasPhotoPanel: boolean }): string {
+  const shot = SHOTS[shotIndex];
+  return [
+    `Cena: ${script.cena}`,
+    `Ato (${shot.ato}, ~${shot.seconds}s): ${script[shot.key].acao}`,
+    'Siga EXATAMENTE o ângulo e o movimento de câmera descritos no ato.',
+    CLASSIC_STYLE_LINE,
+    CLASSIC_RULES_LINE,
+    CLASSIC_FIDELITY_LINE,
+    PRODUCT_COVERAGE_CLIP_LINE,
+    ...(opts.hasSheet ? [PRODUCT_REFERENCE_PROMPT_LINE] : []),
+    ...(opts.hasPhotoPanel ? [PHOTO_PANEL_PROMPT_LINE] : []),
+  ].join('\n');
+}
+
+const formatSeconds = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+
+// Seedance: os quatro atos num clipe só, como uma linha do tempo com cortes
+// secos. O mapa @ImageN (buildSeedancePrompt) diz qual referência é a cena de
+// cada ato, qual é foto real e qual é a folha.
+export function buildClassicSeedancePrompt(script: VideoScript, totalSeconds: number, opts: { hasSheet: boolean }): string {
+  const actSeconds = totalSeconds / SHOTS.length;
+  const timeline = SHOTS.map((shot, i) => {
+    const start = formatSeconds(i * actSeconds);
+    const end = formatSeconds((i + 1) * actSeconds);
+    return `[${start}s–${end}s] ${shot.ato}: ${script[shot.key].acao}`;
+  });
+  return [
+    `Vídeo ÚNICO e contínuo de ${totalSeconds}s em ${SHOTS.length} atos, com CORTE SECO entre um ato e o próximo. O mesmo produto, idêntico, em todos os atos.`,
+    `Cena: ${script.cena}`,
+    'Linha do tempo (siga EXATAMENTE o ângulo e o movimento de câmera de cada ato):',
+    ...timeline,
+    CLASSIC_STYLE_LINE,
+    CLASSIC_RULES_LINE,
+    CLASSIC_FIDELITY_LINE,
+    PRODUCT_COVERAGE_CLIP_LINE,
+    ...(opts.hasSheet ? [PRODUCT_REFERENCE_PROMPT_LINE] : []),
+  ].join('\n');
+}
+
+// Referências do clipe único do Seedance, dentro do teto de imagens: a folha e
+// as cenas (deduplicadas, rotuladas com os atos que as usam) têm prioridade;
+// as fotos reais ocupam o que sobra, na ordem escolhida pelo usuário.
+export function buildClassicSeedanceReferences(
+  shotScenes: PreparedImage[],
+  photos: PreparedImage[],
+  sheet: PreparedImage | null,
+  maxImages: number,
+): ClipReferenceImage[] {
+  const scenes: Array<{ img: PreparedImage; atos: number[] }> = [];
+  shotScenes.forEach((img, i) => {
+    const existing = scenes.find((s) => s.img.url === img.url);
+    if (existing) existing.atos.push(i + 1);
+    else scenes.push({ img, atos: [i + 1] });
+  });
+  const sceneRefs: ClipReferenceImage[] = scenes.map(({ img, atos }) => ({
+    url: img.url, base64: img.base64, mimeType: img.mimeType,
+    papel: `a CENA ${atos.length > 1 ? 'dos atos' : 'do ato'} ${atos.join(' e ')} com o PRODUTO (ambiente e luz)`,
+  }));
+  const sceneUrls = new Set(scenes.map((s) => s.img.url));
+  const photoSlots = Math.max(0, maxImages - sceneRefs.length - (sheet ? 1 : 0));
+  const photoRefs: ClipReferenceImage[] = photos
+    .filter((p) => !sceneUrls.has(p.url))
+    .slice(0, photoSlots)
+    .map((p, i) => ({ url: p.url, base64: p.base64, mimeType: p.mimeType, papel: `FOTO REAL ${i + 1} do PRODUTO (aparência verdadeira — cores, materiais, logotipo, proporções)` }));
+  return [
+    ...photoRefs,
+    ...sceneRefs,
+    ...(sheet ? [{ url: sheet.url, base64: sheet.base64, mimeType: sheet.mimeType, papel: SHEET_PAPEL }] : []),
+  ];
+}
+
 async function runVideoJob(
   uid: string,
   jobId: string,
   productId: string,
   script: VideoScript,
-  shotImages: Array<{ base64: string; mimeType: string; url: string }>,
-  productReference: { base64: string; mimeType: string; url: string } | null,
+  refs: {
+    shotScenes: PreparedImage[]; // uma por shot, na ordem de SHOTS
+    photos: PreparedImage[];     // fotos reais escolhidas no wizard
+    sheet: PreparedImage | null; // folha de referência
+  },
   creditCost: number,
   meta: { productName?: string; userName?: string } = {},
   provider: VideoProvider,
 ): Promise<void> {
   const jobRef = adminDb.collection('users').doc(uid).collection('videoJobs').doc(jobId);
-  console.log(`[video] runVideoJob start uid=${uid} jobId=${jobId} productId=${productId} productReference=${productReference ? 'yes' : 'no'}`);
+  const { shotScenes, photos, sheet } = refs;
+  const singleClip = provider === 'seedance';
+  const totalShots = singleClip ? 1 : SHOTS.length;
+  console.log(`[video] runVideoJob start uid=${uid} jobId=${jobId} productId=${productId} provider=${provider} photos=${photos.length} sheet=${sheet ? 'yes' : 'no'}`);
 
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), `video-${jobId}-`));
 
   try {
-    await jobRef.update({ status: 'processing', shotsDone: 0, totalShots: SHOTS.length, step: 'shot', updatedAt: now() });
+    await jobRef.update({ status: 'processing', shotsDone: 0, totalShots, step: 'shot', updatedAt: now() });
 
     const ai = getVeoClient();
-    const styleLine = 'Formato: vertical 9:16, comercial e explicativo para página de produto, luz natural ou de estúdio, câmera fluida, realista, alta qualidade.';
-    const rulesLine = 'As mãos devem MANIPULAR o produto de forma rica (girar, abrir, acionar, demonstrar o uso). Nenhuma pessoa falando para a câmera. Sem texto na tela. Sem efeitos artificiais.';
-    const fidelityLine = 'FIDELIDADE OBRIGATÓRIA: o produto no vídeo deve ser IDÊNTICO à imagem de referência — mesmas cores, proporções, logotipos, materiais e acabamento. Nunca redesenhe, recolora ou altere o produto.';
-    const baseNegative = 'produto diferente da referência, cores alteradas, logotipo modificado, proporções distorcidas, texto na tela, legendas, marca d\'água, pessoa falando para a câmera, lip sync, distorções, baixa qualidade';
-    const negativePrompt = productReference ? `${baseNegative}, ${PRODUCT_REFERENCE_NEGATIVE}` : baseNegative;
-    // Resized once — the same sheet goes along with every shot.
-    const referenceSheet = productReference
-      ? { ...(await resizeForReference(Buffer.from(productReference.base64, 'base64'))), url: productReference.url }
-      : null;
+    const hasSheet = !!sheet;
+    let shotSeconds: number;
+    let generateSegments: () => Promise<string[]>;
 
-    // All four shots run in PARALLEL — each uses its own reference image,
-    // mapped to the most cohesive scene for that shot's role in the narrative.
-    // Transitions between shots are hard cuts (the shorts/TikTok standard).
-    const generateShot = async (i: number): Promise<string> => {
-      const shot = SHOTS[i];
-      const shotScript = script[shot.key];
-      const src = shotImages[i];
-      const referenceImage = await resizeForReference(Buffer.from(src.base64, 'base64'));
-      const prompt = [
-        `Cena: ${script.cena}`,
-        `Ato (${shot.ato}, ~${shot.seconds}s): ${shotScript.acao}`,
-        'Siga EXATAMENTE o ângulo e o movimento de câmera descritos no ato.',
-        styleLine,
-        rulesLine,
-        fidelityLine,
-        ...(referenceSheet ? [PRODUCT_REFERENCE_PROMPT_LINE] : []),
-      ].join('\n');
-
-      const referenceImages: ClipReferenceImage[] = [
-        { url: src.url, base64: referenceImage.base64, mimeType: referenceImage.mimeType },
-        ...(referenceSheet ? [{ url: referenceSheet.url, base64: referenceSheet.base64, mimeType: referenceSheet.mimeType }] : []),
-      ];
-
-      console.log(`[video] shot ${i + 1}/${SHOTS.length} (${shot.key}) generate jobId=${jobId} provider=${provider}`);
-      const videoBytes = await runClipGeneration(provider, ai, jobId, `shot#${i + 1}`, {
-        prompt,
-        negativePrompt,
-        durationSeconds: shot.seconds,
-        aspectRatio: VIDEO_ASPECT_RATIO,
-        generateAudio: false,
-        referenceImages,
-      });
-
-      const segPath = path.join(workDir, `seg${i}.mp4`);
-      await fs.writeFile(segPath, Buffer.from(videoBytes, 'base64'));
-      await jobRef.update({ shotsDone: FieldValue.increment(1), updatedAt: now() });
-      return segPath;
-    };
+    if (singleClip) {
+      const totalSeconds = SEEDANCE_MAX_DURATION_SECONDS;
+      shotSeconds = totalSeconds / SHOTS.length;
+      generateSegments = async () => {
+        const referenceImages = buildClassicSeedanceReferences(shotScenes, photos, sheet, SEEDANCE_MAX_REFERENCE_IMAGES);
+        console.log(`[video] single clip ${totalSeconds}s generate jobId=${jobId} provider=${provider} refs=${referenceImages.length}`);
+        const videoBytes = await runClipGeneration(provider, ai, jobId, 'clip#1', {
+          prompt: buildClassicSeedancePrompt(script, totalSeconds, { hasSheet }),
+          negativePrompt: buildClassicNegativePrompt({ hasSheet, hasPhotoPanel: false }),
+          durationSeconds: totalSeconds,
+          aspectRatio: VIDEO_ASPECT_RATIO,
+          generateAudio: false,
+          referenceImages,
+        });
+        const segPath = path.join(workDir, 'seg0.mp4');
+        await fs.writeFile(segPath, Buffer.from(videoBytes, 'base64'));
+        await jobRef.update({ shotsDone: FieldValue.increment(1), updatedAt: now() });
+        return [segPath];
+      };
+    } else {
+      shotSeconds = SHOTS[0].seconds;
+      // Veo aceita 3 referências: cena do shot + folha + um painel com todas
+      // as fotos reais escolhidas (montado uma vez, vai em todos os shots).
+      const panel = photos.length ? await buildPhotoPanel(photos) : null;
+      const hasPhotoPanel = !!panel;
+      const negativePrompt = buildClassicNegativePrompt({ hasSheet, hasPhotoPanel });
+      // All four shots run in PARALLEL — each uses its own scene image,
+      // mapped to the most cohesive scene for that shot's role in the narrative.
+      // Transitions between shots are hard cuts (the shorts/TikTok standard).
+      const generateShot = async (i: number): Promise<string> => {
+        const scene = shotScenes[i];
+        const referenceImages: ClipReferenceImage[] = [
+          { url: scene.url, base64: scene.base64, mimeType: scene.mimeType, papel: 'a CENA deste shot com o PRODUTO' },
+          ...(sheet ? [{ url: sheet.url, base64: sheet.base64, mimeType: sheet.mimeType, papel: SHEET_PAPEL }] : []),
+          ...(panel ? [{ base64: panel.base64, mimeType: panel.mimeType, papel: 'PAINEL com as fotos reais do produto' }] : []),
+        ];
+        console.log(`[video] shot ${i + 1}/${SHOTS.length} (${SHOTS[i].key}) generate jobId=${jobId} provider=${provider}`);
+        const videoBytes = await runClipGeneration(provider, ai, jobId, `shot#${i + 1}`, {
+          prompt: buildClassicShotPrompt(script, i, { hasSheet, hasPhotoPanel }),
+          negativePrompt,
+          durationSeconds: SHOTS[i].seconds,
+          aspectRatio: VIDEO_ASPECT_RATIO,
+          generateAudio: false,
+          referenceImages,
+        });
+        const segPath = path.join(workDir, `seg${i}.mp4`);
+        await fs.writeFile(segPath, Buffer.from(videoBytes, 'base64'));
+        await jobRef.update({ shotsDone: FieldValue.increment(1), updatedAt: now() });
+        return segPath;
+      };
+      generateSegments = () => Promise.all(SHOTS.map((_, i) => generateShot(i)));
+    }
 
     // Narration only depends on the script, so TTS runs alongside the shots.
     const narrationText = SHOTS.map((s) => script[s.key].narracao.trim())
@@ -380,18 +496,18 @@ async function runVideoJob(
       .join(' ');
 
     const [segmentPaths, narrationBuffer] = await Promise.all([
-      Promise.all(SHOTS.map((_, i) => generateShot(i))),
+      generateSegments(),
       synthesizeNarration(narrationText),
     ]);
     const narrationPath = path.join(workDir, 'narration.mp3');
     await fs.writeFile(narrationPath, narrationBuffer);
-    console.log(`[video] ${segmentPaths.length} shots + narration ready jobId=${jobId} chars=${narrationText.length}`);
+    console.log(`[video] ${segmentPaths.length} segment(s) + narration ready jobId=${jobId} chars=${narrationText.length}`);
 
     // Single-pass post-production: concat + narration + music in one encode.
     await jobRef.update({ step: 'post', updatedAt: now() });
     const finalPath = path.join(workDir, 'final.mp4');
     const captions = SHOTS.map((s) => script[s.key].narracao);
-    await assembleFinalVideo(segmentPaths, narrationPath, MUSIC_PATH, workDir, finalPath, captions);
+    await assembleFinalVideo(segmentPaths, narrationPath, MUSIC_PATH, workDir, finalPath, captions, shotSeconds);
     console.log(`[video] post-production done jobId=${jobId}`);
 
     await jobRef.update({ step: 'uploading', updatedAt: now() });
@@ -435,6 +551,7 @@ async function runVideoJob(
     }
   } finally {
     await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
+    await deleteStagedReferences(uid, jobId);
   }
 }
 
@@ -444,10 +561,12 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
   app.post('/api/video/generate-script', async (req, res) => {
     try {
       await verifyFirebaseToken(req);
-      const { description, brand, imageUrl, productName, category, attributes } = req.body as {
+      const { description, brand, imageUrl, photoUrls, productName, category, attributes } = req.body as {
         description: string;
         brand?: string;
         imageUrl: string;
+        // Fotos reais escolhidas no wizard — o roteiro só usa os lados/estados que elas mostram.
+        photoUrls?: string[];
         productName?: string;
         category?: string;
         attributes?: Record<string, string>;
@@ -455,7 +574,8 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
       if (!description || !imageUrl) {
         return res.status(400).json({ error: 'description e imageUrl são obrigatórios' });
       }
-      const { base64, mimeType } = await fetchImageAsBase64(imageUrl);
+      const photos = sanitizePhotoUrls(photoUrls).filter((u) => u !== imageUrl);
+      const images = await Promise.all([imageUrl, ...photos].map((u) => fetchImageAsBase64(u)));
       const script = await generateScript(
         {
           description,
@@ -464,8 +584,7 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
           category: category ?? '',
           attributes: attributes ?? {},
         },
-        base64,
-        mimeType,
+        images,
       );
       res.json({ script });
     } catch (err) {
@@ -476,13 +595,15 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
   app.post('/api/video/start-job', async (req, res) => {
     try {
       const decoded = await verifyFirebaseToken(req);
-      const { productId, productName, script, shotImageUrls, productReferenceUrl } = req.body as {
+      const { productId, productName, script, shotImageUrls, productReferenceUrl, productPhotoUrls } = req.body as {
         productId: string;
         productName: string;
         script: VideoScript;
         shotImageUrls: string[];
         // Optional so older clients keep working; the current UI always sends it.
         productReferenceUrl?: string;
+        // Fotos reais escolhidas no wizard (todas marcadas por padrão).
+        productPhotoUrls?: string[];
       };
       if (!productId || !script || !Array.isArray(shotImageUrls) || shotImageUrls.length !== SHOTS.length) {
         return res.status(400).json({ error: `productId, script e shotImageUrls (${SHOTS.length} imagens) são obrigatórios` });
@@ -492,11 +613,11 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
 
       // Resolvido e validado ANTES de debitar crédito: sem isso, um
       // OPENROUTER_API_KEY ausente só era detectado depois do débito (dentro do
-      // runKlingOperation), gerando um par débito+estorno em credit_logs (fonte
+      // runSeedanceOperation), gerando um par débito+estorno em credit_logs (fonte
       // de verdade do CRM pra "gerou conteúdo") por nada — achado do code
       // review de 2026-09-28.
       const provider = await getDefaultVideoProvider();
-      if (provider === 'kling') getOpenRouterApiKey();
+      if (provider === 'seedance') getOpenRouterApiKey();
 
       const creditMeta = { productName, userName: decoded.name ?? decoded.email ?? '' };
       const creditCost = await debitCreditsAdmin(decoded.uid, CREDIT_ACTIONS.videoGeneration, creditMeta);
@@ -508,8 +629,8 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
         .doc();
       const jobId = jobRef.id;
 
-      let shotImages: Array<{ base64: string; mimeType: string; url: string }>;
-      let productReference: { base64: string; mimeType: string; url: string } | null = null;
+      const photoUrls = sanitizePhotoUrls(productPhotoUrls);
+      let refs: { shotScenes: PreparedImage[]; photos: PreparedImage[]; sheet: PreparedImage | null };
       try {
         await jobRef.set({
           jobId,
@@ -522,17 +643,17 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
           updatedAt: now(),
         });
 
-        // Fetch each shot's reference image, deduplicating repeated URLs so the
-        // same scene driving two shots is only downloaded once.
-        const uniqueUrls = Array.from(new Set(shotImageUrls));
-        const fetched = new Map<string, { base64: string; mimeType: string; url: string }>();
-        await Promise.all(uniqueUrls.map(async (url) => {
-          fetched.set(url, { ...(await fetchImageAsBase64(url)), url });
-        }));
-        shotImages = shotImageUrls.map((url) => fetched.get(url)!);
-        if (productReferenceUrl) {
-          productReference = { ...(await fetchImageAsBase64(productReferenceUrl)), url: productReferenceUrl };
-        }
+        // Each URL is downloaded once even when it drives two shots or is both
+        // a scene and a photo.
+        const prepared = await prepareReferenceImages([...shotImageUrls, ...photoUrls, ...(productReferenceUrl ? [productReferenceUrl] : [])]);
+        // O Seedance lê as referências por URL: vão cópias no nosso Storage,
+        // nunca a URL original (CDN de ERP, http://, anti-bot…).
+        if (provider === 'seedance') await stageReferenceImages(decoded.uid, jobId, prepared);
+        refs = {
+          shotScenes: shotImageUrls.map((url) => prepared.get(url)!),
+          photos: photoUrls.map((url) => prepared.get(url)!),
+          sheet: productReferenceUrl ? prepared.get(productReferenceUrl)! : null,
+        };
       } catch (prepErr) {
         // Refund + mark the job errored so credits aren't lost and it isn't orphaned in 'queued'.
         if (creditCost > 0) {
@@ -543,6 +664,7 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
           error: prepErr instanceof Error ? prepErr.message : String(prepErr),
           updatedAt: now(),
         }).catch(() => {});
+        await deleteStagedReferences(decoded.uid, jobId);
         throw prepErr;
       }
 
@@ -555,7 +677,7 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
       res.write(JSON.stringify({ jobId }));
 
       try {
-        await runVideoJob(decoded.uid, jobId, productId, script, shotImages, productReference, creditCost, creditMeta, provider);
+        await runVideoJob(decoded.uid, jobId, productId, script, refs, creditCost, creditMeta, provider);
       } finally {
         res.end();
       }

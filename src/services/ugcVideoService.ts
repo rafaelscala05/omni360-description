@@ -23,7 +23,7 @@ export interface UgcVideoJob {
   jobId: string;
   productId: string;
   status: UgcVideoJobStatus;
-  provider?: 'veo' | 'kling';
+  provider?: 'veo' | 'seedance' | 'kling'; // 'kling' = jobs antigos
   videoUrl?: string;
   error?: string;
   createdAt: string;
@@ -39,6 +39,8 @@ export async function generateUgcVideoScript(
     description: string;
     brand?: string;
     productImageUrl: string;
+    /** Fotos reais escolhidas — o roteiro só usa os lados/estados que elas mostram */
+    photoUrls?: string[];
     avatarImageUrl: string;
     avatarDescricao: string;
     productName?: string;
@@ -62,7 +64,9 @@ export async function generateUgcVideoScript(
 export async function startUgcVideoJob(
   idToken: string,
   params: {
-    productId: string; productName: string; script: UgcVideoScript; avatarImageUrl: string; productImageUrl: string;
+    productId: string; productName: string; script: UgcVideoScript; avatarImageUrl: string;
+    /** Fotos reais escolhidas no wizard (todas marcadas por padrão) */
+    productPhotoUrls: string[];
     productReferenceUrl: string;
   },
 ): Promise<string> {
@@ -98,6 +102,8 @@ export function computeUgcVideoProgress(job: UgcVideoJob | null): { pct: number;
 
   if (!step || step === 'clip') {
     const pct = Math.min(5 + Math.round((done / total) * 80), 85);
+    // Seedance gera o vídeo inteiro num clipe só (totalClips = 1).
+    if (total === 1) return { pct, label: 'Gerando o vídeo em uma tomada só — aguarde 3 a 8 min' };
     return { pct, label: `${done} de ${total} clipes prontos — aguarde 2 a 4 min` };
   }
   if (step === 'post') return { pct: 90, label: 'Montando vídeo final...' };

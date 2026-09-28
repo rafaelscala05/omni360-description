@@ -14,12 +14,15 @@ import { CREDIT_ACTIONS } from '../src/credits';
 import {
   getGeminiClient, TEXT_MODEL, fetchImageAsBase64, formatAttributes, sendError,
   VIDEO_ASPECT_RATIO,
-  getVeoClient, resizeForReference, runFfmpeg,
+  getVeoClient, runFfmpeg,
   debitCreditsAdmin, refundCreditsAdmin, assertNoActiveVideoJob, now, STORAGE_BUCKET,
   getDefaultVideoProvider, PRODUCT_REFERENCE_PROMPT_LINE, PRODUCT_REFERENCE_NEGATIVE, CAMERA_VARIETY_RULE,
-  type ClipReferenceImage, type VideoProvider,
+  PRODUCT_COVERAGE_RULE, PRODUCT_COVERAGE_CLIP_LINE, PRODUCT_COVERAGE_NEGATIVE,
+  PHOTO_PANEL_PROMPT_LINE, PHOTO_PANEL_NEGATIVE, sanitizePhotoUrls,
+  prepareReferenceImages, stageReferenceImages, deleteStagedReferences, buildPhotoPanel,
+  type ClipReferenceImage, type PreparedImage, type VideoProvider,
 } from './videoShared';
-import { runClipGeneration, getOpenRouterApiKey } from './videoProviders';
+import { runClipGeneration, getOpenRouterApiKey, SEEDANCE_MAX_REFERENCE_IMAGES } from './videoProviders';
 import type { GoogleGenAI } from '@google/genai';
 
 export interface UgcVideoClip {
@@ -65,6 +68,8 @@ export function buildUgcScriptPrompt(params: {
 
 Crie um roteiro de vídeo VERTICAL (9:16) em que um AVATAR (uma pessoa) aparece falando diretamente para a câmera, interagindo com o produto — no estilo de um vídeo de influenciador real, não uma peça publicitária de estúdio.
 
+**Imagens anexadas:** a PRIMEIRA é o avatar; a SEGUNDA é a folha de referência do produto (vários ângulos e detalhes); as DEMAIS são FOTOS REAIS do produto. Os lados, partes e estados do produto que aparecem nessas imagens são os ÚNICOS que o vídeo pode mostrar.
+
 **Avatar (a pessoa que vai aparecer no vídeo):**
 ${avatarDescricao}
 
@@ -85,6 +90,7 @@ ${formatAttributes(attributes)}
 - "acaoVisual": começa por "Câmera: <ângulo> + <movimento>." e depois descreve o que acontece na cena além da fala (gestos, manipulação do produto).
 ${CAMERA_VARIETY_RULE}
 - Como o avatar FALA em todos os clipes, o rosto dele precisa ficar visível em todos: varie o enquadramento sem tirar o rosto de quadro (ex.: selfie em close no gancho; plano médio com o produto em primeiro plano ou câmera por cima do ombro mostrando produto e rosto na demonstração; ângulo lateral/3/4 com leve aproximação no fechamento).
+${PRODUCT_COVERAGE_RULE}
 - Nunca invente atributos que não estejam na lista de atributos ou na descrição.
 
 **CAMPOS (responda em pt-BR):**
@@ -112,10 +118,9 @@ export async function generateUgcScript(
     attributes: Record<string, string>;
     avatarDescricao: string;
   },
-  productImageBase64: string,
-  productImageMimeType: string,
-  avatarImageBase64: string,
-  avatarImageMimeType: string,
+  avatarImage: { base64: string; mimeType: string },
+  // [folha de referência, ...fotos reais escolhidas]
+  productImages: Array<{ base64: string; mimeType: string }>,
 ): Promise<UgcVideoScript> {
   const ai = getGeminiClient();
   const prompt = buildUgcScriptPrompt(params);
@@ -126,8 +131,8 @@ export async function generateUgcScript(
       {
         role: 'user',
         parts: [
-          { inlineData: { mimeType: avatarImageMimeType, data: avatarImageBase64 } },
-          { inlineData: { mimeType: productImageMimeType, data: productImageBase64 } },
+          { inlineData: { mimeType: avatarImage.mimeType, data: avatarImage.base64 } },
+          ...productImages.map((img) => ({ inlineData: { mimeType: img.mimeType, data: img.base64 } })),
           { text: prompt },
         ],
       },
@@ -146,7 +151,24 @@ export async function generateUgcScript(
 
 const UGC_REFUND = { label: 'Estorno — Geração de Vídeo UGC', actionKey: 'video_ugc_generation_refund' };
 
-// Each clip is an independent Veo generation, so the avatar's description
+const UGC_STYLE_LINE = 'Formato: vertical 9:16, estilo UGC autêntico (câmera na mão ou tripé caseiro, iluminação natural, estética espontânea-realista, não é produção de estúdio comercial).';
+const UGC_FIDELITY_LINE = 'FIDELIDADE OBRIGATÓRIA: o avatar deve ser IDÊNTICO à imagem de referência de pessoa (mesmo rosto, cabelo, tom de pele, roupa). O produto deve ser IDÊNTICO às fotos reais do produto (mesmas cores, proporções, logotipo, materiais). Nunca redesenhe nenhum dos dois.';
+const UGC_BASE_NEGATIVE = "avatar diferente da referência, rosto diferente, produto diferente da referência, cores alteradas, logotipo modificado, voz robótica, fala fora de sincronia, texto na tela, legendas, marca d'água, distorções, baixa qualidade";
+const AVATAR_PAPEL = 'o AVATAR — a pessoa que aparece e fala (rosto, cabelo, tom de pele e roupa idênticos)';
+const SHEET_PAPEL = 'FOLHA DE REFERÊNCIA do mesmo produto em vários ângulos — só para fidelidade, nunca aparece no vídeo';
+// Veo só gera clipes de 8s em reference-to-video; o roteiro é escrito para isso.
+export const UGC_CLIP_SECONDS = 8;
+
+export function buildUgcNegativePrompt(opts: { hasProductReference?: boolean; hasPhotoPanel?: boolean }): string {
+  return [
+    UGC_BASE_NEGATIVE,
+    PRODUCT_COVERAGE_NEGATIVE,
+    ...(opts.hasProductReference ? [PRODUCT_REFERENCE_NEGATIVE] : []),
+    ...(opts.hasPhotoPanel ? [PHOTO_PANEL_NEGATIVE] : []),
+  ].join(', ');
+}
+
+// Veo: each clip is an independent generation, so the avatar's description
 // (appearance AND voice) must be in every clip's prompt — the reference image
 // only anchors the face, nothing else keeps the voice consistent across cuts.
 export function buildUgcClipPrompt(params: {
@@ -154,29 +176,72 @@ export function buildUgcClipPrompt(params: {
   avatarDescricao: string;
   clip: UgcVideoClip;
   hasProductReference?: boolean;
+  hasPhotoPanel?: boolean;
 }): { prompt: string; negativePrompt: string } {
-  const { cena, avatarDescricao, clip, hasProductReference } = params;
-  const styleLine = 'Formato: vertical 9:16, estilo UGC autêntico (câmera na mão ou tripé caseiro, iluminação natural, estética espontânea-realista, não é produção de estúdio comercial).';
+  const { cena, avatarDescricao, clip, hasProductReference, hasPhotoPanel } = params;
   const rulesLine = 'O AVATAR aparece em quadro, olha diretamente para a câmera e FALA a fala abaixo em português do Brasil, com sincronia labial. Interage naturalmente com o produto enquanto fala.';
-  const fidelityLine = 'FIDELIDADE OBRIGATÓRIA: o avatar deve ser IDÊNTICO à imagem de referência de pessoa (mesmo rosto, cabelo, tom de pele, roupa). O produto deve ser IDÊNTICO à imagem de referência de produto (mesmas cores, proporções, logotipo, materiais). Nunca redesenhe nenhum dos dois.';
-  const baseNegative = "avatar diferente da referência, rosto diferente, produto diferente da referência, cores alteradas, logotipo modificado, voz robótica, fala fora de sincronia, texto na tela, legendas, marca d'água, distorções, baixa qualidade";
-  const negativePrompt = hasProductReference ? `${baseNegative}, ${PRODUCT_REFERENCE_NEGATIVE}` : baseNegative;
 
   const prompt = [
     `Cena: ${cena}`,
     `Avatar (aparência e voz — a MESMA em todos os clipes): ${avatarDescricao}`,
     'Mantenha exatamente a mesma voz (timbre, tom, energia e sotaque) em todos os clipes deste vídeo.',
-    `Papel do clipe: ${clip.papel} (~8s)`,
+    `Papel do clipe: ${clip.papel} (~${UGC_CLIP_SECONDS}s)`,
     `Ação visual: ${clip.acaoVisual}`,
     'Siga EXATAMENTE o ângulo e o movimento de câmera descritos na ação visual.',
     `Fala do avatar (dita olhando para a câmera): "${clip.fala}"`,
-    styleLine,
+    UGC_STYLE_LINE,
     rulesLine,
-    fidelityLine,
+    UGC_FIDELITY_LINE,
+    PRODUCT_COVERAGE_CLIP_LINE,
     ...(hasProductReference ? [PRODUCT_REFERENCE_PROMPT_LINE] : []),
+    ...(hasPhotoPanel ? [PHOTO_PANEL_PROMPT_LINE] : []),
   ].join('\n');
 
-  return { prompt, negativePrompt };
+  return { prompt, negativePrompt: buildUgcNegativePrompt({ hasProductReference, hasPhotoPanel }) };
+}
+
+// Seedance: o roteiro inteiro num clipe só (UGC_CLIP_SECONDS por trecho, cabe
+// nos 30s do modelo) — uma geração só mantém o mesmo rosto, a mesma voz e o
+// mesmo produto do começo ao fim, sem depender de cada clipe acertar sozinho.
+export function buildUgcSeedancePrompt(script: UgcVideoScript, opts: { hasProductReference?: boolean }): { prompt: string; negativePrompt: string; durationSeconds: number } {
+  const durationSeconds = script.clipes.length * UGC_CLIP_SECONDS;
+  const timeline = script.clipes.map((clip, i) => {
+    const start = i * UGC_CLIP_SECONDS;
+    const end = start + UGC_CLIP_SECONDS;
+    return `[${start}s–${end}s] ${clip.papel}: ${clip.acaoVisual}\n  Fala do avatar (olhando para a câmera): "${clip.fala}"`;
+  });
+  const prompt = [
+    `Vídeo ÚNICO e contínuo de ${durationSeconds}s, com o MESMO avatar e o MESMO produto do início ao fim. Pode haver corte seco entre um trecho e o próximo.`,
+    `Cena: ${script.cena}`,
+    `Avatar (aparência e voz): ${script.avatarDescricao}`,
+    'O AVATAR aparece em quadro, olha diretamente para a câmera e FALA cada fala abaixo em português do Brasil, com sincronia labial e a MESMA voz (timbre, tom, energia e sotaque) no vídeo inteiro. Interage naturalmente com o produto enquanto fala.',
+    'Linha do tempo (siga EXATAMENTE o ângulo e o movimento de câmera de cada trecho):',
+    ...timeline,
+    UGC_STYLE_LINE,
+    UGC_FIDELITY_LINE,
+    PRODUCT_COVERAGE_CLIP_LINE,
+    ...(opts.hasProductReference ? [PRODUCT_REFERENCE_PROMPT_LINE] : []),
+  ].join('\n');
+  return { prompt, negativePrompt: buildUgcNegativePrompt({ hasProductReference: opts.hasProductReference }), durationSeconds };
+}
+
+// Referências do clipe único do Seedance: avatar e folha sempre; as fotos
+// reais ocupam as vagas que sobram do teto, na ordem escolhida pelo usuário.
+export function buildUgcSeedanceReferences(
+  avatar: PreparedImage,
+  photos: PreparedImage[],
+  sheet: PreparedImage | null,
+  maxImages: number,
+): ClipReferenceImage[] {
+  const photoSlots = Math.max(0, maxImages - 1 - (sheet ? 1 : 0));
+  return [
+    { url: avatar.url, base64: avatar.base64, mimeType: avatar.mimeType, papel: AVATAR_PAPEL },
+    ...photos.slice(0, photoSlots).map((p, i) => ({
+      url: p.url, base64: p.base64, mimeType: p.mimeType,
+      papel: `FOTO REAL ${i + 1} do PRODUTO (formato, cores, logotipo e materiais idênticos)`,
+    })),
+    ...(sheet ? [{ url: sheet.url, base64: sheet.base64, mimeType: sheet.mimeType, papel: SHEET_PAPEL }] : []),
+  ];
 }
 
 async function generateUgcClip(
@@ -186,32 +251,26 @@ async function generateUgcClip(
   clip: UgcVideoClip,
   cena: string,
   avatarDescricao: string,
-  avatarImage: { base64: string; mimeType: string; url: string },
-  productImage: { base64: string; mimeType: string; url: string },
-  productReference: { base64: string; mimeType: string; url: string } | null,
+  avatar: PreparedImage,
+  panel: { base64: string; mimeType: string },
+  sheet: PreparedImage | null,
   workDir: string,
   provider: VideoProvider,
 ): Promise<string> {
-  const [avatarResized, productResized, referenceResized] = await Promise.all([
-    resizeForReference(Buffer.from(avatarImage.base64, 'base64')),
-    resizeForReference(Buffer.from(productImage.base64, 'base64')),
-    productReference ? resizeForReference(Buffer.from(productReference.base64, 'base64')) : Promise.resolve(null),
-  ]);
-  const { prompt, negativePrompt } = buildUgcClipPrompt({ cena, avatarDescricao, clip, hasProductReference: !!referenceResized });
+  const { prompt, negativePrompt } = buildUgcClipPrompt({ cena, avatarDescricao, clip, hasProductReference: !!sheet, hasPhotoPanel: true });
 
+  // Veo 3.1 takes up to 3 ASSET references: avatar + panel of real photos + reference sheet.
   const referenceImages: ClipReferenceImage[] = [
-    { url: avatarImage.url, base64: avatarResized.base64, mimeType: avatarResized.mimeType },
-    { url: productImage.url, base64: productResized.base64, mimeType: productResized.mimeType },
-    ...(referenceResized && productReference
-      ? [{ url: productReference.url, base64: referenceResized.base64, mimeType: referenceResized.mimeType }]
-      : []),
+    { url: avatar.url, base64: avatar.base64, mimeType: avatar.mimeType, papel: AVATAR_PAPEL },
+    { base64: panel.base64, mimeType: panel.mimeType, papel: 'PAINEL com as fotos reais do PRODUTO' },
+    ...(sheet ? [{ url: sheet.url, base64: sheet.base64, mimeType: sheet.mimeType, papel: SHEET_PAPEL }] : []),
   ];
 
   console.log(`[ugc-video] clip ${index + 1} (${clip.papel}) generate jobId=${jobId} provider=${provider}`);
   const videoBytes = await runClipGeneration(provider, ai, jobId, `clip#${index + 1}`, {
     prompt,
     negativePrompt,
-    durationSeconds: 8,
+    durationSeconds: UGC_CLIP_SECONDS,
     aspectRatio: VIDEO_ASPECT_RATIO,
     generateAudio: true,
     referenceImages,
@@ -248,31 +307,57 @@ async function runUgcVideoJob(
   jobId: string,
   productId: string,
   script: UgcVideoScript,
-  avatarImage: { base64: string; mimeType: string; url: string },
-  productImage: { base64: string; mimeType: string; url: string },
-  productReference: { base64: string; mimeType: string; url: string } | null,
+  refs: {
+    avatar: PreparedImage;
+    photos: PreparedImage[];     // fotos reais escolhidas no wizard (ao menos uma)
+    sheet: PreparedImage | null; // folha de referência
+  },
   creditCost: number,
   meta: { productName?: string; userName?: string } = {},
   provider: VideoProvider,
 ): Promise<void> {
   const jobRef = adminDb.collection('users').doc(uid).collection('ugcVideoJobs').doc(jobId);
-  console.log(`[ugc-video] runUgcVideoJob start uid=${uid} jobId=${jobId} productId=${productId} productReference=${productReference ? 'yes' : 'no'}`);
+  const { avatar, photos, sheet } = refs;
+  const singleClip = provider === 'seedance';
+  const totalClips = singleClip ? 1 : script.clipes.length;
+  console.log(`[ugc-video] runUgcVideoJob start uid=${uid} jobId=${jobId} productId=${productId} provider=${provider} photos=${photos.length} sheet=${sheet ? 'yes' : 'no'}`);
 
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), `ugc-video-${jobId}-`));
 
   try {
-    await jobRef.update({ status: 'processing', clipsDone: 0, totalClips: script.clipes.length, step: 'clip', updatedAt: now() });
+    await jobRef.update({ status: 'processing', clipsDone: 0, totalClips, step: 'clip', updatedAt: now() });
 
     const ai = getVeoClient();
-    let clipsDone = 0;
-    const segmentPaths = await Promise.all(
-      script.clipes.map(async (clip, i) => {
-        const segPath = await generateUgcClip(ai, jobId, i, clip, script.cena, script.avatarDescricao, avatarImage, productImage, productReference, workDir, provider);
-        clipsDone += 1;
-        await jobRef.update({ clipsDone, updatedAt: now() });
-        return segPath;
-      }),
-    );
+    let segmentPaths: string[];
+    if (singleClip) {
+      const { prompt, negativePrompt, durationSeconds } = buildUgcSeedancePrompt(script, { hasProductReference: !!sheet });
+      const referenceImages = buildUgcSeedanceReferences(avatar, photos, sheet, SEEDANCE_MAX_REFERENCE_IMAGES);
+      console.log(`[ugc-video] single clip ${durationSeconds}s generate jobId=${jobId} provider=${provider} refs=${referenceImages.length}`);
+      const videoBytes = await runClipGeneration(provider, ai, jobId, 'clip#1', {
+        prompt,
+        negativePrompt,
+        durationSeconds,
+        aspectRatio: VIDEO_ASPECT_RATIO,
+        generateAudio: true,
+        referenceImages,
+      });
+      const segPath = path.join(workDir, 'clip0.mp4');
+      await fs.writeFile(segPath, Buffer.from(videoBytes, 'base64'));
+      await jobRef.update({ clipsDone: 1, updatedAt: now() });
+      segmentPaths = [segPath];
+    } else {
+      // Montado uma vez: todas as fotos escolhidas numa vaga de referência só.
+      const panel = await buildPhotoPanel(photos);
+      let clipsDone = 0;
+      segmentPaths = await Promise.all(
+        script.clipes.map(async (clip, i) => {
+          const segPath = await generateUgcClip(ai, jobId, i, clip, script.cena, script.avatarDescricao, avatar, panel, sheet, workDir, provider);
+          clipsDone += 1;
+          await jobRef.update({ clipsDone, updatedAt: now() });
+          return segPath;
+        }),
+      );
+    }
 
     await jobRef.update({ step: 'post', updatedAt: now() });
     const finalPath = path.join(workDir, 'final.mp4');
@@ -320,6 +405,7 @@ async function runUgcVideoJob(
     }
   } finally {
     await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
+    await deleteStagedReferences(uid, jobId);
   }
 }
 
@@ -330,11 +416,13 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
     try {
       await verifyFirebaseToken(req);
       const {
-        description, brand, productImageUrl, avatarImageUrl, avatarDescricao, productName, category, attributes,
+        description, brand, productImageUrl, photoUrls, avatarImageUrl, avatarDescricao, productName, category, attributes,
       } = req.body as {
         description: string;
         brand?: string;
         productImageUrl: string;
+        // Fotos reais escolhidas no wizard — o roteiro só usa os lados/estados que elas mostram.
+        photoUrls?: string[];
         avatarImageUrl: string;
         avatarDescricao: string;
         productName?: string;
@@ -344,10 +432,10 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
       if (!description || !productImageUrl || !avatarImageUrl || !avatarDescricao) {
         return res.status(400).json({ error: 'description, productImageUrl, avatarImageUrl e avatarDescricao são obrigatórios' });
       }
-      const [productImage, avatarImage] = await Promise.all([
-        fetchImageAsBase64(productImageUrl),
-        fetchImageAsBase64(avatarImageUrl),
-      ]);
+      const photos = sanitizePhotoUrls(photoUrls).filter((u) => u !== productImageUrl);
+      const [avatarImage, ...productImages] = await Promise.all(
+        [avatarImageUrl, productImageUrl, ...photos].map((u) => fetchImageAsBase64(u)),
+      );
       const script = await generateUgcScript(
         {
           description,
@@ -357,10 +445,8 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
           attributes: attributes ?? {},
           avatarDescricao,
         },
-        productImage.base64,
-        productImage.mimeType,
-        avatarImage.base64,
-        avatarImage.mimeType,
+        avatarImage,
+        productImages,
       );
       res.json({ script });
     } catch (err) {
@@ -371,17 +457,21 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
   app.post('/api/video/ugc/start-job', async (req, res) => {
     try {
       const decoded = await verifyFirebaseToken(req);
-      const { productId, productName, script, avatarImageUrl, productImageUrl, productReferenceUrl } = req.body as {
+      const { productId, productName, script, avatarImageUrl, productImageUrl, productPhotoUrls, productReferenceUrl } = req.body as {
         productId: string;
         productName: string;
         script: UgcVideoScript;
         avatarImageUrl: string;
-        productImageUrl: string;
+        // Legado (uma foto só) — clientes atuais mandam productPhotoUrls.
+        productImageUrl?: string;
+        // Fotos reais escolhidas no wizard (todas marcadas por padrão).
+        productPhotoUrls?: string[];
         // Optional so older clients keep working; the current UI always sends it.
         productReferenceUrl?: string;
       };
-      if (!productId || !script || !avatarImageUrl || !productImageUrl) {
-        return res.status(400).json({ error: 'productId, script, avatarImageUrl e productImageUrl são obrigatórios' });
+      const photoUrls = sanitizePhotoUrls(productPhotoUrls?.length ? productPhotoUrls : [productImageUrl]);
+      if (!productId || !script || !avatarImageUrl || photoUrls.length === 0) {
+        return res.status(400).json({ error: 'productId, script, avatarImageUrl e ao menos uma foto do produto são obrigatórios' });
       }
       if (!validateUgcScript(script)) {
         return res.status(400).json({ error: 'script inválido' });
@@ -392,7 +482,7 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
       // Resolvido e validado ANTES de debitar crédito — mesmo raciocínio do
       // fluxo clássico (server/videoAgent.ts), achado do code review de 2026-09-28.
       const provider = await getDefaultVideoProvider();
-      if (provider === 'kling') getOpenRouterApiKey();
+      if (provider === 'seedance') getOpenRouterApiKey();
 
       const creditMeta = { productName, userName: decoded.name ?? decoded.email ?? '' };
       const creditCost = await debitCreditsAdmin(decoded.uid, CREDIT_ACTIONS.ugcVideoGeneration, creditMeta);
@@ -400,21 +490,20 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
       const jobRef = adminDb.collection('users').doc(decoded.uid).collection('ugcVideoJobs').doc();
       const jobId = jobRef.id;
 
-      let avatarImage: { base64: string; mimeType: string; url: string };
-      let productImage: { base64: string; mimeType: string; url: string };
-      let productReference: { base64: string; mimeType: string; url: string } | null = null;
+      let refs: { avatar: PreparedImage; photos: PreparedImage[]; sheet: PreparedImage | null };
       try {
         await jobRef.set({
           jobId, productId, status: 'queued', provider, videoUrl: null, error: null, createdAt: now(), updatedAt: now(),
         });
-        const [avatarFetched, productFetched, referenceFetched] = await Promise.all([
-          fetchImageAsBase64(avatarImageUrl),
-          fetchImageAsBase64(productImageUrl),
-          productReferenceUrl ? fetchImageAsBase64(productReferenceUrl) : Promise.resolve(null),
-        ]);
-        avatarImage = { ...avatarFetched, url: avatarImageUrl };
-        productImage = { ...productFetched, url: productImageUrl };
-        productReference = referenceFetched ? { ...referenceFetched, url: productReferenceUrl! } : null;
+        const prepared = await prepareReferenceImages([avatarImageUrl, ...photoUrls, ...(productReferenceUrl ? [productReferenceUrl] : [])]);
+        // O Seedance lê as referências por URL: vão cópias no nosso Storage,
+        // nunca a URL original (CDN de ERP, http://, anti-bot…).
+        if (provider === 'seedance') await stageReferenceImages(decoded.uid, jobId, prepared);
+        refs = {
+          avatar: prepared.get(avatarImageUrl)!,
+          photos: photoUrls.map((url) => prepared.get(url)!),
+          sheet: productReferenceUrl ? prepared.get(productReferenceUrl)! : null,
+        };
       } catch (prepErr) {
         if (creditCost > 0) {
           await refundCreditsAdmin(decoded.uid, creditCost, creditMeta, UGC_REFUND).catch(() => {});
@@ -424,6 +513,7 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
           error: prepErr instanceof Error ? prepErr.message : String(prepErr),
           updatedAt: now(),
         }).catch(() => {});
+        await deleteStagedReferences(decoded.uid, jobId);
         throw prepErr;
       }
 
@@ -439,7 +529,7 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
       res.write(JSON.stringify({ jobId }));
 
       try {
-        await runUgcVideoJob(decoded.uid, jobId, productId, script, avatarImage, productImage, productReference, creditCost, creditMeta, provider);
+        await runUgcVideoJob(decoded.uid, jobId, productId, script, refs, creditCost, creditMeta, provider);
       } finally {
         res.end();
       }

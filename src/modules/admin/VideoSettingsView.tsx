@@ -1,4 +1,4 @@
-// Escolha do provider padrão de geração de vídeo de produto (Veo/Kling) —
+// Escolha do provider padrão de geração de vídeo de produto (Veo/Seedance) —
 // plataforma inteira, sem opção por usuário. Mesmo esqueleto de
 // AutomationsView.tsx (load em useEffect, Card/ErrorBanner/Spinner de ./ui).
 import { useCallback, useEffect, useState } from 'react';
@@ -8,7 +8,7 @@ import { Card, ErrorBanner, Spinner, formatDateTime } from './ui';
 
 const OPTIONS: { value: VideoProvider; label: string; hint: string }[] = [
   { value: 'veo', label: 'Veo 3', hint: 'Google, via Vertex AI. Provider atual — validado em produção.' },
-  { value: 'kling', label: 'Kling', hint: 'kwaivgi/kling-v3.0-std, via OpenRouter. Trocar aqui não afeta vídeos já em geração.' },
+  { value: 'seedance', label: 'Seedance 2.5', hint: 'bytedance/seedance-2.5 (720p), via OpenRouter. Trocar aqui não afeta vídeos já em geração.' },
 ];
 
 export default function VideoSettingsView() {
