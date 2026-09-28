@@ -23,6 +23,7 @@ export interface UgcVideoJob {
   jobId: string;
   productId: string;
   status: UgcVideoJobStatus;
+  provider?: 'veo' | 'kling';
   videoUrl?: string;
   error?: string;
   createdAt: string;

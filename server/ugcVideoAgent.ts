@@ -13,11 +13,13 @@ import { adminDb, adminStorage } from './firebaseAdmin';
 import { CREDIT_ACTIONS } from '../src/credits';
 import {
   getGeminiClient, TEXT_MODEL, fetchImageAsBase64, formatAttributes, sendError,
-  VEO_MODEL, VIDEO_ASPECT_RATIO, VideoGenerationReferenceType,
-  getVeoClient, resizeForReference, runVeoOperation, runFfmpeg,
+  VIDEO_ASPECT_RATIO,
+  getVeoClient, resizeForReference, runFfmpeg,
   debitCreditsAdmin, refundCreditsAdmin, assertNoActiveVideoJob, now, STORAGE_BUCKET,
-  PRODUCT_REFERENCE_PROMPT_LINE, PRODUCT_REFERENCE_NEGATIVE, CAMERA_VARIETY_RULE,
+  getDefaultVideoProvider, PRODUCT_REFERENCE_PROMPT_LINE, PRODUCT_REFERENCE_NEGATIVE, CAMERA_VARIETY_RULE,
+  type ClipReferenceImage, type VideoProvider,
 } from './videoShared';
+import { runClipGeneration } from './videoProviders';
 import type { GoogleGenAI } from '@google/genai';
 
 export interface UgcVideoClip {
@@ -184,10 +186,11 @@ async function generateUgcClip(
   clip: UgcVideoClip,
   cena: string,
   avatarDescricao: string,
-  avatarImage: { base64: string; mimeType: string },
-  productImage: { base64: string; mimeType: string },
-  productReference: { base64: string; mimeType: string } | null,
+  avatarImage: { base64: string; mimeType: string; url: string },
+  productImage: { base64: string; mimeType: string; url: string },
+  productReference: { base64: string; mimeType: string; url: string } | null,
   workDir: string,
+  provider: VideoProvider,
 ): Promise<string> {
   const [avatarResized, productResized, referenceResized] = await Promise.all([
     resizeForReference(Buffer.from(avatarImage.base64, 'base64')),
@@ -196,26 +199,22 @@ async function generateUgcClip(
   ]);
   const { prompt, negativePrompt } = buildUgcClipPrompt({ cena, avatarDescricao, clip, hasProductReference: !!referenceResized });
 
-  console.log(`[ugc-video] clip ${index + 1} (${clip.papel}) generate jobId=${jobId}`);
-  const videoBytes = await runVeoOperation(ai, jobId, `clip#${index + 1}`, {
-    model: VEO_MODEL,
+  const referenceImages: ClipReferenceImage[] = [
+    { url: avatarImage.url, base64: avatarResized.base64, mimeType: avatarResized.mimeType },
+    { url: productImage.url, base64: productResized.base64, mimeType: productResized.mimeType },
+    ...(referenceResized && productReference
+      ? [{ url: productReference.url, base64: referenceResized.base64, mimeType: referenceResized.mimeType }]
+      : []),
+  ];
+
+  console.log(`[ugc-video] clip ${index + 1} (${clip.papel}) generate jobId=${jobId} provider=${provider}`);
+  const videoBytes = await runClipGeneration(provider, ai, jobId, `clip#${index + 1}`, {
     prompt,
-    config: {
-      numberOfVideos: 1,
-      durationSeconds: 8,
-      aspectRatio: VIDEO_ASPECT_RATIO,
-      personGeneration: 'allow_adult',
-      generateAudio: true,
-      negativePrompt,
-      referenceImages: [
-        { image: { imageBytes: avatarResized.base64, mimeType: avatarResized.mimeType }, referenceType: VideoGenerationReferenceType.ASSET },
-        { image: { imageBytes: productResized.base64, mimeType: productResized.mimeType }, referenceType: VideoGenerationReferenceType.ASSET },
-        // Veo 3.1 takes up to 3 ASSET references: avatar + real photo + reference sheet.
-        ...(referenceResized
-          ? [{ image: { imageBytes: referenceResized.base64, mimeType: referenceResized.mimeType }, referenceType: VideoGenerationReferenceType.ASSET }]
-          : []),
-      ],
-    },
+    negativePrompt,
+    durationSeconds: 8,
+    aspectRatio: VIDEO_ASPECT_RATIO,
+    generateAudio: true,
+    referenceImages,
   });
 
   const segPath = path.join(workDir, `clip${index}.mp4`);
@@ -249,11 +248,12 @@ async function runUgcVideoJob(
   jobId: string,
   productId: string,
   script: UgcVideoScript,
-  avatarImage: { base64: string; mimeType: string },
-  productImage: { base64: string; mimeType: string },
-  productReference: { base64: string; mimeType: string } | null,
+  avatarImage: { base64: string; mimeType: string; url: string },
+  productImage: { base64: string; mimeType: string; url: string },
+  productReference: { base64: string; mimeType: string; url: string } | null,
   creditCost: number,
   meta: { productName?: string; userName?: string } = {},
+  provider: VideoProvider,
 ): Promise<void> {
   const jobRef = adminDb.collection('users').doc(uid).collection('ugcVideoJobs').doc(jobId);
   console.log(`[ugc-video] runUgcVideoJob start uid=${uid} jobId=${jobId} productId=${productId} productReference=${productReference ? 'yes' : 'no'}`);
@@ -267,7 +267,7 @@ async function runUgcVideoJob(
     let clipsDone = 0;
     const segmentPaths = await Promise.all(
       script.clipes.map(async (clip, i) => {
-        const segPath = await generateUgcClip(ai, jobId, i, clip, script.cena, script.avatarDescricao, avatarImage, productImage, productReference, workDir);
+        const segPath = await generateUgcClip(ai, jobId, i, clip, script.cena, script.avatarDescricao, avatarImage, productImage, productReference, workDir, provider);
         clipsDone += 1;
         await jobRef.update({ clipsDone, updatedAt: now() });
         return segPath;
@@ -395,18 +395,23 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
       const jobRef = adminDb.collection('users').doc(decoded.uid).collection('ugcVideoJobs').doc();
       const jobId = jobRef.id;
 
-      let avatarImage: { base64: string; mimeType: string };
-      let productImage: { base64: string; mimeType: string };
-      let productReference: { base64: string; mimeType: string } | null = null;
+      let avatarImage: { base64: string; mimeType: string; url: string };
+      let productImage: { base64: string; mimeType: string; url: string };
+      let productReference: { base64: string; mimeType: string; url: string } | null = null;
+      let provider: VideoProvider;
       try {
+        provider = await getDefaultVideoProvider();
         await jobRef.set({
-          jobId, productId, status: 'queued', videoUrl: null, error: null, createdAt: now(), updatedAt: now(),
+          jobId, productId, status: 'queued', provider, videoUrl: null, error: null, createdAt: now(), updatedAt: now(),
         });
-        [avatarImage, productImage, productReference] = await Promise.all([
+        const [avatarFetched, productFetched, referenceFetched] = await Promise.all([
           fetchImageAsBase64(avatarImageUrl),
           fetchImageAsBase64(productImageUrl),
           productReferenceUrl ? fetchImageAsBase64(productReferenceUrl) : Promise.resolve(null),
         ]);
+        avatarImage = { ...avatarFetched, url: avatarImageUrl };
+        productImage = { ...productFetched, url: productImageUrl };
+        productReference = referenceFetched ? { ...referenceFetched, url: productReferenceUrl! } : null;
       } catch (prepErr) {
         if (creditCost > 0) {
           await refundCreditsAdmin(decoded.uid, creditCost, creditMeta, UGC_REFUND).catch(() => {});
@@ -431,7 +436,7 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
       res.write(JSON.stringify({ jobId }));
 
       try {
-        await runUgcVideoJob(decoded.uid, jobId, productId, script, avatarImage, productImage, productReference, creditCost, creditMeta);
+        await runUgcVideoJob(decoded.uid, jobId, productId, script, avatarImage, productImage, productReference, creditCost, creditMeta, provider);
       } finally {
         res.end();
       }
