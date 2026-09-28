@@ -10,12 +10,14 @@ import KanbanBoard from './KanbanBoard';
 import CustomerList from './CustomerList';
 import CustomerDetail from './CustomerDetail';
 import AutomationsView from './AutomationsView';
+import VideoSettingsView from './VideoSettingsView';
 
 const NAV = [
   { to: '/admin', label: 'Atenção hoje', exact: true },
   { to: '/admin/kanban', label: 'Kanban' },
   { to: '/admin/clientes', label: 'Clientes' },
   { to: '/admin/automacoes', label: 'Automações' },
+  { to: '/admin/video', label: 'Vídeo' },
 ];
 
 export default function AdminApp() {
@@ -147,6 +149,7 @@ export default function AdminApp() {
           <Route path="clientes" element={<CustomerList />} />
           <Route path="clientes/:uid" element={<CustomerDetail />} />
           <Route path="automacoes" element={<AutomationsView />} />
+          <Route path="video" element={<VideoSettingsView />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>
       </main>

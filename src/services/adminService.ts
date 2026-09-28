@@ -18,6 +18,8 @@ import type {
   EmailStatus,
   PipelineStatus,
   TimelineEntry,
+  VideoPlatformSettings,
+  VideoProvider,
   WhatsAppStatus,
   WhatsAppTemplateInfo,
 } from '../types/crm';
@@ -124,6 +126,10 @@ export const listTemplates = () =>
   call<{ templates: WhatsAppTemplateInfo[] }>('/api/admin/whatsapp/templates');
 
 export const listAutomations = () => call<{ automations: CrmAutomation[] }>('/api/admin/automations');
+
+export const getVideoSettings = () => call<VideoPlatformSettings>('/api/admin/video-settings');
+export const setVideoSettings = (defaultProvider: VideoProvider) =>
+  call<VideoPlatformSettings>('/api/admin/video-settings', 'PUT', { defaultProvider });
 
 export const createAutomation = (stage: CrmStage, automation: Partial<CrmAutomation>) =>
   call<{ ok: boolean; automation: CrmAutomation }>('/api/admin/automations', 'POST', { ...automation, stage });
