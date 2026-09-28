@@ -15,7 +15,7 @@ import {
   getDefaultVideoProvider, PRODUCT_REFERENCE_PROMPT_LINE, PRODUCT_REFERENCE_NEGATIVE, CAMERA_VARIETY_RULE,
   type ClipReferenceImage, type VideoProvider,
 } from './videoShared';
-import { runClipGeneration } from './videoProviders';
+import { runClipGeneration, getOpenRouterApiKey } from './videoProviders';
 
 // Background music + TTS voice for the final mix. The audio is added AFTER the
 // video is generated (segments are generated MUTE), so there is never any lip
@@ -490,6 +490,14 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
 
       await assertNoActiveVideoJob(decoded.uid);
 
+      // Resolvido e validado ANTES de debitar crédito: sem isso, um
+      // OPENROUTER_API_KEY ausente só era detectado depois do débito (dentro do
+      // runKlingOperation), gerando um par débito+estorno em credit_logs (fonte
+      // de verdade do CRM pra "gerou conteúdo") por nada — achado do code
+      // review de 2026-09-28.
+      const provider = await getDefaultVideoProvider();
+      if (provider === 'kling') getOpenRouterApiKey();
+
       const creditMeta = { productName, userName: decoded.name ?? decoded.email ?? '' };
       const creditCost = await debitCreditsAdmin(decoded.uid, CREDIT_ACTIONS.videoGeneration, creditMeta);
 
@@ -502,9 +510,7 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
 
       let shotImages: Array<{ base64: string; mimeType: string; url: string }>;
       let productReference: { base64: string; mimeType: string; url: string } | null = null;
-      let provider: VideoProvider;
       try {
-        provider = await getDefaultVideoProvider();
         await jobRef.set({
           jobId,
           productId,

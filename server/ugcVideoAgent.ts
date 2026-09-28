@@ -19,7 +19,7 @@ import {
   getDefaultVideoProvider, PRODUCT_REFERENCE_PROMPT_LINE, PRODUCT_REFERENCE_NEGATIVE, CAMERA_VARIETY_RULE,
   type ClipReferenceImage, type VideoProvider,
 } from './videoShared';
-import { runClipGeneration } from './videoProviders';
+import { runClipGeneration, getOpenRouterApiKey } from './videoProviders';
 import type { GoogleGenAI } from '@google/genai';
 
 export interface UgcVideoClip {
@@ -389,6 +389,11 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
 
       await assertNoActiveVideoJob(decoded.uid);
 
+      // Resolvido e validado ANTES de debitar crédito — mesmo raciocínio do
+      // fluxo clássico (server/videoAgent.ts), achado do code review de 2026-09-28.
+      const provider = await getDefaultVideoProvider();
+      if (provider === 'kling') getOpenRouterApiKey();
+
       const creditMeta = { productName, userName: decoded.name ?? decoded.email ?? '' };
       const creditCost = await debitCreditsAdmin(decoded.uid, CREDIT_ACTIONS.ugcVideoGeneration, creditMeta);
 
@@ -398,9 +403,7 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
       let avatarImage: { base64: string; mimeType: string; url: string };
       let productImage: { base64: string; mimeType: string; url: string };
       let productReference: { base64: string; mimeType: string; url: string } | null = null;
-      let provider: VideoProvider;
       try {
-        provider = await getDefaultVideoProvider();
         await jobRef.set({
           jobId, productId, status: 'queued', provider, videoUrl: null, error: null, createdAt: now(), updatedAt: now(),
         });

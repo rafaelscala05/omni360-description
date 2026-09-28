@@ -101,6 +101,73 @@ globalThis.fetch = async (url) => {
 };
 const bytes = await runKlingOperation('jobId2', 'shot#1', baseRequest, { pollIntervalMs: 1, retryDelaysMs: [1, 1, 1] });
 check('runKlingOperation retenta 500 transitório e completa', Buffer.from(bytes, 'base64').toString(), 'video-bytes');
+
+// --- runKlingOperation: erro transitório no poll retenta o PRÓPRIO poll,
+// não reenvia um novo submit (não pode comprar a geração de novo) ---
+let videosCalls = 0;
+let pollCalls = 0;
+globalThis.fetch = async (url) => {
+  const u = String(url);
+  if (u.endsWith('/videos')) {
+    videosCalls++;
+    return { ok: true, json: async () => ({ id: 'job4', polling_url: '/api/v1/videos/job4', status: 'pending' }) };
+  }
+  if (u.includes('/content')) {
+    return { ok: true, arrayBuffer: async () => new TextEncoder().encode('video-bytes-4').buffer };
+  }
+  pollCalls++;
+  if (pollCalls === 1) return { ok: false, status: 503, text: async () => 'indisponível' };
+  return { ok: true, json: async () => ({ status: 'completed', unsigned_urls: ['https://openrouter.ai/api/v1/videos/job4/content'] }) };
+};
+const bytes4 = await runKlingOperation('jobId4', 'shot#1', baseRequest, { pollIntervalMs: 1, retryDelaysMs: [1, 1, 1] });
+check('runKlingOperation: erro transitório no poll não reenvia o submit (só 1 POST /videos)', videosCalls, 1);
+check('runKlingOperation: poll foi retentado até completar', pollCalls >= 2, true);
+check('runKlingOperation: vídeo baixado normalmente após o poll retentar', Buffer.from(bytes4, 'base64').toString(), 'video-bytes-4');
+
+// --- runKlingOperation: não manda a Authorization da OpenRouter pra um host
+// de terceiro (unsigned_urls pode apontar pra um CDN fora do controle da OpenRouter) ---
+let downloadHeaders = null;
+globalThis.fetch = async (url, init) => {
+  const u = String(url);
+  if (u.endsWith('/videos')) {
+    return { ok: true, json: async () => ({ id: 'job5', polling_url: '/api/v1/videos/job5', status: 'pending' }) };
+  }
+  if (u.startsWith('https://cdn.terceiro.exemplo/')) {
+    downloadHeaders = init?.headers ?? {};
+    return { ok: true, arrayBuffer: async () => new TextEncoder().encode('bytes-5').buffer };
+  }
+  return { ok: true, json: async () => ({ status: 'completed', unsigned_urls: ['https://cdn.terceiro.exemplo/video.mp4'] }) };
+};
+await runKlingOperation('jobId5', 'shot#1', baseRequest, { pollIntervalMs: 1 });
+check('runKlingOperation não manda Authorization pra host fora da OpenRouter', !downloadHeaders || !('Authorization' in downloadHeaders), true);
+
+// --- runKlingOperation: status desconhecido (nem completed/failed/em-andamento)
+// não pode ficar pollando pra sempre — findings do code review (2026-09-28).
+// Roda por último entre os testes de fetch: pré-fix esta chamada nunca resolve
+// de verdade (só rejeita via a race de segurança abaixo), e a promise órfã
+// continuaria chamando o fetch mockado em segundo plano, contaminando
+// qualquer teste que viesse depois dela.
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+  ]);
+}
+globalThis.fetch = async (url) => {
+  if (String(url).endsWith('/videos')) {
+    return { ok: true, json: async () => ({ id: 'job3', polling_url: '/api/v1/videos/job3', status: 'pending' }) };
+  }
+  return { ok: true, json: async () => ({ status: 'cancelled' }) };
+};
+let unknownStatusMessage = '';
+try {
+  await withTimeout(runKlingOperation('jobId3', 'shot#1', baseRequest, { pollIntervalMs: 1, retryDelaysMs: [1, 1, 1], maxPollMs: 50 }), 500);
+} catch (err) {
+  unknownStatusMessage = err.message;
+}
+check('runKlingOperation não trava num status desconhecido (resolve antes do timeout de segurança)', unknownStatusMessage !== 'timeout', true);
+check('runKlingOperation menciona o status desconhecido no erro', /desconhecido/i.test(unknownStatusMessage), true);
+
 globalThis.fetch = originalFetch;
 process.env.OPENROUTER_API_KEY = originalKey;
 
