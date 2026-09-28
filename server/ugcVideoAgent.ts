@@ -203,45 +203,78 @@ export function buildUgcClipPrompt(params: {
 // Seedance: o roteiro inteiro num clipe só (UGC_CLIP_SECONDS por trecho, cabe
 // nos 30s do modelo) — uma geração só mantém o mesmo rosto, a mesma voz e o
 // mesmo produto do começo ao fim, sem depender de cada clipe acertar sozinho.
-export function buildUgcSeedancePrompt(script: UgcVideoScript, opts: { hasProductReference?: boolean }): { prompt: string; negativePrompt: string; durationSeconds: number } {
+//
+// O avatar NÃO vai como imagem: o filtro do Seedance recusa qualquer rosto
+// fotorrealista como "pessoa real" (InputImageSensitiveContentDetected.
+// PrivacyInformation), inclusive os nossos avatares gerados por IA. A pessoa
+// é recriada só pelo texto — a descrição salva do avatar mais, quando houver,
+// a descrição visual lida do retrato (describeAvatarAppearance).
+export function buildUgcSeedancePrompt(
+  script: UgcVideoScript,
+  opts: { hasProductReference?: boolean; aparenciaAvatar?: string },
+): { prompt: string; negativePrompt: string; durationSeconds: number } {
   const durationSeconds = script.clipes.length * UGC_CLIP_SECONDS;
   const timeline = script.clipes.map((clip, i) => {
     const start = i * UGC_CLIP_SECONDS;
     const end = start + UGC_CLIP_SECONDS;
     return `[${start}s–${end}s] ${clip.papel}: ${clip.acaoVisual}\n  Fala do avatar (olhando para a câmera): "${clip.fala}"`;
   });
+  const aparencia = opts.aparenciaAvatar?.trim();
   const prompt = [
-    `Vídeo ÚNICO e contínuo de ${durationSeconds}s, com o MESMO avatar e o MESMO produto do início ao fim. Pode haver corte seco entre um trecho e o próximo.`,
+    `Vídeo ÚNICO e contínuo de ${durationSeconds}s, com a MESMA pessoa e o MESMO produto do início ao fim. Pode haver corte seco entre um trecho e o próximo.`,
     `Cena: ${script.cena}`,
-    `Avatar (aparência e voz): ${script.avatarDescricao}`,
+    'AVATAR (não há imagem de referência da pessoa — recrie-a seguindo esta descrição à risca e mantenha exatamente a mesma aparência em todos os trechos):',
+    `- Perfil e voz: ${script.avatarDescricao}`,
+    ...(aparencia ? [`- Aparência: ${aparencia}`] : []),
     'O AVATAR aparece em quadro, olha diretamente para a câmera e FALA cada fala abaixo em português do Brasil, com sincronia labial e a MESMA voz (timbre, tom, energia e sotaque) no vídeo inteiro. Interage naturalmente com o produto enquanto fala.',
     'Linha do tempo (siga EXATAMENTE o ângulo e o movimento de câmera de cada trecho):',
     ...timeline,
     UGC_STYLE_LINE,
-    UGC_FIDELITY_LINE,
+    'FIDELIDADE OBRIGATÓRIA: o produto deve ser IDÊNTICO às fotos reais do produto (mesmas cores, proporções, logotipo, materiais) — nunca redesenhe. A pessoa segue a descrição acima e não muda de rosto, cabelo ou roupa entre os trechos.',
     PRODUCT_COVERAGE_CLIP_LINE,
     ...(opts.hasProductReference ? [PRODUCT_REFERENCE_PROMPT_LINE] : []),
   ].join('\n');
   return { prompt, negativePrompt: buildUgcNegativePrompt({ hasProductReference: opts.hasProductReference }), durationSeconds };
 }
 
-// Referências do clipe único do Seedance: avatar e folha sempre; as fotos
-// reais ocupam as vagas que sobram do teto, na ordem escolhida pelo usuário.
+// Referências do clipe único do Seedance: só o produto (fotos reais + folha).
+// O avatar fica de fora de propósito — ver buildUgcSeedancePrompt.
 export function buildUgcSeedanceReferences(
-  avatar: PreparedImage,
   photos: PreparedImage[],
   sheet: PreparedImage | null,
   maxImages: number,
 ): ClipReferenceImage[] {
-  const photoSlots = Math.max(0, maxImages - 1 - (sheet ? 1 : 0));
+  const photoSlots = Math.max(0, maxImages - (sheet ? 1 : 0));
   return [
-    { url: avatar.url, base64: avatar.base64, mimeType: avatar.mimeType, papel: AVATAR_PAPEL },
     ...photos.slice(0, photoSlots).map((p, i) => ({
       url: p.url, base64: p.base64, mimeType: p.mimeType,
       papel: `FOTO REAL ${i + 1} do PRODUTO (formato, cores, logotipo e materiais idênticos)`,
     })),
     ...(sheet ? [{ url: sheet.url, base64: sheet.base64, mimeType: sheet.mimeType, papel: SHEET_PAPEL }] : []),
   ];
+}
+
+// Como o Seedance não recebe o retrato, o Gemini lê o retrato no nosso
+// servidor e escreve o que se vê (cabelo, rosto, roupa…) para ir no prompt.
+// Falha aqui não derruba o job: o vídeo segue só com a descrição salva.
+export async function describeAvatarAppearance(avatar: PreparedImage): Promise<string> {
+  try {
+    const ai = getGeminiClient();
+    const result = await ai.models.generateContent({
+      model: TEXT_MODEL,
+      contents: [{
+        role: 'user',
+        parts: [
+          { inlineData: { mimeType: avatar.mimeType, data: avatar.base64 } },
+          { text: 'Descreva, em português do Brasil, a aparência física desta pessoa para que um diretor de vídeo consiga recriá-la sem ver a foto: cabelo (cor, comprimento, corte, textura), formato do rosto, sobrancelhas, pelos faciais, tom de pele, compleição, roupa (peças, cores, estampas) e acessórios. Só o que é visível na imagem, sem nome, sem suposições e sem descrever o fundo. Texto corrido, no máximo 450 caracteres.' },
+        ],
+      }],
+    });
+    return (result.text ?? '').trim().slice(0, 600);
+  } catch (err) {
+    console.warn('[ugc-video] describeAvatarAppearance falhou, seguindo só com a descrição salva:', (err as Error).message);
+    return '';
+  }
 }
 
 async function generateUgcClip(
@@ -330,8 +363,9 @@ async function runUgcVideoJob(
     const ai = getVeoClient();
     let segmentPaths: string[];
     if (singleClip) {
-      const { prompt, negativePrompt, durationSeconds } = buildUgcSeedancePrompt(script, { hasProductReference: !!sheet });
-      const referenceImages = buildUgcSeedanceReferences(avatar, photos, sheet, SEEDANCE_MAX_REFERENCE_IMAGES);
+      const aparenciaAvatar = await describeAvatarAppearance(avatar);
+      const { prompt, negativePrompt, durationSeconds } = buildUgcSeedancePrompt(script, { hasProductReference: !!sheet, aparenciaAvatar });
+      const referenceImages = buildUgcSeedanceReferences(photos, sheet, SEEDANCE_MAX_REFERENCE_IMAGES);
       console.log(`[ugc-video] single clip ${durationSeconds}s generate jobId=${jobId} provider=${provider} refs=${referenceImages.length}`);
       const videoBytes = await runClipGeneration(provider, ai, jobId, 'clip#1', {
         prompt,
@@ -497,8 +531,14 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
         });
         const prepared = await prepareReferenceImages([avatarImageUrl, ...photoUrls, ...(productReferenceUrl ? [productReferenceUrl] : [])]);
         // O Seedance lê as referências por URL: vão cópias no nosso Storage,
-        // nunca a URL original (CDN de ERP, http://, anti-bot…).
-        if (provider === 'seedance') await stageReferenceImages(decoded.uid, jobId, prepared);
+        // nunca a URL original (CDN de ERP, http://, anti-bot…). O retrato do
+        // avatar não é copiado: ele nunca vai para o Seedance (só é lido pelo
+        // Gemini no nosso servidor — ver buildUgcSeedancePrompt).
+        if (provider === 'seedance') {
+          const productOnly = new Map(prepared);
+          if (!photoUrls.includes(avatarImageUrl) && avatarImageUrl !== productReferenceUrl) productOnly.delete(avatarImageUrl);
+          await stageReferenceImages(decoded.uid, jobId, productOnly);
+        }
         refs = {
           avatar: prepared.get(avatarImageUrl)!,
           photos: photoUrls.map((url) => prepared.get(url)!),

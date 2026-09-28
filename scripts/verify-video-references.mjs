@@ -110,13 +110,18 @@ check('UGC Seedance: linha do tempo com todas as falas',
   ['[0s–8s]', '[8s–16s]', '[16s–24s]', 'fala um', 'fala dois', 'fala tres'].every((t) => ugcSeedance.prompt.includes(t)), true);
 check('UGC Seedance: pede a mesma voz no vídeo inteiro', ugcSeedance.prompt.includes('MESMA voz'), true);
 
-const avatar = img('avatar');
-const ugcRefs = buildUgcSeedanceReferences(avatar, photos, sheet, SEEDANCE_MAX_REFERENCE_IMAGES);
-check('UGC Seedance: avatar é a @Image1', ugcRefs[0].url, avatar.url);
+const ugcSeedanceComAparencia = buildUgcSeedancePrompt(ugcScript, { hasProductReference: true, aparenciaAvatar: 'cabelo castanho curto, camiseta azul' });
+check('UGC Seedance: avatar vai só por texto (sem @Image de pessoa)', /não há imagem de referência da pessoa/.test(ugcSeedance.prompt), true);
+check('UGC Seedance: leva a descrição salva do avatar', ugcSeedance.prompt.includes('mulher, 28 anos'), true);
+check('UGC Seedance: leva a aparência lida do retrato quando existe', ugcSeedanceComAparencia.prompt.includes('Aparência: cabelo castanho curto, camiseta azul'), true);
+check('UGC Seedance: sem aparência, não gera linha vazia', /Aparência:/.test(ugcSeedance.prompt), false);
+
+const ugcRefs = buildUgcSeedanceReferences(photos, sheet, SEEDANCE_MAX_REFERENCE_IMAGES);
+check('UGC Seedance: nenhuma referência é o avatar (filtro de rosto do Seedance)', ugcRefs.some((r) => /AVATAR/.test(r.papel)), false);
 check('UGC Seedance: folha vai por último', ugcRefs.at(-1).url, sheet.url);
-check(`UGC Seedance: fotos ocupam o resto do teto (${SEEDANCE_MAX_REFERENCE_IMAGES - 2})`,
-  ugcRefs.filter((r) => r.papel.startsWith('FOTO REAL')).length, SEEDANCE_MAX_REFERENCE_IMAGES - 2);
-check('UGC Seedance: com 2 fotos manda as 2', buildUgcSeedanceReferences(avatar, photos.slice(0, 2), sheet, 9).length, 4);
+check(`UGC Seedance: fotos ocupam o teto menos a folha (${SEEDANCE_MAX_REFERENCE_IMAGES - 1})`,
+  ugcRefs.filter((r) => r.papel.startsWith('FOTO REAL')).length, Math.min(photos.length, SEEDANCE_MAX_REFERENCE_IMAGES - 1));
+check('UGC Seedance: com 2 fotos manda as 2 + folha', buildUgcSeedanceReferences(photos.slice(0, 2), sheet, 9).length, 3);
 
 console.log(failures === 0 ? '\nTodas as verificações passaram.' : `\n${failures} verificação(ões) falharam.`);
 process.exit(failures === 0 ? 0 : 1);
