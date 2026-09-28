@@ -727,7 +727,7 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
     }
   });
 
-  // Provider padrão de geração de vídeo (Veo/Seedance) — um doc só, plataforma
+  // Provider padrão de geração de vídeo (Veo/Seedance/Omni) — um doc só, plataforma
   // inteira. Lido uma vez por job em videoAgent.ts/ugcVideoAgent.ts via
   // getDefaultVideoProvider(); trocar aqui não afeta jobs já em andamento.
   app.get('/api/admin/video-settings', async (req, res) => {
@@ -749,9 +749,9 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
     try {
       const admin = await requireAdmin(req);
       const body = req.body ?? {};
-      const defaultProvider = body.defaultProvider === 'seedance' ? 'seedance' : body.defaultProvider === 'veo' ? 'veo' : null;
+      const defaultProvider = (['veo', 'seedance', 'omni'] as const).find((p) => p === body.defaultProvider) ?? null;
       if (!defaultProvider) {
-        throw Object.assign(new Error('defaultProvider deve ser "veo" ou "seedance"'), { status: 422 });
+        throw Object.assign(new Error('defaultProvider deve ser "veo", "seedance" ou "omni"'), { status: 422 });
       }
 
       const settings: VideoPlatformSettings = {

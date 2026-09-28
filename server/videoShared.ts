@@ -22,7 +22,7 @@ export { VideoGenerationReferenceType };
 import type { VideoProvider } from '../src/types/crm';
 export type { VideoProvider };
 
-// Formato de entrada comum aos dois providers (Veo, Seedance) — cada agente
+// Formato de entrada comum aos providers (Veo, Seedance, Omni) — cada agente
 // (videoAgent.ts, ugcVideoAgent.ts) monta isto uma vez por shot/clipe; o
 // dispatcher runClipGeneration (server/videoProviders.ts) decide o que
 // repassar pra Veo ou pra Seedance.
@@ -264,6 +264,24 @@ export async function buildPhotoPanel(photos: PreparedImage[]): Promise<{ base64
   return resizeForReference(panel);
 }
 
+// O Omni não tem campo de duração (entrega de 3 a 10s). No vídeo clássico cada
+// trecho precisa durar exatamente o tempo do ato — as legendas e a narração
+// são temporizadas por ato —, então corta o excesso ou congela o último
+// quadro até completar. Só o vídeo: o áudio do trecho é descartado na montagem.
+export async function fitSegmentDuration(segPath: string, seconds: number): Promise<void> {
+  const tmpPath = `${segPath}.fit.mp4`;
+  await runFfmpeg([
+    '-y', '-i', segPath,
+    '-vf', `tpad=stop_mode=clone:stop_duration=${seconds}`,
+    '-t', String(seconds),
+    '-an',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p',
+    tmpPath,
+  ]);
+  const { rename } = await import('node:fs/promises');
+  await rename(tmpPath, segPath);
+}
+
 export function runFfmpeg(args: string[]): Promise<void> {
   if (!ffmpegPath) throw new Error('ffmpeg-static não encontrado');
   return new Promise((resolve, reject) => {
@@ -384,6 +402,7 @@ export async function assertNoActiveVideoJob(uid: string): Promise<void> {
 // passa a gerar com Seedance sem precisar reescolher.
 export function resolveVideoProvider(data?: { defaultProvider?: unknown }): VideoProvider {
   const value = data?.defaultProvider;
+  if (value === 'omni') return 'omni';
   return value === 'seedance' || value === 'kling' ? 'seedance' : 'veo';
 }
 

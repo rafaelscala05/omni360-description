@@ -15,7 +15,7 @@ import {
   getDefaultVideoProvider, PRODUCT_REFERENCE_PROMPT_LINE, PRODUCT_REFERENCE_NEGATIVE, CAMERA_VARIETY_RULE,
   PRODUCT_COVERAGE_RULE, PRODUCT_COVERAGE_CLIP_LINE, PRODUCT_COVERAGE_NEGATIVE,
   PHOTO_PANEL_PROMPT_LINE, PHOTO_PANEL_NEGATIVE, sanitizePhotoUrls,
-  prepareReferenceImages, stageReferenceImages, deleteStagedReferences, buildPhotoPanel,
+  prepareReferenceImages, stageReferenceImages, deleteStagedReferences, buildPhotoPanel, fitSegmentDuration,
   type ClipReferenceImage, type PreparedImage, type VideoProvider,
 } from './videoShared';
 import {
@@ -484,6 +484,7 @@ async function runVideoJob(
         });
         const segPath = path.join(workDir, `seg${i}.mp4`);
         await fs.writeFile(segPath, Buffer.from(videoBytes, 'base64'));
+        if (provider === 'omni') await fitSegmentDuration(segPath, SHOTS[i].seconds);
         await jobRef.update({ shotsDone: FieldValue.increment(1), updatedAt: now() });
         return segPath;
       };

@@ -367,7 +367,7 @@ export default function UgcVideoGenerationTab({
                 <CheckCircle2 className="w-4 h-4 shrink-0" /> Vídeo gerado com sucesso!
                 {job.provider && (
                   <span className="ml-auto text-xs font-semibold text-green-600 bg-white/60 px-2 py-0.5 rounded-full">
-                    {job.provider === 'seedance' ? 'Seedance' : job.provider === 'kling' ? 'Kling' : 'Veo 3'}
+                    {job.provider === 'seedance' ? 'Seedance' : job.provider === 'omni' ? 'Omni 1.1' : job.provider === 'kling' ? 'Kling' : 'Veo 3'}
                   </span>
                 )}
               </div>
@@ -439,7 +439,7 @@ function UgcVideoProgressDisplay({ job }: { job: UgcVideoJob | null }) {
         <p className="text-xs text-slate-400 leading-relaxed">
           {total === 1
             ? 'O vídeo é gerado inteiro de uma vez, com o avatar falando. Esse processo geralmente leva de 3 a 8 minutos.'
-            : 'O Veo 3.1 gera os clipes em paralelo, com o avatar falando. Esse processo geralmente leva de 2 a 4 minutos.'}
+            : 'Os clipes são gerados em paralelo, com o avatar falando. Esse processo geralmente leva de 2 a 4 minutos.'}
         </p>
       </div>
     </div>

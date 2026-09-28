@@ -1,8 +1,9 @@
 // Verificação da lógica pura de seleção/montagem de provider de vídeo
 // (server/videoShared.ts, server/videoProviders.ts). Não sobe servidor, não
-// toca o Firestore; chamadas de rede do Seedance são dubladas via globalThis.fetch.
+// toca o Firestore; chamadas de rede do Seedance e do Omni são dubladas via globalThis.fetch.
 // Rodar com: npx tsx scripts/verify-video-providers.mjs
 import { buildVeoRequest, VideoGenerationReferenceType, resolveVideoProvider } from '../server/videoShared.ts';
+import { buildOmniRequestBody, buildOmniPrompt, extractOmniVideoBytes, runOmniOperation, OMNI_MODEL } from '../server/omniProvider.ts';
 import { buildSeedanceRequestBody, buildSeedancePrompt, getOpenRouterApiKey, runSeedanceOperation, SEEDANCE_MODEL } from '../server/videoProviders.ts';
 
 let failures = 0;
@@ -184,7 +185,97 @@ check('runSeedanceOperation menciona o status desconhecido no erro', /desconheci
 globalThis.fetch = originalFetch;
 process.env.OPENROUTER_API_KEY = originalKey;
 
+// --- buildOmniRequestBody ---
+const omniBody = buildOmniRequestBody(baseRequest);
+check('buildOmniRequestBody usa o ID do Vertex (gemini-omni-1.1-flash-preview)', [omniBody.model, OMNI_MODEL], ['gemini-omni-1.1-flash-preview', 'gemini-omni-1.1-flash-preview']);
+check('buildOmniRequestBody pede vídeo 9:16 720p inline (Vertex não aceita base64; uri exige gcs_uri)', omniBody.response_format, { type: 'video', aspect_ratio: '9:16', resolution: '720p', delivery: 'inline' });
+check('buildOmniRequestBody roda em background', omniBody.background, true);
+check('buildOmniRequestBody: imagens inline em base64 antes do texto, na ordem', omniBody.input.map((p) => p.type === 'image' ? p.data : p.type), ['AAAA', 'BBBB', 'text']);
+check('buildOmniRequestBody NÃO envia negative_prompt nem duração (campos inexistentes)', ['negative_prompt', 'duration', 'negativePrompt'].some((k) => k in omniBody), false);
+const omniPrompt = buildOmniPrompt(baseRequest);
+check('buildOmniPrompt nomeia as referências na ordem e leva duração/EVITE', [
+  omniPrompt.includes('Imagem 1 = o PRODUTO'),
+  omniPrompt.includes('Imagem 2 = FOLHA DE REFERÊNCIA'),
+  omniPrompt.includes('DURAÇÃO: 8 segundos.'),
+  omniPrompt.includes('EVITE: baixa qualidade'),
+  omniPrompt.includes(baseRequest.prompt),
+], [true, true, true, true, true]);
+check('buildOmniPrompt: sem áudio pede clipe sem falas', /sem falas/.test(omniPrompt), true);
+check('buildOmniPrompt: com áudio pede fala em pt-BR sincronizada', /português do Brasil/.test(buildOmniPrompt({ ...baseRequest, generateAudio: true })), true);
+let omniThrew = false;
+try { buildOmniRequestBody({ ...baseRequest, referenceImages: [{ url: 'https://x/y.jpg', papel: 'x' }] }); } catch { omniThrew = true; }
+check('buildOmniRequestBody exige base64 por imagem', omniThrew, true);
+omniThrew = false;
+const img = baseRequest.referenceImages[0];
+try { buildOmniRequestBody({ ...baseRequest, referenceImages: [img, img, img, img] }); } catch { omniThrew = true; }
+check('buildOmniRequestBody recusa mais de 3 referências', omniThrew, true);
+
+// --- extractOmniVideoBytes (formato real do Vertex, capturado em 2026-09-28) ---
+check('extractOmniVideoBytes lê o vídeo do último model_output', extractOmniVideoBytes({ status: 'completed', steps: [
+  { type: 'thought', content: [] },
+  { type: 'model_output', content: [{ type: 'video', mime_type: 'video/mp4', data: 'VIDEO' }] },
+] }), 'VIDEO');
+check('extractOmniVideoBytes sem vídeo → null', extractOmniVideoBytes({ steps: [{ type: 'thought', content: [] }] }), null);
+
+// --- runOmniOperation: submit em background → poll (com erro transitório) → bytes ---
+const omniDone = { id: 'i1', status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'video', data: Buffer.from('omni-bytes').toString('base64') }] }] };
+let omniCreates = 0;
+let omniGets = 0;
+let omniCreateBody = null;
+const flakyClient = {
+  async create(body) { omniCreates++; omniCreateBody = body; return { id: 'i1', status: 'in_progress' }; },
+  async get(id) {
+    omniGets++;
+    if (omniGets === 1) throw Object.assign(new Error('indisponível'), { status: 503 });
+    if (omniGets === 2) return { id, status: 'in_progress' };
+    return omniDone;
+  },
+};
+const omniBytes = await runOmniOperation('jobO1', 'shot#1', baseRequest, { client: flakyClient, pollIntervalMs: 1, retryDelaysMs: [1, 1, 1] });
+check('runOmniOperation completa com os bytes do model_output', Buffer.from(omniBytes, 'base64').toString(), 'omni-bytes');
+check('runOmniOperation envia o body de buildOmniRequestBody', omniCreateBody?.model, 'gemini-omni-1.1-flash-preview');
+check('runOmniOperation: erro transitório no poll não reenvia a geração (só 1 create)', omniCreates, 1);
+
+// --- runOmniOperation: 503 no submit retenta; 400 não ---
+let submits = 0;
+await runOmniOperation('jobO2', 'shot#1', baseRequest, { pollIntervalMs: 1, retryDelaysMs: [1, 1, 1], client: {
+  async create() { submits++; if (submits === 1) throw Object.assign(new Error('sobrecarga'), { status: 503 }); return omniDone; },
+  async get() { throw new Error('não devia pollar'); },
+} });
+check('runOmniOperation retenta 503 no submit', submits, 2);
+let badSubmits = 0;
+let badMsg = '';
+try {
+  await runOmniOperation('jobO3', 'shot#1', baseRequest, { pollIntervalMs: 1, retryDelaysMs: [1, 1, 1], client: {
+    async create() { badSubmits++; throw Object.assign(new Error('invalid_request'), { status: 400 }); },
+    async get() { throw new Error('não devia pollar'); },
+  } });
+} catch (err) { badMsg = err.message; }
+check('runOmniOperation não retenta 400', [badSubmits, badMsg], [1, 'invalid_request']);
+
+// --- runOmniOperation: status failed vira erro com o motivo, sem retentar ---
+let failCreates = 0;
+let omniFailMsg = '';
+try {
+  await runOmniOperation('jobO4', 'shot#1', baseRequest, { pollIntervalMs: 1, retryDelaysMs: [1, 1, 1], client: {
+    async create() { failCreates++; return { id: 'f', status: 'in_progress' }; },
+    async get(id) { return { id, status: 'failed', error: { message: 'política de conteúdo' } }; },
+  } });
+} catch (err) { omniFailMsg = err.message; }
+check('runOmniOperation: failed vira erro com o motivo e sem retentar', [/política de conteúdo/.test(omniFailMsg), failCreates], [true, 1]);
+
+// --- runOmniOperation: não fica pollando para sempre ---
+let stuckMsg = '';
+try {
+  await runOmniOperation('jobO5', 'shot#1', baseRequest, { pollIntervalMs: 1, retryDelaysMs: [1, 1, 1], maxPollMs: 20, client: {
+    async create() { return { id: 's', status: 'in_progress' }; },
+    async get(id) { return { id, status: 'in_progress' }; },
+  } });
+} catch (err) { stuckMsg = err.message; }
+check('runOmniOperation respeita o tempo máximo de espera', /tempo máximo/.test(stuckMsg), true);
+
 // --- resolveVideoProvider ---
+check('resolveVideoProvider: omni → omni', resolveVideoProvider({ defaultProvider: 'omni' }), 'omni');
 check('resolveVideoProvider: doc ausente → veo', resolveVideoProvider(undefined), 'veo');
 check('resolveVideoProvider: campo ausente → veo', resolveVideoProvider({}), 'veo');
 check('resolveVideoProvider: valor inválido → veo', resolveVideoProvider({ defaultProvider: 'sora' }), 'veo');

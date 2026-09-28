@@ -1,4 +1,4 @@
-// Escolha do provider padrão de geração de vídeo de produto (Veo/Seedance) —
+// Escolha do provider padrão de geração de vídeo de produto (Veo/Seedance/Omni) —
 // plataforma inteira, sem opção por usuário. Mesmo esqueleto de
 // AutomationsView.tsx (load em useEffect, Card/ErrorBanner/Spinner de ./ui).
 import { useCallback, useEffect, useState } from 'react';
@@ -9,6 +9,7 @@ import { Card, ErrorBanner, Spinner, formatDateTime } from './ui';
 const OPTIONS: { value: VideoProvider; label: string; hint: string }[] = [
   { value: 'veo', label: 'Veo 3', hint: 'Google, via Vertex AI. Provider atual — validado em produção.' },
   { value: 'seedance', label: 'Seedance 2.5', hint: 'bytedance/seedance-2.5 (720p), via OpenRouter. Trocar aqui não afeta vídeos já em geração.' },
+  { value: 'omni', label: 'Gemini Omni 1.1 Flash', hint: 'gemini-omni-1.1-flash-preview (720p), via Vertex AI. Áudio e fala com lip sync nativos; pt-BR não é avaliado oficialmente pela Google.' },
 ];
 
 export default function VideoSettingsView() {

@@ -471,7 +471,7 @@ export default function VideoGenerationTab({
                 Vídeo gerado com sucesso!
                 {job.provider && (
                   <span className="ml-auto text-xs font-semibold text-green-600 bg-white/60 px-2 py-0.5 rounded-full">
-                    {job.provider === 'seedance' ? 'Seedance' : job.provider === 'kling' ? 'Kling' : 'Veo 3'}
+                    {job.provider === 'seedance' ? 'Seedance' : job.provider === 'omni' ? 'Omni 1.1' : job.provider === 'kling' ? 'Kling' : 'Veo 3'}
                   </span>
                 )}
               </div>
@@ -630,7 +630,7 @@ function VideoProgressDisplay({ job }: { job: VideoJob | null }) {
         <p className="text-xs text-slate-400 leading-relaxed">
           {total === 1
             ? 'O vídeo é gerado inteiro de uma vez e depois recebe narração + música. Esse processo geralmente leva de 3 a 8 minutos.'
-            : `O Veo 3.1 gera os ${total} trechos em paralelo e monta narração + música. Esse processo geralmente leva de 2 a 5 minutos.`}
+            : `Os ${total} trechos são gerados em paralelo e depois recebem narração + música. Esse processo geralmente leva de 2 a 5 minutos.`}
           Você pode fechar essa janela — o vídeo ficará disponível aqui quando pronto.
         </p>
       </div>

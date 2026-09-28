@@ -26,7 +26,7 @@ export interface VideoJob {
   jobId: string;
   productId: string;
   status: VideoJobStatus;
-  provider?: 'veo' | 'seedance' | 'kling'; // 'kling' = jobs antigos
+  provider?: 'veo' | 'seedance' | 'omni' | 'kling'; // 'kling' = jobs antigos
   videoUrl?: string;
   error?: string;
   createdAt: string;

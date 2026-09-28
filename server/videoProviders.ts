@@ -15,6 +15,7 @@ import {
   type ClipGenerationRequest,
   type VideoProvider,
 } from './videoShared';
+import { runOmniOperation } from './omniProvider';
 
 export const SEEDANCE_MODEL = 'bytedance/seedance-2.5';
 export const SEEDANCE_RESOLUTION = '720p';
@@ -215,7 +216,7 @@ export async function runSeedanceOperation(
 }
 
 // Único ponto que videoAgent.ts/ugcVideoAgent.ts chamam — decide qual provider
-// gera o clipe. `ai` só é usado no branch Veo (mantém a mesma assinatura de
+// gera o clipe. `ai` só é usado no branch Veo (o Omni monta o próprio client Vertex, na região global) (mantém a mesma assinatura de
 // runVeoOperation, que espera um client já construído).
 export async function runClipGeneration(
   provider: VideoProvider,
@@ -225,5 +226,6 @@ export async function runClipGeneration(
   request: ClipGenerationRequest,
 ): Promise<string> {
   if (provider === 'seedance') return runSeedanceOperation(jobId, label, request);
+  if (provider === 'omni') return runOmniOperation(jobId, label, request);
   return runVeoOperation(ai, jobId, label, buildVeoRequest(request));
 }
