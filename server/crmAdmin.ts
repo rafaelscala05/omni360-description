@@ -26,6 +26,7 @@ import {
   type CustomerListItem,
   type PipelineStatus,
   type TimelineEntry,
+  type VideoPlatformSettings,
 } from '../src/types/crm';
 
 interface AdminDeps {
@@ -720,6 +721,46 @@ export function registerCrmAdminRoutes(app: express.Application, deps: AdminDeps
       await ref.delete();
       await auditLog(admin, 'automation', 'automacao', `${STAGE_LABELS[stage]}: removida`);
       res.json({ ok: true });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // Provider padrão de geração de vídeo (Veo/Kling) — um doc só, plataforma
+  // inteira. Lido uma vez por job em videoAgent.ts/ugcVideoAgent.ts via
+  // getDefaultVideoProvider(); trocar aqui não afeta jobs já em andamento.
+  app.get('/api/admin/video-settings', async (req, res) => {
+    try {
+      await requireAdmin(req);
+      const snap = await adminDb.collection('platform_settings').doc('video').get();
+      const data = snap.exists ? (snap.data() as VideoPlatformSettings) : undefined;
+      res.json({
+        defaultProvider: data?.defaultProvider === 'kling' ? 'kling' : 'veo',
+        updatedAt: data?.updatedAt ?? null,
+        updatedBy: data?.updatedBy ?? null,
+      });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  app.put('/api/admin/video-settings', async (req, res) => {
+    try {
+      const admin = await requireAdmin(req);
+      const body = req.body ?? {};
+      const defaultProvider = body.defaultProvider === 'kling' ? 'kling' : body.defaultProvider === 'veo' ? 'veo' : null;
+      if (!defaultProvider) {
+        throw Object.assign(new Error('defaultProvider deve ser "veo" ou "kling"'), { status: 422 });
+      }
+
+      const settings: VideoPlatformSettings = {
+        defaultProvider,
+        updatedAt: new Date().toISOString(),
+        updatedBy: admin.uid,
+      };
+      await adminDb.collection('platform_settings').doc('video').set(settings);
+      await auditLog(admin, 'platform', 'video-provider', `default → ${defaultProvider}`);
+      res.json(settings);
     } catch (err) {
       sendError(res, err);
     }

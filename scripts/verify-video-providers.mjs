@@ -2,7 +2,7 @@
 // (server/videoShared.ts, server/videoProviders.ts). Não sobe servidor, não
 // toca o Firestore; chamadas de rede da Kling são dubladas via globalThis.fetch.
 // Rodar com: npx tsx scripts/verify-video-providers.mjs
-import { buildVeoRequest, VideoGenerationReferenceType } from '../server/videoShared.ts';
+import { buildVeoRequest, VideoGenerationReferenceType, resolveVideoProvider } from '../server/videoShared.ts';
 import { buildKlingRequestBody, getOpenRouterApiKey, runKlingOperation, KLING_MODEL } from '../server/videoProviders.ts';
 
 let failures = 0;
@@ -103,6 +103,13 @@ const bytes = await runKlingOperation('jobId2', 'shot#1', baseRequest, { pollInt
 check('runKlingOperation retenta 500 transitório e completa', Buffer.from(bytes, 'base64').toString(), 'video-bytes');
 globalThis.fetch = originalFetch;
 process.env.OPENROUTER_API_KEY = originalKey;
+
+// --- resolveVideoProvider ---
+check('resolveVideoProvider: doc ausente → veo', resolveVideoProvider(undefined), 'veo');
+check('resolveVideoProvider: campo ausente → veo', resolveVideoProvider({}), 'veo');
+check('resolveVideoProvider: valor inválido → veo', resolveVideoProvider({ defaultProvider: 'sora' }), 'veo');
+check('resolveVideoProvider: kling → kling', resolveVideoProvider({ defaultProvider: 'kling' }), 'kling');
+check('resolveVideoProvider: veo explícito → veo', resolveVideoProvider({ defaultProvider: 'veo' }), 'veo');
 
 console.log(failures === 0 ? '\nTodas as verificações passaram.' : `\n${failures} verificação(ões) falharam.`);
 process.exit(failures === 0 ? 0 : 1);

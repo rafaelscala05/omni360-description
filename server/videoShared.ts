@@ -252,6 +252,18 @@ export async function assertNoActiveVideoJob(uid: string): Promise<void> {
   }
 }
 
+// Lê users/platform_settings/video no client seria negado pelas rules (não há
+// nenhum match cobrindo essa coleção) — só o Admin SDK acessa. Ausência do doc
+// (instalação nova) ou de valor reconhecido cai em 'veo', o provider seguro.
+export function resolveVideoProvider(data?: { defaultProvider?: unknown }): VideoProvider {
+  return data?.defaultProvider === 'kling' ? 'kling' : 'veo';
+}
+
+export async function getDefaultVideoProvider(): Promise<VideoProvider> {
+  const snap = await adminDb.collection('platform_settings').doc('video').get();
+  return resolveVideoProvider(snap.exists ? (snap.data() as { defaultProvider?: unknown }) : undefined);
+}
+
 export async function debitCreditsAdmin(
   uid: string,
   action: CreditAction,
