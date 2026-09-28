@@ -1,7 +1,7 @@
 // server/omniProvider.ts
 //
 // Geração de vídeo via Gemini Omni 1.1 Flash, pela Interactions API do Vertex AI
-// (mesmas credenciais ADC do Veo — sem API key). No Vertex o modelo só existe
+// (mesmas credenciais ADC do Veo — sem API key, ver omniFetch). No Vertex o modelo só existe
 // como `gemini-omni-1.1-flash-preview` e só na região `global`; o ID GA
 // (`gemini-omni-1.1-flash`) é da Gemini API e dá 404 no Vertex. Validado com
 // geração real em 2026-09-28: `background: true` responde na hora com
@@ -21,7 +21,7 @@
 // - Sem negative prompt: vira uma linha "EVITE:" no prompt, como no Seedance.
 // - Idioma: a Google só avaliou inglês; pt-BR funciona, mas sem garantia de
 //   qualidade de fala/lip sync.
-import { GoogleGenAI } from '@google/genai';
+import { GoogleAuth } from 'google-auth-library';
 import { GCP_PROJECT, type ClipGenerationRequest } from './videoShared';
 
 export const OMNI_MODEL = 'gemini-omni-1.1-flash-preview';
@@ -83,19 +83,38 @@ export interface OmniInteraction {
   error?: { message?: string };
 }
 
-// A fronteira com a rede — o verify script injeta um dublê no lugar do SDK.
+// A fronteira com a rede — o verify script injeta um dublê no lugar do Vertex.
 export interface OmniClient {
   create(body: Record<string, unknown>): Promise<OmniInteraction>;
   get(id: string): Promise<OmniInteraction>;
 }
 
+// REST direto, não `ai.interactions` do @google/genai: o SDK (1.46) monta o
+// cliente de interactions com `apiKey: undefined`, e o construtor dele cai no
+// default `process.env.GEMINI_API_KEY` — em produção (onde a chave existe) a
+// chamada vai para o Vertex com `x-goog-api-key` e volta 401 "API keys are
+// not supported by this API". Aqui a autenticação é sempre o token OAuth do ADC.
+const OMNI_BASE_URL = `https://aiplatform.googleapis.com/v1beta1/projects/${GCP_PROJECT}/locations/${OMNI_LOCATION}/interactions`;
+let omniAuth: GoogleAuth | null = null;
+
+async function omniFetch(url: string, init: RequestInit = {}): Promise<OmniInteraction> {
+  omniAuth ??= new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
+  const token = await omniAuth.getAccessToken();
+  const res = await fetch(url, {
+    ...init,
+    headers: { Authorization: `Bearer ${token}`, 'x-goog-user-project': GCP_PROJECT, 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw Object.assign(new Error(`Omni ${init.method ?? 'GET'} falhou (${res.status}): ${text.slice(0, 300)}`), { status: res.status });
+  }
+  return (await res.json()) as OmniInteraction;
+}
+
 function createVertexOmniClient(): OmniClient {
-  const ai = new GoogleGenAI({ vertexai: true, project: GCP_PROJECT, location: OMNI_LOCATION });
-  // maxRetries: 0 — o retry é nosso, por fase (withOmniRetry). O retry
-  // automático do SDK num submit que expirou pagaria a geração duas vezes.
   return {
-    create: (body) => ai.interactions.create(body as any, { maxRetries: 0 }) as Promise<OmniInteraction>,
-    get: (id) => ai.interactions.get(id, undefined, { maxRetries: 0 }) as Promise<OmniInteraction>,
+    create: (body) => omniFetch(OMNI_BASE_URL, { method: 'POST', body: JSON.stringify(body) }),
+    get: (id) => omniFetch(`${OMNI_BASE_URL}/${encodeURIComponent(id)}`),
   };
 }
 
