@@ -202,6 +202,17 @@ export interface MeliSyncJob {
   progress: number;
   lastStep: string;
   error: string | null;
+  phase?: 'listing' | 'processing';
+  failedItemIds?: string[];
+}
+
+export interface MeliListingPage {
+  listings: MeliListing[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  counts: Record<string, number>;
 }
 
 async function headers(): Promise<Record<string, string>> {
@@ -288,11 +299,19 @@ export async function getMeliJob(jobId: string): Promise<MeliSyncJob> {
   return (await handle<{ job: MeliSyncJob }>(response)).job;
 }
 
-export async function listMeliListings(filters: { status?: string; search?: string } = {}): Promise<{ listings: MeliListing[]; total: number }> {
+export async function getActiveMeliJob(): Promise<MeliSyncJob | null> {
+  const response = await fetch('/api/meli/jobs/active', { headers: await headers() });
+  return (await handle<{ job: MeliSyncJob | null }>(response)).job;
+}
+
+export async function listMeliListings(
+  filters: { status?: string; search?: string; page?: number; pageSize?: number } = {},
+): Promise<MeliListingPage> {
   const params = new URLSearchParams();
   if (filters.status) params.set('status', filters.status);
   if (filters.search) params.set('search', filters.search);
-  params.set('limit', '200');
+  params.set('page', String(filters.page || 1));
+  params.set('pageSize', String(filters.pageSize || 25));
   const response = await fetch(`/api/meli/listings?${params.toString()}`, { headers: await headers() });
   return handle(response);
 }

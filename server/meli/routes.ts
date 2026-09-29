@@ -2,7 +2,7 @@ import type express from 'express';
 import { adminDb } from '../firebaseAdmin';
 import { meliConfigured } from './config';
 import { completeAuthorization, createAuthorizationUrl, MELI_SECRET_REF, MELI_SELLER_REGISTRY_REF, MELI_STATUS_REF, oauthPopupHtml, type VerifyFirebaseToken } from './oauth';
-import { createSyncJob, MELI_JOBS_REF, recordAudit, scheduleSyncJob } from './sync';
+import { createSyncJob, findActiveAccountSyncJob, MELI_JOBS_REF, recordAudit, scheduleSyncJob } from './sync';
 import type { MeliConnectionSecret, MeliListingStatus } from './types';
 import { sanitizeError } from './utils';
 import { createAnalysis, getLatestAnalysis, scheduleAnalysis } from './analysis';
@@ -115,6 +115,11 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
       const { uid } = await verifyMeliModule(req);
       const requested = Array.isArray(req.body?.statuses) ? req.body.statuses : [];
       const statuses = requested.filter((value: unknown): value is MeliListingStatus => allowedStatuses.has(value as MeliListingStatus));
+      const active = await findActiveAccountSyncJob(uid);
+      if (active) {
+        scheduleSyncJob(uid, active.id);
+        return res.status(202).json({ job: active });
+      }
       const job = await createSyncJob(uid, { statuses: statuses.length ? statuses : undefined });
       scheduleSyncJob(uid, job.id);
       return res.status(202).json({ job });
@@ -134,18 +139,32 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
     }
   });
 
+  // Paginado (25 por padrão). O filtro, a busca e as contagens rodam sobre uma
+  // projeção leve (id, título, status, data); o documento completo — que
+  // carrega rawItem, atributos e imagens — só é lido para a página pedida.
   app.get('/api/meli/listings', async (req, res) => {
     try {
       const { uid } = await verifyMeliModule(req);
       const status = typeof req.query.status === 'string' ? req.query.status : '';
       const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
-      const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 100));
-      const snap = await LISTINGS_REF(uid).get();
-      const all = snap.docs.map((doc) => doc.data() as any)
-        .filter((item) => !status || item.status === status)
-        .filter((item) => !search || String(item.title || '').toLowerCase().includes(search) || String(item.itemId || '').toLowerCase().includes(search))
-        .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
-      return res.json({ listings: all.slice(0, limit), total: all.length });
+      const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 25));
+      const index = await LISTINGS_REF(uid).select('itemId', 'title', 'status', 'updatedAt').get();
+      const rows = index.docs.map((doc) => ({ id: doc.id, ...(doc.data() as { itemId?: string; title?: string; status?: string; updatedAt?: string }) }));
+      const counts: Record<string, number> = { all: rows.length };
+      rows.forEach((row) => { const key = String(row.status || 'unknown'); counts[key] = (counts[key] || 0) + 1; });
+      const matching = rows
+        .filter((row) => !status || row.status === status)
+        .filter((row) => !search || String(row.title || '').toLowerCase().includes(search) || String(row.itemId || row.id).toLowerCase().includes(search))
+        .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+      const totalPages = Math.max(1, Math.ceil(matching.length / pageSize));
+      const page = Math.min(totalPages, Math.max(1, Math.floor(Number(req.query.page)) || 1));
+      const slice = matching.slice((page - 1) * pageSize, page * pageSize);
+      const docs = slice.length ? await adminDb.getAll(...slice.map((row) => LISTINGS_REF(uid).doc(row.id))) : [];
+      const listings = docs.filter((doc) => doc.exists).map((doc) => {
+        const { rawItem: _rawItem, ...listing } = doc.data() as Record<string, unknown>;
+        return listing;
+      });
+      return res.json({ listings, total: matching.length, page, pageSize, totalPages, counts });
     } catch (error) {
       return res.status(statusCode(error)).json({ message: sanitizeError(error) });
     }
@@ -268,6 +287,16 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
       const run = await getMutationRun(uid, req.params.runId);
       if (!run) return res.status(404).json({ message: 'Execução de publicação não encontrada.' });
       return res.json({ mutationRun: run });
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
+  // Registrada antes de /jobs/:jobId, senão "active" casa como ID.
+  app.get('/api/meli/jobs/active', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      return res.json({ job: await findActiveAccountSyncJob(uid) });
     } catch (error) {
       return res.status(statusCode(error)).json({ message: sanitizeError(error) });
     }

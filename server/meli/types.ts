@@ -113,6 +113,22 @@ export interface MeliSyncJob {
   completedAt: string | null;
   processingLeaseId?: string | null;
   processingLeaseUntil?: number | null;
+  // Importação em lotes: 'listing' grava os IDs em meli_jobs/{id}/batches,
+  // 'processing' consome os lotes em ordem. `cursor` é o checkpoint gravado
+  // junto com cada lote concluído — é dele que uma execução retomada parte.
+  phase?: 'listing' | 'processing';
+  listedStatuses?: MeliListingStatus[];
+  batchCount?: number;
+  cursor?: MeliSyncCursor;
+  attempts?: number;
+  failedItemIds?: string[];
+}
+
+export interface MeliSyncCursor {
+  nextBatch: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
 }
 
 export type MeliFindingSeverity = 'info' | 'low' | 'medium' | 'high' | 'blocked';

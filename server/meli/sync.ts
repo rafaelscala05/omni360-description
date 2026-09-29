@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { adminDb } from '../firebaseAdmin';
 import { MeliApiClient } from './apiClient';
 import { MELI_SECRET_REF, MELI_SELLER_REGISTRY_REF, MELI_STATUS_REF } from './oauth';
-import type { MeliConnectionSecret, MeliListingRecord, MeliListingStatus, MeliSyncJob } from './types';
+import type { MeliConnectionSecret, MeliListingRecord, MeliListingStatus, MeliSyncCursor, MeliSyncJob } from './types';
 import { chunk, contentHash, jsonSafe, normalizeBulkItems, sanitizeError } from './utils';
 import { enqueueAnalysisIfNeeded } from './analysis';
 import { markListingProposalsStale } from './proposals';
@@ -33,23 +33,6 @@ async function connection(uid: string): Promise<MeliConnectionSecret> {
   const data = snap.data() as MeliConnectionSecret;
   if (data.status !== 'active') throw Object.assign(new Error('Reconecte a conta Mercado Livre.'), { status: 401 });
   return data;
-}
-
-async function listItemIds(client: MeliApiClient, sellerId: string, statuses: MeliListingStatus[]): Promise<string[]> {
-  const ids = new Set<string>();
-  for (const status of statuses) {
-    let scrollId: string | null = null;
-    for (let page = 0; page < 1000; page += 1) {
-      const params = new URLSearchParams({ status, search_type: 'scan', limit: '100' });
-      if (scrollId) params.set('scroll_id', scrollId);
-      const payload = await client.get<any>(`/users/${encodeURIComponent(sellerId)}/items/search?${params.toString()}`);
-      const results = Array.isArray(payload?.results) ? payload.results.map(String) : [];
-      results.forEach((id: string) => ids.add(id));
-      scrollId = payload?.scroll_id ? String(payload.scroll_id) : null;
-      if (!results.length || !scrollId) break;
-    }
-  }
-  return [...ids];
 }
 
 async function bestEffort<T>(operation: () => Promise<T | null>): Promise<T | null> {
@@ -102,16 +85,21 @@ async function fetchUserProductScope(
   return result;
 }
 
+// Chamado por lote (≤ BATCH_SIZE IDs), nunca com a conta inteira: segurar
+// milhares de itens completos em memória antes de salvar o primeiro era o que
+// impedia contas grandes de terminar. Falha de um bulk não derruba o lote —
+// os IDs que faltarem são buscados um a um, e o que ainda faltar vira falha
+// daquele item só.
 async function loadFullItems(client: MeliApiClient, itemIds: string[]): Promise<Map<string, Record<string, any>>> {
   const byId = new Map<string, Record<string, any>>();
   for (const group of chunk(itemIds, 20)) {
-    const payload = await client.get(`/items/bulk?ids=${group.map(encodeURIComponent).join(',')}`);
+    const payload = await bestEffort(() => client.get(`/items/bulk?ids=${group.map(encodeURIComponent).join(',')}`));
     normalizeBulkItems(payload).forEach((item) => {
       if (item?.id) byId.set(String(item.id), item);
     });
     const missing = group.filter((id) => !byId.has(id));
     await mapLimit(missing, 3, async (id) => {
-      const item = await client.get<Record<string, any>>(`/items/${encodeURIComponent(id)}?include_attributes=all`);
+      const item = await bestEffort(() => client.get<Record<string, any>>(`/items/${encodeURIComponent(id)}?include_attributes=all`));
       if (item?.id) byId.set(String(item.id), item);
     });
   }
@@ -219,11 +207,27 @@ export async function refreshListingNow(uid: string, itemId: string): Promise<Me
   return refreshed.data() as MeliListingRecord;
 }
 
+const TERMINAL_JOB_STATUSES = ['succeeded', 'partial', 'failed', 'cancelled'];
+const BATCHES_REF = (uid: string, jobId: string) => MELI_JOBS_REF(uid).doc(jobId).collection('batches');
+const BATCH_SIZE = 50;
+// O lease é renovado a cada gravação de progresso; se a instância morrer, o
+// scheduler (60s) retoma o job assim que ele expira, a partir do último lote.
+const LEASE_MS = 10 * 60 * 1000;
+// Depois disso a execução devolve o job para o fim da fila, para uma conta
+// com dezenas de milhares de anúncios não monopolizar os dois slots de sync.
+const RUN_BUDGET_MS = 4 * 60 * 1000;
+const PROGRESS_THROTTLE_MS = 3_000;
+const MAX_ATTEMPTS = 5;
+const MAX_FAILED_IDS = 200;
+const EMPTY_CURSOR: MeliSyncCursor = { nextBatch: 0, processed: 0, succeeded: 0, failed: 0 };
+
+const batchDocId = (index: number) => String(index).padStart(6, '0');
+
 async function updateJob(uid: string, jobId: string, patch: Partial<MeliSyncJob>): Promise<void> {
-  const terminal = patch.status && ['succeeded', 'partial', 'failed', 'cancelled'].includes(patch.status);
+  const terminal = patch.status && TERMINAL_JOB_STATUSES.includes(patch.status);
   await MELI_JOBS_REF(uid).doc(jobId).set({
     ...patch,
-    ...(terminal ? { processingLeaseId: null, processingLeaseUntil: null } : { processingLeaseUntil: Date.now() + 30 * 60 * 1000 }),
+    ...(terminal ? { processingLeaseId: null, processingLeaseUntil: null } : { processingLeaseUntil: Date.now() + LEASE_MS }),
   }, { merge: true });
 }
 
@@ -255,23 +259,186 @@ export async function createSyncJob(
     completedAt: null,
     processingLeaseId: null,
     processingLeaseUntil: null,
+    phase: 'listing',
+    listedStatuses: [],
+    batchCount: 0,
+    cursor: EMPTY_CURSOR,
+    attempts: 0,
+    failedItemIds: [],
   };
   await ref.set(job);
   return job;
 }
 
+// Uma sync de conta por vez: clicar de novo (ou abrir outra aba) devolve a que
+// já está andando em vez de enfileirar outra varredura da conta inteira.
+export async function findActiveAccountSyncJob(uid: string): Promise<MeliSyncJob | null> {
+  const recent = await MELI_JOBS_REF(uid).orderBy('createdAt', 'desc').limit(20).get();
+  const active = recent.docs
+    .map((doc) => doc.data() as MeliSyncJob)
+    .find((job) => job.kind === 'account_sync' && !TERMINAL_JOB_STATUSES.includes(job.status));
+  return active || null;
+}
+
+// Fase 1: enumera os IDs pelo scan e grava em lotes de BATCH_SIZE. O scroll_id
+// do scan expira em minutos e não dá para retomá-lo, então uma listagem
+// interrompida recomeça o status inteiro — deduplicando contra os lotes já
+// gravados, para nenhum anúncio entrar duas vezes.
+async function listIntoBatches(
+  uid: string,
+  jobId: string,
+  job: MeliSyncJob,
+  client: MeliApiClient,
+  sellerId: string,
+): Promise<{ batchCount: number; total: number }> {
+  const existing = await BATCHES_REF(uid, jobId).get();
+  const known = new Set<string>();
+  let batchCount = 0;
+  existing.docs.forEach((doc) => {
+    const data = doc.data();
+    (Array.isArray(data.itemIds) ? data.itemIds : []).forEach((id: unknown) => known.add(String(id)));
+    batchCount = Math.max(batchCount, Number(data.index) + 1);
+  });
+
+  const writeBatch = async (itemIds: string[]) => {
+    await BATCHES_REF(uid, jobId).doc(batchDocId(batchCount)).set({
+      index: batchCount, itemIds, createdAt: new Date().toISOString(),
+    });
+    batchCount += 1;
+  };
+
+  if (job.itemId) {
+    if (!/^[A-Z]{2,4}\d+$/i.test(job.itemId)) throw new Error('ID de anúncio inválido.');
+    if (!batchCount) await writeBatch([job.itemId.toUpperCase()]);
+    return { batchCount, total: 1 };
+  }
+
+  const listedStatuses = new Set<MeliListingStatus>(job.listedStatuses || []);
+  for (const status of job.requestedStatuses) {
+    if (listedStatuses.has(status)) continue;
+    const pending: string[] = [];
+    let scrollId: string | null = null;
+    for (let page = 0; page < 1000; page += 1) {
+      const params = new URLSearchParams({ status, search_type: 'scan', limit: '100' });
+      if (scrollId) params.set('scroll_id', scrollId);
+      const payload = await client.get<any>(`/users/${encodeURIComponent(sellerId)}/items/search?${params.toString()}`);
+      const results: string[] = Array.isArray(payload?.results) ? payload.results.map(String) : [];
+      results.forEach((id) => {
+        if (known.has(id)) return;
+        known.add(id);
+        pending.push(id);
+      });
+      while (pending.length >= BATCH_SIZE) await writeBatch(pending.splice(0, BATCH_SIZE));
+      await updateJob(uid, jobId, {
+        total: known.size, batchCount, lastStep: `Listando anúncios: ${known.size} encontrados`,
+      });
+      scrollId = payload?.scroll_id ? String(payload.scroll_id) : null;
+      if (!results.length || !scrollId) break;
+    }
+    while (pending.length) await writeBatch(pending.splice(0, BATCH_SIZE));
+    listedStatuses.add(status);
+    await updateJob(uid, jobId, { listedStatuses: [...listedStatuses], batchCount, total: known.size });
+  }
+  return { batchCount, total: known.size };
+}
+
+type RunOutcome = 'done' | 'yield' | 'cancelled';
+
+// Fase 2: consome os lotes em ordem. Cada lote conclui com UMA gravação
+// atômica (lote marcado + cursor do job), então uma queda no meio do lote só
+// refaz aquele lote — os anúncios já salvos são idempotentes (contentHash).
+async function processBatches(
+  uid: string,
+  jobId: string,
+  job: MeliSyncJob,
+  client: MeliApiClient,
+  connectionData: MeliConnectionSecret,
+  batchCount: number,
+  total: number,
+  runStartedAt: number,
+): Promise<RunOutcome> {
+  const jobRef = MELI_JOBS_REF(uid).doc(jobId);
+  let cursor: MeliSyncCursor = { ...EMPTY_CURSOR, ...(job.cursor || {}) };
+  let failedItemIds = job.failedItemIds || [];
+  const progressOf = (processed: number) => (total ? Math.min(99, Math.round((processed / total) * 100)) : 0);
+
+  while (cursor.nextBatch < batchCount) {
+    if (Date.now() - runStartedAt > RUN_BUDGET_MS) return 'yield';
+    const fresh = (await jobRef.get()).data() as MeliSyncJob | undefined;
+    if (!fresh || fresh.status === 'cancelled') return 'cancelled';
+
+    const batchRef = BATCHES_REF(uid, jobId).doc(batchDocId(cursor.nextBatch));
+    const batchSnap = await batchRef.get();
+    const itemIds: string[] = Array.isArray(batchSnap.data()?.itemIds) ? batchSnap.data()!.itemIds.map(String) : [];
+    const items = await loadFullItems(client, itemIds);
+
+    let batchSucceeded = 0;
+    const batchFailed: string[] = [];
+    let batchDone = 0;
+    let lastProgressAt = Date.now();
+    await mapLimit(itemIds, 3, async (itemId) => {
+      const item = items.get(itemId);
+      try {
+        if (!item) throw new Error('O item não foi retornado pela API.');
+        if (String(item.seller_id) !== connectionData.sellerId) throw new Error('Item não pertence ao seller autenticado.');
+        await persistListing(uid, connectionData, client, item);
+        batchSucceeded += 1;
+      } catch {
+        batchFailed.push(itemId);
+      }
+      batchDone += 1;
+      if (Date.now() - lastProgressAt >= PROGRESS_THROTTLE_MS) {
+        lastProgressAt = Date.now();
+        const processed = cursor.processed + batchDone;
+        await updateJob(uid, jobId, {
+          processed,
+          progress: progressOf(processed),
+          lastStep: `Salvando anúncios (${processed}/${total})`,
+        });
+      }
+    });
+
+    cursor = {
+      nextBatch: cursor.nextBatch + 1,
+      processed: cursor.processed + itemIds.length,
+      succeeded: cursor.succeeded + batchSucceeded,
+      failed: cursor.failed + batchFailed.length,
+    };
+    failedItemIds = [...failedItemIds, ...batchFailed].slice(0, MAX_FAILED_IDS);
+    const commit = adminDb.batch();
+    commit.set(batchRef, {
+      done: true, succeeded: batchSucceeded, failed: batchFailed.length, failedItemIds: batchFailed,
+      processedAt: new Date().toISOString(),
+    }, { merge: true });
+    commit.set(jobRef, {
+      cursor,
+      processed: cursor.processed,
+      succeeded: cursor.succeeded,
+      failed: cursor.failed,
+      failedItemIds,
+      attempts: 0,
+      progress: progressOf(cursor.processed),
+      lastStep: `Salvando anúncios (${cursor.processed}/${total}) · lote ${cursor.nextBatch}/${batchCount}`,
+      processingLeaseUntil: Date.now() + LEASE_MS,
+    }, { merge: true });
+    await commit.commit();
+  }
+  return 'done';
+}
+
 export async function runSyncJob(uid: string, jobId: string): Promise<void> {
   const ref = MELI_JOBS_REF(uid).doc(jobId);
   const leaseId = crypto.randomUUID();
+  const runStartedAt = Date.now();
   const job = await adminDb.runTransaction(async (tx) => {
     const jobSnap = await tx.get(ref);
     if (!jobSnap.exists) return null;
     const value = jobSnap.data() as MeliSyncJob;
-    if (['succeeded', 'partial', 'failed', 'cancelled'].includes(value.status)) return null;
+    if (TERMINAL_JOB_STATUSES.includes(value.status)) return null;
     if (value.processingLeaseUntil && value.processingLeaseUntil > Date.now()) return null;
     tx.set(ref, {
       status: 'running', startedAt: value.startedAt || new Date().toISOString(), lastStep: 'Validando conexão',
-      processingLeaseId: leaseId, processingLeaseUntil: Date.now() + 30 * 60 * 1000,
+      processingLeaseId: leaseId, processingLeaseUntil: Date.now() + LEASE_MS,
     }, { merge: true });
     return value;
   });
@@ -284,52 +451,38 @@ export async function runSyncJob(uid: string, jobId: string): Promise<void> {
     }, { merge: true });
     const client = new MeliApiClient(uid);
     const me = await client.get<any>('/users/me');
-    if (!me || String(me.id) !== connectionData.sellerId) throw new Error('A conexão não pertence ao seller armazenado.');
+    if (!me || String(me.id) !== connectionData.sellerId) throw Object.assign(new Error('A conexão não pertence ao seller armazenado.'), { status: 403 });
 
-    let itemIds: string[];
-    if (job.itemId) {
-      if (!/^[A-Z]{2,4}\d+$/i.test(job.itemId)) throw new Error('ID de anúncio inválido.');
-      itemIds = [job.itemId.toUpperCase()];
-    } else {
+    let batchCount = job.batchCount || 0;
+    let total = job.total || 0;
+    if (job.phase !== 'processing') {
       await updateJob(uid, jobId, { lastStep: 'Listando anúncios por status' });
-      itemIds = await listItemIds(client, connectionData.sellerId, job.requestedStatuses);
+      ({ batchCount, total } = await listIntoBatches(uid, jobId, job, client, connectionData.sellerId));
+      await updateJob(uid, jobId, { phase: 'processing', batchCount, total, lastStep: `${total} anúncios encontrados` });
     }
-    await updateJob(uid, jobId, { total: itemIds.length, lastStep: 'Buscando detalhes em lotes de 20' });
-    const items = await loadFullItems(client, itemIds);
 
-    let succeeded = 0;
-    let failed = 0;
-    let processed = 0;
-    await mapLimit(itemIds, 3, async (itemId) => {
-      const item = items.get(itemId);
-      try {
-        if (!item) throw new Error('O item não foi retornado pela API.');
-        if (String(item.seller_id) !== connectionData.sellerId) throw new Error('Item não pertence ao seller autenticado.');
-        await persistListing(uid, connectionData, client, item);
-        succeeded += 1;
-      } catch {
-        failed += 1;
-      }
-      processed += 1;
-      await updateJob(uid, jobId, {
-        processed,
-        succeeded,
-        failed,
-        progress: itemIds.length ? Math.round((processed / itemIds.length) * 100) : 100,
-        lastStep: `Sincronizando anúncios (${processed}/${itemIds.length})`,
-      });
-    });
+    const outcome = await processBatches(uid, jobId, job, client, connectionData, batchCount, total, runStartedAt);
+    if (outcome === 'cancelled') {
+      await ref.set({ processingLeaseId: null, processingLeaseUntil: null }, { merge: true });
+      return;
+    }
+    if (outcome === 'yield') {
+      await ref.set({ processingLeaseId: null, processingLeaseUntil: null }, { merge: true });
+      scheduleSyncJob(uid, jobId);
+      return;
+    }
 
+    const final = (await ref.get()).data() as MeliSyncJob;
+    const { succeeded, failed } = final.cursor || EMPTY_CURSOR;
     const completedAt = new Date().toISOString();
     const status = failed ? (succeeded ? 'partial' : 'failed') : 'succeeded';
     await Promise.all([
       updateJob(uid, jobId, {
         status,
-        processed: itemIds.length,
-        succeeded,
-        failed,
         progress: 100,
-        lastStep: status === 'succeeded' ? 'Sincronização concluída' : 'Sincronização concluída com falhas',
+        lastStep: status === 'succeeded'
+          ? `Sincronização concluída: ${succeeded} anúncios`
+          : `Sincronização concluída: ${succeeded} salvos, ${failed} com falha`,
         completedAt,
       }),
       MELI_STATUS_REF(uid).set({ lastSyncedAt: completedAt, lastSyncJobId: jobId }, { merge: true }),
@@ -339,17 +492,38 @@ export async function runSyncJob(uid: string, jobId: string): Promise<void> {
         action: 'meli.sync.completed',
         resourceType: 'meli_job',
         resourceId: jobId,
-        metadata: { total: itemIds.length, succeeded, failed, statuses: job.requestedStatuses },
+        metadata: { total, succeeded, failed, statuses: job.requestedStatuses },
         createdAt: completedAt,
       }),
     ]);
+    // Os lotes só servem para retomar; concluído o job, os IDs com falha já
+    // estão em failedItemIds.
+    await adminDb.recursiveDelete(BATCHES_REF(uid, jobId)).catch(() => undefined);
   } catch (error) {
-    await updateJob(uid, jobId, {
-      status: 'failed',
-      error: sanitizeError(error),
-      lastStep: 'Falha na sincronização',
-      completedAt: new Date().toISOString(),
-    });
+    // Erro transitório (rede, 5xx esgotado, 429 longo) não joga fora o que já
+    // foi salvo: o job volta para a fila e retoma do cursor. Só conexão
+    // inválida ou tentativas esgotadas encerram como falha.
+    const httpStatus = Number((error as any)?.status);
+    const attempts = (job.attempts || 0) + 1;
+    const permanent = httpStatus === 401 || httpStatus === 403 || attempts >= MAX_ATTEMPTS;
+    if (permanent) {
+      await updateJob(uid, jobId, {
+        status: 'failed',
+        attempts,
+        error: sanitizeError(error),
+        lastStep: 'Falha na sincronização',
+        completedAt: new Date().toISOString(),
+      });
+    } else {
+      await ref.set({
+        status: 'retry_scheduled',
+        attempts,
+        error: sanitizeError(error),
+        lastStep: `Erro temporário; retomando do ponto salvo (tentativa ${attempts + 1}/${MAX_ATTEMPTS})`,
+        processingLeaseId: null,
+        processingLeaseUntil: Date.now() + 60_000 * attempts,
+      }, { merge: true });
+    }
   }
 }
 
