@@ -12,6 +12,7 @@ interface ValueSuggestion {
   valueId: string | null;
   reason: string;
   evidence: string[];
+  fromSeller?: boolean;
 }
 
 interface PictureSuggestion {
@@ -127,7 +128,9 @@ export function collectProposalCandidates(listing: ListingForProposal, analysis:
       : ruleDescription ? { value: ruleDescription, source: 'rule' } : null,
     attributes: analysis.suggestions.attributes.filter((item) => differsFromCurrent(listing.attributes, item)),
     saleTerms: analysis.suggestions.saleTerms.filter((item) => differsFromCurrent(listing.saleTerms, item)),
-    picturePlan: analysis.suggestions.picturePlan.filter((item) => ['reorder', 'remove', 'replace', 'create'].includes(item.action)),
+    // create/replace sem URL não são publicáveis: fotos novas entram pela
+    // geração (addPictureChange), já com a URL no Storage.
+    picturePlan: analysis.suggestions.picturePlan.filter((item) => ['reorder', 'remove'].includes(item.action)),
   };
 }
 

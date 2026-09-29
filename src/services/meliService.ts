@@ -34,6 +34,8 @@ export interface MeliListing {
   catalogQuality: any | null;
   userProductId: string | null;
   catalogProductId: string | null;
+  videoId?: string | null;
+  visits30d?: number | null;
   lastSyncedAt: string;
   analysisInProgress?: string | null;
   analysisSummary?: {
@@ -44,6 +46,7 @@ export interface MeliListing {
     findingCount: number;
     completedAt: string;
     contentHash: string;
+    missingChecklist?: MeliChecklistId[];
   };
   proposalSummary?: {
     proposalId: string;
@@ -68,6 +71,43 @@ export interface MeliAnalysisFinding {
   requiresConfirmation: boolean;
 }
 
+export type MeliChecklistId = 'attributes' | 'title' | 'description' | 'main_picture' | 'lifestyle_picture' | 'detail_picture' | 'picture_quality' | 'video';
+
+export interface MeliChecklistItem {
+  id: MeliChecklistId;
+  label: string;
+  status: 'ok' | 'warning' | 'missing';
+  detail: string;
+}
+
+export interface MeliMediaSummary {
+  pictureCount: number;
+  mainWhiteBackground: boolean | null;
+  lifestyleCount: number;
+  detailCount: number;
+  dimensionsCount: number;
+  zoomReadyCount: number;
+  hasVideo: boolean;
+  videoId: string | null;
+}
+
+export type MeliPictureRole = 'main_white_background' | 'lifestyle' | 'detail' | 'dimensions' | 'packaging' | 'infographic' | 'other';
+
+export interface MeliQuestion {
+  fieldPath: string;
+  question: string;
+  reason: string;
+  label?: string;
+  options?: Array<{ id: string; name: string }>;
+  units?: string[];
+}
+
+export interface MeliFacts {
+  itemId: string;
+  answers: Record<string, { value: string; valueId?: string | null; answeredAt: string }>;
+  updatedAt: string;
+}
+
 export interface MeliAnalysis {
   id: string;
   listingId: string;
@@ -84,13 +124,13 @@ export interface MeliAnalysis {
   riskLevel: MeliRiskLevel;
   summary: string;
   findings: MeliAnalysisFinding[];
-  questions: Array<{ fieldPath: string; question: string; reason: string }>;
+  questions: MeliQuestion[];
   suggestions: {
     title: string | null;
     descriptionPlainText: string | null;
     discardedDescription?: { value: string; reason: string } | null;
-    attributes: Array<{ id: string; valueName: string; valueId: string | null; reason: string; evidence: string[] }>;
-    saleTerms: Array<{ id: string; valueName: string; valueId: string | null; reason: string; evidence: string[] }>;
+    attributes: Array<{ id: string; valueName: string; valueId: string | null; reason: string; evidence: string[]; fromSeller?: boolean }>;
+    saleTerms: Array<{ id: string; valueName: string; valueId: string | null; reason: string; evidence: string[]; fromSeller?: boolean }>;
     picturePlan: Array<{ pictureId: string | null; action: string; targetOrder?: number | null; reason: string }>;
   };
   imageDiagnostics: Array<{
@@ -103,7 +143,16 @@ export interface MeliAnalysis {
     issues: string[];
     strengths: string[];
     confidence: number;
+    role?: MeliPictureRole | null;
+    whiteBackground?: boolean | null;
+    hasTextOrWatermark?: boolean | null;
   }>;
+  media?: MeliMediaSummary | null;
+  checklist?: MeliChecklistItem[];
+  buyerQuestions?: Array<{ text: string; answer: string | null; date: string | null }>;
+  factsHash?: string | null;
+  autoProposalId?: string | null;
+  proposalPending?: boolean;
   aiStatus: 'pending' | 'completed' | 'failed' | 'not_configured';
   aiError: string | null;
   status: 'queued' | 'running' | 'completed' | 'failed' | 'stale';
@@ -148,6 +197,7 @@ export interface MeliProposalChange {
   fieldPath: string;
   resource: 'item' | 'description';
   changeType: 'add' | 'replace' | 'remove' | 'reorder';
+  label?: string;
   oldValue: unknown;
   newValue: unknown;
   reason: string;
@@ -306,10 +356,12 @@ export async function getActiveMeliJob(): Promise<MeliSyncJob | null> {
 }
 
 export async function listMeliListings(
-  filters: { status?: string; search?: string; page?: number; pageSize?: number } = {},
+  filters: { status?: string; search?: string; page?: number; pageSize?: number; sort?: 'recent' | 'opportunity'; ready?: boolean } = {},
 ): Promise<MeliListingPage> {
   const params = new URLSearchParams();
   if (filters.status) params.set('status', filters.status);
+  if (filters.sort) params.set('sort', filters.sort);
+  if (filters.ready) params.set('ready', 'true');
   if (filters.search) params.set('search', filters.search);
   params.set('page', String(filters.page || 1));
   params.set('pageSize', String(filters.pageSize || 25));
@@ -403,4 +455,68 @@ export async function createMeliRollbackProposal(proposalId: string): Promise<Me
 export async function getMeliOperationalMetrics(): Promise<MeliOperationalMetrics> {
   const response = await fetch('/api/meli/operations/metrics', { headers: await headers() });
   return (await handle<{ metrics: MeliOperationalMetrics }>(response)).metrics;
+}
+
+export async function getMeliFacts(itemId: string): Promise<MeliFacts> {
+  const response = await fetch(`/api/meli/listings/${encodeURIComponent(itemId)}/facts`, { headers: await headers() });
+  return (await handle<{ facts: MeliFacts }>(response)).facts;
+}
+
+export async function saveMeliFacts(itemId: string, answers: Record<string, { value: string; valueId?: string | null }>): Promise<MeliFacts> {
+  const response = await fetch(`/api/meli/listings/${encodeURIComponent(itemId)}/facts`, {
+    method: 'PUT', headers: await headers(), body: JSON.stringify({ answers }),
+  });
+  return (await handle<{ facts: MeliFacts }>(response)).facts;
+}
+
+export type MeliGeneratedPictureKind = 'lifestyle' | 'white_background';
+
+export interface MeliGeneratedPicture {
+  id: string;
+  itemId: string;
+  kind: MeliGeneratedPictureKind;
+  url: string;
+  createdAt: string;
+}
+
+export async function generateMeliPicture(
+  itemId: string,
+  options: { kind: MeliGeneratedPictureKind; sourcePictureId?: string | null; instructions?: string | null },
+): Promise<MeliProposalResult & { picture: MeliGeneratedPicture }> {
+  const response = await fetch(`/api/meli/listings/${encodeURIComponent(itemId)}/pictures/generate`, {
+    method: 'POST', headers: await headers(), body: JSON.stringify(options),
+  });
+  return handle(response);
+}
+
+// Aprova os marcados, rejeita o resto e publica, numa chamada só.
+export async function publishMeliProposal(proposalId: string, changeIds: string[]): Promise<MeliProposalResult & { mutationRun: MeliMutationRun }> {
+  const idempotencyKey = globalThis.crypto?.randomUUID?.() || `${proposalId}-${Date.now()}`;
+  const response = await fetch(`/api/meli/proposals/${encodeURIComponent(proposalId)}/publish`, {
+    method: 'POST', headers: await headers(), body: JSON.stringify({ changeIds, idempotencyKey }),
+  });
+  return handle(response);
+}
+
+export interface MeliListingMedia {
+  itemId: string;
+  productReference: { imageUrl: string; sourceImages: string[]; caracteristicas?: string; ajustes?: string[]; createdAt: string } | null;
+  videoUrl: string | null;
+  videoJobId: string | null;
+  updatedAt: string;
+}
+
+export async function getMeliListingMedia(itemId: string): Promise<MeliListingMedia> {
+  const response = await fetch(`/api/meli/listings/${encodeURIComponent(itemId)}/media`, { headers: await headers() });
+  return (await handle<{ media: MeliListingMedia }>(response)).media;
+}
+
+export async function saveMeliListingMedia(
+  itemId: string,
+  patch: Partial<Pick<MeliListingMedia, 'productReference' | 'videoUrl' | 'videoJobId'>>,
+): Promise<MeliListingMedia> {
+  const response = await fetch(`/api/meli/listings/${encodeURIComponent(itemId)}/media`, {
+    method: 'PUT', headers: await headers(), body: JSON.stringify(patch),
+  });
+  return (await handle<{ media: MeliListingMedia }>(response)).media;
 }

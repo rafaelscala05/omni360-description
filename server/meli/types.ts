@@ -65,6 +65,11 @@ export interface MeliListingRecord {
   variations: unknown[];
   pictures: unknown[];
   shipping: unknown;
+  // `video_id` do item (vídeo do YouTube vinculado ao anúncio), ou null.
+  videoId?: string | null;
+  // Visitas dos últimos 30 dias. Fica fora do contentHash: muda todo dia e não
+  // é conteúdo do anúncio. Alimenta a ordenação por oportunidade.
+  visits30d?: number | null;
   performance: unknown | null;
   catalogQuality: unknown | null;
   userProduct?: unknown | null;
@@ -84,6 +89,7 @@ export interface MeliListingRecord {
     findingCount: number;
     completedAt: string;
     contentHash: string;
+    missingChecklist?: MeliChecklistId[];
   };
   // ID da análise enfileirada/rodando para este anúncio; a lista usa para o
   // selo "Em análise". Limpo quando a análise conclui, falha ou fica stale.
@@ -152,6 +158,58 @@ export interface MeliAnalysisQuestion {
   fieldPath: string;
   question: string;
   reason: string;
+  // Preenchidos a partir do schema da categoria para a tela montar o campo
+  // certo (lista de opções ou número + unidade) em vez de texto livre.
+  label?: string;
+  options?: Array<{ id: string; name: string }>;
+  units?: string[];
+}
+
+// Fatos que o próprio vendedor informou respondendo às perguntas da análise.
+// São a fonte que libera a IA a usar marca, medidas, material etc. sem
+// inventar: entram como evidência no validador e na geração de texto.
+export interface MeliListingFacts {
+  itemId: string;
+  answers: Record<string, { value: string; valueId?: string | null; answeredAt: string }>;
+  updatedAt: string;
+}
+
+export type MeliPictureRole = 'main_white_background' | 'lifestyle' | 'detail' | 'dimensions' | 'packaging' | 'infographic' | 'other';
+
+export interface MeliMediaSummary {
+  pictureCount: number;
+  mainWhiteBackground: boolean | null;
+  lifestyleCount: number;
+  detailCount: number;
+  dimensionsCount: number;
+  zoomReadyCount: number;
+  hasVideo: boolean;
+  videoId: string | null;
+}
+
+export type MeliChecklistId = 'attributes' | 'title' | 'description' | 'main_picture' | 'lifestyle_picture' | 'detail_picture' | 'picture_quality' | 'video';
+
+export interface MeliChecklistItem {
+  id: MeliChecklistId;
+  label: string;
+  status: 'ok' | 'warning' | 'missing';
+  detail: string;
+}
+
+export interface MeliBuyerQuestion {
+  text: string;
+  answer: string | null;
+  date: string | null;
+}
+
+export interface MeliValueSuggestion {
+  id: string;
+  valueName: string;
+  valueId: string | null;
+  reason: string;
+  evidence: string[];
+  // true quando veio de uma resposta do vendedor, não da IA.
+  fromSeller?: boolean;
 }
 
 export interface MeliScoreComponents {
@@ -173,6 +231,9 @@ export interface MeliImageDiagnostic {
   issues: string[];
   strengths: string[];
   confidence: number;
+  role?: MeliPictureRole | null;
+  whiteBackground?: boolean | null;
+  hasTextOrWatermark?: boolean | null;
 }
 
 export interface MeliAnalysisRecord {
@@ -195,11 +256,23 @@ export interface MeliAnalysisRecord {
     title: string | null;
     descriptionPlainText: string | null;
     discardedDescription?: { value: string; reason: string } | null;
-    attributes: Array<{ id: string; valueName: string; valueId: string | null; reason: string; evidence: string[] }>;
-    saleTerms: Array<{ id: string; valueName: string; valueId: string | null; reason: string; evidence: string[] }>;
+    attributes: MeliValueSuggestion[];
+    saleTerms: MeliValueSuggestion[];
     picturePlan: Array<{ pictureId: string | null; action: MeliImageDiagnostic['action']; targetOrder?: number | null; reason: string }>;
   };
   imageDiagnostics: MeliImageDiagnostic[];
+  media?: MeliMediaSummary | null;
+  checklist?: MeliChecklistItem[];
+  buyerQuestions?: MeliBuyerQuestion[];
+  // Hash dos fatos usados nesta análise: se o vendedor responder mais
+  // perguntas depois, a tela sabe que vale gerar de novo.
+  factsHash?: string | null;
+  // Fatos do vendedor (respostas + respostas a compradores) em texto, usados
+  // como fonte extra quando a proposta revalida título/descrição.
+  sellerSourceText?: string | null;
+  // Resultado da proposta criada automaticamente ao fim da análise.
+  autoProposalId?: string | null;
+  proposalPending?: boolean;
   aiStatus: 'pending' | 'completed' | 'failed' | 'not_configured';
   aiError: string | null;
   status: 'queued' | 'running' | 'completed' | 'failed' | 'stale';
@@ -239,6 +312,8 @@ export interface MeliListingChange {
   fieldPath: string;
   resource: 'item' | 'description';
   changeType: 'add' | 'replace' | 'remove' | 'reorder';
+  // Nome legível do campo ("Marca", "Descrição"), para a tela não mostrar o fieldPath.
+  label?: string;
   oldValue: unknown;
   newValue: unknown;
   reason: string;

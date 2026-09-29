@@ -112,11 +112,13 @@ async function persistListing(
   item: Record<string, any>,
 ): Promise<void> {
   const itemId = String(item.id);
-  const [description, performance, catalogQuality] = await Promise.all([
+  const [description, performance, catalogQuality, visits] = await Promise.all([
     bestEffort(() => client.get<any>(`/items/${encodeURIComponent(itemId)}/description`, { allowNotFound: true })),
     bestEffort(() => client.get(`/item/${encodeURIComponent(itemId)}/performance`, { allowNotFound: true })),
     bestEffort(() => client.get(`/catalog_quality/status?item_id=${encodeURIComponent(itemId)}&v=3`, { allowNotFound: true })),
+    bestEffort(() => client.get<any>(`/items/${encodeURIComponent(itemId)}/visits/time_window?last=30&unit=day`, { allowNotFound: true })),
   ]);
+  const visitsTotal = Number(visits?.total_visits);
   const userProductId = item.user_product_id ? String(item.user_product_id) : null;
   const userProductScope = await fetchUserProductScope(uid, client, connectionData, userProductId);
   const now = new Date().toISOString();
@@ -159,6 +161,8 @@ async function persistListing(
     variations: Array.isArray(item.variations) ? item.variations : [],
     pictures: Array.isArray(item.pictures) ? item.pictures : [],
     shipping: item.shipping ?? null,
+    videoId: item.video_id ? String(item.video_id) : null,
+    visits30d: Number.isFinite(visitsTotal) ? visitsTotal : previousData?.visits30d ?? null,
     performance,
     catalogQuality,
     userProduct: userProductScope.userProduct,

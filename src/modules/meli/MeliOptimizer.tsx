@@ -1,19 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  AlertCircle, Check, ChevronLeft, ChevronRight, ExternalLink, Image as ImageIcon, Loader2,
-  MessageCircleQuestion, Pencil, RefreshCw, Search, ShieldCheck, Sparkles, Store,
-  TriangleAlert, Unplug, WandSparkles, X,
+  AlertCircle, Check, ChevronLeft, ChevronRight, Eye, Loader2, RefreshCw, Search, ShieldCheck, Sparkles, Store,
+  Unplug, WandSparkles, X,
 } from 'lucide-react';
 import {
-  applyMeliProposal, connectMeli, createMeliProposal, createMeliRollbackProposal, decideMeliProposalChange, disconnectMeli,
-  editMeliProposalChange, getActiveMeliJob, getLatestMeliAnalysis, getLatestMeliProposal, getMeliJob, getMeliMutationRun, getMeliOperationalMetrics, listMeliListings,
-  MAX_BULK_ANALYSES, meliConnection, startMeliAnalysis, startMeliBulkAnalysis, startMeliSync, type MeliAnalysis,
-  type MeliAnalysisFinding, type MeliConnection, type MeliListing,
-  type MeliListingStatus, type MeliMutationRun, type MeliOperationalMetrics, type MeliProposalChange, type MeliProposalResult,
-  type MeliRiskLevel, type MeliSyncJob,
+  connectMeli, disconnectMeli, getActiveMeliJob, getMeliJob, getMeliOperationalMetrics, listMeliListings,
+  MAX_BULK_ANALYSES, meliConnection, startMeliBulkAnalysis, startMeliSync,
+  type MeliChecklistId, type MeliConnection, type MeliListing, type MeliListingStatus, type MeliOperationalMetrics, type MeliSyncJob,
 } from '../../services/meliService';
-import ProposalReview from './ProposalReview';
-import { countProposalCandidates } from './proposalCandidates';
+import ListingPanel from './ListingPanel';
+import type { MeliCreditHelpers } from './MeliVideoStudio';
 
 const STATUS_LABEL: Record<string, string> = { active: 'Ativo', paused: 'Pausado', closed: 'Encerrado' };
 const terminalJobs = new Set(['succeeded', 'partial', 'failed', 'cancelled']);
@@ -24,122 +20,68 @@ const LISTINGS_REFRESH_DURING_SYNC_MS = 10_000;
 // Enquanto algum anúncio da página estiver "Em análise", a lista é relida
 // nesta cadência para o selo virar a nota quando a análise terminar.
 const LISTINGS_REFRESH_DURING_ANALYSIS_MS = 5_000;
-const terminalAnalyses = new Set(['completed', 'failed', 'stale']);
-const SEVERITY_ORDER = { blocked: 5, high: 4, medium: 3, low: 2, info: 1 } as const;
-const SEVERITY_LABEL = { blocked: 'Bloqueador', high: 'Alta', medium: 'Média', low: 'Baixa', info: 'Informação' } as const;
-const ACTION_LABEL: Record<string, string> = { keep: 'Manter', reorder: 'Reordenar', remove: 'Remover', replace: 'Substituir', create: 'Criar', needs_review: 'Revisar' };
+const MISSING_BADGE: Partial<Record<MeliChecklistId, string>> = {
+  lifestyle_picture: 'Sem foto ambientada',
+  video: 'Sem vídeo',
+  main_picture: 'Capa sem fundo branco',
+  attributes: 'Ficha incompleta',
+  description: 'Descrição fraca',
+};
+const READY_STATUSES = new Set(['awaiting_review', 'partially_approved', 'approved', 'failed']);
 
-function qualityMissing(listing: MeliListing): string[] {
-  const adoption = listing.catalogQuality?.adoption_status;
-  const groups = adoption && typeof adoption === 'object' ? Object.values(adoption) as any[] : [];
-  return [...new Set(groups.flatMap((group) => Array.isArray(group?.missing_attributes) ? group.missing_attributes : []))];
-}
-
-function Score({ value, label, compact = false }: { value?: number | null; label: string; compact?: boolean }) {
+function Score({ value, label }: { value?: number | null; label: string }) {
   const score = typeof value === 'number' ? Math.round(value) : null;
   const color = score == null ? 'text-slate-400' : score >= 80 ? 'text-emerald-600' : score >= 60 ? 'text-amber-600' : 'text-red-600';
-  return <div className={compact ? 'text-center shrink-0 p-2' : 'text-right shrink-0'}>
-    <div className={`${compact ? 'text-lg' : 'text-2xl'} font-black leading-none ${color}`}>{score ?? '—'}</div>
+  return <div className="text-right shrink-0">
+    <div className={`text-2xl font-black leading-none ${color}`}>{score ?? '—'}</div>
     <div className="text-[10px] text-slate-400 mt-1 whitespace-nowrap">{label}</div>
   </div>;
 }
 
-function RiskBadge({ risk }: { risk: MeliRiskLevel }) {
-  const style = risk === 'blocked' || risk === 'high' ? 'bg-red-50 text-red-700 border-red-200'
-    : risk === 'medium' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200';
-  const label = { low: 'Risco baixo', medium: 'Risco médio', high: 'Risco alto', blocked: 'Bloqueado' }[risk];
-  return <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full border ${style}`}>{label}</span>;
-}
-
-function Finding({ finding }: { finding: MeliAnalysisFinding }) {
-  const style = finding.severity === 'blocked' || finding.severity === 'high' ? 'border-red-200 bg-red-50/60'
-    : finding.severity === 'medium' ? 'border-amber-200 bg-amber-50/60' : 'border-slate-200 bg-slate-50';
-  return <div className={`border rounded-xl p-3 ${style}`}>
-    <div className="flex items-start justify-between gap-3">
-      <div><div className="flex items-center gap-2 flex-wrap">
-        <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">{SEVERITY_LABEL[finding.severity]}</span>
-        <span className="text-[10px] text-slate-400 font-mono">{finding.fieldPath}</span>
-        {finding.requiresConfirmation && <span className="text-[10px] font-bold text-red-700">Confirmação factual</span>}
-      </div><p className="text-sm font-semibold text-slate-800 mt-1">{finding.message}</p>
-      {finding.evidence.length > 0 && <p className="text-xs text-slate-500 mt-1.5">Evidência: {finding.evidence.join(' · ')}</p>}</div>
-      <span className="text-[10px] text-slate-400 shrink-0">{Math.round(finding.confidence * 100)}%</span>
-    </div>
-  </div>;
-}
-
-function AnalysisResult({ analysis }: { analysis: MeliAnalysis }) {
-  const findings = [...analysis.findings].sort((a, b) => SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity]);
-  const hasSuggestions = Boolean(analysis.suggestions.title || analysis.suggestions.descriptionPlainText
-    || analysis.suggestions.attributes.length || analysis.suggestions.saleTerms.length || analysis.suggestions.picturePlan.length);
-  return <div className="space-y-5">
-    <div className="border border-blue-200 bg-blue-50/60 rounded-xl p-4">
-      <div className="flex items-start justify-between gap-3"><p className="text-sm text-slate-700">{analysis.summary}</p><RiskBadge risk={analysis.riskLevel} /></div>
-      {analysis.aiStatus === 'failed' && <p className="text-xs text-amber-700 mt-2">A camada de IA não respondeu; os achados determinísticos continuam válidos. {analysis.aiError}</p>}
-    </div>
-    {analysis.scoreComponents && <div><h3 className="text-sm font-bold text-slate-900 mb-2">Composição do score Alfreds</h3>
-      <div className="grid grid-cols-5 border border-slate-200 rounded-xl divide-x overflow-hidden">
-        <Score compact value={analysis.scoreComponents.technicalCompleteness} label="Técnica · 35%" />
-        <Score compact value={analysis.scoreComponents.consistency} label="Consist. · 20%" />
-        <Score compact value={analysis.scoreComponents.title} label="Título · 15%" />
-        <Score compact value={analysis.scoreComponents.description} label="Descrição · 15%" />
-        <Score compact value={analysis.scoreComponents.images} label="Imagens · 15%" />
-      </div></div>}
-    <div><div className="flex items-center justify-between mb-2"><h3 className="text-sm font-bold text-slate-900">Achados da auditoria</h3><span className="text-xs text-slate-400">{findings.length}</span></div>
-      <div className="space-y-2">{findings.length ? findings.map((finding, index) => <Finding key={`${finding.code}-${finding.fieldPath}-${index}`} finding={finding} />) : <p className="text-sm text-slate-500">Nenhum problema foi detectado.</p>}</div></div>
-    {analysis.questions.length > 0 && <div><h3 className="text-sm font-bold text-slate-900 mb-2 flex items-center gap-2"><MessageCircleQuestion className="w-4 h-4 text-violet-600" /> Informações que precisam de você</h3>
-      <div className="space-y-2">{analysis.questions.map((question, index) => <div key={`${question.fieldPath}-${index}`} className="border border-violet-200 bg-violet-50/60 rounded-xl p-3"><p className="text-sm font-semibold text-slate-800">{question.question}</p><p className="text-xs text-slate-500 mt-1">{question.reason}</p></div>)}</div></div>}
-    {hasSuggestions && <div><div className="flex items-center gap-2 mb-2"><WandSparkles className="w-4 h-4 text-blue-600" /><h3 className="text-sm font-bold text-slate-900">Sugestões candidatas</h3><span className="text-[10px] text-blue-700 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5">somente auditoria</span></div>
-      <p className="text-xs text-slate-500 mb-3">Ainda não são propostas aprováveis e nunca são publicadas por esta tela.</p><div className="space-y-3">
-        {analysis.suggestions.title && <div className="border rounded-xl p-3"><p className="text-[10px] font-bold uppercase text-slate-400">Título sugerido</p><p className="text-sm text-slate-800 mt-1">{analysis.suggestions.title}</p></div>}
-        {analysis.suggestions.descriptionPlainText && <div className="border rounded-xl p-3"><p className="text-[10px] font-bold uppercase text-slate-400">Descrição sugerida</p><p className="text-sm text-slate-700 mt-1 whitespace-pre-wrap max-h-64 overflow-y-auto">{analysis.suggestions.descriptionPlainText}</p></div>}
-        {(analysis.suggestions.attributes.length > 0 || analysis.suggestions.saleTerms.length > 0) && <div className="border rounded-xl divide-y">{[...analysis.suggestions.attributes, ...analysis.suggestions.saleTerms].map((item) => <div key={`${item.id}-${item.valueName}`} className="p-3"><div className="flex justify-between gap-3 text-sm"><span className="font-semibold text-slate-700">{item.id}</span><span className="text-slate-900 text-right">{item.valueName}</span></div><p className="text-xs text-slate-500 mt-1">{item.reason}</p></div>)}</div>}
-      </div></div>}
-    {analysis.imageDiagnostics.length > 0 && <div><h3 className="text-sm font-bold text-slate-900 mb-2 flex items-center gap-2"><ImageIcon className="w-4 h-4 text-blue-600" /> Diagnóstico visual</h3>
-      <div className="grid grid-cols-2 gap-3">{analysis.imageDiagnostics.map((image) => <div key={`${image.pictureId}-${image.order}`} className="border border-slate-200 rounded-xl overflow-hidden"><div className="aspect-square bg-slate-100">{image.url && <img src={image.url} alt="" className="w-full h-full object-contain" />}</div><div className="p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-bold text-slate-700">#{image.order + 1} · {ACTION_LABEL[image.action] || image.action}</span><span className="text-[10px] text-slate-400">{image.width && image.height ? `${image.width}×${image.height}` : 'sem dimensões'}</span></div>{image.issues.map((issue) => <p key={issue} className="text-[11px] text-red-700 mt-1">• {issue}</p>)}{image.strengths.map((strength) => <p key={strength} className="text-[11px] text-emerald-700 mt-1">• {strength}</p>)}</div></div>)}</div></div>}
-  </div>;
-}
-
-export default function MeliOptimizer() {
+export default function MeliOptimizer({ credits }: { credits: MeliCreditHelpers }) {
   const [connection, setConnection] = useState<MeliConnection | null>(null);
   const [listings, setListings] = useState<MeliListing[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [job, setJob] = useState<MeliSyncJob | null>(null);
-  const [filter, setFilter] = useState<'' | MeliListingStatus>('');
+  const [filter, setFilter] = useState<'' | MeliListingStatus | 'ready'>('');
+  const [sort, setSort] = useState<'recent' | 'opportunity'>('opportunity');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
   const [pageInfo, setPageInfo] = useState<{ total: number; totalPages: number; counts: Record<string, number> }>({ total: 0, totalPages: 1, counts: {} });
   const [selected, setSelected] = useState<MeliListing | null>(null);
-  const [analysis, setAnalysis] = useState<MeliAnalysis | null>(null);
-  const [analysisLoading, setAnalysisLoading] = useState(false);
-  const [proposalResult, setProposalResult] = useState<MeliProposalResult | null>(null);
-  const [mutationRun, setMutationRun] = useState<MeliMutationRun | null>(null);
-  const [proposalBusy, setProposalBusy] = useState(false);
   const [metrics, setMetrics] = useState<MeliOperationalMetrics | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Seleção para análise em massa; sobrevive à troca de página e de filtro.
+  // Seleção para otimização em massa; sobrevive à troca de página e de filtro.
   const [checkedIds, setCheckedIds] = useState<Set<string>>(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkNotice, setBulkNotice] = useState<string | null>(null);
 
   // Os intervalos de polling guardam o `load` da renderização em que nasceram;
   // o ref garante que toda recarga use o filtro/busca/página atuais.
-  const queryRef = useRef({ filter, search: debouncedSearch, page });
-  queryRef.current = { filter, search: debouncedSearch, page };
+  const queryRef = useRef({ filter, sort, search: debouncedSearch, page });
+  queryRef.current = { filter, sort, search: debouncedSearch, page };
   const lastListingsRefreshRef = useRef(0);
 
   const listingsRequestRef = useRef(0);
   const loadListings = async () => {
     const query = queryRef.current;
     const requestId = ++listingsRequestRef.current;
-    const result = await listMeliListings({ status: query.filter || undefined, search: query.search || undefined, page: query.page, pageSize: PAGE_SIZE });
+    const result = await listMeliListings({
+      status: query.filter && query.filter !== 'ready' ? query.filter : undefined,
+      ready: query.filter === 'ready',
+      sort: query.sort,
+      search: query.search || undefined, page: query.page, pageSize: PAGE_SIZE,
+    });
     // Trocar filtro e página em sequência dispara duas cargas; só a última vale.
     if (requestId !== listingsRequestRef.current) return;
     lastListingsRefreshRef.current = Date.now();
     setListings(result.listings);
     setPageInfo({ total: result.total, totalPages: result.totalPages, counts: result.counts });
     if (result.page !== query.page) setPage(result.page);
+    // O painel aberto mostra a versão mais nova do anúncio (visitas, vídeo, fotos).
+    setSelected((current) => current ? result.listings.find((listing) => listing.itemId === current.itemId) || current : current);
   };
 
   const load = async () => {
@@ -170,13 +112,13 @@ export default function MeliOptimizer() {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => window.clearTimeout(timer);
   }, [search]);
-  useEffect(() => { setPage(1); }, [filter, debouncedSearch]);
+  useEffect(() => { setPage(1); }, [filter, sort, debouncedSearch]);
   const firstQuery = useRef(true);
   useEffect(() => {
     if (firstQuery.current) { firstQuery.current = false; return; }
     if (!connection?.connected) return;
     loadListings().catch((reason) => setError(reason instanceof Error ? reason.message : 'Falha ao carregar anúncios.'));
-  }, [filter, debouncedSearch, page]);
+  }, [filter, sort, debouncedSearch, page]);
   useEffect(() => {
     if (!job || terminalJobs.has(job.status)) return;
     const timer = window.setInterval(async () => {
@@ -196,54 +138,8 @@ export default function MeliOptimizer() {
     const timer = window.setInterval(() => { loadListings().catch(() => undefined); }, LISTINGS_REFRESH_DURING_ANALYSIS_MS);
     return () => window.clearInterval(timer);
   }, [hasPendingAnalyses]);
-  useEffect(() => {
-    setAnalysis(null);
-    setProposalResult(null);
-    setMutationRun(null);
-    if (!selected) return;
-    let cancelled = false;
-    setAnalysisLoading(true);
-    getLatestMeliAnalysis(selected.itemId).then((result) => { if (!cancelled) setAnalysis(result); })
-      .catch((reason) => { if (!cancelled) setError(reason instanceof Error ? reason.message : 'Falha ao carregar análise.'); })
-      .finally(() => { if (!cancelled) setAnalysisLoading(false); });
-    getLatestMeliProposal(selected.itemId).then(async (result) => {
-      if (cancelled) return;
-      setProposalResult(result);
-      if (result?.proposal.lastMutationRunId) {
-        const run = await getMeliMutationRun(result.proposal.lastMutationRunId).catch(() => null);
-        if (!cancelled) setMutationRun(run);
-      }
-    })
-      .catch((reason) => { if (!cancelled) setError(reason instanceof Error ? reason.message : 'Falha ao carregar proposta.'); });
-    return () => { cancelled = true; };
-  }, [selected?.itemId]);
-  useEffect(() => {
-    if (!mutationRun || !['queued', 'running', 'verifying'].includes(mutationRun.status)) return;
-    const timer = window.setInterval(async () => {
-      const next = await getMeliMutationRun(mutationRun.id).catch(() => null);
-      if (!next) return;
-      setMutationRun(next);
-      if (!['queued', 'running', 'verifying'].includes(next.status) && selected) {
-        const proposal = await getLatestMeliProposal(selected.itemId).catch(() => null);
-        if (proposal) setProposalResult(proposal);
-        await load().catch(() => undefined);
-      }
-    }, 1500);
-    return () => window.clearInterval(timer);
-  }, [mutationRun?.id, mutationRun?.status, selected?.itemId]);
-  useEffect(() => {
-    if (!selected || !analysis || terminalAnalyses.has(analysis.status)) return;
-    const timer = window.setInterval(async () => {
-      const next = await getLatestMeliAnalysis(selected.itemId).catch(() => null);
-      if (!next || next.id !== analysis.id) return;
-      setAnalysis(next);
-      if (terminalAnalyses.has(next.status)) await load().catch(() => undefined);
-    }, 1600);
-    return () => window.clearInterval(timer);
-  }, [selected?.itemId, analysis?.id, analysis?.status]);
 
-  const visible = listings;
-  const pageIds = visible.map((listing) => listing.itemId);
+  const pageIds = listings.map((listing) => listing.itemId);
   const allPageChecked = pageIds.length > 0 && pageIds.every((id) => checkedIds.has(id));
   const toggleChecked = (itemId: string) => setCheckedIds((current) => {
     const next = new Set(current);
@@ -265,111 +161,65 @@ export default function MeliOptimizer() {
       const inProgress = result.skipped.filter((item) => item.reason === 'in_progress').length;
       const notFound = result.skipped.filter((item) => item.reason === 'not_found').length;
       setBulkNotice([
-        `${result.queued.length} anúncio(s) enviados para análise.`,
-        inProgress ? `${inProgress} já estavam em análise.` : '',
+        `${result.queued.length} anúncio(s) enviados para otimização.`,
+        inProgress ? `${inProgress} já estavam em andamento.` : '',
         notFound ? `${notFound} não encontrados — sincronize de novo.` : '',
       ].filter(Boolean).join(' '));
       setCheckedIds(new Set());
       await loadListings();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Falha ao enviar para análise.');
+      setError(reason instanceof Error ? reason.message : 'Falha ao enviar para otimização.');
     } finally {
       setBulkBusy(false);
     }
   };
-  const proposalCandidateCount = selected && analysis?.status === 'completed'
-    ? countProposalCandidates(selected, analysis)
-    : 0;
 
   const connect = async () => { setBusy(true); setError(null); try { const result = await connectMeli(); if (!result.ok) throw new Error(result.message || 'A autorização não foi concluída.'); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao conectar.'); } finally { setBusy(false); } };
   const disconnect = async () => { setBusy(true); setError(null); try { await disconnectMeli(); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao desconectar.'); } finally { setBusy(false); } };
-  const sync = async () => { setBusy(true); setError(null); try { setJob(await startMeliSync(filter ? [filter] : ['active', 'paused', 'closed'])); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao iniciar sincronização.'); } finally { setBusy(false); } };
-  const analyze = async () => { if (!selected) return; setAnalysisLoading(true); setError(null); setProposalResult(null); try { setAnalysis(await startMeliAnalysis(selected.itemId)); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao iniciar auditoria.'); } finally { setAnalysisLoading(false); } };
-  const createProposal = async (manual = false) => {
-    if (!selected || !analysis) return;
-    setProposalBusy(true); setError(null);
-    try { setProposalResult(await createMeliProposal(selected.itemId, analysis.id, manual)); await load(); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao criar proposta.'); }
-    finally { setProposalBusy(false); }
-  };
-  const decideChange = async (change: MeliProposalChange, approvalStatus: 'approved' | 'rejected') => {
-    if (!proposalResult) return;
-    let confirmed = false;
-    if (approvalStatus === 'approved' && change.requiresConfirmation) {
-      confirmed = window.confirm(`Confirme explicitamente o valor proposto para ${change.fieldPath}. Você verificou este dado em uma fonte confiável?`);
-      if (!confirmed) return;
-    }
-    setProposalBusy(true); setError(null);
-    try { setProposalResult(await decideMeliProposalChange(proposalResult.proposal.id, change.id, approvalStatus, confirmed)); await load(); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao registrar decisão.'); }
-    finally { setProposalBusy(false); }
-  };
-  const approveLowRisk = async () => {
-    if (!proposalResult) return;
-    setProposalBusy(true); setError(null);
-    try {
-      let next = proposalResult;
-      for (const change of proposalResult.changes.filter((item) => item.riskLevel === 'low' && item.approvalStatus === 'pending')) {
-        next = await decideMeliProposalChange(next.proposal.id, change.id, 'approved', false);
-      }
-      setProposalResult(next); await load();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha na aprovação em lote.'); }
-    finally { setProposalBusy(false); }
-  };
-  const editChange = async (change: MeliProposalChange, value: unknown) => {
-    if (!proposalResult) return;
-    setProposalBusy(true); setError(null);
-    try { setProposalResult(await editMeliProposalChange(proposalResult.proposal.id, change.id, value)); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao editar a mudança.'); }
-    finally { setProposalBusy(false); }
-  };
-  const applyProposal = async () => {
-    if (!proposalResult) return;
-    const confirmed = window.confirm('As mudanças aprovadas serão publicadas no Mercado Livre. Deseja continuar?');
-    if (!confirmed) return;
-    setProposalBusy(true); setError(null);
-    try {
-      const run = await applyMeliProposal(proposalResult.proposal.id);
-      setMutationRun(run);
-      setProposalResult({ ...proposalResult, proposal: { ...proposalResult.proposal, status: 'applying', lastMutationRunId: run.id } });
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao iniciar a publicação.'); }
-    finally { setProposalBusy(false); }
-  };
-  const createRollback = async () => {
-    if (!proposalResult) return;
-    setProposalBusy(true); setError(null);
-    try { setProposalResult(await createMeliRollbackProposal(proposalResult.proposal.id)); setMutationRun(null); await load(); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao criar proposta de reversão.'); }
-    finally { setProposalBusy(false); }
-  };
+  const sync = async () => { setBusy(true); setError(null); try { setJob(await startMeliSync(filter && filter !== 'ready' ? [filter] : ['active', 'paused', 'closed'])); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao iniciar sincronização.'); } finally { setBusy(false); } };
 
   if (loading) return <div className="h-full flex items-center justify-center text-slate-500"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Abrindo Agente MELI…</div>;
+  const filters: Array<{ value: '' | MeliListingStatus | 'ready'; label: string; count: number }> = [
+    { value: '', label: 'Todos', count: pageInfo.counts.all || 0 },
+    { value: 'ready', label: 'Prontas para revisar', count: pageInfo.counts.ready || 0 },
+    { value: 'active', label: STATUS_LABEL.active, count: pageInfo.counts.active || 0 },
+    { value: 'paused', label: STATUS_LABEL.paused, count: pageInfo.counts.paused || 0 },
+    { value: 'closed', label: STATUS_LABEL.closed, count: pageInfo.counts.closed || 0 },
+  ];
   return <div className="max-w-6xl mx-auto space-y-5 animate-in fade-in">
-    <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4"><div className="flex items-start gap-3"><div className="w-11 h-11 rounded-2xl bg-[#FFE600] flex items-center justify-center shadow-sm shrink-0"><Store className="w-5 h-5 text-slate-900" /></div><div><div className="flex items-center gap-2 flex-wrap"><h1 className="text-xl font-black text-slate-900">Agente MELI</h1><span className="text-[10px] uppercase tracking-wide font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">Auditoria e revisão</span></div><p className="text-sm text-slate-500 mt-0.5">Diagnóstico, propostas versionadas e aprovação por campo.</p></div></div>
+    <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4"><div className="flex items-start gap-3"><div className="w-11 h-11 rounded-2xl bg-[#FFE600] flex items-center justify-center shadow-sm shrink-0"><Store className="w-5 h-5 text-slate-900" /></div><div><h1 className="text-xl font-black text-slate-900">Agente MELI</h1><p className="text-sm text-slate-500 mt-0.5">A IA melhora seus anúncios — ficha técnica, textos, fotos — e você só aprova.</p></div></div>
       {connection?.connected && <div className="flex items-center gap-2 flex-wrap"><span className="inline-flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-2"><Check className="w-3.5 h-3.5" /> Seller {connection.sellerId} · {connection.siteId}</span><button onClick={disconnect} disabled={busy} className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-red-600 px-2 py-2 disabled:opacity-50"><Unplug className="w-3.5 h-3.5" /> Desconectar</button></div>}
     </header>
     {error && <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3"><AlertCircle className="w-4 h-4 mt-0.5 shrink-0" /><span>{error}</span></div>}
     {!connection?.configured ? <section className="bg-white border border-amber-200 rounded-2xl p-6 shadow-sm"><h2 className="font-bold text-slate-900">Configuração do servidor pendente</h2><p className="text-sm text-slate-600 mt-2 max-w-3xl">Configure o App ID, Secret Key, redirect URI e a chave de criptografia nos secrets do ambiente.</p></section>
       : !connection.connected ? <section className="bg-white border border-slate-200 rounded-2xl p-7 shadow-sm"><ShieldCheck className="w-8 h-8 text-blue-600 mb-3" /><h2 className="text-lg font-bold text-slate-900">Conecte a conta principal do vendedor</h2><p className="text-sm text-slate-600 mt-2">Os tokens ficam cifrados no backend e nunca são devolvidos para o navegador.</p><button onClick={connect} disabled={busy} className="mt-5 inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2.5 rounded-xl disabled:opacity-50">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />} Conectar Mercado Livre</button></section>
-        : <>{metrics && <section className="grid grid-cols-2 md:grid-cols-6 gap-2"><div className="bg-white border rounded-xl p-3"><p className="text-[10px] text-slate-400">Anúncios</p><p className="text-lg font-black">{metrics.listings.total}</p></div><div className="bg-white border rounded-xl p-3"><p className="text-[10px] text-slate-400">Análises concluídas</p><p className="text-lg font-black">{metrics.analyses.byStatus.completed || 0}</p></div><div className="bg-white border rounded-xl p-3"><p className="text-[10px] text-slate-400">Propostas</p><p className="text-lg font-black">{metrics.proposals.total}</p></div><div className="bg-white border rounded-xl p-3"><p className="text-[10px] text-slate-400">Publicações</p><p className="text-lg font-black">{metrics.mutations.total}</p></div><div className="bg-white border rounded-xl p-3"><p className="text-[10px] text-slate-400">Webhooks</p><p className="text-lg font-black">{metrics.webhooks.total}</p></div><div className="bg-white border rounded-xl p-3"><p className="text-[10px] text-slate-400">API hoje · 429</p><p className="text-lg font-black">{metrics.apiToday.calls} · <span className={metrics.apiToday.rateLimited ? 'text-red-600' : 'text-emerald-600'}>{metrics.apiToday.rateLimited}</span></p></div></section>}
-          <section className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-4"><div className="flex flex-col md:flex-row md:items-center gap-3 justify-between"><div className="relative flex-1 max-w-lg"><Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por título ou MLB…" className="w-full border border-slate-200 bg-slate-50 rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-blue-400" /></div><button onClick={sync} disabled={busy || Boolean(job && !terminalJobs.has(job.status))} className="inline-flex justify-center items-center gap-2 bg-[#FFE600] hover:bg-[#f1d900] text-slate-900 text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-50">{job && !terminalJobs.has(job.status) ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Sincronizar anúncios</button></div><div className="flex items-center gap-2 overflow-x-auto">{(['', 'active', 'paused', 'closed'] as const).map((value) => <button key={value || 'all'} onClick={() => setFilter(value)} className={`text-xs font-semibold px-3 py-1.5 rounded-full border whitespace-nowrap ${filter === value ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-200 text-slate-600'}`}>{value ? STATUS_LABEL[value] : 'Todos'} ({pageInfo.counts[value || 'all'] || 0})</button>)}{connection.lastSyncedAt && <span className="ml-auto text-[11px] text-slate-400 whitespace-nowrap">Última sync: {new Date(connection.lastSyncedAt).toLocaleString('pt-BR')}</span>}</div>{job && <div className={`rounded-xl border p-3 ${job.status === 'failed' ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-100'}`}><div className="flex justify-between text-xs font-semibold text-slate-700"><span>{job.lastStep}</span><span>{job.progress}%</span></div><div className="h-1.5 bg-white rounded-full overflow-hidden mt-2"><div className="h-full bg-blue-600 rounded-full transition-all" style={{ width: `${job.progress}%` }} /></div>{!terminalJobs.has(job.status) && <p className="text-[11px] text-slate-500 mt-2">Os anúncios são salvos em lotes e já aparecem na lista. A importação continua no servidor mesmo se você fechar esta página.</p>}{job.status === 'partial' && Boolean(job.failedItemIds?.length) && <p className="text-[11px] text-amber-700 mt-2">Sem sucesso: {job.failedItemIds!.slice(0, 10).join(', ')}{job.failedItemIds!.length > 10 ? '…' : ''}</p>}{job.error && !terminalJobs.has(job.status) && <p className="text-[11px] text-amber-700 mt-2">{job.error}</p>}</div>}</section>
-          {visible.length > 0 && <div className="flex flex-wrap items-center gap-3 bg-white border border-slate-200 rounded-2xl px-4 py-2.5 shadow-sm"><label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer"><input type="checkbox" checked={allPageChecked} onChange={togglePage} className="w-4 h-4 accent-blue-600" /> Selecionar página</label>{checkedIds.size > 0 && <span className="text-xs text-slate-500">{checkedIds.size} selecionado(s){checkedIds.size > MAX_BULK_ANALYSES ? ` · máximo ${MAX_BULK_ANALYSES} por vez` : ''}</span>}{checkedIds.size > 0 && <button onClick={() => setCheckedIds(new Set())} className="text-xs font-semibold text-slate-500 hover:text-slate-800">Limpar seleção</button>}<button onClick={bulkAnalyze} disabled={bulkBusy || checkedIds.size === 0 || checkedIds.size > MAX_BULK_ANALYSES} className="ml-auto inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40">{bulkBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />} Analisar selecionados{checkedIds.size ? ` (${checkedIds.size})` : ''}</button></div>}{bulkNotice && <div className="flex items-start gap-2 text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5"><Sparkles className="w-3.5 h-3.5 mt-0.5 shrink-0" /><span className="flex-1">{bulkNotice} As análises rodam em fila no servidor; a nota aparece em cada anúncio ao terminar.</span><button onClick={() => setBulkNotice(null)} aria-label="Fechar aviso"><X className="w-3.5 h-3.5" /></button></div>}
-          <section className="space-y-2">{visible.length === 0 ? <div className="bg-white border border-dashed border-slate-300 rounded-2xl py-14 text-center text-sm text-slate-500">Nenhum anúncio sincronizado neste filtro.</div> : visible.map((listing) => <div key={listing.itemId} className="flex items-center gap-3"><input type="checkbox" checked={checkedIds.has(listing.itemId)} onChange={() => toggleChecked(listing.itemId)} aria-label={`Selecionar ${listing.itemId}`} className="w-4 h-4 accent-blue-600 shrink-0 cursor-pointer" /><button onClick={() => setSelected(listing)} className="flex-1 min-w-0 text-left bg-white border border-slate-200 hover:border-blue-300 rounded-2xl p-4 shadow-sm transition-colors flex items-center gap-4"><div className="w-16 h-16 rounded-xl bg-slate-100 overflow-hidden shrink-0">{listing.thumbnail && <img src={listing.thumbnail} alt="" className="w-full h-full object-contain" />}</div><div className="min-w-0 flex-1"><div className="flex gap-2 items-center"><span className="text-[10px] font-bold uppercase text-slate-400">{listing.itemId}</span><span className="text-[10px] font-semibold text-slate-600 bg-slate-100 rounded px-1.5 py-0.5">{STATUS_LABEL[listing.status] || listing.status}</span>{listing.analysisInProgress ? <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5"><Loader2 className="w-3 h-3 animate-spin" /> Em análise</span> : listing.analysisSummary && <RiskBadge risk={listing.analysisSummary.riskLevel} />}</div><h3 className="text-sm font-bold text-slate-900 truncate mt-1">{listing.title}</h3><p className="text-xs mt-1 text-slate-400">{listing.analysisSummary ? `${listing.analysisSummary.findingCount} achado(s) na auditoria Alfreds` : `${listing.pictures?.length || 0} imagens · ${listing.attributes?.length || 0} atributos`}</p></div><div className="flex items-center gap-5"><Score value={listing.performance?.score} label="Oficial" /><Score value={listing.analysisSummary?.alfredsScore} label="Alfreds" /></div><ChevronRight className="w-4 h-4 text-slate-300 shrink-0" /></button></div>)}</section>{pageInfo.total > 0 && <nav className="flex items-center justify-between gap-3 text-xs text-slate-500"><span>{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, pageInfo.total)} de {pageInfo.total} anúncios</span><div className="flex items-center gap-2"><button onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} className="inline-flex items-center gap-1 border border-slate-200 bg-white rounded-lg px-3 py-1.5 font-semibold text-slate-700 disabled:opacity-40"><ChevronLeft className="w-3.5 h-3.5" /> Anterior</button><span className="font-semibold text-slate-700 whitespace-nowrap">Página {page} de {pageInfo.totalPages}</span><button onClick={() => setPage((current) => Math.min(pageInfo.totalPages, current + 1))} disabled={page >= pageInfo.totalPages} className="inline-flex items-center gap-1 border border-slate-200 bg-white rounded-lg px-3 py-1.5 font-semibold text-slate-700 disabled:opacity-40">Próxima <ChevronRight className="w-3.5 h-3.5" /></button></div></nav>}</>}
-    {selected && <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/35" onMouseDown={() => setSelected(null)}><aside className="w-full max-w-2xl h-full bg-white shadow-2xl overflow-y-auto" onMouseDown={(event) => event.stopPropagation()}><div className="sticky top-0 bg-white/95 backdrop-blur border-b border-slate-200 p-4 flex items-center justify-between z-10"><div><p className="text-[10px] font-bold text-slate-400">{selected.itemId}</p><h2 className="font-bold text-slate-900 line-clamp-1">{selected.title}</h2></div><button onClick={() => setSelected(null)} className="p-2 hover:bg-slate-100 rounded-full"><X className="w-4 h-4" /></button></div><div className="p-5 space-y-5">
-      <div className="grid grid-cols-4 gap-3"><div className="border rounded-xl p-3"><p className="text-[10px] text-slate-400">Score oficial</p><p className="text-xl font-black">{selected.performance?.score ?? '—'}</p></div><div className="border rounded-xl p-3"><p className="text-[10px] text-slate-400">Score Alfreds</p><p className="text-xl font-black">{analysis?.alfredsScore ?? selected.analysisSummary?.alfredsScore ?? '—'}</p></div><div className="border rounded-xl p-3"><p className="text-[10px] text-slate-400">Imagens</p><p className="text-xl font-black">{selected.pictures?.length || 0}</p></div><div className="border rounded-xl p-3"><p className="text-[10px] text-slate-400">Atributos</p><p className="text-xl font-black">{selected.attributes?.length || 0}</p></div></div>
-      {(selected.userProductId || selected.catalogProductId) && <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-xs flex gap-2"><TriangleAlert className="w-4 h-4 shrink-0" /><span><strong>Atenção ao alcance:</strong> associado a {selected.userProductId ? `User Product ${selected.userProductId}` : `catálogo ${selected.catalogProductId}`}.</span></div>}
-      <div className="flex items-center justify-between gap-3 border-y border-slate-100 py-4"><div><h3 className="text-sm font-bold">Auditoria Alfreds</h3><p className="text-xs text-slate-500 mt-0.5">Regras, texto, imagens e fatos ausentes.</p></div><button onClick={analyze} disabled={analysisLoading || Boolean(analysis && !terminalAnalyses.has(analysis.status))} className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2.5 rounded-xl disabled:opacity-50">{analysisLoading || (analysis && !terminalAnalyses.has(analysis.status)) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}{analysis ? 'Analisar novamente' : 'Analisar anúncio'}</button></div>
-      {analysisLoading && !analysis && <div className="py-8 flex justify-center text-sm text-slate-500"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Carregando auditoria…</div>}
-      {analysis && !terminalAnalyses.has(analysis.status) && <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-3"><Loader2 className="w-5 h-5 text-blue-600 animate-spin" /><div><p className="text-sm font-semibold text-blue-900">Analisando anúncio</p><p className="text-xs text-blue-700">Executando regras e inspecionando texto e imagens.</p></div></div>}
-      {analysis?.status === 'stale' && <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">O anúncio mudou. Execute uma nova auditoria.</div>}
-      {analysis?.status === 'failed' && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">A auditoria falhou. {analysis.aiError}</div>}
-      {analysis?.status === 'completed' && <AnalysisResult analysis={analysis} />}
-      {analysis?.status === 'completed' && !proposalResult && proposalCandidateCount > 0 && <div className="flex items-center justify-between gap-3 border border-blue-200 bg-blue-50/50 rounded-xl p-4"><div><p className="text-sm font-bold text-slate-900">Transformar sugestões em proposta</p><p className="text-xs text-slate-500 mt-0.5">Cria um diff versionado com {proposalCandidateCount} mudança(s), risco, alcance e decisão por campo.</p></div><button onClick={() => void createProposal()} disabled={proposalBusy} className="inline-flex items-center gap-2 bg-slate-900 text-white text-sm font-bold px-4 py-2.5 rounded-xl disabled:opacity-50">{proposalBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Criar proposta</button></div>}
-      {analysis?.status === 'completed' && !proposalResult && proposalCandidateCount === 0 && <div className="flex items-center justify-between gap-3 border border-amber-200 bg-amber-50/60 rounded-xl p-4"><div><p className="text-sm font-bold text-slate-900">Nenhuma mudança segura disponível</p><p className="text-xs text-slate-600 mt-0.5">{analysis.aiStatus === 'failed' ? 'A camada determinística encontrou problemas, mas a IA não produziu os novos valores. Refaça a auditoria para gerar sugestões.' : analysis.questions.length ? 'Confirme as informações factuais pendentes antes de gerar valores para estes campos.' : 'As sugestões são iguais ao anúncio atual ou servem apenas como diagnóstico.'}</p></div><div className="shrink-0 flex flex-col gap-2">{analysis.aiStatus === 'failed' && <button onClick={analyze} disabled={analysisLoading} className="inline-flex items-center gap-2 bg-slate-900 text-white text-sm font-bold px-4 py-2.5 rounded-xl disabled:opacity-50">{analysisLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} Reanalisar</button>}<button onClick={() => void createProposal(true)} disabled={proposalBusy} title={analysis.suggestions.discardedDescription ? `Rascunho da IA descartado: ${analysis.suggestions.discardedDescription.reason}` : undefined} className="inline-flex items-center gap-2 border border-slate-300 bg-white text-slate-800 text-sm font-bold px-4 py-2.5 rounded-xl disabled:opacity-50">{proposalBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />} Escrever manualmente</button></div></div>}
-      {proposalResult && <ProposalReview result={proposalResult} busy={proposalBusy} writeEnabled={connection?.mode === 'assisted_write'} mutationRun={mutationRun} onDecide={decideChange} onEdit={editChange} onApproveLowRisk={approveLowRisk} onApply={applyProposal} onRollback={createRollback} />}
-      {!analysis && !analysisLoading && <><div><h3 className="text-sm font-bold mb-2">Descrição atual</h3><div className="whitespace-pre-wrap text-sm text-slate-600 bg-slate-50 border rounded-xl p-4 max-h-64 overflow-y-auto">{selected.descriptionPlainText || 'Sem descrição.'}</div></div>{qualityMissing(selected).length > 0 && <div><h3 className="text-sm font-bold mb-2">Ausências apontadas pelo Mercado Livre</h3><div className="flex flex-wrap gap-1.5">{qualityMissing(selected).map((id) => <span key={id} className="text-xs bg-amber-50 text-amber-800 border border-amber-200 rounded-full px-2 py-1">{id}</span>)}</div></div>}</>}
-      {selected.permalink && <a href={selected.permalink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600"><ExternalLink className="w-4 h-4" /> Abrir anúncio no Mercado Livre</a>}
-      <div className="bg-slate-50 border text-slate-600 rounded-xl p-3 text-xs"><strong>Escrita assistida:</strong> somente campos aprovados são enviados. Cada publicação cria snapshots antes/depois, relê o anúncio para confirmar o resultado e permite gerar uma nova proposta de reversão.</div>
-    </div></aside></div>}
+        : <>
+          <section className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center gap-3 justify-between">
+              <div className="relative flex-1 max-w-lg"><Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por título ou MLB…" className="w-full border border-slate-200 bg-slate-50 rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-blue-400" /></div>
+              <div className="flex items-center gap-2">
+                <select value={sort} onChange={(event) => setSort(event.target.value as 'recent' | 'opportunity')} className="border border-slate-200 bg-white rounded-xl px-3 py-2 text-sm text-slate-700" aria-label="Ordenar">
+                  <option value="opportunity">Maior oportunidade</option>
+                  <option value="recent">Atualizados recentemente</option>
+                </select>
+                <button onClick={sync} disabled={busy || Boolean(job && !terminalJobs.has(job.status))} className="inline-flex justify-center items-center gap-2 bg-[#FFE600] hover:bg-[#f1d900] text-slate-900 text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-50">{job && !terminalJobs.has(job.status) ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Sincronizar</button>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 overflow-x-auto">{filters.map((entry) => <button key={entry.value || 'all'} onClick={() => setFilter(entry.value)} className={`text-xs font-semibold px-3 py-1.5 rounded-full border whitespace-nowrap ${filter === entry.value ? 'bg-slate-900 border-slate-900 text-white' : entry.value === 'ready' && entry.count ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-white border-slate-200 text-slate-600'}`}>{entry.label} ({entry.count})</button>)}{connection.lastSyncedAt && <span className="ml-auto text-[11px] text-slate-400 whitespace-nowrap">Última sync: {new Date(connection.lastSyncedAt).toLocaleString('pt-BR')}</span>}</div>
+            {sort === 'opportunity' && <p className="text-[11px] text-slate-400">Primeiro os anúncios com mais visitas e mais espaço para melhorar — onde uma melhoria rende mais vendas.</p>}
+            {job && <div className={`rounded-xl border p-3 ${job.status === 'failed' ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-100'}`}><div className="flex justify-between text-xs font-semibold text-slate-700"><span>{job.lastStep}</span><span>{job.progress}%</span></div><div className="h-1.5 bg-white rounded-full overflow-hidden mt-2"><div className="h-full bg-blue-600 rounded-full transition-all" style={{ width: `${job.progress}%` }} /></div>{!terminalJobs.has(job.status) && <p className="text-[11px] text-slate-500 mt-2">Os anúncios são salvos em lotes e já aparecem na lista. A importação continua no servidor mesmo se você fechar esta página.</p>}{job.status === 'partial' && Boolean(job.failedItemIds?.length) && <p className="text-[11px] text-amber-700 mt-2">Sem sucesso: {job.failedItemIds!.slice(0, 10).join(', ')}{job.failedItemIds!.length > 10 ? '…' : ''}</p>}{job.error && !terminalJobs.has(job.status) && <p className="text-[11px] text-amber-700 mt-2">{job.error}</p>}</div>}
+          </section>
+          {listings.length > 0 && <div className="flex flex-wrap items-center gap-3 bg-white border border-slate-200 rounded-2xl px-4 py-2.5 shadow-sm"><label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer"><input type="checkbox" checked={allPageChecked} onChange={togglePage} className="w-4 h-4 accent-blue-600" /> Selecionar página</label>{checkedIds.size > 0 && <span className="text-xs text-slate-500">{checkedIds.size} selecionado(s){checkedIds.size > MAX_BULK_ANALYSES ? ` · máximo ${MAX_BULK_ANALYSES} por vez` : ''}</span>}{checkedIds.size > 0 && <button onClick={() => setCheckedIds(new Set())} className="text-xs font-semibold text-slate-500 hover:text-slate-800">Limpar seleção</button>}<button onClick={bulkAnalyze} disabled={bulkBusy || checkedIds.size === 0 || checkedIds.size > MAX_BULK_ANALYSES} className="ml-auto inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40">{bulkBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />} Otimizar selecionados{checkedIds.size ? ` (${checkedIds.size})` : ''}</button></div>}
+          {bulkNotice && <div className="flex items-start gap-2 text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5"><Sparkles className="w-3.5 h-3.5 mt-0.5 shrink-0" /><span className="flex-1">{bulkNotice} Cada anúncio fica com as melhorias prontas em “Prontas para revisar” ao terminar.</span><button onClick={() => setBulkNotice(null)} aria-label="Fechar aviso"><X className="w-3.5 h-3.5" /></button></div>}
+          <section className="space-y-2">{listings.length === 0 ? <div className="bg-white border border-dashed border-slate-300 rounded-2xl py-14 text-center text-sm text-slate-500">{filter === 'ready' ? 'Nenhum anúncio com melhorias esperando revisão. Otimize alguns anúncios para vê-los aqui.' : 'Nenhum anúncio sincronizado neste filtro.'}</div> : listings.map((listing) => {
+            const ready = listing.proposalSummary && READY_STATUSES.has(listing.proposalSummary.status);
+            const missing = (listing.analysisSummary?.missingChecklist || []).map((id) => MISSING_BADGE[id]).filter(Boolean) as string[];
+            if (!listing.analysisSummary && listing.videoId === null) missing.push('Sem vídeo');
+            return <div key={listing.itemId} className="flex items-center gap-3"><input type="checkbox" checked={checkedIds.has(listing.itemId)} onChange={() => toggleChecked(listing.itemId)} aria-label={`Selecionar ${listing.itemId}`} className="w-4 h-4 accent-blue-600 shrink-0 cursor-pointer" /><button onClick={() => setSelected(listing)} className="flex-1 min-w-0 text-left bg-white border border-slate-200 hover:border-blue-300 rounded-2xl p-4 shadow-sm transition-colors flex items-center gap-4"><div className="w-16 h-16 rounded-xl bg-slate-100 overflow-hidden shrink-0">{listing.thumbnail && <img src={listing.thumbnail} alt="" className="w-full h-full object-contain" />}</div><div className="min-w-0 flex-1"><div className="flex gap-2 items-center flex-wrap"><span className="text-[10px] font-bold uppercase text-slate-400">{listing.itemId}</span><span className="text-[10px] font-semibold text-slate-600 bg-slate-100 rounded px-1.5 py-0.5">{STATUS_LABEL[listing.status] || listing.status}</span>{listing.analysisInProgress ? <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5"><Loader2 className="w-3 h-3 animate-spin" /> Otimizando</span> : ready && <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5"><WandSparkles className="w-3 h-3" /> {listing.proposalSummary!.changeCount} melhoria(s) pronta(s)</span>}</div><h3 className="text-sm font-bold text-slate-900 truncate mt-1">{listing.title}</h3><div className="flex items-center gap-1.5 mt-1.5 flex-wrap">{listing.visits30d != null && <span className="inline-flex items-center gap-1 text-[11px] text-slate-500"><Eye className="w-3 h-3" /> {listing.visits30d.toLocaleString('pt-BR')} visitas/30d</span>}{missing.slice(0, 3).map((label) => <span key={label} className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">{label}</span>)}</div></div><div className="flex items-center gap-5"><Score value={listing.performance?.score} label="Mercado Livre" /><Score value={listing.analysisSummary?.alfredsScore} label="Alfreds" /></div><ChevronRight className="w-4 h-4 text-slate-300 shrink-0" /></button></div>;
+          })}</section>
+          {pageInfo.total > 0 && <nav className="flex items-center justify-between gap-3 text-xs text-slate-500"><span>{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, pageInfo.total)} de {pageInfo.total} anúncios</span><div className="flex items-center gap-2"><button onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} className="inline-flex items-center gap-1 border border-slate-200 bg-white rounded-lg px-3 py-1.5 font-semibold text-slate-700 disabled:opacity-40"><ChevronLeft className="w-3.5 h-3.5" /> Anterior</button><span className="font-semibold text-slate-700 whitespace-nowrap">Página {page} de {pageInfo.totalPages}</span><button onClick={() => setPage((current) => Math.min(pageInfo.totalPages, current + 1))} disabled={page >= pageInfo.totalPages} className="inline-flex items-center gap-1 border border-slate-200 bg-white rounded-lg px-3 py-1.5 font-semibold text-slate-700 disabled:opacity-40">Próxima <ChevronRight className="w-3.5 h-3.5" /></button></div></nav>}
+          {metrics && <details className="bg-white border border-slate-200 rounded-2xl"><summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-slate-500">Painel operacional</summary><div className="grid grid-cols-2 md:grid-cols-6 gap-2 px-4 pb-4">{([['Anúncios', metrics.listings.total], ['Análises concluídas', metrics.analyses.byStatus.completed || 0], ['Propostas', metrics.proposals.total], ['Publicações', metrics.mutations.total], ['Webhooks', metrics.webhooks.total], ['API hoje · 429', `${metrics.apiToday.calls} · ${metrics.apiToday.rateLimited}`]] as const).map(([label, value]) => <div key={label} className="border rounded-xl p-3"><p className="text-[10px] text-slate-400">{label}</p><p className="text-lg font-black">{value}</p></div>)}</div></details>}
+        </>}
+    {selected && <ListingPanel listing={selected} connection={connection} credits={credits} onClose={() => setSelected(null)} onChanged={() => { loadListings().catch(() => undefined); }} />}
   </div>;
 }

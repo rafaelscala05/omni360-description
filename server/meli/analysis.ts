@@ -6,6 +6,7 @@ import firebaseAppletConfig from '../../firebase-applet-config.json';
 import { adminDb } from '../firebaseAdmin';
 import { assertSafeImageUrl } from '../safeUrl';
 import {
+  enrichQuestions,
   evidenceSupportsValue,
   descriptionRejectionReason,
   runListingRules,
@@ -18,19 +19,27 @@ import type {
   MeliAnalysisFinding,
   MeliAnalysisQuestion,
   MeliAnalysisRecord,
+  MeliBuyerQuestion,
   MeliImageDiagnostic,
+  MeliListingFacts,
   MeliListingRecord,
   MeliScoreComponents,
+  MeliValueSuggestion,
 } from './types';
+import { buyerAnswersSourceText, factsHash, factsSourceText, fetchBuyerQuestions, getListingFacts } from './facts';
+import { buildChecklist, buildMediaSummary } from './media';
+import { generateListingCopy } from './copywriter';
+import { createProposal } from './proposals';
 import { jsonSafe, sanitizeError } from './utils';
 import { isServingSchemaComplexityError, simplifyServingJsonSchema } from './aiSchema';
 
-const RULESET_VERSION = '2026-09-24.1';
-const PROMPT_VERSION = 'meli-audit-2026-09-24.2';
+const RULESET_VERSION = '2026-09-29.1';
+const PROMPT_VERSION = 'meli-audit-2026-09-29.1';
 const MODEL = process.env.MELI_ANALYSIS_MODEL || 'gemini-2.5-flash';
 const VERTEX_PROJECT = process.env.VERTEX_PROJECT_ID || firebaseAppletConfig.projectId;
 const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
-const MAX_IMAGES = 6;
+const MAX_IMAGES = 10;
+const DEFAULT_MAX_TITLE_LENGTH = 60;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const LISTINGS_REF = (uid: string) => adminDb.collection('users').doc(uid).collection('meli_listings');
 const ANALYSES_REF = (uid: string) => adminDb.collection('users').doc(uid).collection('meli_listing_analyses');
@@ -73,6 +82,9 @@ const PicturePlanSchema = z.object({
 const ImageDiagnosticSchema = z.object({
   picture_id: z.string().min(1).max(200),
   order: z.number().int().min(0),
+  role: z.enum(['main_white_background', 'lifestyle', 'detail', 'dimensions', 'packaging', 'infographic', 'other']).nullable(),
+  white_background: z.boolean().nullable(),
+  has_text_or_watermark: z.boolean().nullable(),
   action: z.enum(['keep', 'reorder', 'remove', 'replace', 'create', 'needs_review']),
   issues: z.array(z.string().min(1).max(300)).max(10),
   strengths: z.array(z.string().min(1).max(300)).max(10),
@@ -224,8 +236,15 @@ function categoryDigest(schemaRecord: MeliCategorySchemaRecord | null): unknown 
   return visit(schemaRecord.schema);
 }
 
-function aiContext(listing: MeliListingRecord, schemaRecord: MeliCategorySchemaRecord | null, images: PreparedImage[]): unknown {
+interface SellerContext {
+  facts: MeliListingFacts | null;
+  buyerQuestions: MeliBuyerQuestion[];
+}
+
+function aiContext(listing: MeliListingRecord, schemaRecord: MeliCategorySchemaRecord | null, images: PreparedImage[], seller: SellerContext): unknown {
   return {
+    seller_facts: Object.entries(seller.facts?.answers ?? {} as MeliListingFacts['answers']).map(([field_path, answer]) => ({ field_path, value: answer.value, value_id: answer.valueId ?? null })),
+    buyer_questions: seller.buyerQuestions.slice(0, 25).map((question) => ({ question: question.text, seller_answer: question.answer })),
     listing: {
       item_id: listing.itemId,
       category_id: listing.categoryId,
@@ -249,6 +268,7 @@ async function runAiAnalysis(
   listing: MeliListingRecord,
   schemaRecord: MeliCategorySchemaRecord | null,
   images: PreparedImage[],
+  seller: SellerContext,
 ): Promise<AiOutput> {
   // Só Vertex (credenciais ADC da service account), como productImport.ts e
   // contentAgent.ts. A GEMINI_API_KEY do ambiente não é usada aqui.
@@ -256,17 +276,22 @@ async function runAiAnalysis(
   const systemInstruction = [
     'Você audita anúncios brasileiros do Mercado Livre em português do Brasil.',
     'Use exclusivamente os fatos presentes no contexto ou visíveis nas imagens. Nunca invente GTIN, marca, modelo, dimensões, material, compatibilidade, certificação, garantia ou conteúdo da embalagem.',
+    'seller_facts são dados confirmados pelo próprio vendedor: podem ser usados como evidência (cite "Informado pelo vendedor: <valor>"). As respostas do vendedor em buyer_questions também são fatos. Não repita perguntas já respondidas em seller_facts.',
+    'Perguntas de compradores sem resposta indicam o que falta explicar no anúncio: transforme em questions objetivas ao vendedor quando o dado não estiver nas fontes.',
     'Quando um fato não estiver comprovado, não o inclua em suggestions; crie uma pergunta objetiva em questions.',
     'description_plain_text deve ser texto simples, sem HTML, URLs, contato, preço, estoque ou promessa sem evidência.',
     'Cada atributo ou termo sugerido precisa citar evidência literal que contenha o valor proposto.',
     'Avalie imagens quanto a resolução, nitidez, iluminação, fundo, texto promocional, marca d’água, duplicidade, coerência e cobertura. Não afirme com certeza o que não estiver visível.',
+    'Em image_diagnostics, classifique cada imagem em role: main_white_background (produto isolado em fundo branco ou quase branco), lifestyle (produto em uso ou em ambiente real), detail (close de acabamento/detalhe), dimensions (medidas), packaging (embalagem), infographic (arte com textos ou ícones de benefícios) ou other. Informe white_background e has_text_or_watermark.',
+    'A imagem order=0 é a capa da busca: precisa ser o produto em fundo branco, sem textos, logos, bordas ou marca d’água. Se não for, registre um issue nela.',
+    'Em picture_plan use apenas reorder (ex.: levar a melhor foto em fundo branco para a posição 1) ou remove (duplicada, ilegível). Não proponha create ou replace: novas fotos são geradas por outra ferramenta.',
     'Para action=reorder, informe target_order começando em 1. Para as demais ações use target_order=null. Nunca invente uma URL de imagem.',
     'Não recomende publicar ou editar automaticamente. Sua saída será validada e usada apenas como auditoria assistida.',
     'Responda com um objeto JSON contendo exatamente: summary, score_components, findings, questions, suggestions e image_diagnostics. score_components contém title, description, technical_completeness, consistency e images. suggestions contém title, description_plain_text, attributes, sale_terms e picture_plan.',
   ].join(' ');
   const parts: any[] = images.filter((image) => image.base64).slice(0, MAX_IMAGES)
     .map((image) => ({ inlineData: { mimeType: image.mimeType!, data: image.base64! } }));
-  parts.push({ text: `Analise o contexto JSON a seguir. A ordem das imagens anexadas corresponde aos registros pictures com available_to_model=true.\n${JSON.stringify(aiContext(listing, schemaRecord, images))}` });
+  parts.push({ text: `Analise o contexto JSON a seguir. A ordem das imagens anexadas corresponde aos registros pictures com available_to_model=true.\n${JSON.stringify(aiContext(listing, schemaRecord, images, seller))}` });
   const baseRequest = {
     model: MODEL,
     contents: [{ role: 'user', parts }],
@@ -346,6 +371,9 @@ function mergeImageDiagnostics(base: MeliImageDiagnostic[], ai: AiOutput | null,
       ])],
       strengths: visual.strengths,
       confidence: Math.min(item.confidence, visual.confidence),
+      role: visual.role,
+      whiteBackground: visual.white_background,
+      hasTextOrWatermark: visual.has_text_or_watermark,
     };
   });
 }
@@ -495,7 +523,14 @@ export async function runAnalysis(uid: string, analysisId: string): Promise<void
     }
     const schemaRecord = schemaSnap.exists ? schemaSnap.data() as MeliCategorySchemaRecord : null;
     const ruleResult = runListingRules(listing, schemaRecord);
-    const images = await prepareImages(listing);
+    const [images, facts, buyerQuestions] = await Promise.all([
+      prepareImages(listing),
+      getListingFacts(uid, analysis.listingId).catch(() => null),
+      fetchBuyerQuestions(uid, analysis.listingId),
+    ]);
+    // Tudo o que o vendedor afirmou (respostas às perguntas da análise e aos
+    // compradores) passa a contar como fonte para o validador factual.
+    const sellerSource = [factsSourceText(facts), buyerAnswersSourceText(buyerQuestions)].filter(Boolean).join('\n');
     const baseImageDiagnostics = deterministicImageDiagnostics(images);
     const variationPictureIds = new Set(asObjects(listing.variations)
       .flatMap((variation) => Array.isArray(variation.picture_ids) ? variation.picture_ids.map(String) : []));
@@ -505,7 +540,7 @@ export async function runAnalysis(uid: string, analysisId: string): Promise<void
     const aiConfigured = Boolean(VERTEX_PROJECT);
     if (aiConfigured) {
       try {
-        ai = await runAiAnalysis(listing, schemaRecord, images);
+        ai = await runAiAnalysis(listing, schemaRecord, images, { facts, buyerQuestions });
         aiStatus = 'completed';
       } catch (error) {
         aiStatus = 'failed';
@@ -532,31 +567,68 @@ export async function runAnalysis(uid: string, analysisId: string): Promise<void
       fieldPath: question.field_path, question: question.question, reason: question.reason,
     }))];
     const rejectedAttributes: MeliAnalysisQuestion[] = [];
-    const suggestedAttributes = (ai?.suggestions.attributes || []).filter((item) => {
-      const supported = evidenceSupportsValue(item.value_name, item.evidence, listing);
+    const toSuggestion = (item: AiOutput['suggestions']['attributes'][number]) => ({
+      id: item.id, valueName: item.value_name, valueId: item.value_id, reason: item.reason, evidence: item.evidence,
+    });
+    const aiAttributes = (ai?.suggestions.attributes || []).filter((item) => {
+      const supported = evidenceSupportsValue(item.value_name, item.evidence, listing, sellerSource);
       if (!supported) rejectedAttributes.push({
         fieldPath: `attributes.${item.id}`,
         question: `Qual é o valor confirmado de ${item.id}?`,
         reason: 'A sugestão da IA não possuía evidência literal nas fontes sincronizadas.',
       });
       return supported;
-    }).map((item) => ({ id: item.id, valueName: item.value_name, valueId: item.value_id, reason: item.reason, evidence: item.evidence }));
-    const suggestedTerms = (ai?.suggestions.sale_terms || []).filter((item) => evidenceSupportsValue(item.value_name, item.evidence, listing))
-      .map((item) => ({ id: item.id, valueName: item.value_name, valueId: item.value_id, reason: item.reason, evidence: item.evidence }));
-    const descriptionSuggestion = validateSuggestedDescription(ai?.suggestions.description_plain_text || null, listing);
-    if (ai?.suggestions.description_plain_text && !descriptionSuggestion) questions.push({
+    }).map(toSuggestion);
+    const aiTerms = (ai?.suggestions.sale_terms || [])
+      .filter((item) => evidenceSupportsValue(item.value_name, item.evidence, listing, sellerSource))
+      .map(toSuggestion);
+    // O que o vendedor respondeu vira sugestão direta e vence a da IA para o
+    // mesmo campo: é o dado confirmado pela pessoa que conhece o produto.
+    const answers: MeliListingFacts['answers'] = facts?.answers ?? {};
+    const sellerSuggestions = (prefix: 'attributes.' | 'sale_terms.'): MeliValueSuggestion[] => Object.entries(answers)
+      .filter(([fieldPath]) => fieldPath.startsWith(prefix))
+      .map(([fieldPath, answer]) => ({
+        id: fieldPath.slice(prefix.length), valueName: answer.value, valueId: answer.valueId ?? null,
+        reason: 'Valor informado por você na análise.', evidence: [`Informado pelo vendedor: ${answer.value}`], fromSeller: true,
+      }));
+    const mergeSuggestions = (seller: MeliValueSuggestion[], fromAi: MeliValueSuggestion[]) => [
+      ...seller, ...fromAi.filter((item) => !seller.some((candidate) => candidate.id === item.id)),
+    ];
+    const suggestedAttributes = mergeSuggestions(sellerSuggestions('attributes.'), aiAttributes);
+    const suggestedTerms = mergeSuggestions(sellerSuggestions('sale_terms.'), aiTerms);
+
+    const titleEditable = listing.soldQuantity === 0 && !listing.catalogProductId;
+    let copy: Awaited<ReturnType<typeof generateListingCopy>> | null = null;
+    if (aiConfigured && aiStatus !== 'failed') {
+      const rawSettings = (listing.rawItem as any)?.settings;
+      const maxTitleLength = Number(rawSettings?.max_title_length) > 0 ? Number(rawSettings.max_title_length) : DEFAULT_MAX_TITLE_LENGTH;
+      copy = await generateListingCopy({
+        listing, factsText: sellerSource, buyerQuestions, titleEditable, maxTitleLength,
+        visualNotes: (ai?.image_diagnostics || []).flatMap((image) => image.strengths).slice(0, 12),
+      }).catch((error) => {
+        console.warn('[meli-analysis] geração de texto falhou; mantendo sugestões da auditoria.', sanitizeError(error));
+        return null;
+      });
+    }
+    const auditDescription = validateSuggestedDescription(ai?.suggestions.description_plain_text || null, listing, sellerSource);
+    const descriptionSuggestion = copy?.description || auditDescription;
+    const rawDescriptionDraft = ai?.suggestions.description_plain_text || null;
+    if (!descriptionSuggestion && (copy?.descriptionRejection || rawDescriptionDraft)) questions.push({
       fieldPath: 'description.plain_text',
       question: 'Confirme os dados técnicos adicionais que devem constar na nova descrição.',
-      reason: 'A sugestão foi descartada porque continha informação não comprovada, HTML ou contato.',
+      reason: `A descrição gerada foi descartada: ${copy?.descriptionRejection || descriptionRejectionReason(rawDescriptionDraft, listing, sellerSource) || 'informação não comprovada'}. Responda às perguntas acima para liberar esses dados.`,
     });
-    const titleSuggestion = listing.soldQuantity === 0
-      ? validateSuggestedTitle(ai?.suggestions.title || null, listing)
+    const titleSuggestion = titleEditable
+      ? copy?.title || validateSuggestedTitle(ai?.suggestions.title || null, listing, sellerSource)
       : null;
-    const mergedQuestions = dedupeQuestions([...questions, ...rejectedAttributes]);
+    const mergedQuestions = enrichQuestions(dedupeQuestions([...questions, ...rejectedAttributes]), listing, schemaRecord);
     const riskLevel = riskFrom(findings);
     let score = weightedMeliScore(components);
     if (riskLevel === 'blocked') score = Math.min(score, 45);
     else if (findings.some((finding) => finding.severity === 'high' && finding.requiresConfirmation)) score = Math.min(score, 59);
+    const imageDiagnostics = mergeImageDiagnostics(baseImageDiagnostics, ai, variationPictureIds);
+    const media = buildMediaSummary(listing, imageDiagnostics);
+    const checklist = buildChecklist(listing, findings, media);
     const completedAt = new Date().toISOString();
     const result: Partial<MeliAnalysisRecord> = jsonSafe({
       modelProvider: ai ? 'vertex' : null,
@@ -572,8 +644,8 @@ export async function runAnalysis(uid: string, analysisId: string): Promise<void
       suggestions: {
         title: titleSuggestion,
         descriptionPlainText: descriptionSuggestion,
-        discardedDescription: ai?.suggestions.description_plain_text && !descriptionSuggestion
-          ? { value: ai.suggestions.description_plain_text, reason: descriptionRejectionReason(ai.suggestions.description_plain_text, listing) || 'Rejeitada pelo validador.' }
+        discardedDescription: !descriptionSuggestion && rawDescriptionDraft
+          ? { value: rawDescriptionDraft, reason: descriptionRejectionReason(rawDescriptionDraft, listing, sellerSource) || 'Rejeitada pelo validador.' }
           : null,
         attributes: suggestedAttributes,
         saleTerms: suggestedTerms,
@@ -587,10 +659,18 @@ export async function runAnalysis(uid: string, analysisId: string): Promise<void
           };
         }),
       },
-      imageDiagnostics: mergeImageDiagnostics(baseImageDiagnostics, ai, variationPictureIds),
+      imageDiagnostics,
+      media,
+      checklist,
+      buyerQuestions: buyerQuestions.slice(0, 25),
+      sellerSourceText: sellerSource || null,
+      factsHash: factsHash(facts),
       aiStatus,
       aiError,
       status: 'completed',
+      // true até a proposta automática ser gravada: a tela espera por ela em
+      // vez de concluir "sem melhorias" no intervalo entre as duas gravações.
+      proposalPending: true,
       completedAt,
       processingLeaseId: null,
       processingLeaseUntil: null,
@@ -603,13 +683,25 @@ export async function runAnalysis(uid: string, analysisId: string): Promise<void
     await Promise.all([
       ref.set(result, { merge: true }),
       LISTINGS_REF(uid).doc(analysis.listingId).set({
-        analysisSummary: { analysisId, status: 'completed', alfredsScore: score, riskLevel, findingCount: findings.length, completedAt, contentHash: analysis.contentHash },
+        analysisSummary: {
+          analysisId, status: 'completed', alfredsScore: score, riskLevel, findingCount: findings.length, completedAt, contentHash: analysis.contentHash,
+          missingChecklist: checklist.filter((item) => item.status !== 'ok').map((item) => item.id),
+        },
       }, { merge: true }),
       AUDIT_REF(uid).add({
         actorType: 'system', actorId: null, action: 'meli.analysis.completed', resourceType: 'meli_listing_analysis', resourceId: analysisId,
         metadata: { listingId: analysis.listingId, alfredsScore: score, riskLevel, findingCount: findings.length, aiStatus }, createdAt: completedAt,
       }),
     ]);
+    // A proposta nasce junto com a análise: o vendedor chega direto nas
+    // melhorias prontas para aprovar. Sem mudança segura, simplesmente não há proposta.
+    let autoProposalId: string | null = null;
+    try {
+      autoProposalId = (await createProposal(uid, analysis.listingId, analysisId, { actor: 'system' })).proposal.id;
+    } catch (error: any) {
+      if (![409, 422].includes(Number(error?.status))) console.warn('[meli-analysis] proposta automática falhou', sanitizeError(error));
+    }
+    await ref.set({ autoProposalId, proposalPending: false }, { merge: true });
   } catch (error) {
     await ref.set({ status: 'failed', aiStatus: 'failed', aiError: sanitizeError(error), completedAt: new Date().toISOString(), processingLeaseId: null, processingLeaseUntil: null }, { merge: true });
   } finally {

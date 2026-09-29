@@ -48,6 +48,39 @@ operam em `assisted_write`; conexões somente leitura permanecem em `audit_only`
 - Preservação de atributos, termos, imagens não alteradas e vínculos de imagens com variações.
 - Propostas de reversão com nova revisão e aprovação humana; nenhuma reversão é automática.
 
+## Fluxo "Otimizar anúncio" (2026-09-29)
+
+Um botão faz tudo e entrega um plano pronto para aprovar:
+
+- **Análise + proposta automática.** Ao fim de `runAnalysis` a proposta é criada
+  (`createProposal(..., { actor: 'system' })`). `proposalPending` fica `true` entre
+  as duas gravações para a tela não concluir "sem melhorias" cedo demais.
+- **Fatos do vendedor** (`server/meli/facts.ts`, `users/{uid}/meli_listing_facts`):
+  as perguntas da análise têm campo de resposta (lista/unidade vindas do schema via
+  `enrichQuestions`). Respostas viram fonte extra do validador factual e sugestões
+  diretas de atributo (`fromSeller`, sem confirmação extra). Respostas do vendedor
+  a compradores (`/questions/search`) também contam como fonte.
+- **Redator dedicado** (`server/meli/copywriter.ts`): título (Produto + Marca +
+  Modelo + característica) e descrição estruturada com FAQ das perguntas de
+  compradores. Passa pelo mesmo validador; se recusado, tenta de novo uma vez com o motivo.
+- **Mídia** (`server/meli/media.ts`): a IA classifica o papel de cada foto (fundo
+  branco, ambientada, detalhe, medidas, embalagem, infográfico); o checklist de
+  relevância sai dali + `video_id` do item. Zoom exige 1200 px. Até 10 fotos vão ao modelo.
+- **Fotos geradas** (`server/meli/pictureGenerator.ts`): ambientada ou capa em fundo
+  branco, `gemini-2.5-flash-image` (Vertex, `global`), 1200×1200, salva em
+  `meli-pictures/{uid}/{itemId}/` com token de download e entra na proposta como
+  `create` com posição (capa = 1, ambientada = 2). Cobra `ambient_image` só após gerar.
+- **Revisão por seleção:** `POST /api/meli/proposals/:id/publish` aprova os
+  marcados, rejeita o resto e publica. Item sensível vem desmarcado; marcar é a confirmação.
+- **Oportunidade:** `visits30d` (fora do `contentHash`) × (100 − nota) ordena a lista.
+- **Vídeo:** o envio de vídeo por integração foi descontinuado pelo Mercado Livre
+  para vendedor local (upload de Clips por API só aparece para Global Selling/CBT).
+  O agente gera o vídeo vertical reaproveitando o assistente de vídeo sobre um
+  `Product` sintético (`meli-<MLB>`), guarda referência/vídeo em
+  `users/{uid}/meli_listing_media` e orienta o upload manual como Clip.
+
+Verificar com `npm run verify:meli:optimize`.
+
 ## Permissão do módulo
 
 A aba **Agente MELI** e suas APIs autenticadas só ficam disponíveis quando o
@@ -115,6 +148,12 @@ GET    /api/meli/listings/:itemId/proposals/latest
 GET    /api/meli/proposals/:proposalId
 PATCH  /api/meli/proposals/:proposalId/changes/:changeId
 PUT    /api/meli/proposals/:proposalId/changes/:changeId
+POST   /api/meli/proposals/:proposalId/publish
+GET    /api/meli/listings/:itemId/facts
+PUT    /api/meli/listings/:itemId/facts
+POST   /api/meli/listings/:itemId/pictures/generate
+GET    /api/meli/listings/:itemId/media
+PUT    /api/meli/listings/:itemId/media
 POST   /api/meli/proposals/:proposalId/apply
 POST   /api/meli/proposals/:proposalId/rollback-proposal
 GET    /api/meli/mutations/:runId
@@ -137,7 +176,8 @@ Todos, exceto o callback OAuth, exigem um Firebase ID token. Tokens MELI nunca a
 ## Limites atuais
 
 - Preço, estoque e categoria continuam bloqueados e nunca entram no payload de escrita.
-- Criação ou substituição de imagem exige que o operador informe uma URL HTTPS.
+- Fotos novas entram pela geração com IA (URL no Storage); o plano da IA só propõe reordenar/remover.
+- Vídeo não é publicado por API: o vendedor baixa e envia como Clip no painel.
 - A reversão é uma nova proposta e pode ser recusada pelo Mercado Livre caso o campo
   tenha se tornado imutável, controlado por catálogo ou incompatível com o schema atual.
 
@@ -164,6 +204,7 @@ npm run verify:meli
 npm run verify:meli:audit
 npm run verify:meli:review
 npm run verify:meli:write
+npm run verify:meli:optimize
 npm run build
 ```
 

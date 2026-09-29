@@ -137,7 +137,9 @@ export function buildPictures(
       pictures.splice(index, 1, { source: String(value.source) });
     } else if (action === 'create') {
       if (!/^https:\/\//i.test(String(value.source || ''))) throw Object.assign(new Error('A nova imagem exige uma URL HTTPS.'), { status: 422 });
-      pictures.push({ source: String(value.source) });
+      const target = Number(value.targetOrder) - 1;
+      if (Number.isInteger(target) && target >= 0 && target < pictures.length) pictures.splice(target, 0, { source: String(value.source) });
+      else pictures.push({ source: String(value.source) });
     } else if (action === 'reorder') {
       if (index < 0) throw Object.assign(new Error(`A imagem ${pictureId} não existe mais no anúncio.`), { status: 409 });
       const target = Number(value.targetOrder) - 1;

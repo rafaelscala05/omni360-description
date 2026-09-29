@@ -360,7 +360,7 @@ export function runListingRules(
   return { findings, questions, scoreComponents: components, score, riskLevel };
 }
 
-export function descriptionRejectionReason(description: string | null, listing: MeliListingRecord): string | null {
+export function descriptionRejectionReason(description: string | null, listing: MeliListingRecord, extraSource = ''): string | null {
   if (!description) return null;
   if (HTML_PATTERN.test(description) || /https?:\/\/|www\.|\b(?:whats|telefone|e-mail|email)\b/i.test(description)) return 'Contém HTML, link ou contato.';
   const source = [
@@ -368,6 +368,7 @@ export function descriptionRejectionReason(description: string | null, listing: 
     listing.descriptionPlainText,
     ...asObjects(listing.attributes).flatMap((attribute) => [attribute.name, attribute.value_name]),
     ...asObjects(listing.saleTerms).flatMap((term) => [term.name, term.value_name]),
+    extraSource,
   ].filter(Boolean).join(' ');
   const knownNumbers = new Set(source.match(/\b\d+(?:[.,]\d+)?\b/g) || []);
   const inventedNumber = (description.match(/\b\d+(?:[.,]\d+)?\b/g) || []).some((number) => !knownNumbers.has(number));
@@ -379,31 +380,80 @@ export function descriptionRejectionReason(description: string | null, listing: 
   return claim ? `Afirma algo sobre "${claim}" que não consta no anúncio.` : null;
 }
 
-export function validateSuggestedDescription(description: string | null, listing: MeliListingRecord): string | null {
-  if (!description || descriptionRejectionReason(description, listing)) return null;
+export function validateSuggestedDescription(description: string | null, listing: MeliListingRecord, extraSource = ''): string | null {
+  if (!description || descriptionRejectionReason(description, listing, extraSource)) return null;
   return description.trim();
 }
 
-export function validateSuggestedTitle(title: string | null, listing: MeliListingRecord): string | null {
-  const basic = validateSuggestedDescription(title, listing);
+// Palavras de categoria/uso ("para", "kit") não são fatos; o resto do título
+// precisa existir em alguma fonte — anúncio, ficha, respostas do vendedor.
+export function validateSuggestedTitle(title: string | null, listing: MeliListingRecord, extraSource = ''): string | null {
+  const basic = validateSuggestedDescription(title, listing, extraSource);
   if (!basic) return null;
   const source = normalize([
     listing.title,
     listing.descriptionPlainText,
     ...asObjects(listing.attributes).flatMap((attribute) => [attribute.name, attribute.value_name]),
+    extraSource,
   ].filter(Boolean).join(' '));
-  const safeConnectors = new Set(['com', 'para', 'por', 'sem', 'de', 'da', 'das', 'do', 'dos', 'em', 'e']);
+  const safeConnectors = new Set(['com', 'para', 'por', 'sem', 'de', 'da', 'das', 'do', 'dos', 'em', 'e', 'kit', 'unidade', 'unidades', 'novo', 'nova']);
   const candidateTokens: string[] = Array.from(normalize(basic).matchAll(/[a-z0-9]+/g), (match) => match[0]);
   const introducedToken = candidateTokens.some((token) => token.length > 2 && !safeConnectors.has(token) && !source.includes(token));
   return introducedToken ? null : basic;
 }
 
-export function evidenceSupportsValue(value: string, evidence: string[], listing: MeliListingRecord): boolean {
+export function evidenceSupportsValue(value: string, evidence: string[], listing: MeliListingRecord, extraSource = ''): boolean {
   const normalizedValue = normalize(value.trim());
   if (!normalizedValue) return false;
   const source = [listing.title, listing.descriptionPlainText,
     ...asObjects(listing.attributes).flatMap((attribute) => [attribute.value_name, attribute.value_id]),
     ...asObjects(listing.saleTerms).flatMap((term) => [term.value_name, term.value_id]),
+    extraSource,
   ].filter(Boolean).map(String).map(normalize).join(' ');
   return source.includes(normalizedValue) && evidence.some((entry) => normalize(entry).includes(normalizedValue));
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  title: 'Título',
+  'description.plain_text': 'Descrição',
+};
+
+// Nome legível do campo para a tela: "Marca" em vez de attributes.BRAND.
+export function fieldLabel(fieldPath: string, listing: MeliListingRecord, schemaRecord: MeliCategorySchemaRecord | null): string {
+  if (FIELD_LABELS[fieldPath]) return FIELD_LABELS[fieldPath];
+  if (fieldPath.startsWith('pictures.')) return 'Fotos';
+  const match = fieldPath.match(/^(attributes|sale_terms)\.(.+)$/);
+  if (!match) return fieldPath;
+  const id = match[2];
+  const fromListing = asObjects(match[1] === 'attributes' ? listing.attributes : listing.saleTerms)
+    .find((entry) => String(entry.id) === id)?.name;
+  const fromSchema = collectSchemaAttributes(schemaRecord).get(id)?.name;
+  return String(fromListing || fromSchema || id);
+}
+
+// Completa cada pergunta de atributo com o que o schema sabe (nome, opções,
+// unidades) para a tela oferecer um select/unidade em vez de texto livre.
+export function enrichQuestions(
+  questions: MeliAnalysisQuestion[],
+  listing: MeliListingRecord,
+  schemaRecord: MeliCategorySchemaRecord | null,
+): MeliAnalysisQuestion[] {
+  const schema = collectSchemaAttributes(schemaRecord);
+  return questions.map((question) => {
+    const match = question.fieldPath.match(/^attributes\.(.+)$/);
+    const definition = match ? schema.get(match[1]) : undefined;
+    const options = definition
+      ? asObjects(definition.values || definition.allowed_values)
+        .filter((value) => typeof value.id === 'string' && typeof value.name === 'string')
+        .slice(0, 80)
+        .map((value) => ({ id: String(value.id), name: String(value.name) }))
+      : [];
+    const units = definition && String(definition.value_type ?? '').toLowerCase() === 'number_unit' ? allowedUnits(definition).slice(0, 20) : [];
+    return {
+      ...question,
+      label: fieldLabel(question.fieldPath, listing, schemaRecord),
+      ...(options.length ? { options } : {}),
+      ...(units.length ? { units: [...new Set(units)] } : {}),
+    };
+  });
 }

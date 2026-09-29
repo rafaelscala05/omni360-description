@@ -6,7 +6,10 @@ import { createSyncJob, findActiveAccountSyncJob, MELI_JOBS_REF, recordAudit, sc
 import type { MeliConnectionSecret, MeliListingStatus } from './types';
 import { sanitizeError } from './utils';
 import { createAnalysis, createBulkAnalyses, getLatestAnalysis, scheduleAnalysis } from './analysis';
-import { createProposal, decideChange, editChange, getLatestProposal, getProposal } from './proposals';
+import { addPictureChange, createProposal, decideChange, decideSelection, editChange, getLatestProposal, getProposal } from './proposals';
+import { getListingFacts, saveListingFacts } from './facts';
+import { getListingMedia, saveListingMedia } from './videoAssets';
+import { generateListingPicture, TARGET_ORDER, type MeliGeneratedPictureKind } from './pictureGenerator';
 import { getMeliOperationalMetrics } from './operations';
 import { createMutationRun, createRollbackProposal, getMutationRun, scheduleMutation } from './mutations';
 
@@ -14,6 +17,30 @@ interface Deps { verifyFirebaseToken: VerifyFirebaseToken }
 
 const allowedStatuses = new Set<MeliListingStatus>(['active', 'paused', 'closed']);
 const LISTINGS_REF = (uid: string) => adminDb.collection('users').doc(uid).collection('meli_listings');
+
+interface IndexRow {
+  itemId?: string;
+  title?: string;
+  status?: string;
+  updatedAt?: string;
+  visits30d?: number | null;
+  analysisSummary?: { alfredsScore?: number };
+  performance?: { score?: number };
+  proposalSummary?: { status?: string };
+}
+
+const READY_PROPOSAL_STATUSES = new Set(['awaiting_review', 'partially_approved', 'approved', 'failed']);
+const hasReadyProposal = (row: IndexRow) => READY_PROPOSAL_STATUSES.has(String(row.proposalSummary?.status || ''));
+
+// Oportunidade = quanto tráfego o anúncio já recebe × quanto ele ainda pode
+// melhorar. Muito visitado e com nota baixa sobe para o topo; sem visitas
+// conhecidas, conta como 1 para a nota ainda ordenar.
+export function opportunity(row: IndexRow): number {
+  const score = Number(row.analysisSummary?.alfredsScore ?? row.performance?.score);
+  const gap = Number.isFinite(score) ? Math.max(0, 100 - score) : 50;
+  const visits = Number(row.visits30d);
+  return (Number.isFinite(visits) && visits > 0 ? visits : 1) * gap;
+}
 
 function statusCode(error: any): number {
   const status = Number(error?.status);
@@ -148,14 +175,24 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
       const status = typeof req.query.status === 'string' ? req.query.status : '';
       const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
       const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 25));
-      const index = await LISTINGS_REF(uid).select('itemId', 'title', 'status', 'updatedAt').get();
-      const rows = index.docs.map((doc) => ({ id: doc.id, ...(doc.data() as { itemId?: string; title?: string; status?: string; updatedAt?: string }) }));
-      const counts: Record<string, number> = { all: rows.length };
-      rows.forEach((row) => { const key = String(row.status || 'unknown'); counts[key] = (counts[key] || 0) + 1; });
+      const sort = req.query.sort === 'opportunity' ? 'opportunity' : 'recent';
+      const readyOnly = req.query.ready === 'true';
+      const index = await LISTINGS_REF(uid)
+        .select('itemId', 'title', 'status', 'updatedAt', 'visits30d', 'analysisSummary.alfredsScore', 'performance.score', 'proposalSummary.status')
+        .get();
+      const rows = index.docs.map((doc) => ({ id: doc.id, ...(doc.data() as IndexRow) }));
+      const counts: Record<string, number> = { all: rows.length, ready: 0 };
+      rows.forEach((row) => {
+        const key = String(row.status || 'unknown'); counts[key] = (counts[key] || 0) + 1;
+        if (hasReadyProposal(row)) counts.ready += 1;
+      });
       const matching = rows
         .filter((row) => !status || row.status === status)
+        .filter((row) => !readyOnly || hasReadyProposal(row))
         .filter((row) => !search || String(row.title || '').toLowerCase().includes(search) || String(row.itemId || row.id).toLowerCase().includes(search))
-        .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+        .sort((a, b) => sort === 'opportunity'
+          ? opportunity(b) - opportunity(a) || String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))
+          : String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
       const totalPages = Math.max(1, Math.ceil(matching.length / pageSize));
       const page = Math.min(totalPages, Math.max(1, Math.floor(Number(req.query.page)) || 1));
       const slice = matching.slice((page - 1) * pageSize, page * pageSize);
@@ -203,6 +240,70 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
         queued: result.queued.length, skipped: result.skipped.length,
       });
       return res.status(202).json(result);
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
+  app.get('/api/meli/listings/:itemId/facts', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      return res.json({ facts: await getListingFacts(uid, req.params.itemId) });
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
+  app.put('/api/meli/listings/:itemId/facts', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      const listing = await LISTINGS_REF(uid).doc(req.params.itemId.toUpperCase()).get();
+      if (!listing.exists) return res.status(404).json({ message: 'Anúncio não encontrado.' });
+      return res.json({ facts: await saveListingFacts(uid, req.params.itemId, req.body?.answers) });
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
+  app.get('/api/meli/listings/:itemId/media', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      return res.json({ media: await getListingMedia(uid, req.params.itemId) });
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
+  app.put('/api/meli/listings/:itemId/media', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      const listing = await LISTINGS_REF(uid).doc(req.params.itemId.toUpperCase()).get();
+      if (!listing.exists) return res.status(404).json({ message: 'Anúncio não encontrado.' });
+      return res.json({ media: await saveListingMedia(uid, req.params.itemId, req.body) });
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
+  // Gera a foto (ambientada ou capa em fundo branco) e já a coloca na
+  // proposta do anúncio, pendente de aprovação como qualquer mudança.
+  app.post('/api/meli/listings/:itemId/pictures/generate', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      const kind = req.body?.kind as MeliGeneratedPictureKind;
+      if (kind !== 'lifestyle' && kind !== 'white_background') return res.status(422).json({ message: 'kind deve ser lifestyle ou white_background.' });
+      const picture = await generateListingPicture(uid, req.params.itemId, {
+        kind,
+        sourcePictureId: typeof req.body?.sourcePictureId === 'string' ? req.body.sourcePictureId : null,
+        instructions: typeof req.body?.instructions === 'string' ? req.body.instructions : null,
+      });
+      const proposal = await addPictureChange(uid, req.params.itemId, {
+        source: picture.url, targetOrder: TARGET_ORDER[kind], generatedPictureId: picture.id,
+        reason: kind === 'white_background'
+          ? 'Nova capa em fundo branco: é a foto que aparece na busca e a que mais pesa no clique.'
+          : 'Foto ambientada mostra o produto em uso e ajuda o comprador a se imaginar com ele.',
+      });
+      return res.status(201).json({ picture, ...proposal });
     } catch (error) {
       return res.status(statusCode(error)).json({ message: sanitizeError(error) });
     }
@@ -271,6 +372,23 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
         return res.status(422).json({ message: 'newValue é obrigatório.' });
       }
       return res.json(await editChange(uid, req.params.proposalId, req.params.changeId, req.body.newValue));
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
+  // Um clique: grava a seleção (marcados = aprovados, resto = rejeitado) e
+  // dispara a publicação. A confirmação factual dos itens sensíveis é o
+  // próprio checkbox marcado, com o aviso exibido ao lado dele na tela.
+  app.post('/api/meli/proposals/:proposalId/publish', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      const selected = Array.isArray(req.body?.changeIds) ? req.body.changeIds.filter((id: unknown) => typeof id === 'string') : [];
+      if (!selected.length) return res.status(422).json({ message: 'Selecione ao menos uma melhoria para publicar.' });
+      const result = await decideSelection(uid, req.params.proposalId, selected);
+      const run = await createMutationRun(uid, req.params.proposalId, req.body?.idempotencyKey);
+      scheduleMutation(uid, run.id);
+      return res.status(202).json({ ...result, mutationRun: run });
     } catch (error) {
       return res.status(statusCode(error)).json({ message: sanitizeError(error) });
     }
