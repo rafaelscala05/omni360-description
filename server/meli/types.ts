@@ -85,6 +85,9 @@ export interface MeliListingRecord {
     completedAt: string;
     contentHash: string;
   };
+  // ID da análise enfileirada/rodando para este anúncio; a lista usa para o
+  // selo "Em análise". Limpo quando a análise conclui, falha ou fica stale.
+  analysisInProgress?: string | null;
   proposalSummary?: {
     proposalId: string;
     version: number;

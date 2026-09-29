@@ -28,6 +28,8 @@ import { isServingSchemaComplexityError, simplifyServingJsonSchema } from './aiS
 const RULESET_VERSION = '2026-09-24.1';
 const PROMPT_VERSION = 'meli-audit-2026-09-24.2';
 const MODEL = process.env.MELI_ANALYSIS_MODEL || 'gemini-2.5-flash';
+const VERTEX_PROJECT = process.env.VERTEX_PROJECT_ID || firebaseAppletConfig.projectId;
+const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
 const MAX_IMAGES = 6;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const LISTINGS_REF = (uid: string) => adminDb.collection('users').doc(uid).collection('meli_listings');
@@ -248,11 +250,9 @@ async function runAiAnalysis(
   schemaRecord: MeliCategorySchemaRecord | null,
   images: PreparedImage[],
 ): Promise<AiOutput> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  const vertexProject = process.env.VERTEX_PROJECT_ID || firebaseAppletConfig.projectId;
-  const ai = apiKey
-    ? new GoogleGenAI({ apiKey })
-    : new GoogleGenAI({ vertexai: true, project: vertexProject, location: process.env.VERTEX_LOCATION || 'us-central1' });
+  // Só Vertex (credenciais ADC da service account), como productImport.ts e
+  // contentAgent.ts. A GEMINI_API_KEY do ambiente não é usada aqui.
+  const ai = new GoogleGenAI({ vertexai: true, project: VERTEX_PROJECT, location: VERTEX_LOCATION });
   const systemInstruction = [
     'Você audita anúncios brasileiros do Mercado Livre em português do Brasil.',
     'Use exclusivamente os fatos presentes no contexto ou visíveis nas imagens. Nunca invente GTIN, marca, modelo, dimensões, material, compatibilidade, certificação, garantia ou conteúdo da embalagem.',
@@ -402,7 +402,18 @@ export async function createAnalysis(uid: string, itemId: string): Promise<MeliA
     processingLeaseUntil: null,
   };
   await ref.set(empty);
+  await LISTINGS_REF(uid).doc(normalizedId).set({ analysisInProgress: ref.id }, { merge: true });
   return empty;
+}
+
+// Só limpa se a marca ainda for desta análise: uma análise mais nova do mesmo
+// anúncio pode ter sido criada enquanto esta rodava.
+async function clearAnalysisInProgress(uid: string, listingId: string, analysisId: string): Promise<void> {
+  const ref = LISTINGS_REF(uid).doc(listingId);
+  await adminDb.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (snap.exists && snap.data()?.analysisInProgress === analysisId) tx.update(ref, { analysisInProgress: null });
+  }).catch(() => undefined);
 }
 
 const analysisQueue: Array<{ uid: string; analysisId: string }> = [];
@@ -425,16 +436,39 @@ export function scheduleAnalysis(uid: string, analysisId: string): void {
   setImmediate(drainAnalysisQueue);
 }
 
-export async function enqueueAnalysisIfNeeded(uid: string, itemId: string, contentHash: string): Promise<MeliAnalysisRecord | null> {
-  const existing = await ANALYSES_REF(uid).where('listingId', '==', itemId.toUpperCase()).get();
-  const reusable = existing.docs.map((doc) => doc.data() as MeliAnalysisRecord).find((record) =>
-    record.contentHash === contentHash
-    && record.rulesetVersion === RULESET_VERSION
-    && ['queued', 'running', 'completed'].includes(record.status));
-  if (reusable) return null;
-  const analysis = await createAnalysis(uid, itemId);
-  scheduleAnalysis(uid, analysis.id);
-  return analysis;
+export const MAX_BULK_ANALYSES = 100;
+
+export interface BulkAnalysisResult {
+  queued: Array<{ itemId: string; analysisId: string }>;
+  skipped: Array<{ itemId: string; reason: 'in_progress' | 'not_found' }>;
+}
+
+// Análise em massa pedida pela lista. Usa a mesma fila da individual (2 por
+// vez); anúncio que já tem análise na fila/rodando é pulado para o mesmo
+// anúncio não ir duas vezes ao modelo.
+export async function createBulkAnalyses(uid: string, itemIds: string[]): Promise<BulkAnalysisResult> {
+  const ids = [...new Set(itemIds.map((id) => String(id).trim().toUpperCase()).filter(Boolean))];
+  if (ids.length > MAX_BULK_ANALYSES) {
+    throw Object.assign(new Error(`Selecione no máximo ${MAX_BULK_ANALYSES} anúncios por vez.`), { status: 422 });
+  }
+  const result: BulkAnalysisResult = { queued: [], skipped: [] };
+  const listings = ids.length ? await adminDb.getAll(...ids.map((id) => LISTINGS_REF(uid).doc(id))) : [];
+  for (const [index, listingSnap] of listings.entries()) {
+    const itemId = ids[index];
+    if (!listingSnap.exists) { result.skipped.push({ itemId, reason: 'not_found' }); continue; }
+    const inProgressId = listingSnap.data()?.analysisInProgress;
+    if (inProgressId) {
+      const current = await ANALYSES_REF(uid).doc(String(inProgressId)).get();
+      if (['queued', 'running'].includes(current.data()?.status)) {
+        result.skipped.push({ itemId, reason: 'in_progress' });
+        continue;
+      }
+    }
+    const analysis = await createAnalysis(uid, itemId);
+    scheduleAnalysis(uid, analysis.id);
+    result.queued.push({ itemId, analysisId: analysis.id });
+  }
+  return result;
 }
 
 export async function runAnalysis(uid: string, analysisId: string): Promise<void> {
@@ -468,7 +502,7 @@ export async function runAnalysis(uid: string, analysisId: string): Promise<void
     let ai: AiOutput | null = null;
     let aiStatus: MeliAnalysisRecord['aiStatus'] = 'not_configured';
     let aiError: string | null = null;
-    const aiConfigured = Boolean(process.env.GEMINI_API_KEY || process.env.VERTEX_PROJECT_ID || firebaseAppletConfig.projectId);
+    const aiConfigured = Boolean(VERTEX_PROJECT);
     if (aiConfigured) {
       try {
         ai = await runAiAnalysis(listing, schemaRecord, images);
@@ -525,7 +559,7 @@ export async function runAnalysis(uid: string, analysisId: string): Promise<void
     else if (findings.some((finding) => finding.severity === 'high' && finding.requiresConfirmation)) score = Math.min(score, 59);
     const completedAt = new Date().toISOString();
     const result: Partial<MeliAnalysisRecord> = jsonSafe({
-      modelProvider: ai ? 'google' : null,
+      modelProvider: ai ? 'vertex' : null,
       modelName: ai ? MODEL : null,
       promptVersion: ai ? PROMPT_VERSION : null,
       officialScore: officialScore(listing),
@@ -578,6 +612,8 @@ export async function runAnalysis(uid: string, analysisId: string): Promise<void
     ]);
   } catch (error) {
     await ref.set({ status: 'failed', aiStatus: 'failed', aiError: sanitizeError(error), completedAt: new Date().toISOString(), processingLeaseId: null, processingLeaseUntil: null }, { merge: true });
+  } finally {
+    await clearAnalysisInProgress(uid, analysis.listingId, analysisId);
   }
 }
 

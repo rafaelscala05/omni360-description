@@ -4,7 +4,6 @@ import { MeliApiClient } from './apiClient';
 import { MELI_SECRET_REF, MELI_SELLER_REGISTRY_REF, MELI_STATUS_REF } from './oauth';
 import type { MeliConnectionSecret, MeliListingRecord, MeliListingStatus, MeliSyncCursor, MeliSyncJob } from './types';
 import { chunk, contentHash, jsonSafe, normalizeBulkItems, sanitizeError } from './utils';
-import { enqueueAnalysisIfNeeded } from './analysis';
 import { markListingProposalsStale } from './proposals';
 
 const LISTINGS_REF = (uid: string) => adminDb.collection('users').doc(uid).collection('meli_listings');
@@ -172,6 +171,7 @@ async function persistListing(
     createdAt: previousData?.createdAt || now,
     updatedAt: now,
     ...(!changed && previousData?.analysisSummary ? { analysisSummary: previousData.analysisSummary } : {}),
+    ...(previousData?.analysisInProgress ? { analysisInProgress: previousData.analysisInProgress } : {}),
     ...(previousData?.proposalVersion ? { proposalVersion: previousData.proposalVersion } : {}),
     ...(previousData?.proposalSummary ? {
       proposalSummary: changed ? { ...previousData.proposalSummary, status: 'stale', updatedAt: now } : previousData.proposalSummary,
@@ -190,8 +190,9 @@ async function persistListing(
   }
   await ref.set(record);
   if (changed && previousData) await markListingProposalsStale(uid, itemId);
+  // A auditoria (IA + imagens) é só sob demanda — individual ou em massa pela
+  // lista. Disparar na importação custava uma chamada ao modelo por anúncio.
   await fetchCategorySchema(uid, client, record.categoryId);
-  if (changed) await enqueueAnalysisIfNeeded(uid, itemId, hash);
 }
 
 export async function refreshListingNow(uid: string, itemId: string): Promise<MeliListingRecord> {

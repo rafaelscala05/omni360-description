@@ -35,6 +35,7 @@ export interface MeliListing {
   userProductId: string | null;
   catalogProductId: string | null;
   lastSyncedAt: string;
+  analysisInProgress?: string | null;
   analysisSummary?: {
     analysisId: string;
     status: string;
@@ -313,6 +314,20 @@ export async function listMeliListings(
   params.set('page', String(filters.page || 1));
   params.set('pageSize', String(filters.pageSize || 25));
   const response = await fetch(`/api/meli/listings?${params.toString()}`, { headers: await headers() });
+  return handle(response);
+}
+
+export const MAX_BULK_ANALYSES = 100;
+
+export interface MeliBulkAnalysisResult {
+  queued: Array<{ itemId: string; analysisId: string }>;
+  skipped: Array<{ itemId: string; reason: 'in_progress' | 'not_found' }>;
+}
+
+export async function startMeliBulkAnalysis(itemIds: string[]): Promise<MeliBulkAnalysisResult> {
+  const response = await fetch('/api/meli/analyses/bulk', {
+    method: 'POST', headers: await headers(), body: JSON.stringify({ itemIds }),
+  });
   return handle(response);
 }
 

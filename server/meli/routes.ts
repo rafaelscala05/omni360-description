@@ -5,7 +5,7 @@ import { completeAuthorization, createAuthorizationUrl, MELI_SECRET_REF, MELI_SE
 import { createSyncJob, findActiveAccountSyncJob, MELI_JOBS_REF, recordAudit, scheduleSyncJob } from './sync';
 import type { MeliConnectionSecret, MeliListingStatus } from './types';
 import { sanitizeError } from './utils';
-import { createAnalysis, getLatestAnalysis, scheduleAnalysis } from './analysis';
+import { createAnalysis, createBulkAnalyses, getLatestAnalysis, scheduleAnalysis } from './analysis';
 import { createProposal, decideChange, editChange, getLatestProposal, getProposal } from './proposals';
 import { getMeliOperationalMetrics } from './operations';
 import { createMutationRun, createRollbackProposal, getMutationRun, scheduleMutation } from './mutations';
@@ -188,6 +188,21 @@ export function registerMeliRoutes(app: express.Express, { verifyFirebaseToken }
       scheduleAnalysis(uid, analysis.id);
       await recordAudit(uid, 'meli.analysis.requested', 'meli_listing_analysis', analysis.id, { listingId: analysis.listingId });
       return res.status(202).json({ analysis });
+    } catch (error) {
+      return res.status(statusCode(error)).json({ message: sanitizeError(error) });
+    }
+  });
+
+  app.post('/api/meli/analyses/bulk', async (req, res) => {
+    try {
+      const { uid } = await verifyMeliModule(req);
+      const itemIds = Array.isArray(req.body?.itemIds) ? req.body.itemIds.filter((id: unknown) => typeof id === 'string') : [];
+      if (!itemIds.length) return res.status(422).json({ message: 'Selecione ao menos um anúncio.' });
+      const result = await createBulkAnalyses(uid, itemIds);
+      await recordAudit(uid, 'meli.analysis.bulk_requested', 'meli_listing_analysis', 'bulk', {
+        queued: result.queued.length, skipped: result.skipped.length,
+      });
+      return res.status(202).json(result);
     } catch (error) {
       return res.status(statusCode(error)).json({ message: sanitizeError(error) });
     }
