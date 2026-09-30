@@ -7,9 +7,10 @@
 //
 // Duas regras que não são óbvias:
 // - Tarefa só ganha `prompt` (o botão "Fazer com Alfred") quando existe
-//   ferramenta no registry do agente para executá-la. Geração de produto roda
-//   no cliente e o Mercado Livre não tem ferramenta, então essas tarefas
-//   levam à tela certa em vez de prometer uma execução que o chat não faz.
+//   ferramenta no registry do agente para executá-la — `alfredFaz` diz quais
+//   providers a conta enxerga (GET /api/agent/tools). Sem a ferramenta, a
+//   tarefa leva à tela certa em vez de prometer uma execução que o chat não
+//   faz. Foto de produto não tem ferramenta: continua levando à tela.
 // - O que tem data (artigo agendado, ação executada) fica no próprio dia; o
 //   resto é espalhado de hoje em diante, no máximo MAX_POR_DIA por dia, com o
 //   que precisa do usuário na frente.
@@ -49,7 +50,12 @@ export interface SinaisSemana {
   /** null = módulo desligado ou métrica indisponível. */
   meliPropostasAguardando: number | null;
   integracoesComAlerta: string[];
+  /** Providers com ferramenta no registry para esta conta. Ausente = nenhum. */
+  alfredFaz?: { produtos?: boolean; meli?: boolean };
 }
+
+export const PROMPT_DESCRICOES = 'Complete as descrições dos produtos que estão sem, num lote de 5, e me mostre uma amostra antes de gravar.';
+export const PROMPT_MELI = 'Quais anúncios do Mercado Livre têm proposta de melhoria esperando? Me mostre a de maior impacto.';
 
 export const MAX_POR_DIA = 3;
 export const DIAS_CURTOS = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB', 'DOM'];
@@ -92,7 +98,7 @@ export function montarSemana(s: SinaisSemana): TarefaSemana[] {
     if (dia === null) continue;
     fixas.push({
       id: `acao-${a.id}`,
-      origem: a.provider === 'content' ? 'conteudo' : 'operacoes',
+      origem: origemDoProvider(a.provider),
       titulo: a.preview.resumo,
       detalhe: a.preview.alvo,
       dia,
@@ -123,7 +129,7 @@ export function montarSemana(s: SinaisSemana): TarefaSemana[] {
   if (pendentes.length > 0) {
     flexiveis.push({
       id: 'aprovacoes',
-      origem: pendentes.every((a) => a.provider === 'content') ? 'conteudo' : 'operacoes',
+      origem: pendentes.every((a) => a.provider === pendentes[0].provider) ? origemDoProvider(pendentes[0].provider) : 'operacoes',
       titulo: `Aprovar ${plural(pendentes.length, 'ação do Alfred', 'ações do Alfred')}`,
       detalhe: 'Nada é gravado sem a sua aprovação',
       estado: 'precisa',
@@ -148,6 +154,7 @@ export function montarSemana(s: SinaisSemana): TarefaSemana[] {
       origem: 'meli',
       titulo: `Revisar ${plural(s.meliPropostasAguardando, 'proposta', 'propostas')} de melhoria no Mercado Livre`,
       estado: 'precisa',
+      prompt: s.alfredFaz?.meli ? PROMPT_MELI : undefined,
       destino: 'meli',
     });
   }
@@ -159,6 +166,7 @@ export function montarSemana(s: SinaisSemana): TarefaSemana[] {
       titulo: `Completar a descrição de ${plural(s.produtosSemDescricao, 'produto', 'produtos')}`,
       detalhe: 'Sem descrição o produto aparece mal na busca',
       estado: 'aberta',
+      prompt: s.alfredFaz?.produtos ? PROMPT_DESCRICOES : undefined,
       destino: 'produtos',
     });
   }
@@ -187,6 +195,14 @@ export function montarSemana(s: SinaisSemana): TarefaSemana[] {
   return [...fixas, ...distribuidas].sort(
     (a, b) => a.dia - b.dia || ordemEstado(a.estado) - ordemEstado(b.estado),
   );
+}
+
+/** De qual agente veio uma ação do Alfred, na legenda de cores da semana. */
+export function origemDoProvider(provider: string): OrigemTarefa {
+  if (provider === 'content') return 'conteudo';
+  if (provider === 'produtos') return 'produto';
+  if (provider === 'meli') return 'meli';
+  return 'operacoes';
 }
 
 function ordemEstado(e: EstadoTarefa): number {

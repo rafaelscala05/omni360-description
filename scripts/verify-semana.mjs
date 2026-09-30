@@ -7,6 +7,8 @@ import {
   montarSemana,
   proximoPasso,
   semImagem,
+  PROMPT_DESCRICOES,
+  PROMPT_MELI,
 } from '../src/modules/agent/semana.ts';
 
 let failures = 0;
@@ -50,7 +52,13 @@ check('sem sinais, sem tarefas', montarSemana(base), []);
 // Produto não tem ferramenta no registry: leva à tela, não promete execução.
 const prod = montarSemana({ ...base, produtosSemDescricao: 12 });
 check('tarefa de descrição cai hoje', prod.map((t) => [t.id, t.dia, t.estado]), [['produtos-descricao', 2, 'aberta']]);
-check('tarefa de produto não tem "Fazer com Alfred"', prod[0].prompt, undefined);
+check('sem ferramenta de produto, não tem "Fazer com Alfred"', prod[0].prompt, undefined);
+{
+  const comTool = montarSemana({ ...base, produtosSemDescricao: 4, produtosSemImagem: 2, meliPropostasAguardando: 3, alfredFaz: { produtos: true, meli: true } });
+  check('com ferramenta de produto, descrições ganham prompt', comTool.find((t) => t.id === 'produtos-descricao').prompt, PROMPT_DESCRICOES);
+  check('foto de produto continua sem ferramenta', comTool.find((t) => t.id === 'produtos-imagem').prompt, undefined);
+  check('com ferramenta do MELI, propostas ganham prompt', comTool.find((t) => t.id === 'meli-propostas').prompt, PROMPT_MELI);
+}
 check('plural e singular no título', montarSemana({ ...base, produtosSemDescricao: 1 })[0].titulo, 'Completar a descrição de 1 produto');
 
 // O que precisa do usuário vem antes do que está só aberto.

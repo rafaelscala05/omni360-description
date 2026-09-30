@@ -6,13 +6,13 @@
 // Alfred escuta as duas para a régua e o chat), para não abrir um segundo
 // listener no mesmo documento.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Product } from '../../types/models';
 import type { AgentAction } from '../../types/agent';
 import type { IntegrationSummary } from '../../services/integrationsStatusService';
 import { listenCalendar, listenProjects } from '../../services/contentService';
 import { getMeliOperationalMetrics } from '../../services/meliService';
-import { listenActions } from '../../services/agentChatService';
+import { fetchTools, listenActions } from '../../services/agentChatService';
 import { diaNaSemana, inicioDaSemana, montarSemana, semImagem, type ArtigoAgendado, type TarefaSemana } from './semana';
 
 export function useArtigosDaSemana(uid: string, ativo: boolean): ArtigoAgendado[] {
@@ -89,9 +89,23 @@ interface Opcoes {
   integracoes: IntegrationSummary[];
   hasContentAgent: boolean;
   hasMeli: boolean;
+  /** Providers com ferramenta no registry (ver useProvidersAlfred). */
+  providers?: string[];
 }
 
-export function useSemana({ uid, products, acoes, integracoes, hasContentAgent, hasMeli }: Opcoes): {
+/** Quais providers o Alfred consegue operar nesta conta — liga o "Fazer com Alfred". */
+export function useProvidersAlfred(uid: string, ativo: boolean): string[] {
+  const [providers, setProviders] = useState<string[]>([]);
+  useEffect(() => {
+    if (!ativo) { setProviders([]); return; }
+    let vivo = true;
+    fetchTools().then((r) => { if (vivo) setProviders(r.providers ?? []); }).catch(() => {});
+    return () => { vivo = false; };
+  }, [uid, ativo]);
+  return providers;
+}
+
+export function useSemana({ uid, products, acoes, integracoes, hasContentAgent, hasMeli, providers = [] }: Opcoes): {
   tarefas: TarefaSemana[];
   hoje: number;
   artigos: ArtigoAgendado[];
@@ -126,23 +140,39 @@ export function useSemana({ uid, products, acoes, integracoes, hasContentAgent, 
         artigos,
         meliPropostasAguardando,
         integracoesComAlerta,
+        alfredFaz: { produtos: providers.includes('produtos'), meli: providers.includes('meli') },
       }),
       hoje: diaNaSemana(inicioDaSemana(agora), agora) ?? 0,
       artigos,
       meliPropostasAguardando,
     };
-  }, [semDescricao, semFoto, acoes, artigos, meliPropostasAguardando, integracoesComAlerta]);
+  }, [semDescricao, semFoto, acoes, artigos, meliPropostasAguardando, integracoesComAlerta, providers]);
 }
 
-/** Aprovações do Alfred esperando o usuário — o selo da aba Atividade. */
-export function usePendentesAlfred(ativo: boolean): number {
+/**
+ * Aprovações do Alfred esperando o usuário — o selo da aba Atividade.
+ *
+ * `onCatalogoAlterado` dispara quando uma ação de produto passa a executada
+ * depois que o app abriu: o catálogo mora em memória no App e só é relido por
+ * loadFromCloud, então sem isso as descrições que o Alfred gravou só
+ * apareceriam no próximo login.
+ */
+export function usePendentesAlfred(ativo: boolean, onCatalogoAlterado?: () => void): number {
   const [n, setN] = useState(0);
+  const cbRef = useRef(onCatalogoAlterado);
+  cbRef.current = onCatalogoAlterado;
   useEffect(() => {
     if (!ativo) {
       setN(0);
       return;
     }
-    return listenActions((lista) => setN(lista.filter((a) => a.status === 'pending').length));
+    let vistas: Set<string> | null = null;
+    return listenActions((lista) => {
+      setN(lista.filter((a) => a.status === 'pending').length);
+      const executadas = lista.filter((a) => a.provider === 'produtos' && a.status === 'executed').map((a) => a.id);
+      if (vistas && executadas.some((id) => !vistas!.has(id))) cbRef.current?.();
+      vistas = new Set(executadas);
+    });
   }, [ativo]);
   return n;
 }

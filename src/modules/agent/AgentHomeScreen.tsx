@@ -71,6 +71,7 @@ const AgentHomeScreen: React.FC<Props> = ({
   const [integracoes, setIntegracoes] = useState<IntegrationSummary[]>([]);
   const [statusCarregando, setStatusCarregando] = useState(true);
   const [ferramentas, setFerramentas] = useState<Record<string, number>>({});
+  const [providers, setProviders] = useState<string[]>([]);
   const [projetosCount, setProjetosCount] = useState<number | null>(null);
   const listaAcoes = useMemo(() => Object.values(acoes), [acoes]);
   const [parcial, setParcial] = useState('');
@@ -128,8 +129,9 @@ const AgentHomeScreen: React.FC<Props> = ({
   useEffect(() => {
     let vivo = true;
     fetchTools()
-      .then(({ tools }) => {
+      .then(({ tools, providers: lista }) => {
         if (!vivo) return;
+        setProviders(lista ?? []);
         const contagem: Record<string, number> = {};
         for (const t of tools) contagem[t.provider] = (contagem[t.provider] ?? 0) + 1;
         setFerramentas(contagem);
@@ -144,7 +146,7 @@ const AgentHomeScreen: React.FC<Props> = ({
   }, [uid, hasContentAgent]);
 
   const { tarefas, hoje } = useSemana({
-    uid, products, acoes: listaAcoes, integracoes, hasContentAgent, hasMeli,
+    uid, products, acoes: listaAcoes, integracoes, hasContentAgent, hasMeli, providers,
   });
 
   const focar = (f: boolean) => { setComposerFocado(f); onFocoChange?.(f); };

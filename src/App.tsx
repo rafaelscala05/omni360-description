@@ -293,7 +293,9 @@ export default function App() {
   const [hasMeliListingOptimizer, setHasMeliListingOptimizer] = useState<boolean>(false);
   // Coorte da jornada de missão (users/{uid}.cohort). null = ainda não lida ou conta legada.
   const [cohort, setCohort] = useState<string | null>(null);
-  const pendentesAlfred = usePendentesAlfred(!!user && (hasContentAgent || hasOperationsAgent));
+  // Preenchido depois de loadFromCloud: o Alfred gravou no catálogo, relê do Firestore.
+  const catalogoAlteradoRef = useRef<() => void>(() => {});
+  const pendentesAlfred = usePendentesAlfred(!!user && (hasContentAgent || hasOperationsAgent), () => catalogoAlteradoRef.current());
   // "Abrir" de uma tarefa da semana / de um cartão de Ferramentas.
   const abrirDestino = (destino: DestinoTarefa) => {
     if (destino === 'produtos') setMainView('products');
@@ -1060,6 +1062,9 @@ export default function App() {
       setIsLoadingFromCloud(false);
     }
   };
+  // Mesmo critério dos imports de ERP: com edição local pendente, não relê por
+  // cima (o autosave grava primeiro e o usuário vê o resto no próximo carregamento).
+  catalogoAlteradoRef.current = () => { if (!hasUnsavedChanges) loadFromCloud(true); };
 
   // Template State
   const [templates, setTemplates] = useState<Template[]>(() => {

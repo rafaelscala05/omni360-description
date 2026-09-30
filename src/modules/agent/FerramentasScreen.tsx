@@ -5,7 +5,7 @@ import type { AgentAction } from '../../types/agent';
 import { listenActions } from '../../services/agentChatService';
 import { fetchIntegrationsOverview, type IntegrationSummary } from '../../services/integrationsStatusService';
 import { useAgentTheme } from './theme';
-import { useSemana } from './useSemana';
+import { useProvidersAlfred, useSemana } from './useSemana';
 import { diaNaSemana, inicioDaSemana, proximoPasso, semImagem, type DestinoTarefa, type OrigemTarefa } from './semana';
 import { ORIGEM } from './SemanaPanel';
 
@@ -83,8 +83,9 @@ const FerramentasScreen: React.FC<Props> = ({
     return () => { vivo = false; };
   }, [uid]);
 
+  const providers = useProvidersAlfred(uid, hasAgente);
   const { tarefas, hoje, artigos, meliPropostasAguardando } = useSemana({
-    uid, products, acoes, integracoes, hasContentAgent, hasMeli,
+    uid, products, acoes, integracoes, hasContentAgent, hasMeli, providers,
   });
   const passo = proximoPasso(tarefas, hoje);
 
