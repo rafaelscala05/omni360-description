@@ -12,7 +12,7 @@ import type { DynamicStructuredTool } from '@langchain/core/tools';
 import { interrupt, isGraphInterrupt } from '@langchain/langgraph';
 import * as z from 'zod';
 import { resolveApprovalMode, type AgentSettings } from './agentSettings';
-import { estimateCredits, runApprovedWrite } from './execution';
+import { estimateCredits, recordAutoAction, runApprovedWrite } from './execution';
 
 const tools = new Map<string, ToolDef<any>>();
 
@@ -140,7 +140,14 @@ export function toLangChainTools(
           const preview = await def.preview!(ctx, args);
           const mode = resolveApprovalMode(settings, def.name);
           if (mode === 'auto') {
-            return await runApprovedWrite(ctx, def, args, preview);
+            try {
+              const result = await runApprovedWrite(ctx, def, args, preview);
+              await recordAutoAction(ctx, def, args, preview, { result });
+              return result;
+            } catch (err) {
+              await recordAutoAction(ctx, def, args, preview, { error: err instanceof Error ? err.message : String(err) });
+              throw err;
+            }
           }
 
           const decisao = interrupt({

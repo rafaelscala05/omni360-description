@@ -25,6 +25,32 @@ const ALWAYS_ASK_TOOLS: readonly string[] = [
   'meli.proposta.publicar',
 ];
 
+/** Trava fixa: o modo automático não vale para ela. */
+export function isAlwaysAsk(toolName: string): boolean {
+  return ALWAYS_ASK_TOOLS.includes(toolName);
+}
+
+export const alwaysAskTools = (): string[] => [...ALWAYS_ASK_TOOLS];
+
+/**
+ * Sanea o que chega do cliente antes de gravar: só 'ask'/'auto', nomes no
+ * formato de ferramenta, e nenhuma trava fixa marcada como automática (ela
+ * seria ignorada de qualquer jeito, mas gravada daria a impressão contrária).
+ */
+export function sanitizeSettings(raw: unknown): AgentSettings {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const approvalMode = r.approvalMode === 'auto' ? 'auto' : 'ask';
+  const toolOverrides: Record<string, 'ask' | 'auto'> = {};
+  const o = (r.toolOverrides ?? {}) as Record<string, unknown>;
+  for (const [nome, modo] of Object.entries(o)) {
+    if (!/^[a-zA-Z][a-zA-Z0-9_.:-]{0,63}$/.test(nome)) continue;
+    if (modo !== 'ask' && modo !== 'auto') continue;
+    if (modo === 'auto' && isAlwaysAsk(nome)) continue;
+    toolOverrides[nome] = modo;
+  }
+  return { approvalMode, toolOverrides };
+}
+
 export function resolveApprovalMode(settings: AgentSettings, toolName: string): 'ask' | 'auto' {
   if (ALWAYS_ASK_TOOLS.includes(toolName)) return 'ask';
   return settings.toolOverrides?.[toolName] ?? settings.approvalMode;

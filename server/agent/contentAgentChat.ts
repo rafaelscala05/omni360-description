@@ -230,6 +230,9 @@ async function streamRun(
           uid,
           providers: agentContext.providers,
           conexoes: agentContext.conexoes,
+          // Autonomia por ferramenta (users/{uid}/agent_settings/config).
+          // Sem isto o grafo caía sempre no padrão "perguntar".
+          settings: agentContext.settings,
           ...(contexto ? { contexto } : {}),
         },
       },

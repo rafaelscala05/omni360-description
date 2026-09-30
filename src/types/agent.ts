@@ -43,6 +43,13 @@ export interface AgentAction {
   result?: unknown;
   error?: string;
   dryRun?: boolean;
+  /** Rodou no modo automático, sem passar pela aprovação (threadId 'auto'). */
+  auto?: boolean;
+}
+
+export interface AgentSettings {
+  approvalMode: 'ask' | 'auto';
+  toolOverrides?: Record<string, 'ask' | 'auto'>;
 }
 
 export interface ThreadMessage {

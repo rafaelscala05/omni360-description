@@ -132,3 +132,36 @@ export async function runApprovedWrite(
     throw err;
   }
 }
+
+/**
+ * Uma escrita que rodou no modo automático não passa por interrupt(), então
+ * não nasce o documento em agent_actions que a aprovação cria. Sem ele, o que
+ * o Alfred fez sozinho não apareceria na Atividade nem riscaria a tarefa na
+ * semana — o "Feito com recibo" ficaria só para o que o usuário aprovou.
+ */
+export async function recordAutoAction(
+  ctx: ToolCtx,
+  def: ToolDef<any>,
+  args: Record<string, unknown>,
+  preview: ActionPreview,
+  outcome: { result?: unknown; error?: string },
+): Promise<void> {
+  const ref = adminDb.collection('users').doc(ctx.uid).collection('agent_actions').doc();
+  const now = new Date().toISOString();
+  const { payload: _payload, ...visivel } = preview;
+  await ref.set(stripUndefined({
+    id: ref.id,
+    threadId: 'auto',
+    tool: def.name,
+    provider: def.provider,
+    args,
+    preview: { ...visivel, ferramenta: def.name, args },
+    status: outcome.error ? 'failed' : 'executed',
+    auto: true,
+    createdAt: now,
+    resolvedAt: now,
+    result: outcome.result,
+    error: outcome.error,
+    dryRun: ctx.dryRun,
+  })).catch(() => {});
+}

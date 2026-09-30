@@ -10,6 +10,7 @@
 import { adminDb } from '../firebaseAdmin';
 import { getV2Token } from '../tinyV2';
 import type { ToolCtx, ToolProvider } from './types';
+import { DEFAULT_AGENT_SETTINGS, sanitizeSettings, type AgentSettings } from './agentSettings';
 
 const WAKE_SECRET = (uid: string) =>
   adminDb.collection('users').doc(uid).collection('integration_secrets').doc('wake');
@@ -46,6 +47,15 @@ export async function resolveConnections(uid: string): Promise<Connections> {
 export interface AgentContext {
   providers: ToolProvider[];
   conexoes: { wake: boolean; tiny: boolean };
+  settings: AgentSettings;
+}
+
+export const agentSettingsRef = (uid: string) =>
+  adminDb.collection('users').doc(uid).collection('agent_settings').doc('config');
+
+export async function loadAgentSettings(uid: string): Promise<AgentSettings> {
+  const snap = await agentSettingsRef(uid).get().catch(() => null);
+  return snap?.exists ? sanitizeSettings(snap.data()) : DEFAULT_AGENT_SETTINGS;
 }
 
 /**
@@ -73,7 +83,7 @@ export async function resolveAgentContext(uid: string): Promise<AgentContext> {
   if (modules.contentAgent === true || modules.operationsAgent === true) providers.push('produtos');
   if (modules.meliListingOptimizer === true) providers.push('meli');
 
-  return { providers, conexoes: { wake: conns.wake, tiny: conns.tiny } };
+  return { providers, conexoes: { wake: conns.wake, tiny: conns.tiny }, settings: await loadAgentSettings(uid) };
 }
 
 /** users/{uid}.modules.contentAgent or .operationsAgent must be on — the account needs at least one of the two features this agent covers. */

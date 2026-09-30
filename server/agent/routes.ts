@@ -7,7 +7,8 @@
 import type express from 'express';
 import { adminDb } from '../firebaseAdmin';
 import { describeTools } from './registry';
-import { resolveAgentContext, requireAnyModule } from './connections';
+import { agentSettingsRef, loadAgentSettings, resolveAgentContext, requireAnyModule } from './connections';
+import { alwaysAskTools, sanitizeSettings } from './agentSettings';
 
 interface Deps {
   verifyFirebaseToken: (req: express.Request) => Promise<{ uid: string }>;
@@ -35,6 +36,30 @@ export function registerOperationsRoutes(app: express.Express, { verifyFirebaseT
       await requireAnyModule(uid);
       const ctx = await resolveAgentContext(uid);
       return res.json({ providers: ctx.providers, tools: describeTools(ctx.providers) });
+    } catch (e: any) {
+      return res.status(httpStatus(e)).json({ message: e?.message });
+    }
+  });
+
+  // Autonomia por ferramenta. Gravado pelo servidor (sanitizeSettings) e não
+  // direto pelo cliente, para uma trava fixa nunca aparecer como automática.
+  app.get('/api/agent/settings', async (req, res) => {
+    try {
+      const { uid } = await verifyFirebaseToken(req);
+      await requireAnyModule(uid);
+      return res.json({ settings: await loadAgentSettings(uid), travas: alwaysAskTools() });
+    } catch (e: any) {
+      return res.status(httpStatus(e)).json({ message: e?.message });
+    }
+  });
+
+  app.put('/api/agent/settings', async (req, res) => {
+    try {
+      const { uid } = await verifyFirebaseToken(req);
+      await requireAnyModule(uid);
+      const settings = sanitizeSettings(req.body?.settings);
+      await agentSettingsRef(uid).set({ ...settings, updatedAt: new Date().toISOString() });
+      return res.json({ settings, travas: alwaysAskTools() });
     } catch (e: any) {
       return res.status(httpStatus(e)).json({ message: e?.message });
     }

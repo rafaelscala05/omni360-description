@@ -11,7 +11,7 @@
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import type {
-  AgentAction, AgentConnections, AgentLog, AgentToolInfo, ThreadMessage, WorkspaceContext,
+  AgentAction, AgentConnections, AgentLog, AgentSettings, AgentToolInfo, ThreadMessage, WorkspaceContext,
 } from '../types/agent';
 
 const AGENT_THREAD_ID = 'principal';
@@ -41,7 +41,7 @@ function assertJson(resp: Response): void {
   }
 }
 
-async function call<T>(url: string, method: 'GET' | 'POST' = 'GET', body?: unknown): Promise<T> {
+async function call<T>(url: string, method: 'GET' | 'POST' | 'PUT' = 'GET', body?: unknown): Promise<T> {
   const resp = await fetch(url, {
     method,
     headers: await authHeaders(),
@@ -53,6 +53,18 @@ async function call<T>(url: string, method: 'GET' | 'POST' = 'GET', body?: unkno
     throw new Error((data as { message?: string }).message || `Erro ${resp.status}`);
   }
   return resp.json() as Promise<T>;
+}
+
+/** Autonomia por ferramenta; `travas` são as que sempre perguntam, mesmo no automático. */
+export const fetchAgentSettings = () => call<{ settings: AgentSettings; travas: string[] }>('/api/agent/settings');
+export const salvarAgentSettings = (settings: AgentSettings) =>
+  call<{ settings: AgentSettings; travas: string[] }>('/api/agent/settings', 'PUT', { settings });
+
+/** Liga ou desliga o "aprovar sozinho" de uma ferramenta, preservando o resto. */
+export async function definirAutonomia(tool: string, auto: boolean): Promise<AgentSettings> {
+  const { settings } = await fetchAgentSettings();
+  const toolOverrides = { ...(settings.toolOverrides ?? {}), [tool]: auto ? 'auto' as const : 'ask' as const };
+  return (await salvarAgentSettings({ ...settings, toolOverrides })).settings;
 }
 
 export const fetchConnections = () => call<AgentConnections>('/api/agent/connections');

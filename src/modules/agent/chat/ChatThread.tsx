@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Check, ChevronDown, Sparkles, X } from 'lucide-react';
 import type { AgentAction, ThreadMessage } from '../../../types/agent';
 import ActionCard from './ActionCard';
+import PlanoCard from './PlanoCard';
+import { montarPlano, rotuloFerramenta, temPlano } from '../plano';
 import Markdown from './Markdown';
 
 interface Props {
@@ -18,13 +20,7 @@ interface Props {
 
 type Leitura = { tool: string; ok: boolean; erro?: string };
 
-/** Nome técnico da ferramenta em algo legível: `tiny.produto.obter` → "Tiny · produto obter". */
-function humanizar(tool: string): string {
-  const [provider, ...resto] = tool.split('.');
-  const nome = resto.join(' ').replace(/[._]/g, ' ');
-  const marca = { wake: 'Wake', tiny: 'Tiny', content: 'Conteúdo', docs: 'Documentação' }[provider] ?? provider;
-  return nome ? `${marca} · ${nome}` : marca;
-}
+const humanizar = rotuloFerramenta;
 
 /**
  * As leituras que o agente fez num turno, colapsadas numa linha só.
@@ -152,7 +148,17 @@ const ChatThread: React.FC<Props> = ({
             <div key={m.id} className="ag-rise flex gap-3">
               <Avatar />
               <div className="min-w-0 flex-1 space-y-3">
-                {!!m.leituras?.length && <Trilha leituras={m.leituras} />}
+                {/* Turno que propôs uma gravação (ou leu várias fontes) vira
+                    um plano; as chamadas cruas ficam atrás do "Ver como ele
+                    trabalhou". Turno simples mantém só a trilha discreta. */}
+                {temPlano({ leituras: m.leituras ?? [], acao: cards[0] })
+                  ? (
+                    <PlanoCard
+                      plano={montarPlano({ leituras: m.leituras ?? [], acao: cards[0] })}
+                      detalhes={m.leituras?.length ? <Trilha leituras={m.leituras} /> : undefined}
+                    />
+                  )
+                  : !!m.leituras?.length && <Trilha leituras={m.leituras} />}
                 {m.texto && <Markdown texto={m.texto} />}
                 {cards.map((a) => (
                   <ActionCard key={a.id} uid={uid} action={a} onExecutar={onExecutar} onRejeitar={onRejeitar} />
@@ -167,7 +173,9 @@ const ChatThread: React.FC<Props> = ({
           <div className="ag-rise flex gap-3">
             <Avatar />
             <div className="min-w-0 flex-1 space-y-3">
-              {leituras.length > 0 && <Trilha leituras={leituras} aoVivo={streaming} />}
+              {temPlano({ leituras, aoVivo: streaming })
+                ? <PlanoCard plano={montarPlano({ leituras, aoVivo: streaming })} detalhes={<Trilha leituras={leituras} />} />
+                : leituras.length > 0 && <Trilha leituras={leituras} aoVivo={streaming} />}
               {parcial ? <Markdown texto={parcial} /> : streaming && <Pensando />}
             </div>
           </div>
