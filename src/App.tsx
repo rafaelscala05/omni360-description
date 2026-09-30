@@ -3718,6 +3718,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               uid={user.uid}
               onAbrirMenu={() => setIsSidebarOpen(true)}
               onAbrirAlfred={() => setMainView('home')}
+              products={products}
             />
           ) : mainView === 'ferramentas' ? (
             <FerramentasScreen

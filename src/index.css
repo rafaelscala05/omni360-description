@@ -322,7 +322,18 @@ body {
 
 .ag-scroll-x::-webkit-scrollbar { display: none; }
 
+/* Progresso sem total conhecido (vídeo na fila): uma faixa que atravessa a
+   barra, em vez de uma porcentagem inventada. */
+.ag-indeterminado {
+  animation: ag-indeterminado 1.6s ease-in-out infinite;
+}
+@keyframes ag-indeterminado {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .ag-indeterminado,
   .ag-aurora::before,
   .ag-aurora::after,
   .ag-rise,

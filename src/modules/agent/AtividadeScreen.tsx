@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Inbox, Menu } from 'lucide-react';
+import { AlertCircle, Clapperboard, Inbox, Menu } from 'lucide-react';
 import type { AgentAction } from '../../types/agent';
+import type { Product } from '../../types/models';
+import { useRodando } from './useRodando';
+import type { ItemRodando } from './rodando';
 import { executarAcao, listenActions, rejeitarAcao } from '../../services/agentChatService';
 import { useAgentTheme } from './theme';
 import ActionCard from './chat/ActionCard';
@@ -10,17 +13,53 @@ interface Props {
   onAbrirMenu: () => void;
   /** Leva ao chat — é lá que o Alfred responde depois de uma aprovação. */
   onAbrirAlfred: () => void;
+  /** Para dar nome aos vídeos em produção (o job só guarda o id do produto). */
+  products?: Product[];
+  /** Tema da superfície do agente, compartilhado com as outras telas. */
+  tema?: 'claro' | 'escuro';
 }
 
-type Aba = 'voce' | 'historico';
+type Aba = 'voce' | 'rodando' | 'feito';
+
+const LinhaRodando: React.FC<{ item: ItemRodando }> = ({ item }) => {
+  const pct = item.feito !== null && item.total ? Math.round((item.feito / item.total) * 100) : null;
+  return (
+    <div className="ag-glass rounded-[22px] p-4 flex flex-col gap-2.5">
+      <div className="flex items-center gap-2.5">
+        <span className="w-9 h-9 rounded-full grid place-items-center shrink-0" style={{ background: 'var(--ag-blue-soft)', color: 'var(--ag-blue)' }}>
+          <Clapperboard className="w-[18px] h-[18px]" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[14.5px] font-semibold text-[var(--ag-text)] truncate">{item.titulo}</div>
+          <div className="text-[12.5px]" style={{ color: item.parado ? 'var(--ag-warn)' : 'var(--ag-text-2)' }}>
+            {item.parado ? 'Sem atualização há mais de 30 min — confira no produto' : item.etapa}
+          </div>
+        </div>
+        {item.feito !== null && item.total !== null && (
+          <span className="shrink-0 px-2.5 py-1 rounded-full text-[12px] font-semibold tabular-nums" style={{ background: 'var(--ag-blue-soft)', color: 'var(--ag-blue)' }}>
+            {item.feito} de {item.total}
+          </span>
+        )}
+      </div>
+      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--ag-fill-2)' }} role="progressbar" aria-valuenow={pct ?? undefined} aria-valuemin={0} aria-valuemax={100}>
+        {pct !== null
+          ? <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${Math.max(pct, 4)}%`, background: 'var(--ag-blue)' }} />
+          : <div className="h-full w-1/3 rounded-full ag-indeterminado" style={{ background: 'var(--ag-blue)' }} />}
+      </div>
+    </div>
+  );
+};
 
 /**
  * Caixa de entrada única do agente: tudo o que ele pediu para gravar e tudo o
  * que já gravou, venha do chat ou de um botão numa ferramenta. É a resposta
  * para "o que está sendo aprovado e o que já foi feito" sem rolar a conversa.
  */
-const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirMenu, onAbrirAlfred }) => {
-  const { tema } = useAgentTheme();
+const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirMenu, onAbrirAlfred, products = [], tema: temaProp }) => {
+  const { tema: temaLocal } = useAgentTheme();
+  const tema = temaProp ?? temaLocal;
+  const nomes = useMemo(() => new Map(products.map((p) => [p._id, String(p['Descrição'] ?? '')])), [products]);
+  const rodando = useRodando(uid, nomes);
   const [acoes, setAcoes] = useState<AgentAction[]>([]);
   const [aba, setAba] = useState<Aba>('voce');
   const [erro, setErro] = useState<string | null>(null);
@@ -48,6 +87,7 @@ const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirMenu, onAbrirAlfred }) =
   };
 
   const lista = aba === 'voce' ? pendentes : historico;
+  const vazio = aba === 'rodando' ? rodando.length === 0 : lista.length === 0;
 
   return (
     <div className="alfreds h-full flex flex-col" data-tema={tema}>
@@ -68,10 +108,11 @@ const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirMenu, onAbrirAlfred }) =
             <h1 className="font-display text-[26px] sm:text-[30px] font-semibold tracking-tight text-[var(--ag-text)]">Atividade</h1>
           </div>
 
-          <div className="grid grid-cols-2 p-[3px] rounded-[14px] max-w-md" style={{ background: 'var(--ag-fill-2)' }} role="tablist">
+          <div className="grid grid-cols-3 p-[3px] rounded-[14px] max-w-md" style={{ background: 'var(--ag-fill-2)' }} role="tablist">
             {([
               ['voce', `Para você${pendentes.length ? ` · ${pendentes.length}` : ''}`],
-              ['historico', 'Histórico'],
+              ['rodando', `Rodando${rodando.length ? ` · ${rodando.length}` : ''}`],
+              ['feito', 'Feito'],
             ] as [Aba, string][]).map(([id, rotulo]) => (
               <button
                 key={id}
@@ -101,13 +142,15 @@ const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirMenu, onAbrirAlfred }) =
               </div>
             )}
 
-            {lista.length === 0 ? (
+            {vazio ? (
               <div className="ag-glass rounded-[22px] px-5 py-8 flex flex-col items-center gap-3 text-center">
                 <Inbox className="w-6 h-6 text-[var(--ag-text-3)]" />
                 <div className="text-[14px] text-[var(--ag-text-2)] max-w-xs">
                   {aba === 'voce'
                     ? 'Nada esperando por você. Quando o Alfred precisar gravar algo, a aprovação aparece aqui.'
-                    : 'O Alfred ainda não gravou nada.'}
+                    : aba === 'rodando'
+                      ? 'Nada rodando agora. Vídeos em produção aparecem aqui com o progresso.'
+                      : 'O Alfred ainda não gravou nada.'}
                 </div>
                 <button
                   onClick={onAbrirAlfred}
@@ -117,6 +160,8 @@ const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirMenu, onAbrirAlfred }) =
                   Ver a semana
                 </button>
               </div>
+            ) : aba === 'rodando' ? (
+              rodando.map((item) => <LinhaRodando key={item.id} item={item} />)
             ) : (
               lista.map((a) => (
                 <ActionCard
