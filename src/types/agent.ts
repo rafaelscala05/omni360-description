@@ -2,7 +2,7 @@
 // módulo e pelo serviço. Espelham server/agent/types.ts — mantenha os dois
 // em sincronia.
 
-export type ToolProvider = 'wake' | 'tiny' | 'docs' | 'content';
+export type ToolProvider = 'wake' | 'tiny' | 'docs' | 'content' | 'produtos' | 'meli';
 
 export interface PreviewField {
   campo: string;
@@ -16,6 +16,10 @@ export interface ActionPreview {
   alvo: string;
   campos: PreviewField[];
   avisos: string[];
+  /** Antes/depois por item numa ação em lote (amostra navegável na aprovação). */
+  itens?: { alvo: string; campos: PreviewField[] }[];
+  /** Créditos que a execução vai debitar. */
+  custo?: number;
   /** Nome da ferramenta e argumentos originais — dá pra UI renderizar um
    * formulário específico por ferramenta (ex.: content.credencial.conectar)
    * em vez do diff padrão. Sempre presentes: registry.ts inclui os dois em

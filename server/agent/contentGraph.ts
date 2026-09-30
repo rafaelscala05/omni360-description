@@ -10,6 +10,8 @@ import '../agent/tools/contentBlog';
 import '../agent/tools/wake';
 import '../agent/tools/tiny';
 import '../agent/tools/discovery';
+import '../agent/tools/produtos';
+import '../agent/tools/meli';
 import { StateGraph, START, END, MessagesAnnotation } from '@langchain/langgraph';
 import { ToolNode } from '@langchain/langgraph/prebuilt';
 import { ChatVertexAI } from '@langchain/google-vertexai';
@@ -72,6 +74,14 @@ function buildSystemPrompt(config: ContentGraphConfig): string {
       conexoes.tiny ? '- Tiny ERP (v2): produtos, preço, estoque, pedidos e contatos.' : null,
     ].filter(Boolean).join('\n');
     partes.push(`Plataformas de e-commerce/ERP conectadas nesta conta:\n${plataformas || '- Nenhuma plataforma conectada.'}`);
+  }
+
+  const providers = config.configurable?.providers ?? [];
+  if (providers.includes('produtos')) {
+    partes.push('Catálogo do OMNI360: você lê os produtos (produtos.incompletos.listar, produtos.buscar) e escreve descrição + SEO em lote com produtos.descricoes.gerar — isso grava só no catálogo do OMNI360, não no ERP. Antes de gravar, diga em uma frase o plano: quantos produtos, o que muda e que o usuário revisa uma amostra antes.');
+  }
+  if (providers.includes('meli')) {
+    partes.push('Mercado Livre: meli.propostas.listar e meli.proposta.ver leem as propostas do otimizador; meli.proposta.publicar publica as mudanças escolhidas e sempre pede aprovação.');
   }
 
   if (contexto?.projetoId) {

@@ -12,7 +12,7 @@ import type { DynamicStructuredTool } from '@langchain/core/tools';
 import { interrupt, isGraphInterrupt } from '@langchain/langgraph';
 import * as z from 'zod';
 import { resolveApprovalMode, type AgentSettings } from './agentSettings';
-import { runApprovedWrite } from './execution';
+import { estimateCredits, runApprovedWrite } from './execution';
 
 const tools = new Map<string, ToolDef<any>>();
 
@@ -149,6 +149,10 @@ export function toLangChainTools(
             alvo: preview.alvo,
             campos: preview.campos,
             avisos: preview.avisos,
+            // Lote: antes/depois por item e o custo em créditos — a aprovação
+            // mostra uma amostra navegável e quanto vai gastar antes de gastar.
+            ...(preview.itens?.length ? { itens: preview.itens } : {}),
+            custo: await estimateCredits(def, preview),
             // Argumentos originais da chamada — dá pro frontend renderizar UI
             // específica por ferramenta (ex.: content.credencial.conectar
             // usa args.provider/args.projectId pra saber qual formulário

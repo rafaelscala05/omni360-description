@@ -23,9 +23,14 @@ const auditCol = (uid: string) => adminDb.collection('users').doc(uid).collectio
  * their own service functions (runArticlePipeline, regenerateArticleImage),
  * which this change does not touch.
  */
-export function creditActionsFor(def: Pick<ToolDef<any>, 'name' | 'provider'>): CreditAction[] {
+export function creditActionsFor(def: Pick<ToolDef<any>, 'name' | 'provider'>, preview?: Pick<ActionPreview, 'payload'>): CreditAction[] {
   if (def.provider === 'wake' || def.provider === 'tiny') return [CREDIT_ACTIONS.agentAction];
   switch (def.name) {
+    // Mesmo débito da geração em massa do botão: um por produto do lote.
+    case 'produtos.descricoes.gerar': {
+      const n = Array.isArray(preview?.payload?.itens) ? (preview!.payload!.itens as unknown[]).length : 0;
+      return Array.from({ length: n }, () => CREDIT_ACTIONS.generateSeoMass);
+    }
     case 'content.clusters.gerar':
       return [CREDIT_ACTIONS.contentClusters, CREDIT_ACTIONS.seoKeywordResearch];
     case 'content.calendario.gerar':
@@ -40,6 +45,14 @@ export function creditActionsFor(def: Pick<ToolDef<any>, 'name' | 'provider'>): 
 async function getCreditCosts(): Promise<Record<string, number>> {
   const snap = await adminDb.collection('config').doc('credits').get().catch(() => null);
   return (snap?.data()?.costs as Record<string, number>) ?? {};
+}
+
+/** Quanto a execução vai debitar — mostrado na aprovação, antes de gastar. */
+export async function estimateCredits(def: Pick<ToolDef<any>, 'name' | 'provider'>, preview: Pick<ActionPreview, 'payload'>): Promise<number> {
+  const actions = creditActionsFor(def, preview);
+  if (!actions.length) return 0;
+  const costs = await getCreditCosts();
+  return actions.reduce((sum, a) => sum + resolveCreditCost(costs, a.key), 0);
 }
 
 async function debitCredits(uid: string, actions: CreditAction[], productName: string): Promise<void> {
@@ -89,7 +102,7 @@ export async function runApprovedWrite(
   args: Record<string, unknown>,
   preview: ActionPreview,
 ): Promise<unknown> {
-  await debitCredits(ctx.uid, creditActionsFor(def), preview.alvo);
+  await debitCredits(ctx.uid, creditActionsFor(def, preview), preview.alvo);
 
   try {
     const result = await def.execute!(ctx, args, preview);

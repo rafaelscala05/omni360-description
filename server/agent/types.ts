@@ -15,7 +15,7 @@ export interface ToolSchema {
   additionalProperties?: boolean;
 }
 
-export type ToolProvider = 'wake' | 'tiny' | 'docs' | 'content';
+export type ToolProvider = 'wake' | 'tiny' | 'docs' | 'content' | 'produtos' | 'meli';
 
 /**
  * Per-request execution context handed to every tool. Credentials are resolved
@@ -51,6 +51,15 @@ export interface ActionPreview {
   campos: PreviewField[];
   avisos: string[];
   payload?: Record<string, unknown>;
+  /**
+   * Ações em lote (várias descrições, várias mudanças de um anúncio): o
+   * antes/depois de cada item, para a aprovação mostrar uma amostra navegável
+   * em vez de uma tabela com dezenas de linhas. `campos` continua valendo como
+   * resumo do lote inteiro.
+   */
+  itens?: { alvo: string; campos: PreviewField[] }[];
+  /** Créditos que a execução vai debitar — mostrado antes de gastar. */
+  custo?: number;
 }
 
 export interface ToolDef<A = Record<string, unknown>> {

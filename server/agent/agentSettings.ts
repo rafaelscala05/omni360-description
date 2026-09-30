@@ -21,6 +21,8 @@ const ALWAYS_ASK_TOOLS: readonly string[] = [
   // conectadas): irreversível e alto raio de impacto, diferente das outras
   // exclusões (cluster/artigo/post/categoria), que seguem o modo configurado.
   'content.projeto.excluir',
+  // Mexe num anúncio público do Mercado Livre — mesma natureza de publicar artigo.
+  'meli.proposta.publicar',
 ];
 
 export function resolveApprovalMode(settings: AgentSettings, toolName: string): 'ask' | 'auto' {

@@ -68,6 +68,10 @@ export async function resolveAgentContext(uid: string): Promise<AgentContext> {
 
   const providers: ToolProvider[] = [...conns.providers];
   if (modules.contentAgent === true) providers.push('content');
+  // O catálogo existe para toda conta: com qualquer módulo de agente ligado, o
+  // Alfred lê e completa produtos. O Mercado Livre depende do módulo próprio.
+  if (modules.contentAgent === true || modules.operationsAgent === true) providers.push('produtos');
+  if (modules.meliListingOptimizer === true) providers.push('meli');
 
   return { providers, conexoes: { wake: conns.wake, tiny: conns.tiny } };
 }
