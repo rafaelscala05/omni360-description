@@ -5,6 +5,7 @@ import logoAlfreds from './assets/brand/logo-alfreds-produtos.png';
 import AgentHomeScreen from './modules/agent/AgentHomeScreen';
 import AtividadeScreen from './modules/agent/AtividadeScreen';
 import FerramentasScreen from './modules/agent/FerramentasScreen';
+import ProximoPassoBar from './modules/agent/ProximoPassoBar';
 import { usePendentesAlfred } from './modules/agent/useSemana';
 import type { DestinoTarefa } from './modules/agent/semana';
 import AppTabBar from './components/AppTabBar';
@@ -3450,6 +3451,12 @@ Retorne APENAS um JSON válido no seguinte formato:
           >
             <Columns3 className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Ferramentas'}
           </button>
+          {/* As três portas (Alfred · Atividade · Ferramentas) em cima; daqui
+              para baixo, as telas de cada ferramenta — o mesmo desenho da
+              tab bar do telefone, com o resto à mão no desktop. */}
+          {(hasContentAgent || hasOperationsAgent) && (
+            <div className="my-2 mx-3 h-px bg-white/10" role="separator" />
+          )}
           <button
             onClick={() => { setMainView('products'); setIsSidebarOpen(false); }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'products' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
@@ -3677,6 +3684,19 @@ Retorne APENAS um JSON válido no seguinte formato:
             </div>
           </div>
         </header>
+
+        {/* Princípio "um próximo passo sempre visível": no desktop, em toda
+            tela menos Ferramentas (que já abre com o mesmo cartão no topo). */}
+        {(hasContentAgent || hasOperationsAgent) && mainView !== 'ferramentas' && (
+          <ProximoPassoBar
+            uid={user.uid}
+            products={products}
+            hasContentAgent={hasContentAgent}
+            hasMeli={hasMeliListingOptimizer}
+            onAbrir={abrirDestino}
+            onPedirAlfred={(p) => { setPromptAlfred(p); setMainView('home'); }}
+          />
+        )}
 
         {/* Dynamic View Content */}
         <main className={cn(

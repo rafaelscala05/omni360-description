@@ -8,9 +8,15 @@
 //
 // Sem módulo de agente não há chat nem atividade: a barra antiga (Catálogo,
 // novo produto, Integrações) continua valendo.
+//
+// A barra é vidro do design system do agente (tokens `--ag-*`, escopo
+// `.alfreds`): segue o tema claro/escuro que o usuário escolheu no Alfred, em
+// qualquer tela. Cor nenhuma aqui é literal — um `text-slate-500` solto some
+// sobre o vidro escuro.
 
 import React from 'react';
 import { Bell, Columns3, Layout, Menu, Plug, Plus } from 'lucide-react';
+import { useAgentTheme } from '../modules/agent/theme';
 
 export type TabDestino = 'home' | 'atividade' | 'ferramentas' | 'products' | 'integrations';
 
@@ -36,17 +42,19 @@ const Item: React.FC<{
     onClick={onClick}
     aria-current={ativo ? 'page' : undefined}
     aria-label={selo ? `${rotulo}, ${selo} pendente(s)` : undefined}
-    className={`relative flex-1 flex flex-col items-center justify-center gap-1 min-h-[44px] py-1 transition-colors ${
-      ativo ? 'text-[#0b0d12]' : 'text-slate-500'
-    }`}
+    className="relative flex-1 flex flex-col items-center justify-center gap-1 min-h-[44px] py-1 transition-colors"
+    style={{ color: ativo ? 'var(--ag-text)' : 'var(--ag-text-2)' }}
   >
     {ativo && (
-      <span className="absolute inset-x-1.5 -inset-y-0.5 rounded-[18px] bg-[rgba(15,23,42,.06)]" />
+      <span className="absolute inset-x-1.5 -inset-y-0.5 rounded-[18px]" style={{ background: 'var(--ag-fill-2)' }} />
     )}
     <span className="relative">
       {icone}
       {!!selo && (
-        <span className="absolute -top-1.5 -right-2.5 min-w-[17px] h-[17px] px-1 rounded-full bg-[#B83F00] text-white text-[10px] font-semibold leading-[17px] text-center">
+        <span
+          className="absolute -top-1.5 -right-2.5 min-w-[17px] h-[17px] px-1 rounded-full text-[10px] font-semibold leading-[17px] text-center"
+          style={{ background: 'var(--ag-accent)', color: 'var(--ag-accent-ink)' }}
+        >
           {selo > 99 ? '99+' : selo}
         </span>
       )}
@@ -55,29 +63,25 @@ const Item: React.FC<{
   </button>
 );
 
-const Barra: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div
-    className="md:hidden fixed left-0 right-0 bottom-0 z-30 px-3 pointer-events-none"
-    style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom, 0px))' }}
-  >
+const Barra: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { tema } = useAgentTheme();
+  return (
     <div
-      className="pointer-events-auto relative flex items-center gap-1 px-2 pt-2 pb-1.5 rounded-[26px] border border-white/60"
-      style={{
-        background: 'rgba(255,255,255,.78)',
-        backdropFilter: 'blur(24px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,.7), 0 8px 30px -10px rgba(9,12,20,.28)',
-      }}
+      className="alfreds md:hidden fixed left-0 right-0 bottom-0 z-30 px-3 pointer-events-none"
+      data-tema={tema}
+      style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom, 0px))' }}
     >
-      {children}
+      <div className="ag-glass-strong ag-sheen pointer-events-auto relative flex items-center gap-1 px-2 pt-2 pb-1.5 rounded-[26px]">
+        {children}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const Orbe: React.FC = () => (
   <span
     className="block w-[19px] h-[19px] rounded-full"
-    style={{ background: '#ff5b03', boxShadow: 'inset 0 0 0 3.5px #ffb27f' }}
+    style={{ background: 'var(--ag-accent)', boxShadow: 'inset 0 0 0 3.5px color-mix(in srgb, var(--ag-accent) 45%, var(--ag-bg-2))' }}
   />
 );
 
@@ -117,11 +121,12 @@ const AppTabBar: React.FC<Props> = ({ atual, mostrarAgente, pendentes = 0, onNav
         <button
           onClick={onNovoProduto}
           title="Novo Produto"
-          className="absolute -top-[30px] w-[54px] h-[54px] rounded-full flex items-center justify-center text-white transition-transform active:scale-95"
+          className="absolute -top-[30px] w-[54px] h-[54px] rounded-full flex items-center justify-center transition-transform active:scale-95"
           style={{
-            background: 'linear-gradient(160deg,#ff7a33,#ff5b03)',
-            border: '4px solid rgba(255,255,255,.85)',
-            boxShadow: '0 10px 24px -6px rgba(255,91,3,.55)',
+            background: 'var(--ag-accent)',
+            color: 'var(--ag-accent-ink)',
+            border: '4px solid var(--ag-bg-2)',
+            boxShadow: '0 10px 24px -6px var(--ag-accent)',
           }}
         >
           <Plus className="w-[22px] h-[22px]" />

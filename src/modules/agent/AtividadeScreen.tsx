@@ -15,8 +15,6 @@ interface Props {
   onAbrirAlfred: () => void;
   /** Para dar nome aos vídeos em produção (o job só guarda o id do produto). */
   products?: Product[];
-  /** Tema da superfície do agente, compartilhado com as outras telas. */
-  tema?: 'claro' | 'escuro';
 }
 
 type Aba = 'voce' | 'rodando' | 'feito';
@@ -55,9 +53,8 @@ const LinhaRodando: React.FC<{ item: ItemRodando }> = ({ item }) => {
  * que já gravou, venha do chat ou de um botão numa ferramenta. É a resposta
  * para "o que está sendo aprovado e o que já foi feito" sem rolar a conversa.
  */
-const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirMenu, onAbrirAlfred, products = [], tema: temaProp }) => {
-  const { tema: temaLocal } = useAgentTheme();
-  const tema = temaProp ?? temaLocal;
+const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirMenu, onAbrirAlfred, products = [] }) => {
+  const { tema } = useAgentTheme();
   const nomes = useMemo(() => new Map(products.map((p) => [p._id, String(p['Descrição'] ?? '')])), [products]);
   const rodando = useRodando(uid, nomes);
   const [acoes, setAcoes] = useState<AgentAction[]>([]);

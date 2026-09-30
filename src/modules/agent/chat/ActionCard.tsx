@@ -247,7 +247,7 @@ const ActionCard: React.FC<Props> = ({ uid, action, onExecutar, onRejeitar }) =>
           {[
             ['Itens', String(itens.length)],
             ['Campos', `${Math.max(...itens.map((it) => it.campos.filter((c) => c.mudou).length))} cada`],
-            ['Custo', custo ? `${custo} ${custo === 1 ? 'crédito' : 'créditos'}` : 'grátis'],
+            [custo === 1 ? 'Crédito' : 'Créditos', custo ? String(custo) : 'grátis'],
           ].map(([r, v]) => (
             <div key={r} className="rounded-[14px] px-3 py-2" style={{ background: 'var(--ag-fill)' }}>
               <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em] text-[var(--ag-text-3)]">{r}</div>
