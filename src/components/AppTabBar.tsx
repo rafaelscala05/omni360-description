@@ -1,25 +1,25 @@
 // Tab bar flutuante de vidro (mobile), no padrão de navegação de app da Apple.
 //
-// Substitui a barra inferior chapada que existia antes. Três diferenças que
-// importam: ela flutua sobre o conteúdo com blur (em vez de ser uma faixa
-// opaca colada na borda), o destino principal passa a ser o chat do agente
-// quando a conta tem algum módulo habilitado, e Integrações ganha um atalho
-// direto — era o item que o usuário mais precisa alcançar e só existia
-// enterrado no menu lateral.
+// Com algum módulo de agente habilitado, a barra são as três portas do produto
+// — Alfred (a semana + o chat), Atividade (o que espera aprovação e o que já
+// foi feito) e Ferramentas (o painel de cada agente) — mais o Menu, que segue
+// dando acesso ao resto. A tela do Alfred esconde a barra enquanto o campo de
+// digitar está focado, para o teclado ficar só com o composer.
 //
-// Créditos e Categorias saíram da barra: ambos continuam a um toque no menu
-// lateral, e Créditos também no cabeçalho. Cinco alvos + FAB não cabem em
-// 360px sem encolher a área de toque abaixo dos 44px do HIG.
+// Sem módulo de agente não há chat nem atividade: a barra antiga (Catálogo,
+// novo produto, Integrações) continua valendo.
 
 import React from 'react';
-import { Layout, Menu, Plug, Plus, Sparkles } from 'lucide-react';
+import { Bell, Columns3, Layout, Menu, Plug, Plus } from 'lucide-react';
 
-export type TabDestino = 'home' | 'products' | 'integrations';
+export type TabDestino = 'home' | 'atividade' | 'ferramentas' | 'products' | 'integrations';
 
 interface Props {
   atual: string;
   /** Conta com módulo de conteúdo ou de operações — sem isso o chat não existe. */
   mostrarAgente: boolean;
+  /** Aprovações do Alfred esperando o usuário — selo na aba Atividade. */
+  pendentes?: number;
   onNavegar: (destino: TabDestino) => void;
   onNovoProduto: () => void;
   onMenu: () => void;
@@ -29,24 +29,33 @@ const Item: React.FC<{
   ativo: boolean;
   rotulo: string;
   icone: React.ReactNode;
+  selo?: number;
   onClick: () => void;
-}> = ({ ativo, rotulo, icone, onClick }) => (
+}> = ({ ativo, rotulo, icone, selo, onClick }) => (
   <button
     onClick={onClick}
     aria-current={ativo ? 'page' : undefined}
+    aria-label={selo ? `${rotulo}, ${selo} pendente(s)` : undefined}
     className={`relative flex-1 flex flex-col items-center justify-center gap-1 min-h-[44px] py-1 transition-colors ${
-      ativo ? 'text-[#FF5B03]' : 'text-slate-400'
+      ativo ? 'text-[#0b0d12]' : 'text-slate-500'
     }`}
   >
     {ativo && (
-      <span className="absolute -top-1.5 w-8 h-[3px] rounded-full bg-[#FF5B03]" />
+      <span className="absolute inset-x-1.5 -inset-y-0.5 rounded-[18px] bg-[rgba(15,23,42,.06)]" />
     )}
-    {icone}
-    <span className={`text-[10px] leading-none ${ativo ? 'font-bold' : 'font-medium'}`}>{rotulo}</span>
+    <span className="relative">
+      {icone}
+      {!!selo && (
+        <span className="absolute -top-1.5 -right-2.5 min-w-[17px] h-[17px] px-1 rounded-full bg-[#B83F00] text-white text-[10px] font-semibold leading-[17px] text-center">
+          {selo > 99 ? '99+' : selo}
+        </span>
+      )}
+    </span>
+    <span className={`relative text-[10px] leading-none ${ativo ? 'font-bold' : 'font-medium'}`}>{rotulo}</span>
   </button>
 );
 
-const AppTabBar: React.FC<Props> = ({ atual, mostrarAgente, onNavegar, onNovoProduto, onMenu }) => (
+const Barra: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div
     className="md:hidden fixed left-0 right-0 bottom-0 z-30 px-3 pointer-events-none"
     style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom, 0px))' }}
@@ -60,15 +69,43 @@ const AppTabBar: React.FC<Props> = ({ atual, mostrarAgente, onNavegar, onNovoPro
         boxShadow: 'inset 0 1px 0 rgba(255,255,255,.7), 0 8px 30px -10px rgba(9,12,20,.28)',
       }}
     >
-      {mostrarAgente && (
-        <Item
-          ativo={atual === 'home'}
-          rotulo="Alfreds"
-          icone={<Sparkles className="w-[19px] h-[19px]" />}
-          onClick={() => onNavegar('home')}
-        />
-      )}
+      {children}
+    </div>
+  </div>
+);
 
+const Orbe: React.FC = () => (
+  <span
+    className="block w-[19px] h-[19px] rounded-full"
+    style={{ background: '#ff5b03', boxShadow: 'inset 0 0 0 3.5px #ffb27f' }}
+  />
+);
+
+const AppTabBar: React.FC<Props> = ({ atual, mostrarAgente, pendentes = 0, onNavegar, onNovoProduto, onMenu }) => {
+  if (mostrarAgente) {
+    return (
+      <Barra>
+        <Item ativo={atual === 'home'} rotulo="Alfred" icone={<Orbe />} onClick={() => onNavegar('home')} />
+        <Item
+          ativo={atual === 'atividade'}
+          rotulo="Atividade"
+          icone={<Bell className="w-[19px] h-[19px]" />}
+          selo={pendentes}
+          onClick={() => onNavegar('atividade')}
+        />
+        <Item
+          ativo={atual === 'ferramentas'}
+          rotulo="Ferramentas"
+          icone={<Columns3 className="w-[19px] h-[19px]" />}
+          onClick={() => onNavegar('ferramentas')}
+        />
+        <Item ativo={false} rotulo="Menu" icone={<Menu className="w-[19px] h-[19px]" />} onClick={onMenu} />
+      </Barra>
+    );
+  }
+
+  return (
+    <Barra>
       <Item
         ativo={atual === 'products'}
         rotulo="Catálogo"
@@ -98,14 +135,10 @@ const AppTabBar: React.FC<Props> = ({ atual, mostrarAgente, onNavegar, onNovoPro
         onClick={() => onNavegar('integrations')}
       />
 
-      <Item
-        ativo={false}
-        rotulo="Menu"
-        icone={<Menu className="w-[19px] h-[19px]" />}
-        onClick={onMenu}
-      />
-    </div>
-  </div>
-);
+      <Item ativo={false} rotulo="Menu" icone={<Menu className="w-[19px] h-[19px]" />} onClick={onMenu} />
+    </Barra>
+  );
+};
 
 export default AppTabBar;
+

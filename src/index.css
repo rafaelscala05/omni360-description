@@ -107,6 +107,13 @@ body {
   --ag-sphere-link-a: 0.32;
   --ag-sphere-blend: normal;
 
+  /* Origem de cada tarefa da semana — só em pontos de 8px e rótulos, nunca
+     como fundo: cor forte nesta tela é reservada para "precisa de você". */
+  --ag-orig-produto: #ff5b03;
+  --ag-orig-conteudo: #7c3aed;
+  --ag-orig-meli: #c9a800;
+  --ag-orig-operacoes: #0e7c86;
+
   color: var(--ag-text);
 }
 
@@ -145,6 +152,10 @@ body {
   --ag-sphere-link: #94a3b8;
   --ag-sphere-link-a: 0.34;
   --ag-sphere-blend: aditivo;
+  --ag-orig-produto: #ff7a33;
+  --ag-orig-conteudo: #a78bfa;
+  --ag-orig-meli: #facc15;
+  --ag-orig-operacoes: #2dd4bf;
 }
 
 /* Material translúcido padrão — o "vidro" de todo card/barra/sheet. */

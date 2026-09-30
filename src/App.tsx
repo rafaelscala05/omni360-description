@@ -3,6 +3,10 @@ import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Che
 import * as XLSX from 'xlsx';
 import logoAlfreds from './assets/brand/logo-alfreds-produtos.png';
 import AgentHomeScreen from './modules/agent/AgentHomeScreen';
+import AtividadeScreen from './modules/agent/AtividadeScreen';
+import FerramentasScreen from './modules/agent/FerramentasScreen';
+import { usePendentesAlfred } from './modules/agent/useSemana';
+import type { DestinoTarefa } from './modules/agent/semana';
 import AppTabBar from './components/AppTabBar';
 import { COORTE_ATUAL, isCoorteMissao } from './modules/onboarding/mission/missionTypes';
 import type { MissionState } from './modules/onboarding/mission/missionTypes';
@@ -219,7 +223,12 @@ export default function App() {
   useEffect(() => { productsRef.current = products; }, [products]);
   const [originalHeaders, setOriginalHeaders] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [mainView, setMainView] = useState<'home' | 'products' | 'meli' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company' | 'missoes'>('products');
+  const [mainView, setMainView] = useState<'home' | 'atividade' | 'ferramentas' | 'products' | 'meli' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company' | 'missoes'>('products');
+  // Pedido que outra tela (Ferramentas) manda ao Alfred — a tela do agente
+  // envia ao montar e limpa, para voltar ao chat não repetir o pedido.
+  const [promptAlfred, setPromptAlfred] = useState<string | null>(null);
+  // Campo do Alfred focado no telefone: a tab bar sai para o teclado.
+  const [alfredFocado, setAlfredFocado] = useState(false);
   // Top-level workspace: the Product agent (this App) or the Content agency module.
   const [workspace, setWorkspace] = useState<'product' | 'content'>('product');
   const [exportModel, setExportModel] = useState<'standard' | 'tinyerp'>('standard');
@@ -284,6 +293,15 @@ export default function App() {
   const [hasMeliListingOptimizer, setHasMeliListingOptimizer] = useState<boolean>(false);
   // Coorte da jornada de missão (users/{uid}.cohort). null = ainda não lida ou conta legada.
   const [cohort, setCohort] = useState<string | null>(null);
+  const pendentesAlfred = usePendentesAlfred(!!user && (hasContentAgent || hasOperationsAgent));
+  // "Abrir" de uma tarefa da semana / de um cartão de Ferramentas.
+  const abrirDestino = (destino: DestinoTarefa) => {
+    if (destino === 'produtos') setMainView('products');
+    else if (destino === 'conteudo') setWorkspace('content');
+    else if (destino === 'meli') setMainView(hasMeliListingOptimizer ? 'meli' : 'products');
+    else if (destino === 'integracoes') setMainView('integrations');
+    else setMainView('atividade');
+  };
   const [missao, setMissao] = useState<MissionState | null>(null);
   const [missoesCarregadas, setMissoesCarregadas] = useState(false);
   const [todasMissoes, setTodasMissoes] = useState<MissionState[]>([]);
@@ -3405,9 +3423,28 @@ Retorne APENAS um JSON válido no seguinte formato:
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'home' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
               title="Início"
             >
-              <Sparkles className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Início'}
+              <Sparkles className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Alfred'}
             </button>
           )}
+          {(hasContentAgent || hasOperationsAgent) && (
+            <button
+              onClick={() => { setMainView('atividade'); setIsSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'atividade' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
+              title="Atividade"
+            >
+              <Bell className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Atividade'}
+              {pendentesAlfred > 0 && (
+                <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-[#B83F00] text-white text-[11px] font-semibold flex items-center justify-center">{pendentesAlfred}</span>
+              )}
+            </button>
+          )}
+          <button
+            onClick={() => { setMainView('ferramentas'); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'ferramentas' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
+            title="Ferramentas"
+          >
+            <Columns3 className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Ferramentas'}
+          </button>
           <button
             onClick={() => { setMainView('products'); setIsSidebarOpen(false); }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'products' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
@@ -3642,7 +3679,8 @@ Retorne APENAS um JSON válido no seguinte formato:
           // O chat do agente não tem barra inferior no telefone (o menu foi
           // para o cabeçalho dele), então dispensa a reserva de 5rem embaixo
           // e usa um respiro menor nas laterais — a tela toda é a conversa.
-          mainView === 'home' ? "p-3 sm:p-6" : "p-6 pb-20 md:pb-6",
+          mainView === 'atividade' || mainView === 'ferramentas' ? "p-3 sm:p-6" :
+          mainView === 'home' ? (alfredFocado ? "p-3 sm:p-6" : "p-3 pb-24 sm:p-6 md:pb-6") : "p-6 pb-20 md:pb-6",
         )}>
           {mainView === 'missoes' ? (
             <TrilhaMissoes
@@ -3662,8 +3700,32 @@ Retorne APENAS um JSON válido no seguinte formato:
               products={products}
               hasContentAgent={hasContentAgent}
               hasOperationsAgent={hasOperationsAgent}
+              hasMeli={hasMeliListingOptimizer}
               onOpenIntegrations={() => setMainView('integrations')}
-              onManageContent={() => setWorkspace('content')}
+              onAbrirDestino={abrirDestino}
+              onAbrirMenu={() => setIsSidebarOpen(true)}
+              onFocoChange={setAlfredFocado}
+              promptInicial={promptAlfred}
+              onPromptConsumido={() => setPromptAlfred(null)}
+            />
+          ) : mainView === 'atividade' ? (
+            <AtividadeScreen
+              uid={user.uid}
+              onAbrirMenu={() => setIsSidebarOpen(true)}
+              onAbrirAlfred={() => setMainView('home')}
+            />
+          ) : mainView === 'ferramentas' ? (
+            <FerramentasScreen
+              uid={user.uid}
+              products={products}
+              credits={credits}
+              hasAgente={hasContentAgent || hasOperationsAgent}
+              hasContentAgent={hasContentAgent}
+              hasMeli={hasMeliListingOptimizer}
+              mostrarMissoes={isCoorteMissao(cohort)}
+              onAbrir={abrirDestino}
+              onAbrirView={(v) => { if (v === 'history') fetchCreditLogs(); setMainView(v); }}
+              onPedirAlfred={(p) => { setPromptAlfred(p); setMainView('home'); }}
               onAbrirMenu={() => setIsSidebarOpen(true)}
             />
           ) : mainView === 'categories' ? (
@@ -5340,10 +5402,11 @@ Retorne APENAS um JSON válido no seguinte formato:
         </div>
       )}
 
-      {mainView !== 'home' && (
+      {!(mainView === 'home' && alfredFocado) && (
         <AppTabBar
           atual={mainView}
           mostrarAgente={hasContentAgent || hasOperationsAgent}
+          pendentes={pendentesAlfred}
           onNavegar={setMainView}
           onNovoProduto={handleOpenProductUrlImport}
           onMenu={() => setIsSidebarOpen(true)}

@@ -1,15 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AlertCircle, ArrowUpRight, Boxes, Coins, FileText, Menu, Moon, ScrollText, Sparkles, Sun, Zap,
-} from 'lucide-react';
+import { AlertCircle, Coins, Menu, Moon, ScrollText, Sun } from 'lucide-react';
 import type { Product } from '../../types/models';
-import type { AgentAction, AgentConnections, ThreadMessage } from '../../types/agent';
+import type { AgentAction, ThreadMessage } from '../../types/agent';
 import {
-  enviarMensagem, executarAcao, fetchConnections, fetchTools, listenActions, listenMessages, rejeitarAcao,
+  enviarMensagem, executarAcao, fetchTools, listenActions, listenMessages, rejeitarAcao,
 } from '../../services/agentChatService';
 import { fetchIntegrationsOverview, desde, type IntegrationSummary } from '../../services/integrationsStatusService';
 import { listenProjects } from '../../services/contentService';
-import AgentSphere from './AgentSphere';
 import VoiceOrb from './VoiceOrb';
 import ConnectionsBar, { type ConnectionItem } from './ConnectionsBar';
 import { useAgentTheme } from './theme';
@@ -17,6 +14,9 @@ import { useAlturaTeclado, useTelaPequena } from './useViewport';
 import ChatThread from './chat/ChatThread';
 import Composer from './chat/Composer';
 import LogsPanel from './chat/LogsPanel';
+import SemanaPanel from './SemanaPanel';
+import { useSemana } from './useSemana';
+import type { DestinoTarefa } from './semana';
 
 interface Props {
   uid: string;
@@ -25,16 +25,22 @@ interface Props {
   hasContentAgent: boolean;
   hasOperationsAgent: boolean;
   onOpenIntegrations: () => void;
-  onManageContent: () => void;
-  /** Abre o menu lateral — no telefone esta tela não tem barra inferior. */
+  /** Módulo do otimizador do Mercado Livre — alimenta a semana com propostas. */
+  hasMeli: boolean;
+  /** "Abrir" de uma tarefa da semana: leva à ferramenta dona dela. */
+  onAbrirDestino: (destino: DestinoTarefa) => void;
   onAbrirMenu: () => void;
+  /** Campo focado no telefone — o App esconde a tab bar para o teclado. */
+  onFocoChange?: (focado: boolean) => void;
+  /** Pedido vindo de outra tela ("Pedir ao Alfred"): enviado ao montar. */
+  promptInicial?: string | null;
+  onPromptConsumido?: () => void;
 }
 
-const SUGESTOES: { texto: string; icone: React.ComponentType<{ className?: string }> }[] = [
-  { texto: 'Gere a descrição dos produtos sem descrição ainda', icone: Boxes },
-  { texto: 'Quais banners estão ativos na home da loja?', icone: Zap },
-  { texto: 'Qual o preço e o estoque do SKU ABC-123?', icone: Boxes },
-  { texto: 'Crie um artigo novo pra um cluster de conteúdo', icone: FileText },
+/** Atalhos curtos abaixo da semana — pedidos que o chat resolve sozinho. */
+const SUGESTOES = [
+  'Quais banners estão ativos na home da loja?',
+  'Como estão os artigos desta semana?',
 ];
 
 /** Identidade visual de cada plataforma na régua de conexões. */
@@ -46,55 +52,27 @@ const MARCA: Record<string, { glifo: string; cor: string }> = {
   content: { glifo: 'C', cor: 'linear-gradient(135deg,#7c3aed,#c4b5fd)' },
 };
 
-/**
- * Métrica do estado inicial.
- *
- * Era um cartão de vidro com número de 26px. Virou pílula: o número continua
- * legível, mas para de competir com a pergunta — nesta tela o assunto é o
- * campo de digitar, e três cartões grandes empurravam o composer para fora da
- * dobra no telefone.
- */
-const Metrica: React.FC<{
-  icone: React.ReactNode;
-  valor: React.ReactNode;
-  rotulo: React.ReactNode;
-  onClick?: () => void;
-}> = ({ icone, valor, rotulo, onClick }) => {
-  const Tag = onClick ? 'button' : 'div';
-  return (
-    <Tag
-      onClick={onClick}
-      className="flex items-center gap-2 pl-2.5 pr-3.5 py-1.5 rounded-full shrink-0 transition-colors"
-      style={{ background: 'var(--ag-fill)', border: '1px solid var(--ag-hairline)' }}
-    >
-      {icone}
-      <span className="text-[13px] font-semibold text-[var(--ag-text)] tabular-nums">{valor}</span>
-      <span className="text-[12px] text-[var(--ag-text-3)] whitespace-nowrap">{rotulo}</span>
-    </Tag>
-  );
-};
-
 const AgentHomeScreen: React.FC<Props> = ({
-  uid, credits, products, hasContentAgent, hasOperationsAgent, onOpenIntegrations, onManageContent,
-  onAbrirMenu,
+  uid, credits, products, hasContentAgent, hasMeli, onOpenIntegrations, onAbrirDestino,
+  onAbrirMenu, onFocoChange, promptInicial, onPromptConsumido,
 }) => {
   const { tema, alternar } = useAgentTheme();
   const telaPequena = useTelaPequena();
   const alturaTeclado = useAlturaTeclado();
   const [composerFocado, setComposerFocado] = useState(false);
-  // A esfera é um canvas de lado fixo (o renderer recebe px, não %), então o
-  // tamanho tem que vir do JS — 132px ocupa meia tela num telefone de 390px.
-  const esferaPx = telaPequena ? 96 : 132;
+  // A tela abre na semana mesmo com conversa antiga; mandar algo leva ao chat
+  // e o botão do cabeçalho alterna entre os dois.
+  const [modo, setModo] = useState<'semana' | 'chat'>('semana');
   // Modo foco: só no telefone, e só enquanto o campo está focado. No desktop
   // não há teclado cobrindo nada e recolher a tela seria gratuito.
   const emFoco = telaPequena && composerFocado;
   const [mensagens, setMensagens] = useState<ThreadMessage[]>([]);
   const [acoes, setAcoes] = useState<Record<string, AgentAction>>({});
-  const [conns, setConns] = useState<AgentConnections | null>(null);
   const [integracoes, setIntegracoes] = useState<IntegrationSummary[]>([]);
   const [statusCarregando, setStatusCarregando] = useState(true);
   const [ferramentas, setFerramentas] = useState<Record<string, number>>({});
   const [projetosCount, setProjetosCount] = useState<number | null>(null);
+  const listaAcoes = useMemo(() => Object.values(acoes), [acoes]);
   const [parcial, setParcial] = useState('');
   const [leituras, setLeituras] = useState<{ tool: string; ok: boolean; erro?: string }[]>([]);
   const [streaming, setStreaming] = useState(false);
@@ -133,13 +111,6 @@ const AgentHomeScreen: React.FC<Props> = ({
     }
   }, [mensagens]);
 
-  useEffect(() => {
-    if (!hasOperationsAgent) return;
-    let vivo = true;
-    fetchConnections().then((c) => { if (vivo) setConns(c); }).catch(() => {});
-    return () => { vivo = false; };
-  }, [hasOperationsAgent]);
-
   // Estado real das quatro integrações, para a régua de conexões. Falha de uma
   // não derruba as outras (ver fetchIntegrationsOverview).
   useEffect(() => {
@@ -172,6 +143,12 @@ const AgentHomeScreen: React.FC<Props> = ({
     return listenProjects(uid, (list) => setProjetosCount(list.length));
   }, [uid, hasContentAgent]);
 
+  const { tarefas, hoje } = useSemana({
+    uid, products, acoes: listaAcoes, integracoes, hasContentAgent, hasMeli,
+  });
+
+  const focar = (f: boolean) => { setComposerFocado(f); onFocoChange?.(f); };
+
   const handlers = useMemo(() => ({
     onDelta: (t: string) => setParcial((p) => p + t),
     onLeitura: (l: { tool: string; ok: boolean; erro?: string }) => setLeituras((p) => [...p, l]),
@@ -191,6 +168,7 @@ const AgentHomeScreen: React.FC<Props> = ({
   }), []);
 
   const enviar = async (texto: string) => {
+    setModo('chat');
     setErro(null);
     setParcial('');
     setLeituras([]);
@@ -224,6 +202,20 @@ const AgentHomeScreen: React.FC<Props> = ({
       setStreaming(false);
     }
   };
+
+  // Sair da tela com o campo focado não dispara blur — sem isso a tab bar
+  // continuaria escondida na volta.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => onFocoChange?.(false), []);
+
+  // Consome antes de enviar: se o envio falhar, voltar à tela não repete o
+  // pedido sozinho — o usuário vê o erro e decide.
+  useEffect(() => {
+    if (!promptInicial) return;
+    onPromptConsumido?.();
+    void enviar(promptInicial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promptInicial]);
 
   const executar = (id: string) => responder(() => executarAcao(id, handlers));
   const rejeitar = (id: string) => responder(() => rejeitarAcao(id, handlers));
@@ -280,16 +272,12 @@ const AgentHomeScreen: React.FC<Props> = ({
     return base;
   }, [integracoes, ferramentas, pendentesPorProvider, hasContentAgent, projetosCount, acoesPendentesConteudo]);
 
-  const totalProdutos = products.length;
-  const comDescricao = totalProdutos
-    ? Math.round((products.filter((p) => !!p['Descrição']?.trim()).length / totalProdutos) * 100)
-    : 0;
-
   // `mensagens` só reflete o Firestore quando o listener entrega o snapshot,
   // o que chega depois do fim do SSE — sem `interagiu`, essa janela faz a
   // tela voltar para o estado inicial entre o streaming acabar e a mensagem
   // persistida aparecer.
-  const semChat = mensagens.length === 0 && !streaming && !interagiu;
+  const semChat = modo === 'semana' || (mensagens.length === 0 && !streaming && !interagiu);
+  const temConversa = mensagens.length > 0 || streaming || interagiu;
 
   return (
     <div className="alfreds h-full flex flex-col" data-tema={tema}>
@@ -340,6 +328,15 @@ const AgentHomeScreen: React.FC<Props> = ({
           </div>
 
           <div className="ml-auto flex items-center gap-1.5">
+            {temConversa && (
+              <button
+                onClick={() => setModo(semChat ? 'chat' : 'semana')}
+                className="h-9 px-3.5 rounded-full text-[12.5px] font-semibold text-[var(--ag-text)] transition-colors"
+                style={{ background: 'var(--ag-fill-2)' }}
+              >
+                {semChat ? 'Conversa' : 'Semana'}
+              </button>
+            )}
             {pendentesTotal > 0 && (
               <span
                 className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[12px] font-semibold"
@@ -391,11 +388,11 @@ const AgentHomeScreen: React.FC<Props> = ({
                 flex continua valendo e sobra um buraco no topo — por isso ele
                 também zera. */}
             <div
-              className={`max-w-3xl mx-auto flex flex-col items-center text-center ${
+              className={`max-w-2xl mx-auto flex flex-col items-center text-center ${
                 // No modo foco o que sobra (os atalhos) desce e encosta no
                 // campo, em vez de ficar boiando embaixo do cabeçalho com o
                 // teclado ocupando o resto da tela.
-                emFoco ? 'gap-0 min-h-full justify-end' : 'gap-5 sm:gap-6'
+                emFoco ? 'gap-0 min-h-full justify-end' : 'gap-4'
               }`}
             >
               {erro && (
@@ -412,89 +409,21 @@ const AgentHomeScreen: React.FC<Props> = ({
                 </div>
               )}
 
-              {/* `pt-7 -mt-5`: o `.ag-recolhe` precisa de `overflow: hidden` para
-                  recolher, e sem essa folga no topo ele corta o halo da esfera
-                  numa linha reta. A margem negativa devolve o espaço ao layout
-                  e zera junto com o resto quando o bloco recolhe. */}
-              <div
-                className="ag-recolhe flex flex-col items-center gap-5 sm:gap-6 pt-7 -mt-5"
-                data-recolhido={emFoco}
-                style={{ maxHeight: 640 }}
-              >
-                <div className="ag-rise">
-                  <AgentSphere size={esferaPx} active={streaming} tema={tema} />
-                </div>
-
-                <div className="space-y-2 ag-rise">
-                  <h1 className="font-display text-[22px] sm:text-[30px] font-semibold text-[var(--ag-text)] tracking-tight">
-                    Como posso ajudar hoje?
-                  </h1>
-                  <p className="text-[14px] text-[var(--ag-text-2)] max-w-md mx-auto leading-relaxed">
-                    Peça uma descrição, um artigo ou uma ação no seu ERP — eu mostro exatamente
-                    o que vai mudar antes de alterar qualquer coisa.
-                  </p>
-                </div>
+              {/* A semana recolhe no modo foco: com o teclado aberto o que
+                  importa é o campo, e os atalhos descem para encostar nele. */}
+              <div className="ag-recolhe w-full ag-rise" data-recolhido={emFoco} style={{ maxHeight: 2400 }}>
+                <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={enviar} onAbrir={onAbrirDestino} />
               </div>
 
-              {/* Métricas em pílula, não em cartão: o protagonista da tela é a
-                  pergunta que o usuário vai fazer, não o painel. */}
-              <div
-                className="ag-scroll-x ag-recolhe flex sm:flex-wrap sm:justify-center items-center gap-2 w-full overflow-x-auto -mx-1 px-1"
-                data-recolhido={emFoco}
-                style={{ maxHeight: 80 }}
-              >
-                <Metrica
-                  icone={<Boxes className="w-3.5 h-3.5" style={{ color: 'var(--ag-accent)' }} />}
-                  valor={totalProdutos.toLocaleString('pt-BR')}
-                  rotulo={
-                    <>
-                      produtos
-                      <span className="hidden sm:inline"> · {comDescricao}% com descrição</span>
-                    </>
-                  }
-                />
-
-                {hasContentAgent && (
-                  <Metrica
-                    icone={<FileText className="w-3.5 h-3.5" style={{ color: 'var(--ag-blue)' }} />}
-                    valor={projetosCount ?? '—'}
-                    rotulo={
-                      acoesPendentesConteudo > 0
-                        ? `projetos · ${acoesPendentesConteudo} pendente(s)`
-                        : <span className="inline-flex items-center gap-1">projetos <ArrowUpRight className="w-3 h-3" /></span>
-                    }
-                    onClick={onManageContent}
-                  />
-                )}
-
-                {hasOperationsAgent && (
-                  conns && !conns.wake && !conns.tiny ? (
-                    <Metrica
-                      icone={<Zap className="w-3.5 h-3.5" style={{ color: 'var(--ag-warn)' }} />}
-                      valor={<span style={{ color: 'var(--ag-accent)' }}>Conectar</span>}
-                      rotulo={<span className="inline-flex items-center gap-1">plataforma <ArrowUpRight className="w-3 h-3" /></span>}
-                      onClick={onOpenIntegrations}
-                    />
-                  ) : (
-                    <Metrica
-                      icone={<Zap className="w-3.5 h-3.5" style={{ color: 'var(--ag-warn)' }} />}
-                      valor={acoesPendentesOperacionais}
-                      rotulo={acoesPendentesOperacionais === 1 ? 'ação pendente' : 'ações pendentes'}
-                    />
-                  )
-                )}
-              </div>
-
-              <div className="grid sm:grid-cols-2 gap-2 text-left w-full ag-rise">
-                {SUGESTOES.map(({ texto, icone: Icone }) => (
+              <div className="ag-scroll-x flex gap-2 w-full overflow-x-auto -mx-1 px-1 pt-1">
+                {SUGESTOES.map((texto) => (
                   <button
                     key={texto}
                     onClick={() => enviar(texto)}
-                    className="group ag-glass rounded-[18px] px-4 py-3 flex items-center gap-3 text-left text-[13.5px] text-[var(--ag-text-2)] hover:text-[var(--ag-text)] transition-all duration-200"
+                    className="shrink-0 min-h-[36px] px-3.5 rounded-full text-[13px] font-medium text-[var(--ag-text-2)] hover:text-[var(--ag-text)] transition-colors"
+                    style={{ background: 'var(--ag-fill)', border: '1px solid var(--ag-hairline)' }}
                   >
-                    <Icone className="w-4 h-4 shrink-0 text-[var(--ag-text-3)] group-hover:text-[var(--ag-accent)] transition-colors" />
-                    <span className="min-w-0">{texto}</span>
-                    <Sparkles className="w-3.5 h-3.5 ml-auto shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--ag-accent)' }} />
+                    {texto}
                   </button>
                 ))}
               </div>
@@ -519,7 +448,7 @@ const AgentHomeScreen: React.FC<Props> = ({
           streaming={streaming}
           onEnviar={enviar}
           onParar={parar}
-          onFoco={setComposerFocado}
+          onFoco={focar}
           recuoTeclado={alturaTeclado}
           emFoco={emFoco}
         />
