@@ -2,6 +2,8 @@
 // função que já existe em contentAgent.ts/seoAgent.ts — nenhuma lógica de
 // negócio é duplicada aqui. Mesmo padrão de server/agent/tools/wake.ts.
 
+import { custoDaAcao } from '../execution';
+import { CREDIT_ACTIONS } from '../../../src/credits';
 import { registerTool } from '../registry';
 import { makePreview, buildFieldDiff, requireStr } from '../preview';
 import type { ToolCtx } from '../types';
@@ -214,12 +216,18 @@ registerTool({
     properties: { projectId: { type: 'string' }, articleId: { type: 'string' } },
     required: ['projectId', 'articleId'],
   },
-  preview: async (_ctx: ToolCtx, args: Record<string, unknown>) => makePreview({
-    resumo: 'Produzir este artigo agora (pipeline de 5 etapas: pesquisa, outline, rascunho, imagem, revisão).',
-    alvo: requireStr(args, 'articleId'),
-    campos: [],
-    criacao: true,
-    payload: { projectId: args.projectId, articleId: args.articleId },
+  // O débito acontece dentro de runArticlePipeline (artigo + capa); o custo
+  // vai na prévia para a aprovação mostrar quanto gasta antes de gastar.
+  preview: async (_ctx: ToolCtx, args: Record<string, unknown>) => ({
+    ...makePreview({
+      resumo: 'Produzir este artigo agora (pipeline de 5 etapas: pesquisa, outline, rascunho, imagem, revisão).',
+      alvo: requireStr(args, 'articleId'),
+      campos: [],
+      criacao: true,
+      avisos: ['A imagem de capa só é cobrada se for gerada.'],
+      payload: { projectId: args.projectId, articleId: args.articleId },
+    }),
+    custo: (await custoDaAcao(CREDIT_ACTIONS.contentArticle)) + (await custoDaAcao(CREDIT_ACTIONS.contentImage)),
   }),
   execute: async (ctx: ToolCtx, _args, preview) => {
     const { projectId, articleId } = preview.payload as { projectId: string; articleId: string };
@@ -244,12 +252,15 @@ registerTool({
     },
     required: ['projectId', 'articleId', 'mode'],
   },
-  preview: async (_ctx: ToolCtx, args: Record<string, unknown>) => makePreview({
-    resumo: `Regenerar a imagem de capa (modo: ${requireStr(args, 'mode')}).`,
-    alvo: requireStr(args, 'articleId'),
-    campos: [],
-    criacao: true,
-    payload: args,
+  preview: async (_ctx: ToolCtx, args: Record<string, unknown>) => ({
+    ...makePreview({
+      resumo: `Regenerar a imagem de capa (modo: ${requireStr(args, 'mode')}).`,
+      alvo: requireStr(args, 'articleId'),
+      campos: [],
+      criacao: true,
+      payload: args,
+    }),
+    custo: await custoDaAcao(CREDIT_ACTIONS.contentImage),
   }),
   execute: async (ctx: ToolCtx, _args, preview) => {
     const p = preview.payload as {
@@ -290,7 +301,14 @@ registerTool({
     const texto = String(art.articleFinal).replace(/<[^>]+>/g, ' ').replace(/[#*_>`[\]()!-]+/g, ' ').replace(/\s+/g, ' ').trim();
     const palavras = texto ? texto.split(' ').length : 0;
     const destino = args.destination ? String(args.destination) : 'o destino configurado no projeto';
-    return makePreview({
+    // Publicar no WordPress/Sanity debita (contentPublish); o blog nativo não.
+    let real = args.destination as string | undefined;
+    if (!real) {
+      const project = await loadProject(ctx.uid, projectId).catch(() => null);
+      real = project?.config.sanityProjectId ? 'sanity' : project?.config.wordpressUrl ? 'wordpress' : 'blog';
+    }
+    const custo = real === 'blog' ? 0 : await custoDaAcao(CREDIT_ACTIONS.contentPublish);
+    return { custo, ...makePreview({
       resumo: `Publicar "${art.titulo ?? 'artigo'}" em ${destino}`,
       alvo: art.titulo ?? articleId,
       campos: [
@@ -302,7 +320,7 @@ registerTool({
       ],
       avisos: ['Ação pública e visível para terceiros — confira o artigo antes de aprovar.'],
       payload: args,
-    });
+    }) };
   },
   execute: async (ctx: ToolCtx, _args, preview) => {
     const { projectId, articleId, destination } = preview.payload as {

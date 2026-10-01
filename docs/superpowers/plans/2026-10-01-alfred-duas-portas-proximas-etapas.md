@@ -76,7 +76,7 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 - [ ] Importar/exportar planilha (avisar o que chegou incompleto e criar tarefas).
 - [ ] MELI: vídeo studio e geração de foto (`/pictures/generate`) pelo chat.
 - [ ] Bling e IdWorks no chat (hoje só importação e envio).
-- [ ] Mostrar o custo antes de gastar em **todas** as ferramentas que debitam (hoje só as mapeadas em `creditActionsFor`; as de conteúdo debitam mais fundo e não aparecem no `custo`).
+- [x] Mostrar o custo antes de gastar em **todas** as ferramentas que debitam (produzir artigo, regenerar capa e publicar em WordPress/Sanity levam `preview.custo`) (hoje só as mapeadas em `creditActionsFor`; as de conteúdo debitam mais fundo e não aparecem no `custo`).
 
 ## Ordem sugerida
 
