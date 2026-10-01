@@ -2,7 +2,7 @@
 // (server/agent/produtosRules.ts). Não chama o Vertex nem o Firestore.
 // Rodar com: npx tsx scripts/verify-agent-produtos.mjs
 import {
-  atributosEfetivos, atributosVazios, cenasEfetivas, mesclarAtributos, normalizarAtributos, selecionarParaAtributos,
+  atributosEfetivos, atributosVazios, cenasEfetivas, resumoChegada, mesclarAtributos, normalizarAtributos, selecionarParaAtributos,
   buscarProdutos, cortarHtml, faltando, normalizarGeracao, selecionarParaDescricao, textoPuro, variacoesDoPai,
   LOTE_PADRAO, MAX_DESCRICOES_POR_LOTE, MAX_HTML, MAX_SKUS_BUSCA,
 } from '../server/agent/produtosRules.ts';
@@ -309,6 +309,20 @@ check('banners ativos', contarBannersAtivos([{ ativo: true }, { ativo: false }, 
   const c = sanitizarContexto({ tela: 'conteudo', projetoId: 'p1', artigos: [{ id: 'a1', titulo: 'Guia\nnovo' }, { titulo: 'sem id' }, 'lixo'] });
   check('Conteúdo: artigos com id, título limpo', c.artigos, [{ id: 'a1', titulo: 'Guia novo' }]);
   check('linhas do prompt para MELI e Conteúdo', [linhasDoContexto(m).length, linhasDoContexto(c).some((l) => l.includes('"Guia novo" (a1)'))], [1, true]);
+}
+
+// --- planilha: o que chegou incompleto -------------------------------------
+{
+  const novo = (sku, over = {}) => ({ ...p(sku, over), createdAt: '2026-09-30T10:00:00.000Z' });
+  const r = resumoChegada([
+    novo('N1', { 'Descrição complementar': '<p>ok</p>', 'Título SEO': 'T', 'URL imagem 1': 'https://x', 'Preço': '10', 'Categoria': 'Mesas' }),
+    novo('N2', { 'Preço': '10' }),
+    novo('N2-P', { 'Código do pai': 'N2' }),
+    p('VELHO', { createdAt: '2026-01-01T00:00:00.000Z' }),
+  ], '2026-09-29T00:00:00.000Z');
+  check('conta o que chegou, incompletos só entre os pais', [r.chegaram, r.principais, r.incompletos], [3, 2, 1]);
+  check('o que falta, por campo', r.porCampo, { descricao: 1, foto: 1, seo: 1, sku: 0, preco: 0, categoria: 1 });
+  check('exemplo diz o que falta', r.exemplos[0], { sku: 'N2', nome: 'Produto N2', falta: ['descrição', 'foto', 'SEO', 'categoria'] });
 }
 
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');

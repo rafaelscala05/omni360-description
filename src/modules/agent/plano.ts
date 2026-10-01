@@ -29,6 +29,8 @@ export interface Plano {
 const ROTULOS: Record<string, string> = {
   'produtos.incompletos.listar': 'Ler o catálogo',
   'produtos.buscar': 'Buscar no catálogo',
+  'produtos.planilha.exportar': 'Exportar a planilha',
+  'produtos.importacao.resumo': 'Ver o que chegou na importação',
   'meli.propostas.listar': 'Ver as propostas do Mercado Livre',
   'meli.proposta.ver': 'Ler a proposta do anúncio',
   'docs.buscar': 'Consultar a documentação',

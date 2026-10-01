@@ -10,4 +10,5 @@ import './tiny';
 import './erps';
 import './discovery';
 import './produtos';
+import './planilha';
 import './meli';

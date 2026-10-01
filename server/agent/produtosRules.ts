@@ -304,3 +304,31 @@ export function mesclarAtributos(
   }
   return { atributos, aplicados, pulados };
 }
+
+/**
+ * O que chegou numa importação (planilha, URL, ERP) e veio incompleto: os
+ * produtos cujo primeiro salvamento (`createdAt`) é de `desde` em diante.
+ * Variações entram na contagem do que chegou, mas não na de incompletos (herdam
+ * texto e foto do pai). A semana do Alfred já transforma esses buracos em
+ * tarefas; isto é o resumo que o chat dá logo depois da importação.
+ */
+export function resumoChegada(produtos: ProdutoDoc[], desde: string, max = 20) {
+  const chegaram = produtos.filter((p) => typeof p.createdAt === 'string' && p.createdAt >= desde);
+  const pais = chegaram.filter(ehPai);
+  const falta = (p: ProdutoDoc): string[] => {
+    const f = faltando(p);
+    if (!str(p['Código (SKU)'])) f.push('SKU');
+    if (!str(p['Preço'])) f.push('preço');
+    if (!str(p['Categoria']) && !p.categoryId) f.push('categoria');
+    return f;
+  };
+  const incompletos = pais.map((p) => ({ p, f: falta(p) })).filter((x) => x.f.length);
+  const conta = (campo: string) => incompletos.filter((x) => x.f.includes(campo)).length;
+  return {
+    chegaram: chegaram.length,
+    principais: pais.length,
+    incompletos: incompletos.length,
+    porCampo: { descricao: conta('descrição'), foto: conta('foto'), seo: conta('SEO'), sku: conta('SKU'), preco: conta('preço'), categoria: conta('categoria') },
+    exemplos: incompletos.slice(0, max).map(({ p, f }) => ({ sku: str(p['Código (SKU)']) || null, nome: str(p['Descrição']) || p._docId, falta: f })),
+  };
+}

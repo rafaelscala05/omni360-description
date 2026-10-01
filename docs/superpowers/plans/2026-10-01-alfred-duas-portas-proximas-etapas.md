@@ -73,7 +73,7 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 - [x] Categorias e hierarquia — `produtos.categorias.organizar`.
 - [x] Vídeo de produto — `produtos.video.gerar`; roda pelo app aberto (ver CLAUDE.md). UGC com avatar: `tipo: 'ugc'`.
 - [x] Envio ao ERP pelo chat — `tiny.catalogo.enviar` (Tiny v2), `wake.catalogo.enviar`, `bling.catalogo.enviar`, `idworks.catalogo.enviar`.
-- [ ] Importar/exportar planilha (avisar o que chegou incompleto e criar tarefas).
+- [x] Importar/exportar planilha — `produtos.planilha.exportar` (mesmo arquivo do botão, via `src/services/exportPlanilha.ts`, link do Storage) e `produtos.importacao.resumo` (o que chegou incompleto; as pendências já viram tarefas na semana). O upload da planilha continua pela tela (o chat não recebe arquivo).
 - [ ] MELI: vídeo studio e geração de foto (`/pictures/generate`) pelo chat.
 - [ ] Bling e IdWorks no chat (hoje só importação e envio).
 - [x] Mostrar o custo antes de gastar em **todas** as ferramentas que debitam (produzir artigo, regenerar capa e publicar em WordPress/Sanity levam `preview.custo`) (hoje só as mapeadas em `creditActionsFor`; as de conteúdo debitam mais fundo e não aparecem no `custo`).
