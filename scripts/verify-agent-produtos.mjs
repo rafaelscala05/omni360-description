@@ -7,6 +7,7 @@ import {
   LOTE_PADRAO, MAX_DESCRICOES_POR_LOTE, MAX_HTML, MAX_SKUS_BUSCA,
 } from '../server/agent/produtosRules.ts';
 import { linhasDoContexto, sanitizarContexto, MAX_SKUS_CONTEXTO } from '../server/agent/workspaceContext.ts';
+import { camposDoEnvio, imagensParaTiny, paraTinyPush } from '../server/agent/tinyCatalogo.ts';
 import { chavePrevia } from '../server/agent/previewCache.ts';
 import { resolveApprovalMode } from '../server/agent/agentSettings.ts';
 import { creditActionsFor } from '../server/agent/execution.ts';
@@ -133,6 +134,24 @@ check('publicar no MELI não debita', creditActionsFor({ name: 'meli.proposta.pu
   const m = mesclarAtributos({ cor: { value: 'Branco' }, usos: { value: [] } }, norm);
   check('mescla: chave editada no meio é pulada, vazia é preenchida', [m.aplicados, m.pulados, m.atributos.usos.value, m.atributos.cor.value], [['usos'], ['cor'], ['Sala'], 'Branco']);
   check('mescla marca como sugestão de IA não confirmada', [m.atributos.usos.source, m.atributos.usos.confirmed], ['ai', false]);
+}
+
+// --- envio ao Tiny pelo chat ------------------------------------------------
+{
+  const pai = p('P', { _tinyProductId: '10', 'URL imagem 1': 'https://img/p.jpg', 'Descrição complementar': '<p>D</p>', 'Título SEO': 'T', NCM: '1234', 'Preço': 9 });
+  const filha = p('P-1', { _tinyProductId: '11', 'Código do pai': 'P', 'URL imagem 1': 'https://img/p.jpg' });
+  const push = paraTinyPush(pai);
+  check('push leva só título, descrição, SEO e imagens — nada fiscal', Object.keys(push).filter((k) => push[k] !== undefined).sort(),
+    ['descricaoHtml', 'imagens', 'nome', 'seoTitle', 'sku', 'tinyId', 'urlImagem']);
+  check('variação com a mesma foto do pai não leva imagem própria', paraTinyPush(filha, pai).urlImagem, undefined);
+  check('imagens: ambientadas + URL imagem, só http(s), sem repetir',
+    imagensParaTiny({ _ambientImages: ['https://a', 'data:x'], 'URL imagem 1': 'https://a', 'URL imagem 2': 'http://b' }), ['https://a', 'http://b']);
+  const campos = camposDoEnvio(
+    [{ campo: 'Descrição complementar', valor: '<p>Nova <b>desc</b></p>' }, { campo: 'Imagens novas', itens: ['u1', 'u2'] }, { campo: 'Título SEO', valor: 'Novo' }],
+    { descricaoHtml: '<p>Velha</p>', seoTitle: 'Antigo' },
+  );
+  check('prévia do envio: antes do Tiny, depois do catálogo, em texto', campos.map((c) => [c.campo, c.antes, c.depois]),
+    [['Descrição complementar', 'Velha', 'Nova desc'], ['Imagens novas', null, '2 imagens'], ['Título SEO', 'Antigo', 'Novo']]);
 }
 
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');

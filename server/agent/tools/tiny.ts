@@ -18,11 +18,15 @@
 // account. They fail safe: a wrong name surfaces as a Tiny error during
 // preview(), before anything is approved or written.
 
-import { tinyV2CallRaw, normalizeV2Product, num } from '../../tinyV2';
+import { buildV2AlterarPayload, normalizeV2Product, num, pushV2Lote, tinyV2CallRaw, type V2Caller } from '../../tinyV2';
+import type { TinyPushProduct } from '../../tinyAgent';
+import { adminDb } from '../../firebaseAdmin';
 import { registerTool } from '../registry';
 import { buildFieldDiff, makePreview, requireStr } from '../preview';
 import { withLog } from '../telemetry';
-import type { ToolCtx } from '../types';
+import { camposDoEnvio, paraTinyPush } from '../tinyCatalogo';
+import type { ProdutoDoc } from '../produtosRules';
+import type { PreviewField, ToolCtx } from '../types';
 
 async function tinyCall<T = any>(ctx: ToolCtx, endpoint: string, params: Record<string, string>): Promise<T> {
   const token = await ctx.tinyToken();
@@ -439,5 +443,115 @@ registerTool<ContatoArgs>({
     if (ctx.dryRun) return dryRunResult({ acao: 'contato.alterar.php', body: preview.payload });
     await tinyCall(ctx, 'contato.alterar.php', { contato: JSON.stringify(preview.payload) });
     return { id: a.id, atualizado: true };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Enviar o catálogo do OMNI360 ao Tiny (o mesmo push de Integrações)
+// ---------------------------------------------------------------------------
+
+const MAX_ENVIO = 20;
+
+interface EnvioArgs { skus: string[] }
+
+registerTool<EnvioArgs>({
+  name: 'tiny.catalogo.enviar',
+  provider: 'tiny',
+  mode: 'write',
+  description: `Envia ao Tiny o que está no catálogo do OMNI360 — título, descrição complementar, SEO e imagens — dos produtos indicados (os que vieram do Tiny). É o mesmo envio da tela de Integrações: dados fiscais, preço e estoque nunca vão, e o Tiny só recebe o que for diferente do que ele já tem. A prévia mostra, produto a produto, o que muda. Até ${MAX_ENVIO} SKUs por vez.`,
+  schema: {
+    type: 'object',
+    properties: {
+      skus: { type: 'array', items: { type: 'string' }, description: `SKUs do catálogo do OMNI360 (até ${MAX_ENVIO}).` },
+    },
+    required: ['skus'],
+  },
+  preview: async (ctx, a) => {
+    const skus = [...new Set((a.skus ?? []).map((s) => String(s).trim()).filter(Boolean))];
+    if (!skus.length) throw Object.assign(new Error('Informe os SKUs a enviar.'), { status: 400 });
+    if (skus.length > MAX_ENVIO) throw Object.assign(new Error(`No máximo ${MAX_ENVIO} produtos por envio — divida em lotes.`), { status: 400 });
+
+    const userRef = adminDb.collection('users').doc(ctx.uid);
+    const [catalogoSnap, ajustes] = await Promise.all([
+      userRef.collection('products').get(),
+      userRef.collection('settings').doc('tiny').get().catch(() => null),
+    ]);
+    const catalogo = catalogoSnap.docs.map((d) => ({ ...(d.data() as Record<string, unknown>), _docId: d.id }) as ProdutoDoc);
+    const sobrescreverTitulo = ajustes?.data()?.sobrescreverTitulo !== false;
+    const porSku = new Map(catalogo.map((p) => [String(p['Código (SKU)'] ?? '').trim().toLowerCase(), p]));
+
+    const naoEncontrados: string[] = [];
+    const semTiny: string[] = [];
+    const iguais: string[] = [];
+    const produtos: TinyPushProduct[] = [];
+    const itens: { alvo: string; campos: PreviewField[] }[] = [];
+    let variacoes = 0;
+    for (const sku of skus) {
+      const p = porSku.get(sku.toLowerCase());
+      if (!p) { naoEncontrados.push(sku); continue; }
+      const nome = String(p['Descrição'] ?? sku);
+      if (!p._tinyProductId) { semTiny.push(nome); continue; }
+      const paiSku = String(p['Código do pai'] ?? '').trim();
+      const prod = paraTinyPush(p, paiSku ? porSku.get(paiSku.toLowerCase()) : undefined);
+      const atual = await obterProduto(ctx, prod.tinyId);
+      // Variação: no Tiny o texto é do pai; dela só vai a imagem, pelo pai (invariante 5).
+      if (atual?.tipoVariacao === 'V') {
+        if (prod.urlImagem) { produtos.push(prod); variacoes++; } else iguais.push(`${nome} (variação sem imagem própria)`);
+        continue;
+      }
+      const { enviado, hasAnyChange } = buildV2AlterarPayload(atual, prod, sobrescreverTitulo);
+      if (!hasAnyChange) { iguais.push(nome); continue; }
+      produtos.push(prod);
+      itens.push({ alvo: `${nome} · ${sku}`, campos: camposDoEnvio(enviado, normalizeV2Product(atual)) });
+    }
+
+    if (!produtos.length) {
+      const motivo = [
+        iguais.length ? `já iguais no Tiny: ${iguais.join(', ')}` : '',
+        semTiny.length ? `não vieram do Tiny: ${semTiny.join(', ')}` : '',
+        naoEncontrados.length ? `não encontrados no catálogo: ${naoEncontrados.join(', ')}` : '',
+      ].filter(Boolean).join('; ');
+      throw Object.assign(new Error(`Nada para enviar — ${motivo || 'nenhum produto'}.`), { status: 409 });
+    }
+
+    const avisos = [
+      'Vai título, descrição complementar, SEO e imagens novas. Dados fiscais, preço e estoque não são enviados.',
+      ...(!sobrescreverTitulo ? ['A sobrescrita do título está desligada nas configurações do Tiny: o nome não muda.'] : []),
+      ...(variacoes ? [`${variacoes} ${variacoes === 1 ? 'variação leva' : 'variações levam'} só a imagem própria, gravada pelo produto pai.`] : []),
+      ...(iguais.length ? [`Já iguais no Tiny (não vão): ${iguais.join(', ')}.`] : []),
+      ...(semTiny.length ? [`Não vieram do Tiny (o envio não cria produto): ${semTiny.join(', ')}.`] : []),
+      ...(naoEncontrados.length ? [`SKUs não encontrados no catálogo: ${naoEncontrados.join(', ')}.`] : []),
+    ];
+    return {
+      ...makePreview({
+        resumo: `Enviar ${produtos.length === 1 ? '1 produto' : `${produtos.length} produtos`} do catálogo ao Tiny`,
+        alvo: produtos.length === 1 ? `Tiny · ${produtos[0].sku ?? produtos[0].tinyId}` : `Tiny · ${produtos.length} produtos`,
+        campos: [{ campo: 'Produtos', antes: null, depois: produtos.map((x) => x.sku ?? x.tinyId).join(', '), mudou: true }],
+        avisos,
+        payload: { produtos, sobrescreverTitulo },
+      }),
+      ...(itens.length ? { itens } : {}),
+    };
+  },
+  execute: async (ctx, _a, preview) => {
+    const { produtos, sobrescreverTitulo } = preview.payload as { produtos: TinyPushProduct[]; sobrescreverTitulo: boolean };
+    if (ctx.dryRun) return dryRunResult({ acao: 'push v2', produtos: produtos.length });
+    const token = await ctx.tinyToken();
+    const call: V2Caller = (endpoint, params, headers) => withLog(
+      ctx.uid,
+      { provider: 'tiny', operacao: endpoint, alvo: params.id ?? endpoint, requisicao: params },
+      () => tinyV2CallRaw(token, endpoint, params, 0, headers),
+    );
+    const resultados = await pushV2Lote(call, produtos, {
+      sobrescreverTitulo,
+      developerId: process.env.TINY_DEVELOPER_ID || undefined,
+    });
+    const ok = resultados.filter((r) => r.ok);
+    return {
+      enviados: ok.length,
+      falhas: resultados.filter((r) => !r.ok).map((r) => `${r.sku ?? r.tinyId}: ${Object.values(r.steps).find((v) => v && v !== 'ok' && v !== 'sem alteração') ?? 'falhou'}`),
+      // O mesmo log do painel de Integrações: o que de fato chegou ao Tiny, campo a campo.
+      enviado: ok.map((r) => ({ sku: r.sku, campos: (r.enviado ?? []).map((e) => e.campo) })),
+    };
   },
 });

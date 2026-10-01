@@ -60,7 +60,7 @@ function buildSystemPrompt(config: ContentGraphConfig): string {
   if (conexoes) {
     const plataformas = [
       conexoes.wake ? '- Wake Commerce (loja/e-commerce): banners, hotsites, produtos, preço, estoque e SEO.' : null,
-      conexoes.tiny ? '- Tiny ERP (v2): produtos, preço, estoque, pedidos e contatos.' : null,
+      conexoes.tiny ? '- Tiny ERP (v2): produtos, preço, estoque, pedidos e contatos. Para levar ao Tiny o que foi escrito no catálogo do OMNI360 (descrição, SEO, imagens), use tiny.catalogo.enviar com os SKUs — não tiny.produto.atualizar.' : null,
     ].filter(Boolean).join('\n');
     partes.push(`Plataformas de e-commerce/ERP conectadas nesta conta:\n${plataformas || '- Nenhuma plataforma conectada.'}`);
   }
