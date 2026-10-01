@@ -10,16 +10,12 @@
 // seguindo o tema claro/escuro escolhido no Alfred — cor nenhuma literal.
 
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  Bell, Building2, ChevronRight, Coins, Columns3, Gift, GraduationCap, HelpCircle, LogOut, Moon, Plug, RefreshCw, Settings, Sun, Target,
-} from 'lucide-react';
+import { Bell, Columns3, Moon, Sun } from 'lucide-react';
 import { useAgentTheme } from '../modules/agent/theme';
+import { AvatarConta, ContaMenuItens, type ItemConta } from './ContaMenu';
 
 export type DestinoTrilho = 'home' | 'atividade' | 'ferramentas';
-
-export type ItemConta =
-  | 'creditos' | 'historico' | 'missoes' | 'integracoes' | 'empresa'
-  | 'indique' | 'tutorial' | 'ajuda' | 'configuracoes' | 'sair';
+export type { ItemConta };
 
 interface Props {
   /** A porta ativa — telas de ferramenta (Produtos, Categorias…) contam como Ferramentas. */
@@ -75,28 +71,6 @@ const Porta: React.FC<{
   </button>
 );
 
-const LinhaMenu: React.FC<{
-  icone: React.ReactNode;
-  rotulo: string;
-  extra?: React.ReactNode;
-  perigo?: boolean;
-  primeira?: boolean;
-  onClick: () => void;
-}> = ({ icone, rotulo, extra, perigo, primeira, onClick }) => (
-  <button
-    onClick={onClick}
-    className="w-full min-h-[40px] px-3 flex items-center gap-2.5 text-left text-[13.5px] font-medium rounded-[12px] hover:bg-[var(--ag-fill)] transition-colors"
-    style={{
-      color: perigo ? 'var(--ag-danger)' : 'var(--ag-text)',
-      ...(primeira ? {} : { borderTop: '1px solid var(--ag-hairline)', borderRadius: 0 }),
-    }}
-  >
-    <span className="w-4 h-4 shrink-0 grid place-items-center" style={{ color: perigo ? 'var(--ag-danger)' : 'var(--ag-text-3)' }}>{icone}</span>
-    <span className="flex-1">{rotulo}</span>
-    {extra}
-  </button>
-);
-
 const TrilhoDesktop: React.FC<Props> = ({
   atual, pendentes, credits, nome, email, foto, mostrarMissoes, indiqueNovo, logo, onNavegar, onConta,
 }) => {
@@ -120,7 +94,7 @@ const TrilhoDesktop: React.FC<Props> = ({
   }, [aberto]);
 
   const escolher = (item: ItemConta) => { setAberto(false); onConta(item); };
-  const inicial = (nome || email || '?').trim().charAt(0).toUpperCase();
+  const dados = { credits, nome, email, foto, mostrarMissoes, indiqueNovo };
 
   return (
     <nav
@@ -149,13 +123,9 @@ const TrilhoDesktop: React.FC<Props> = ({
           onClick={() => setAberto((v) => !v)}
           aria-label="Conta"
           aria-expanded={aberto}
-          className="relative w-11 h-11 rounded-full grid place-items-center overflow-hidden text-[15px] font-semibold"
-          style={{ background: 'var(--ag-surface-solid)', color: 'var(--ag-text)', boxShadow: '0 0 0 1px var(--ag-hairline-2)' }}
+          className="rounded-full"
         >
-          {foto ? <img src={foto} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : inicial}
-          {indiqueNovo && (
-            <span className="absolute top-0.5 right-0.5 w-2.5 h-2.5 rounded-full" style={{ background: 'var(--ag-accent)', boxShadow: '0 0 0 2px var(--ag-bg)' }} />
-          )}
+          <AvatarConta dados={dados} tamanho={44} />
         </button>
 
         {aberto && (
@@ -171,29 +141,7 @@ const TrilhoDesktop: React.FC<Props> = ({
               <span className="text-[12px] text-[var(--ag-text-2)] truncate">{email}</span>
             </div>
 
-            <LinhaMenu
-              primeira
-              icone={<Coins className="w-4 h-4" />}
-              rotulo="Créditos"
-              extra={<span className="tabular-nums text-[12.5px] font-semibold text-[var(--ag-text-2)]">{credits}</span>}
-              onClick={() => escolher('creditos')}
-            />
-            <LinhaMenu icone={<RefreshCw className="w-4 h-4" />} rotulo="Histórico de uso" onClick={() => escolher('historico')} />
-            {mostrarMissoes && <LinhaMenu icone={<Target className="w-4 h-4" />} rotulo="Missões" onClick={() => escolher('missoes')} />}
-            <LinhaMenu icone={<Plug className="w-4 h-4" />} rotulo="Integrações" onClick={() => escolher('integracoes')} />
-            <LinhaMenu icone={<Building2 className="w-4 h-4" />} rotulo="Empresa" onClick={() => escolher('empresa')} />
-            <LinhaMenu
-              icone={<Gift className="w-4 h-4" />}
-              rotulo="Indique e Ganhe"
-              extra={indiqueNovo
-                ? <span className="w-2 h-2 rounded-full" style={{ background: 'var(--ag-accent)' }} />
-                : <ChevronRight className="w-4 h-4 text-[var(--ag-text-3)]" />}
-              onClick={() => escolher('indique')}
-            />
-            <LinhaMenu icone={<GraduationCap className="w-4 h-4" />} rotulo="Tutorial" onClick={() => escolher('tutorial')} />
-            <LinhaMenu icone={<HelpCircle className="w-4 h-4" />} rotulo="Ajuda" onClick={() => escolher('ajuda')} />
-            <LinhaMenu icone={<Settings className="w-4 h-4" />} rotulo="Configurações" onClick={() => escolher('configuracoes')} />
-            <LinhaMenu icone={<LogOut className="w-4 h-4" />} rotulo="Sair da conta" perigo onClick={() => escolher('sair')} />
+            <ContaMenuItens dados={dados} onEscolher={escolher} />
           </div>
         )}
       </div>

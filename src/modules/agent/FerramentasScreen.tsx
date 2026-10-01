@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronRight, Coins, Menu, Sparkles } from 'lucide-react';
+import { ChevronRight, Coins, Sparkles } from 'lucide-react';
 import type { Product } from '../../types/models';
 import type { AgentAction } from '../../types/agent';
 import { listenActions } from '../../services/agentChatService';
@@ -8,6 +8,7 @@ import { useAgentTheme } from './theme';
 import { useProvidersAlfred, useSemana } from './useSemana';
 import { diaNaSemana, inicioDaSemana, proximoPasso, semImagem, type DestinoTarefa, type OrigemTarefa } from './semana';
 import { ORIGEM } from './SemanaPanel';
+import { BotaoConta } from '../../components/ContaMenu';
 
 export type ViewConta = 'categories' | 'history' | 'company' | 'missoes';
 
@@ -24,7 +25,6 @@ interface Props {
   onAbrirView: (view: ViewConta) => void;
   /** Leva ao chat já mandando `prompt` — o Alfred recebe o contexto da tela. */
   onPedirAlfred: (prompt: string) => void;
-  onAbrirMenu: () => void;
 }
 
 const Linha: React.FC<{ rotulo: string; valor: React.ReactNode; alerta?: boolean; primeira?: boolean }> = ({ rotulo, valor, alerta, primeira }) => (
@@ -70,7 +70,7 @@ const Cartao: React.FC<{
  * discordarem sobre o que vem primeiro.
  */
 const FerramentasScreen: React.FC<Props> = ({
-  uid, products, credits, hasAgente, hasContentAgent, hasMeli, mostrarMissoes, onAbrir, onAbrirView, onPedirAlfred, onAbrirMenu,
+  uid, products, credits, hasAgente, hasContentAgent, hasMeli, mostrarMissoes, onAbrir, onAbrirView, onPedirAlfred, 
 }) => {
   const { tema } = useAgentTheme();
   const [acoes, setAcoes] = useState<AgentAction[]>([]);
@@ -123,14 +123,7 @@ const FerramentasScreen: React.FC<Props> = ({
         <div className="ag-scroll flex-1 overflow-y-auto px-4 sm:px-6 pt-4 pb-28 md:pb-6">
           <div className="max-w-5xl mx-auto flex flex-col gap-4">
             <div className="flex items-center gap-2">
-              <button
-                onClick={onAbrirMenu}
-                title="Menu"
-                className="md:hidden w-9 h-9 rounded-full grid place-items-center shrink-0 text-[var(--ag-text-2)]"
-                style={{ background: 'var(--ag-fill)' }}
-              >
-                <Menu className="w-[18px] h-[18px]" />
-              </button>
+              <BotaoConta />
               <h1 className="font-display text-[26px] sm:text-[30px] font-semibold tracking-tight text-[var(--ag-text)] flex-1">Ferramentas</h1>
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12.5px] font-medium text-[var(--ag-text-2)] tabular-nums" style={{ background: 'var(--ag-fill)' }}>
                 <Coins className="w-3.5 h-3.5" /> {credits}

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Clapperboard, Inbox, Menu, Sparkles } from 'lucide-react';
+import { AlertCircle, Clapperboard, Inbox, Sparkles } from 'lucide-react';
 import type { AgentAction } from '../../types/agent';
 import type { Product } from '../../types/models';
 import { useRodando } from './useRodando';
@@ -7,10 +7,10 @@ import type { ItemRodando } from './rodando';
 import { executarAcao, listenActions, rejeitarAcao } from '../../services/agentChatService';
 import { useAgentTheme } from './theme';
 import ActionCard from './chat/ActionCard';
+import { BotaoConta } from '../../components/ContaMenu';
 
 interface Props {
   uid: string;
-  onAbrirMenu: () => void;
   /** Leva ao chat — é lá que o Alfred responde depois de uma aprovação. */
   onAbrirAlfred: () => void;
   /** Para dar nome aos vídeos em produção (o job só guarda o id do produto). */
@@ -55,7 +55,7 @@ const LinhaRodando: React.FC<{ item: ItemRodando }> = ({ item }) => {
  * que já gravou, venha do chat ou de um botão numa ferramenta. É a resposta
  * para "o que está sendo aprovado e o que já foi feito" sem rolar a conversa.
  */
-const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirMenu, onAbrirAlfred, products = [] }) => {
+const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirAlfred, products = [] }) => {
   const { tema } = useAgentTheme();
   const nomes = useMemo(() => new Map(products.map((p) => [p._id, String(p['Descrição'] ?? '')])), [products]);
   const rodando = useRodando(uid, nomes);
@@ -96,14 +96,7 @@ const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirMenu, onAbrirAlfred, pro
       >
         <header className="shrink-0 px-4 sm:px-6 pt-4 pb-3 flex flex-col gap-3">
           <div className="flex items-center gap-2">
-            <button
-              onClick={onAbrirMenu}
-              title="Menu"
-              className="md:hidden w-9 h-9 rounded-full grid place-items-center shrink-0 text-[var(--ag-text-2)]"
-              style={{ background: 'var(--ag-fill)' }}
-            >
-              <Menu className="w-[18px] h-[18px]" />
-            </button>
+            <BotaoConta />
             <h1 className="font-display text-[26px] sm:text-[30px] font-semibold tracking-tight text-[var(--ag-text)]">Atividade</h1>
           </div>
 

@@ -11,6 +11,7 @@ import type { DestinoTarefa } from './modules/agent/semana';
 import ProdutosAgenteScreen from './modules/agent/ProdutosAgenteScreen';
 import ConectoresScreen from './modules/agent/ConectoresScreen';
 import TrilhoDesktop, { type DestinoTrilho, type ItemConta } from './components/TrilhoDesktop';
+import { ContaProvider, ContaSheet, AvatarConta, type DadosConta } from './components/ContaMenu';
 import { useAgentTheme } from './modules/agent/theme';
 import type { ChaveFonte } from './modules/agent/conectores';
 import type { PedidoAlfred } from './types/agent';
@@ -219,6 +220,8 @@ async function raceTimeout(promise: Promise<unknown>, ms: number): Promise<boole
 export default function App() {
   // State
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  // Folha da Conta no telefone (com agente ela substitui a gaveta do menu antigo).
+  const [contaAberta, setContaAberta] = useState(false);
   // Tema do agente: com módulo de agente, o fundo do app acompanha o claro/escuro
   // do Alfred nas telas dele (as telas antigas têm cores fixas e ficam claras).
   const { tema: temaAgente } = useAgentTheme();
@@ -3309,18 +3312,106 @@ Retorne APENAS um JSON válido no seguinte formato:
     );
   };
 
+  // Com agente, o desktop navega pelo trilho de vidro (três portas + Conta);
+  // o menu escuro fica só como gaveta do telefone. Telas de ferramenta contam
+  // como Ferramentas; as de conta (créditos, empresa…) não acendem porta.
+  const temAgente = hasContentAgent || hasOperationsAgent;
+  const telaDoAgente = ['home', 'atividade', 'ferramentas', 'agenteProdutos', 'fontes'].includes(mainView);
+  // Telas antigas já convertidas para os tokens `--ag-*`: seguem o tema do Alfred.
+  const telaComTokens = ['history', 'products', 'categories', 'meli'].includes(mainView);
+  // Tema das telas convertidas que abrem o próprio escopo `.alfreds`: sem
+  // agente não há alternador, então ficam no claro.
+  const temaTelas = temAgente ? temaAgente : 'claro';
+  const portaAtual: DestinoTrilho | null =
+    mainView === 'home' || mainView === 'fontes' ? 'home'
+      : mainView === 'atividade' ? 'atividade'
+        : ['ferramentas', 'agenteProdutos', 'products', 'categories', 'meli'].includes(mainView) ? 'ferramentas'
+          : null;
+  const abrirItemConta = (item: ItemConta) => {
+    if (item === 'creditos') { setIsCreditPurchaseOpen(true); trackCreditPurchaseOpen(); }
+    else if (item === 'historico') { setMainView('history'); fetchCreditLogs(); setIsCreditHistoryOpen(false); }
+    else if (item === 'missoes') setMainView('missoes');
+    else if (item === 'integracoes') setMainView('integrations');
+    else if (item === 'empresa') setMainView('company');
+    else if (item === 'indique') {
+      setMainView('referral');
+      if (!referralNavSeen) { setReferralNavSeen(true); localStorage.setItem('referralNavSeen', '1'); }
+    }
+    else if (item === 'tutorial') setMainView('tutorial');
+    else if (item === 'ajuda') openSupportChat().catch((err) => console.error('[suporte] falha ao abrir o chat de ajuda', err));
+    else if (item === 'configuracoes') setIsTemplateModalOpen(true);
+    else if (item === 'sair') handleLogout();
+  };
+
+  const dadosConta: DadosConta = {
+    credits,
+    nome: user?.displayName ?? '',
+    email: user?.email ?? '',
+    foto: user?.photoURL ?? null,
+    mostrarMissoes: isCoorteMissao(cohort),
+    indiqueNovo: !referralNavSeen,
+  };
+  const abrirConta = () => setContaAberta(true);
+
   if (user && workspace === 'content') {
+    // Com agente, o Conteúdo é uma das Ferramentas: abre com o trilho (porta
+    // Ferramentas acesa), a tab bar e o avatar da Conta, e qualquer porta leva
+    // de volta ao workspace de Produto. Itens da Conta que são telas (histórico,
+    // empresa…) ou modais montados só lá (configurações) também voltam para ele.
+    const irParaPorta = (d: DestinoTrilho) => { setWorkspace('product'); setMainView(d); };
+    const contaNoConteudo = (item: ItemConta) => {
+      if (item !== 'creditos' && item !== 'ajuda' && item !== 'sair') setWorkspace('product');
+      abrirItemConta(item);
+    };
     return (
-      <Suspense fallback={<div className="h-screen flex items-center justify-center bg-[#f7f9fb] text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
-        <ContentApp
-          user={user}
-          credits={credits}
-          hasBlogModule={hasBlogModule}
-          onSwitchToProduct={() => setWorkspace('product')}
-          onBuyCredits={() => setIsCreditPurchaseOpen(true)}
-          onLogout={handleLogout}
-        />
-      </Suspense>
+      <ContaProvider value={temAgente ? { dados: dadosConta, abrir: abrirConta } : null}>
+        <div className="h-screen flex overflow-hidden">
+          {temAgente && (
+            <TrilhoDesktop
+              atual="ferramentas"
+              pendentes={pendentesAlfred}
+              credits={credits}
+              nome={user.displayName ?? ''}
+              email={user.email ?? ''}
+              foto={user.photoURL}
+              mostrarMissoes={isCoorteMissao(cohort)}
+              indiqueNovo={!referralNavSeen}
+              logo={logoAlfreds}
+              onNavegar={irParaPorta}
+              onConta={contaNoConteudo}
+            />
+          )}
+          <div className="flex-1 min-w-0">
+            <Suspense fallback={<div className="h-screen flex items-center justify-center bg-[#f7f9fb] text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
+              <ContentApp
+                user={user}
+                credits={credits}
+                hasBlogModule={hasBlogModule}
+                onSwitchToProduct={() => setWorkspace('product')}
+                onBuyCredits={() => { setIsCreditPurchaseOpen(true); trackCreditPurchaseOpen(); }}
+                onLogout={handleLogout}
+                agente={temAgente}
+              />
+            </Suspense>
+          </div>
+          {temAgente && (
+            <>
+              <AppTabBar
+                atual="ferramentas"
+                mostrarAgente
+                pendentes={pendentesAlfred}
+                onNavegar={(d) => { setWorkspace('product'); setMainView(d); }}
+                onNovoProduto={handleOpenProductUrlImport}
+                onMenu={() => {}}
+              />
+              <ContaSheet aberto={contaAberta} dados={dadosConta} onFechar={() => setContaAberta(false)} onEscolher={contaNoConteudo} />
+            </>
+          )}
+          {/* O modal de créditos só era montado no workspace de Produto, então
+              "Comprar créditos" aqui não abria nada. */}
+          {isCreditPurchaseOpen && <CreditPurchaseModal onClose={() => setIsCreditPurchaseOpen(false)} />}
+        </div>
+      </ContaProvider>
     );
   }
 
@@ -3392,38 +3483,8 @@ Retorne APENAS um JSON válido no seguinte formato:
     }
   }
 
-  // Com agente, o desktop navega pelo trilho de vidro (três portas + Conta);
-  // o menu escuro fica só como gaveta do telefone. Telas de ferramenta contam
-  // como Ferramentas; as de conta (créditos, empresa…) não acendem porta.
-  const temAgente = hasContentAgent || hasOperationsAgent;
-  const telaDoAgente = ['home', 'atividade', 'ferramentas', 'agenteProdutos', 'fontes'].includes(mainView);
-  // Telas antigas já convertidas para os tokens `--ag-*`: seguem o tema do Alfred.
-  const telaComTokens = ['history', 'products', 'categories', 'meli'].includes(mainView);
-  // Tema das telas convertidas que abrem o próprio escopo `.alfreds`: sem
-  // agente não há alternador, então ficam no claro.
-  const temaTelas = temAgente ? temaAgente : 'claro';
-  const portaAtual: DestinoTrilho | null =
-    mainView === 'home' || mainView === 'fontes' ? 'home'
-      : mainView === 'atividade' ? 'atividade'
-        : ['ferramentas', 'agenteProdutos', 'products', 'categories', 'meli'].includes(mainView) ? 'ferramentas'
-          : null;
-  const abrirItemConta = (item: ItemConta) => {
-    if (item === 'creditos') { setIsCreditPurchaseOpen(true); trackCreditPurchaseOpen(); }
-    else if (item === 'historico') { setMainView('history'); fetchCreditLogs(); setIsCreditHistoryOpen(false); }
-    else if (item === 'missoes') setMainView('missoes');
-    else if (item === 'integracoes') setMainView('integrations');
-    else if (item === 'empresa') setMainView('company');
-    else if (item === 'indique') {
-      setMainView('referral');
-      if (!referralNavSeen) { setReferralNavSeen(true); localStorage.setItem('referralNavSeen', '1'); }
-    }
-    else if (item === 'tutorial') setMainView('tutorial');
-    else if (item === 'ajuda') openSupportChat().catch((err) => console.error('[suporte] falha ao abrir o chat de ajuda', err));
-    else if (item === 'configuracoes') setIsTemplateModalOpen(true);
-    else if (item === 'sair') handleLogout();
-  };
-
   const renderApp = () => (
+    <ContaProvider value={temAgente ? { dados: dadosConta, abrir: abrirConta } : null}>
     <div className="h-screen bg-[#f7f9fb] flex font-sans overflow-hidden">
       <input type="file" accept=".xlsx, .xls" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
       {isFirebaseUnavailable && (
@@ -3701,13 +3762,15 @@ Retorne APENAS um JSON válido no seguinte formato:
         style={temAgente ? { background: 'var(--ag-bg)' } : undefined}
       >
         {/* Top Bar */}
-        {/* As telas do agente têm cabeçalho próprio; no desktop, com o trilho
-            levando créditos e conta, a barra de topo só sobra nas telas antigas. */}
-        <header className={cn("h-16 bg-(--ag-surface-solid) border-b border-(--ag-hairline) px-4 md:px-6 flex items-center justify-between flex-shrink-0 z-10 sticky top-0 shadow-sm gap-3", temAgente && telaDoAgente && "md:hidden")}>
+        {/* As telas do agente têm cabeçalho próprio (com o avatar da Conta no
+            telefone), então a barra de topo só sobra nas telas antigas. Com
+            agente ela também não abre a gaveta: quem navega é a tab bar, e a
+            Conta sai do avatar. */}
+        <header className={cn("h-16 bg-(--ag-surface-solid) border-b border-(--ag-hairline) px-4 md:px-6 flex items-center justify-between flex-shrink-0 z-10 sticky top-0 shadow-sm gap-3", temAgente && telaDoAgente && "hidden")}>
           <div className="flex items-center gap-3 flex-1 min-w-0">
-            <button 
-              onClick={() => setIsSidebarOpen(true)} 
-              className="md:hidden p-2 text-(--ag-text-2) hover:bg-(--ag-fill-2) rounded-lg transition-colors shrink-0"
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className={cn("md:hidden p-2 text-(--ag-text-2) hover:bg-(--ag-fill-2) rounded-lg transition-colors shrink-0", temAgente && "hidden")}
               title="Abrir Menu"
             >
               <Menu className="w-5 h-5" />
@@ -3744,6 +3807,13 @@ Retorne APENAS um JSON válido no seguinte formato:
               <span className="hidden sm:inline">Créditos:</span>
               <span className="text-(--ag-text) font-bold">{credits}</span>
             </button>
+            {temAgente ? (
+              // Com agente o avatar abre a Conta inteira (a folha no telefone);
+              // no desktop ele sai daqui, porque o trilho já tem o seu.
+              <button onClick={abrirConta} aria-label="Conta" title="Conta" className="md:hidden rounded-full">
+                <AvatarConta dados={dadosConta} tamanho={32} />
+              </button>
+            ) : (<>
             <div className="h-6 w-px bg-(--ag-fill-2)"></div>
             <div className="relative">
               <button onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)} className="flex items-center gap-2 group p-1 hover:bg-(--ag-fill) border border-transparent hover:border-(--ag-hairline) rounded-full transition-colors focus:outline-none" title="Opções da conta">
@@ -3778,6 +3848,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                 </>
               )}
             </div>
+            </>)}
           </div>
         </header>
 
@@ -3829,7 +3900,6 @@ Retorne APENAS um JSON válido no seguinte formato:
               onAbrirFontes={() => setMainView('fontes')}
               onAbrirAtividade={() => setMainView('atividade')}
               onAbrirDestino={abrirDestino}
-              onAbrirMenu={() => setIsSidebarOpen(true)}
               onFocoChange={setAlfredFocado}
               promptInicial={promptAlfred}
               onPromptConsumido={() => setPromptAlfred(null)}
@@ -3840,13 +3910,11 @@ Retorne APENAS um JSON válido no seguinte formato:
               hasMeli={hasMeliListingOptimizer}
               hasContentAgent={hasContentAgent}
               onVoltar={() => setMainView('home')}
-              onAbrirMenu={() => setIsSidebarOpen(true)}
               onConectar={conectarFonte}
             />
           ) : mainView === 'atividade' ? (
             <AtividadeScreen
               uid={user.uid}
-              onAbrirMenu={() => setIsSidebarOpen(true)}
               onAbrirAlfred={() => setMainView('home')}
               products={products}
             />
@@ -3862,7 +3930,6 @@ Retorne APENAS um JSON válido no seguinte formato:
               onAbrir={abrirDestino}
               onAbrirView={(v) => { if (v === 'history') fetchCreditLogs(); setMainView(v); }}
               onPedirAlfred={(p) => { setPromptAlfred({ texto: p }); setMainView('home'); }}
-              onAbrirMenu={() => setIsSidebarOpen(true)}
             />
           ) : mainView === 'agenteProdutos' ? (
             <ProdutosAgenteScreen
@@ -3877,7 +3944,6 @@ Retorne APENAS um JSON válido no seguinte formato:
               onAbrirView={(v) => setMainView(v)}
               onPedirAlfred={(pedido) => { setPromptAlfred(pedido); setMainView('home'); }}
               onVoltar={() => setMainView('ferramentas')}
-              onAbrirMenu={() => setIsSidebarOpen(true)}
               hasAgente={hasContentAgent || hasOperationsAgent}
             />
           ) : mainView === 'categories' ? (
@@ -5572,7 +5638,12 @@ Retorne APENAS um JSON válido no seguinte formato:
         />
       )}
 
+      {temAgente && (
+        <ContaSheet aberto={contaAberta} dados={dadosConta} onFechar={() => setContaAberta(false)} onEscolher={abrirItemConta} />
+      )}
+
     </div>
+    </ContaProvider>
   );
 
   return (

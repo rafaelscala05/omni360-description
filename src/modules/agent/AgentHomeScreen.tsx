@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Coins, Menu, Moon, ScrollText, Sun } from 'lucide-react';
+import { AlertCircle, Coins, Moon, ScrollText, Sun } from 'lucide-react';
 import type { Product } from '../../types/models';
 import type { AgentAction, PedidoAlfred, ThreadMessage, WorkspaceContext } from '../../types/agent';
 import {
@@ -21,6 +21,7 @@ import { useSemana } from './useSemana';
 import { useEstadoMeli } from './useFontes';
 import { entradasDoApp, montarFontes, resumoFontes } from './conectores';
 import type { DestinoTarefa } from './semana';
+import { BotaoConta } from '../../components/ContaMenu';
 
 interface Props {
   uid: string;
@@ -37,7 +38,6 @@ interface Props {
   hasMeli: boolean;
   /** "Abrir" de uma tarefa da semana: leva à ferramenta dona dela. */
   onAbrirDestino: (destino: DestinoTarefa) => void;
-  onAbrirMenu: () => void;
   /** Campo focado no telefone — o App esconde a tab bar para o teclado. */
   onFocoChange?: (focado: boolean) => void;
   /** Pedido vindo de outra tela ("Pedir ao Alfred"): enviado ao montar, com o contexto dela. */
@@ -53,7 +53,7 @@ const SUGESTOES = [
 
 const AgentHomeScreen: React.FC<Props> = ({
   uid, credits, products, hasContentAgent, hasMeli, onOpenIntegrations, onAbrirFontes, onAbrirAtividade, onAbrirDestino,
-  onAbrirMenu, onFocoChange, promptInicial, onPromptConsumido,
+  onFocoChange, promptInicial, onPromptConsumido,
 }) => {
   const { tema, alternar } = useAgentTheme();
   const telaPequena = useTelaPequena();
@@ -309,14 +309,7 @@ const AgentHomeScreen: React.FC<Props> = ({
           className="ag-glass shrink-0 px-2.5 sm:pl-5 sm:pr-4 py-2 sm:py-2.5 flex items-center gap-2 sm:gap-3"
           style={{ borderBottom: '1px solid var(--ag-hairline)', borderRadius: 0, borderLeft: 0, borderRight: 0, borderTop: 0 }}
         >
-          <button
-            onClick={onAbrirMenu}
-            title="Menu"
-            className="md:hidden w-9 h-9 rounded-full grid place-items-center shrink-0 text-[var(--ag-text-2)] transition-colors"
-            style={{ background: 'var(--ag-fill)' }}
-          >
-            <Menu className="w-[18px] h-[18px]" />
-          </button>
+          <BotaoConta />
 
           <div className="flex items-center gap-2.5 min-w-0">
             <VoiceOrb size={34} ativo={streaming} />

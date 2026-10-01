@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ChevronLeft, Menu, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, RefreshCw } from 'lucide-react';
 import type { AgentAction } from '../../types/agent';
 import { fetchTools, listenActions } from '../../services/agentChatService';
 import { fetchIntegrationsOverview, type IntegrationSummary } from '../../services/integrationsStatusService';
@@ -8,13 +8,13 @@ import { useAgentTheme } from './theme';
 import { useEstadoMeli } from './useFontes';
 import { MARCA } from './ConnectionsBar';
 import { entradasDoApp, montarFontes, type ChaveFonte, type Fonte } from './conectores';
+import { BotaoConta } from '../../components/ContaMenu';
 
 interface Props {
   uid: string;
   hasMeli: boolean;
   hasContentAgent: boolean;
   onVoltar: () => void;
-  onAbrirMenu: () => void;
   /** Conectar, revalidar ou gerenciar: leva à tela onde aquela conexão se faz. */
   onConectar: (chave: ChaveFonte) => void;
 }
@@ -113,7 +113,7 @@ const Linha: React.FC<{ f: Fonte; primeira: boolean; verificando: boolean; onAca
  * separado em o que precisa de um toque, o que está ligado (e quantas
  * ferramentas libera) e o que ainda dá para conectar.
  */
-const ConectoresScreen: React.FC<Props> = ({ uid, hasMeli, hasContentAgent, onVoltar, onAbrirMenu, onConectar }) => {
+const ConectoresScreen: React.FC<Props> = ({ uid, hasMeli, hasContentAgent, onVoltar, onConectar }) => {
   const { tema } = useAgentTheme();
   // Recarga manual ("Verificar"): refaz as checagens de status sem sair da tela.
   const [recarga, setRecarga] = useState(0);
@@ -174,14 +174,7 @@ const ConectoresScreen: React.FC<Props> = ({ uid, hasMeli, hasContentAgent, onVo
         <div className="ag-scroll flex-1 overflow-y-auto px-4 sm:px-6 pt-4 pb-28 md:pb-6">
           <div className="max-w-2xl mx-auto flex flex-col gap-5">
             <div className="flex items-center gap-2">
-              <button
-                onClick={onAbrirMenu}
-                title="Menu"
-                className="md:hidden w-9 h-9 rounded-full grid place-items-center shrink-0 text-[var(--ag-text-2)]"
-                style={{ background: 'var(--ag-fill)' }}
-              >
-                <Menu className="w-[18px] h-[18px]" />
-              </button>
+              <BotaoConta />
               <button
                 onClick={onVoltar}
                 className="min-h-[44px] -ml-1 pr-2 flex items-center text-[15px] font-medium text-[var(--ag-text)]"
