@@ -12,6 +12,7 @@ import { adminDb } from '../firebaseAdmin';
 import { describeTools } from './registry';
 import { agentSettingsRef, loadAgentSettings, resolveAgentContext, requireAnyModule } from './connections';
 import { alwaysAskTools, sanitizeSettings } from './agentSettings';
+import { numerosDaLoja } from './numeros';
 
 interface Deps {
   verifyFirebaseToken: (req: express.Request) => Promise<{ uid: string }>;
@@ -90,6 +91,17 @@ export function registerOperationsRoutes(app: express.Express, { verifyFirebaseT
           .sort((a: any, b: any) => String(a.at).localeCompare(String(b.at)))
         : [];
       return res.json({ acao: { id: snap.id, ...acao }, logs });
+    } catch (e: any) {
+      return res.status(httpStatus(e)).json({ message: e?.message });
+    }
+  });
+
+  // Números de Ferramentas que só o servidor alcança (Tiny, Wake, MELI).
+  app.get('/api/agent/numeros', async (req, res) => {
+    try {
+      const { uid } = await verifyFirebaseToken(req);
+      await requireAnyModule(uid);
+      return res.json(await numerosDaLoja(uid));
     } catch (e: any) {
       return res.status(httpStatus(e)).json({ message: e?.message });
     }

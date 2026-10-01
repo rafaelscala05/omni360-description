@@ -14,6 +14,7 @@ import { achatarArvore, arvoreEmTexto, categoriasSemVinculo, normalizarArvore, v
 import { chavePrevia } from '../server/agent/previewCache.ts';
 import { resolveApprovalMode } from '../server/agent/agentSettings.ts';
 import { creditActionsFor } from '../server/agent/execution.ts';
+import { contarBannersAtivos, contarPedidos } from '../server/agent/numeros.ts';
 
 let failures = 0;
 function check(label, actual, expected) {
@@ -294,6 +295,12 @@ check('envio a Bling e IdWorks debita uma ação do agente',
   check('sem cena preenchida vale o modo automático', [cenasEfetivas('vazia', cats), cenasEfetivas('nao-existe', cats), cenasEfetivas(undefined, cats)], [null, null, null]);
   check('pais em ciclo não travam', cenasEfetivas('ciclo-a', cats), null);
 }
+
+// --- números de Ferramentas -------------------------------------------------
+check('pedidos numa página só', contarPedidos({ pedidos: [{}, {}], numeroPaginas: 1 }), { n: 2, mais: false });
+check('pedidos em várias páginas viram "N+"', contarPedidos({ pedidos: [{}], numeroPaginas: 3 }), { n: 201, mais: true });
+check('falha de leitura não vira zero', [contarPedidos(null), contarBannersAtivos(null)], [null, null]);
+check('banners ativos', contarBannersAtivos([{ ativo: true }, { ativo: false }, {}]), 1);
 
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');
 process.exit(failures ? 1 : 0);

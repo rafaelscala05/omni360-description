@@ -662,6 +662,17 @@ export default function App() {
     categories: existingCategories,
     hasVideo: hasVideoModule,
     // Coorte de onboarding: as missões ainda abertas viram a primeira semana.
+    missoesResumo: isCoorteMissao(cohort)
+      ? (() => {
+        const t = montarTrilha({
+          missoes: todasMissoes,
+          produtos: products.length,
+          erpConectado: products.some((p) => p._tinyProductId || p._blingProductId || p._idworksProductId),
+          empresaCompleta: !!companyData?.cnpj,
+        }).filter((m) => m.estado !== 'opcional');
+        return { feitas: t.filter((m) => m.estado === 'feito').length, total: t.length };
+      })()
+      : undefined,
     missoes: isCoorteMissao(cohort)
       ? montarTrilha({
         missoes: todasMissoes,
@@ -3843,6 +3854,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               products={products}
               extras={extrasSemana}
               credits={credits}
+              inicial={(user.displayName || user.email || 'C').trim()}
               hasAgente={hasContentAgent || hasOperationsAgent}
               hasContentAgent={hasContentAgent}
               hasMeli={hasMeliListingOptimizer}

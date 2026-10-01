@@ -79,6 +79,11 @@ export const fetchLogs = (opts: { apenasErros?: boolean; limit?: number } = {}) 
   return call<{ logs: AgentLog[] }>(`/api/agent/logs?${p}`).then((r) => r.logs);
 };
 
+/** Números de Ferramentas que só o servidor alcança — null = indisponível ou não conectado. */
+export const fetchNumerosLoja = () => call<{
+  pedidosAbertos: number | null; pedidosAbertosMais?: boolean; bannersAtivos: number | null; meliSemVideo: number | null; geradoEm: string;
+}>('/api/agent/numeros');
+
 /** Recibo de uma ação executada: o resultado e as chamadas HTTP daquela execução. */
 export const fetchRecibo = (actionId: string) =>
   call<{ acao: AgentAction; logs: AgentLog[] }>(`/api/agent/actions/${encodeURIComponent(actionId)}/recibo`);

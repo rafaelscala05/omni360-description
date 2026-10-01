@@ -3,6 +3,7 @@
 import {
   principais, pilulasDe, contarFiltros, filtrarProdutos, pedidoDaSelecao, FILTROS_DO_SEGMENTO, MAX_SKUS_CONTEXTO,
 } from '../src/modules/agent/produtosAgente.ts';
+import { resumoConteudo, resumoProdutos, sugestoesAlfred, PROMPT_MONTAR_SEMANA } from '../src/modules/agent/painelFerramentas.ts';
 
 let failures = 0;
 function check(label, actual, expected) {
@@ -44,4 +45,26 @@ const grande = pedidoDaSelecao(muitos).contexto;
 check('seleção grande é cortada mas o total é real', [grande.skus.length, grande.totalSelecionados], [MAX_SKUS_CONTEXTO, 70]);
 
 if (failures) { console.error(`\n${failures} falha(s).`); process.exit(1); }
+// --- painel de Ferramentas ------------------------------------------------------
+{
+  const P = (sku, over = {}) => ({ _id: sku, 'Código (SKU)': sku, 'Descrição': sku, ...over });
+  const r = resumoProdutos([
+    P('A', { 'Descrição complementar': 'x', 'URL imagem 1': 'https://a', _tinyProductId: '1', _ambientImages: ['https://b'] }),
+    P('B', { 'URL imagem 1': 'https://a' }),
+    P('C', { 'Descrição complementar': 'x' }),
+    P('A-1', { 'Código do pai': 'A' }),
+    P('D', { _blingDeleted: true }),
+  ]);
+  check('resumo do catálogo (só pais, sem apagados)', r, { total: 3, incompletos: 2, semDescricao: 1, semFoto: 1, semAmbientada: 1, foraDoErp: 2 });
+  const c = resumoConteudo([
+    { id: '1', titulo: 'a', scheduledDate: '2026-09-29', status: 'revisao' },
+    { id: '2', titulo: 'b', scheduledDate: '2026-09-02', status: 'publicado' },
+    { id: '3', titulo: 'c', scheduledDate: '2026-08-30', status: 'publicado' },
+  ], new Date(2026, 8, 30, 12));
+  check('conteúdo: semana, revisão e publicados no mês', c, { semana: 1, revisao: 1, publicadosMes: 1 });
+  const t = (id, prompt, estado = 'aberta') => ({ id, titulo: id, prompt, estado, dia: 2, origem: 'produto', destino: 'produtos' });
+  const s = sugestoesAlfred([t('a', 'pa'), t('b', 'pb'), t('c', 'pc'), t('d', undefined), t('e', 'pe', 'feita')], t('a', 'pa'));
+  check('Alfred sugere: sem o próximo passo, até 3, termina em montar a semana', s.map((x) => x.prompt), ['pb', 'pc', PROMPT_MONTAR_SEMANA]);
+}
+
 console.log('\nTudo certo.');

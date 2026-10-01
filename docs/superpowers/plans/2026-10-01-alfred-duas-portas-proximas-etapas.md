@@ -35,7 +35,7 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 ### Navegação e visual (DS1 · Liquid Glass)
 - [ ] **Trilho desktop de vidro (D1/D2)**: o menu lateral escuro continua; o desenho pede um trilho estreito com as 3 portas + avatar da Conta (Missões, Integrações, Empresa, Créditos, Indique viram o menu do avatar).
 - [ ] **Liquid Glass no resto do app**: Produtos, Conteúdo, Mercado Livre, Integrações, Histórico ainda no visual antigo (fundo `#f7f9fb`, cores literais). Exige levar os tokens `--ag-*` para fora do escopo `.alfreds` e decidir se o tema escuro passa a valer no app todo.
-- [ ] **Avatar da Conta no topo (mobile)**: no desenho a Conta sai do Menu e vira o avatar no cabeçalho de Ferramentas.
+- [x] **Avatar da Conta no topo (mobile)** — em Ferramentas (F1): no desenho a Conta sai do Menu e vira o avatar no cabeçalho de Ferramentas.
 
 ### Alfred (A1–A3, D1)
 - [x] **Desktop em 3 colunas (D1)**: Semana | Chat | coluna "Precisa de você · Rodando · Feito hoje" ao lado (`ColunaAtividade.tsx`), a partir de 1100 px de contêiner. A coluna resume e leva à Atividade; a aprovação inline ("Aprovar 5 prontas" no próprio cartão) ainda não existe ali.
@@ -47,9 +47,9 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 - [x] **Régua de fontes no rodapé da semana (D1)**: "4 fontes · +2 para conectar ›" → A4.
 
 ### Ferramentas (F1, F2, D2)
-- [ ] **F1 em lista**: no celular, um agente por linha com chip de pendência ("12", "em dia") em vez dos cartões grandes; bloco Conta com Créditos e Integrações ("4 ativas · 1 alerta").
-- [ ] **D2 "Alfred sugere"**: coluna lateral com pedidos prontos ("Resumir pedidos parados há mais de 2 dias", "Criar banner para o fim de semana") e Missões "2 de 5".
-- [ ] **Cartões com mais números (D2)**: Produtos "não enviados ao ERP", Conteúdo "achados da auditoria SEO" e "publicados no mês", MELI "anúncios sem vídeo", Operações "pedidos em aberto no Tiny" e "banners ativos na Wake".
+- [x] **F1 em lista** (FerramentasScreen abaixo de `md`; o avatar da Conta abre o menu): no celular, um agente por linha com chip de pendência ("12", "em dia") em vez dos cartões grandes; bloco Conta com Créditos e Integrações ("4 ativas · 1 alerta").
+- [x] **D2 "Alfred sugere"** (`sugestoesAlfred`, pedidos tirados da semana + "montar a semana"; Conta com Missões "X de Y"): coluna lateral com pedidos prontos ("Resumir pedidos parados há mais de 2 dias", "Criar banner para o fim de semana") e Missões "2 de 5".
+- [x] **Cartões com mais números (D2)** — `GET /api/agent/numeros` (`server/agent/numeros.ts`, cache 10 min) para pedidos em aberto no Tiny, banners ativos na Wake e anúncios ativos do MELI sem vídeo; o resto sai do que o app tem (`painelFerramentas.ts`): Produtos "não enviados ao ERP", Conteúdo "achados da auditoria SEO" e "publicados no mês", MELI "anúncios sem vídeo", Operações "pedidos em aberto no Tiny" e "banners ativos na Wake".
 - [x] **F2 · Agente Produtos** (`ProdutosAgenteScreen.tsx`, `produtosAgente.ts`): segmentos Catálogo · Categorias · Imagens · Vídeos · Envio ERP; filtros Incompletos · Todos · Fora do ERP; pílulas por produto (descrição / atributos / foto / ambientada); seleção em massa. Imagens e Vídeos são listas que abrem o modal do produto na aba certa; Categorias e Envio ERP ainda levam às telas antigas. "Não enviados" virou **Fora do ERP** (sem vínculo com Tiny/Bling/IdWorks/Wake): não há registro de push por produto para saber o que foi enviado.
 - [ ] **Barra "Próximo passo · N selecionados" fixa na base de toda tela de agente** com a ação principal ("Gerar descrições") e o atalho "Pedir ao Alfred". Feita em Produtos; falta Conteúdo e Mercado Livre.
 - [x] **"Pedir ao Alfred" com contexto da tela e da seleção**: `WorkspaceContext` ganhou `tela` + `skus` + `totalSelecionados` (`server/agent/workspaceContext.ts`, saneado no Express antes de ir ao system prompt); vale para a conversa toda até outro pedido de outra tela; `produtos.buscar` aceita `skus`. Só Produtos manda seleção por enquanto.

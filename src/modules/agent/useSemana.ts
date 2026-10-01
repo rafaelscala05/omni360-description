@@ -111,6 +111,8 @@ export interface ExtrasSemana {
   hasVideo?: boolean;
   /** Coorte de onboarding: as missões abertas (montarTrilha). */
   missoes?: SinaisSemana['missoes'];
+  /** Coorte de onboarding: quantas missões da trilha já foram feitas ("2 de 5" em Ferramentas). */
+  missoesResumo?: { feitas: number; total: number };
 }
 
 /** Custos por item de config/credits, lidos uma vez por sessão. */
@@ -133,7 +135,7 @@ function useCustos(): SinaisSemana['custos'] {
 }
 
 /** Achados (erro/aviso) da última auditoria SEO de cada projeto de conteúdo. */
-function useAchadosSeo(uid: string, ativo: boolean): NonNullable<SinaisSemana['seoAchados']> {
+export function useAchadosSeo(uid: string, ativo: boolean): NonNullable<SinaisSemana['seoAchados']> {
   const [achados, setAchados] = useState<NonNullable<SinaisSemana['seoAchados']>>([]);
   useEffect(() => {
     if (!ativo) { setAchados([]); return; }
