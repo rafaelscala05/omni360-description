@@ -65,7 +65,7 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 - [x] **Missões viram a primeira semana** (coorte: `ExtrasSemana.missoes`, destino `missao` abre a missão) (sem trilha paralela) para a coorte de onboarding.
 - [x] **Custo e tempo estimado em cada tarefa** (`estimativa`, custos de `config/credits`, tamanho do lote do prompt) ("~4 min · 12 créditos").
 - [x] **Mais fontes de tarefa** — feitas: achados da auditoria SEO (3 mais graves), vídeo sugerido (primeiro produto pronto para vídeo; não há dado de vendas para "o mais vendido"), banner do fim de semana (Wake, quinta), pedidos parados (Tiny), produtos fora do ERP. Falta: anúncios do MELI sem vídeo (as métricas do MELI não trazem essa contagem). Original: achados da auditoria SEO (uma tarefa por achado), "vídeo para o produto mais vendido", "banner da campanha de fim de semana", "pedidos parados" (Tiny), produtos não enviados ao ERP, anúncios do MELI sem vídeo.
-- [ ] **Recalcular toda segunda** e guardar a semana (hoje é recalculada a cada render a partir do estado atual; não há histórico de semanas).
+- [x] **Recalcular toda segunda** e guardar a semana — `users/{uid}/semanas/{segunda}` (`useHistoricoSemana`), "Semana passada: X de Y" no painel; exige deploy do `firestore.rules`.
 
 ### Ferramentas do agente que faltam (Inventário: "falta tool")
 - [x] Atributos por categoria (texto e foto) em lote — `produtos.atributos.gerar`.
