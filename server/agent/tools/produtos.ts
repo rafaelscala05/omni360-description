@@ -15,7 +15,10 @@
 import { adminDb } from '../../firebaseAdmin';
 import { registerTool } from '../registry';
 import { makePreview } from '../preview';
-import { estimateCredits } from '../execution';
+import { custoDaAcao, estimateCredits } from '../execution';
+import { CREDIT_ACTIONS } from '../../../src/credits';
+import { assertNoActiveVideoJob } from '../../videoShared';
+import { faltaParaVideo, montarPedidoVideo, type PedidoVideo } from '../videoPedido';
 import { criarLote } from '../loteStore';
 import { scheduleLote } from '../loteWorker';
 import { lerCatalogo, lerCategorias, produtosCol } from '../produtosGeracao';
@@ -290,5 +293,59 @@ registerTool<ArgsDescricoes>({
       produtos.push(it.nome);
     }
     return { gravados: gravadosIds.length, produtos, gravadosIds, puladosIds };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Vídeo de produto — aprova o pedido; quem roda é o app (ver videoPedido.ts)
+// ---------------------------------------------------------------------------
+
+registerTool<{ sku: string }>({
+  name: 'produtos.video.gerar',
+  provider: 'produtos',
+  mode: 'write',
+  description: 'Produz o vídeo comercial vertical (~32s, narração e música) de UM produto do catálogo, o mesmo da aba Vídeo do produto: roteiro escrito a partir das fotos reais e da referência do produto, e geração das cenas. Leva alguns minutos e aparece em Atividade › Rodando. Exige descrição, título SEO e a referência do produto já criada. Um vídeo por vez.',
+  schema: {
+    type: 'object',
+    properties: { sku: { type: 'string', description: 'SKU do produto no catálogo do OMNI360.' } },
+    required: ['sku'],
+  },
+  preview: async (ctx, a) => {
+    const userSnap = await adminDb.collection('users').doc(ctx.uid).get();
+    if (userSnap.data()?.modules?.video !== true) {
+      throw Object.assign(new Error('O módulo de vídeo não está ativo nesta conta.'), { status: 403 });
+    }
+    const { achados } = buscarProdutos(await lerCatalogo(ctx.uid), { skus: [a.sku] });
+    const p = achados[0];
+    if (!p) throw Object.assign(new Error(`Nenhum produto com o SKU "${a.sku}" no catálogo.`), { status: 404 });
+    const falta = faltaParaVideo(p);
+    if (falta.length) {
+      throw Object.assign(new Error(`Antes do vídeo, ${nomeDe(p)} precisa de: ${falta.join(', ')}.`), { status: 409 });
+    }
+    await assertNoActiveVideoJob(ctx.uid);
+    const pedido = montarPedidoVideo(p);
+    const ambientadas = ((p._ambientImages as string[] | undefined) ?? []).length;
+    const preview = makePreview({
+      resumo: `Produzir o vídeo de ${nomeDe(p)}`,
+      alvo: `${nomeDe(p)}${skuDe(p) ? ` · ${skuDe(p)}` : ''}`,
+      campos: [
+        { campo: 'Formato', antes: null, depois: 'Vertical 9:16, ~32s, narração em off e música', mudou: true },
+        { campo: 'Fotos de referência', antes: null, depois: `${pedido.inicio.productPhotoUrls?.length ?? 0} fotos reais + a referência do produto`, mudou: true },
+        { campo: 'Cenas', antes: null, depois: ambientadas ? `ambientadas (${ambientadas} imagens) e fotos reais` : 'a partir das fotos reais (o produto não tem imagem ambientada)', mudou: true },
+      ],
+      avisos: [
+        'O roteiro é escrito na hora, a partir das fotos — o vídeo só mostra lados e estados do produto que aparecem nelas.',
+        'Leva alguns minutos e começa logo depois da aprovação, com o app aberto. Se falhar, os créditos voltam.',
+      ],
+      payload: { pedido },
+    });
+    // O débito acontece na rota que roda o vídeo, não em runApprovedWrite — o custo vem daqui.
+    return { ...preview, custo: await custoDaAcao(CREDIT_ACTIONS.videoGeneration) };
+  },
+  execute: async (ctx, _a, preview) => {
+    const { pedido } = preview.payload as { pedido: PedidoVideo };
+    if (ctx.dryRun) return { dryRun: true, produto: pedido.inicio.productName };
+    // Só registra o pedido aprovado; quem roda é /api/agent/video/:actionId/iniciar.
+    return { pedidoVideo: pedido, status: 'aguardando início' };
   },
 });

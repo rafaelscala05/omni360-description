@@ -6,7 +6,7 @@ import AgentHomeScreen from './modules/agent/AgentHomeScreen';
 import AtividadeScreen from './modules/agent/AtividadeScreen';
 import FerramentasScreen from './modules/agent/FerramentasScreen';
 import ProximoPassoBar from './modules/agent/ProximoPassoBar';
-import { usePendentesAlfred } from './modules/agent/useSemana';
+import { usePendentesAlfred, useVideosDoAlfred } from './modules/agent/useSemana';
 import type { DestinoTarefa } from './modules/agent/semana';
 import ProdutosAgenteScreen from './modules/agent/ProdutosAgenteScreen';
 import type { PedidoAlfred } from './types/agent';
@@ -299,6 +299,8 @@ export default function App() {
   // Preenchido depois de loadFromCloud: o Alfred gravou no catálogo, relê do Firestore.
   const catalogoAlteradoRef = useRef<() => void>(() => {});
   const pendentesAlfred = usePendentesAlfred(!!user && (hasContentAgent || hasOperationsAgent), () => catalogoAlteradoRef.current());
+  // Vídeo aprovado no chat: o app aberto o inicia e segura a requisição, como o wizard.
+  useVideosDoAlfred(!!user && (hasContentAgent || hasOperationsAgent));
   // "Abrir" de uma tarefa da semana / de um cartão de Ferramentas.
   const abrirDestino = (destino: DestinoTarefa) => {
     // Com agente, Produtos abre a tela do agente (F2); a tabela fica a um toque dela.

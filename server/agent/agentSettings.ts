@@ -23,6 +23,10 @@ const ALWAYS_ASK_TOOLS: readonly string[] = [
   'content.projeto.excluir',
   // Mexe num anúncio público do Mercado Livre — mesma natureza de publicar artigo.
   'meli.proposta.publicar',
+  // Vídeo: o débito mais caro do app, num job de minutos que não se desfaz.
+  'produtos.video.gerar',
+  // Escreve no ERP do cliente, fora do OMNI360.
+  'tiny.catalogo.enviar',
 ];
 
 /** Trava fixa: o modo automático não vale para ela. */

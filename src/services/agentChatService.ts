@@ -124,6 +124,23 @@ export type AcaoLote = 'aprovar' | 'descartar' | 'pausar' | 'retomar' | 'parar';
 export const agirNoLote = (id: string, acao: AcaoLote, itens?: string[]) =>
   call<{ status: string | null }>(`/api/agent/lotes/${encodeURIComponent(id)}/${acao}`, 'POST', itens ? { itens } : {});
 
+// --- Vídeo aprovado no chat ---------------------------------------------------
+
+/**
+ * Inicia o vídeo de uma ação aprovada. A resposta só termina quando o vídeo
+ * termina (é o que mantém o servidor vivo), então resolve assim que o servidor
+ * aceita — o progresso vem de videoJobs, em Atividade › Rodando.
+ */
+export async function iniciarVideoDoAlfred(actionId: string): Promise<void> {
+  const resp = await fetch(`/api/agent/video/${encodeURIComponent(actionId)}/iniciar`, { method: 'POST', headers: await authHeaders() });
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => ({}));
+    throw new Error((data as { message?: string }).message || `Erro ${resp.status}`);
+  }
+  // Segue lendo em segundo plano até o servidor fechar.
+  void resp.body?.getReader().read().catch(() => {});
+}
+
 // --- SSE ----------------------------------------------------------------
 
 export interface StreamHandlers {

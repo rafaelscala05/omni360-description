@@ -1,5 +1,6 @@
 // Verificação do "Plano" do chat do Alfred (src/modules/agent/plano.ts).
 // Rodar com: npx tsx scripts/verify-plano.mjs
+import { videosParaIniciar, VALIDADE_PEDIDO_MS } from '../src/modules/agent/videoAlfred.ts';
 import { montarPlano, rotuloFerramenta, temPlano } from '../src/modules/agent/plano.ts';
 
 let failures = 0;
@@ -41,6 +42,21 @@ const lote = (status) => ({ status, provider: 'produtos', preview: { resumo: 'r'
 check('lote: Alfred escreve, você revisa as prontas, grava', montarPlano({ leituras: [], acao: lote('pending') }).passos.map((p) => [p.tipo, p.estado]),
   [['trabalho', 'agora'], ['voce', 'agora'], ['gravacao', 'depois']]);
 check('lote concluído fecha tudo', montarPlano({ leituras: [], acao: lote('executed') }).passos.map((p) => p.estado), ['feito', 'feito', 'feito']);
+
+// Vídeo aprovado no chat: o app inicia só o que está pronto, recente e intocado.
+{
+  const AG = Date.parse('2026-10-01T12:00:00Z');
+  const v = (id, result, resolvedAt = new Date(AG - 60_000).toISOString(), status = 'executed') => ({ id, tool: 'produtos.video.gerar', status, resolvedAt, createdAt: resolvedAt, result });
+  check('vídeos a iniciar', videosParaIniciar([
+    v('ok', { pedidoVideo: {} }),
+    v('iniciado', { pedidoVideo: {}, videoJobId: 'j' }),
+    v('reivindicado', { pedidoVideo: {}, videoIniciadoEm: 'x' }),
+    v('erro', { pedidoVideo: {}, videoErro: 'sem crédito' }),
+    v('velho', { pedidoVideo: {} }, new Date(AG - VALIDADE_PEDIDO_MS - 1).toISOString()),
+    v('pendente', { pedidoVideo: {} }, undefined, 'pending'),
+    { ...v('outra', { pedidoVideo: {} }), tool: 'x' },
+  ], AG), ['ok']);
+}
 
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');
 process.exit(failures ? 1 : 0);

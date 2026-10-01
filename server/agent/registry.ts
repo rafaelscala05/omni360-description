@@ -178,7 +178,9 @@ export function toLangChainTools(
             // Lote: antes/depois por item e o custo em créditos — a aprovação
             // mostra uma amostra navegável e quanto vai gastar antes de gastar.
             ...(preview.itens?.length ? { itens: preview.itens } : {}),
-            custo: await estimateCredits(def, preview),
+            // A prévia pode trazer o próprio custo quando o débito acontece fora
+            // de runApprovedWrite (o vídeo debita na rota que o roda).
+            custo: preview.custo ?? await estimateCredits(def, preview),
             // Argumentos originais da chamada — dá pro frontend renderizar UI
             // específica por ferramenta (ex.: content.credencial.conectar
             // usa args.provider/args.projectId pra saber qual formulário

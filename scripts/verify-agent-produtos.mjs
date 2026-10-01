@@ -8,6 +8,7 @@ import {
 } from '../server/agent/produtosRules.ts';
 import { linhasDoContexto, sanitizarContexto, MAX_SKUS_CONTEXTO } from '../server/agent/workspaceContext.ts';
 import { camposDoEnvio, imagensParaTiny, paraTinyPush } from '../server/agent/tinyCatalogo.ts';
+import { faltaParaVideo, imagensDasCenas, montarPedidoVideo } from '../server/agent/videoPedido.ts';
 import { chavePrevia } from '../server/agent/previewCache.ts';
 import { resolveApprovalMode } from '../server/agent/agentSettings.ts';
 import { creditActionsFor } from '../server/agent/execution.ts';
@@ -152,6 +153,24 @@ check('publicar no MELI não debita', creditActionsFor({ name: 'meli.proposta.pu
   );
   check('prévia do envio: antes do Tiny, depois do catálogo, em texto', campos.map((c) => [c.campo, c.antes, c.depois]),
     [['Descrição complementar', 'Velha', 'Nova desc'], ['Imagens novas', null, '2 imagens'], ['Título SEO', 'Antigo', 'Novo']]);
+}
+
+// --- vídeo pelo chat -----------------------------------------------------
+{
+  check('cenas: ambientada quando há, senão a foto real', imagensDasCenas(['a1', 'a2'], ['f1']), ['a1', 'a2', 'f1', 'a1']);
+  check('cenas sem ambientada', imagensDasCenas([], ['f1', 'f2']), ['f1', 'f1', 'f1', 'f1']);
+  check('pré-requisitos do vídeo', faltaParaVideo({ 'Descrição complementar': 'x' }).length, 2);
+  const v = p('V1', {
+    'Descrição complementar': '<p>d</p>', 'Título SEO': 'Título', 'URL imagem 1': 'https://f1', 'URL imagem 2': 'https://f2',
+    _productReference: { imageUrl: 'https://ref', sourceImages: ['https://f1', 'https://f3'] },
+    attributes: { cor: { value: 'Preto' }, usos: { value: ['Sala', 'Quarto'] }, vazio: { value: '' } },
+  });
+  check('produto pronto não falta nada', faltaParaVideo(v), []);
+  const ped = montarPedidoVideo(v);
+  check('pedido: roteiro lê a referência, fotos sem repetir, atributos em texto',
+    [ped.roteiro.imageUrl, ped.roteiro.photoUrls, ped.roteiro.attributes, ped.roteiro.productName],
+    ['https://ref', ['https://f1', 'https://f2', 'https://f3'], { cor: 'Preto', usos: 'Sala, Quarto' }, 'Título']);
+  check('pedido: job usa o id do documento e a referência', [ped.inicio.productId, ped.inicio.productReferenceUrl, ped.inicio.shotImageUrls.length], ['d-V1', 'https://ref', 4]);
 }
 
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');

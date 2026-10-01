@@ -30,6 +30,7 @@ import { registerMercadoLivreWebhookRoutes } from "./server/mercadoLivreWebhook"
 import { registerMeliRoutes } from "./server/meli/routes";
 import { startMeliScheduler } from "./server/meli/scheduler";
 import { registerLoteRoutes } from "./server/agent/loteRoutes";
+import { registerVideoAlfredRoutes } from "./server/agent/videoAlfred";
 import { startLoteScheduler } from "./server/agent/loteWorker";
 import { registerBlogPublic } from "./server/blogPublic";
 import { registerBlogAdminRoutes } from "./server/blogAdmin";
@@ -184,6 +185,7 @@ async function startServer() {
   // mesmo padrão do Agente Operacional acima — ver server/agent/contentAgentChat.ts).
   registerContentAgentChatRoutes(app, { verifyFirebaseToken });
   registerLoteRoutes(app, { verifyFirebaseToken });
+  registerVideoAlfredRoutes(app, { verifyFirebaseToken });
 
   // Blog nativo (CMS) — serving público SSR. Precisa vir antes do Vite/static
   // para que /b/{slug} e domínios customizados não caiam no SPA.

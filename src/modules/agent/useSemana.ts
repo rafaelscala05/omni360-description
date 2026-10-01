@@ -12,7 +12,8 @@ import type { AgentAction } from '../../types/agent';
 import type { IntegrationSummary } from '../../services/integrationsStatusService';
 import { listenCalendar, listenProjects } from '../../services/contentService';
 import { getMeliOperationalMetrics } from '../../services/meliService';
-import { fetchTools, listenActions } from '../../services/agentChatService';
+import { fetchTools, iniciarVideoDoAlfred, listenActions } from '../../services/agentChatService';
+import { videosParaIniciar } from './videoAlfred';
 import { diaNaSemana, inicioDaSemana, montarSemana, semImagem, type ArtigoAgendado, type TarefaSemana } from './semana';
 
 export function useArtigosDaSemana(uid: string, ativo: boolean): ArtigoAgendado[] {
@@ -179,4 +180,23 @@ export function usePendentesAlfred(ativo: boolean, onCatalogoAlterado?: () => vo
     });
   }, [ativo]);
   return n;
+}
+
+/**
+ * Começa os vídeos aprovados no chat (videoAlfred.ts). Cada ação é tentada uma
+ * vez por sessão; o servidor reivindica numa transação, então outra aba
+ * aberta não gera um segundo vídeo.
+ */
+export function useVideosDoAlfred(ativo: boolean): void {
+  useEffect(() => {
+    if (!ativo) return;
+    const tentados = new Set<string>();
+    return listenActions((lista) => {
+      for (const id of videosParaIniciar(lista)) {
+        if (tentados.has(id)) continue;
+        tentados.add(id);
+        iniciarVideoDoAlfred(id).catch((e) => console.warn('[alfred] vídeo não iniciou', e?.message));
+      }
+    });
+  }, [ativo]);
 }

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, ArrowRight, Check, Loader2, ShieldCheck, X } from 'lucide-react';
 import type { AgentAction, PreviewField } from '../../../types/agent';
-import { definirAutonomia } from '../../../services/agentChatService';
+import { definirAutonomia, iniciarVideoDoAlfred } from '../../../services/agentChatService';
+import { estadoVideo } from '../videoAlfred';
 import { carregarAutonomia, esquecerAutonomia, rotuloAutonomia } from './autonomia';
 import { CredentialForm } from './CredentialForm';
 import { Amostra, formatar } from './Amostra';
@@ -19,6 +20,40 @@ function recibo(result: unknown): string | null {
   if (typeof r.mudancas === 'number' && typeof r.execucao === 'string') partes.push(`${r.mudancas} mudança(s) na fila de publicação`);
   return partes.length ? partes.join(' · ') : null;
 }
+
+
+/** Depois de aprovado, o vídeo começa pelo app (useVideosDoAlfred): aqui o andamento e o "tentar de novo". */
+const EstadoVideo: React.FC<{ action: AgentAction }> = ({ action }) => {
+  const r = estadoVideo(action);
+  const [tentando, setTentando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  if (!r.pedidoVideo) return null;
+  const falhou = !!(r.videoErro || erro);
+  const tentar = async () => {
+    setTentando(true);
+    setErro(null);
+    try { await iniciarVideoDoAlfred(action.id); } catch (e) { setErro(e instanceof Error ? e.message : 'Falhou.'); } finally { setTentando(false); }
+  };
+  return (
+    <div className="px-4 py-2.5 text-[12.5px] flex items-center gap-2 flex-wrap" style={{ borderTop: '1px solid var(--ag-hairline)', color: falhou ? 'var(--ag-danger)' : 'var(--ag-text-2)' }}>
+      {falhou
+        ? <>Vídeo não começou: {erro ?? r.videoErro}</>
+        : r.videoJobId
+          ? <>Vídeo em produção — acompanhe em Atividade › Rodando.</>
+          : <><Loader2 className="w-3.5 h-3.5 animate-spin" /> {r.status === 'escrevendo o roteiro' ? 'Escrevendo o roteiro…' : 'Começando o vídeo…'}</>}
+      {falhou && (
+        <button
+          onClick={() => void tentar()}
+          disabled={tentando}
+          className="ml-auto inline-flex items-center gap-1.5 min-h-[34px] px-3 rounded-full text-[12.5px] font-semibold disabled:opacity-50"
+          style={{ background: 'var(--ag-fill-2)', color: 'var(--ag-text)' }}
+        >
+          {tentando && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Tentar de novo
+        </button>
+      )}
+    </div>
+  );
+};
 
 interface Props {
   uid: string;
@@ -229,6 +264,8 @@ const ActionCard: React.FC<Props> = ({ uid, action, onExecutar, onRejeitar }) =>
           </span>
         </label>
       )}
+
+      {action.status === 'executed' && action.tool === 'produtos.video.gerar' && <EstadoVideo action={action} />}
 
       {action.status === 'executed' && action.resolvedAt && (
         <div className="px-4 py-2 text-[12px] text-[var(--ag-text-2)] flex items-center gap-1.5" style={{ borderTop: '1px solid var(--ag-hairline)' }}>

@@ -48,12 +48,12 @@ const SHOTS = [
   { key: 'fim', seconds: 8, ato: 'FIM — Fechamento e chamada para ação' },
 ] as const;
 
-interface VideoScriptShot {
+export interface VideoScriptShot {
   acao: string;
   narracao: string;
 }
 
-interface VideoScript {
+export interface VideoScript {
   cena: string;
   trilha: string;
   inicio: VideoScriptShot;
@@ -556,38 +556,131 @@ async function runVideoJob(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Roteiro e início do job como funções — a rota do wizard e o Alfred
+// (server/agent/videoAlfred.ts) passam pelas mesmas, então débito, estorno,
+// preparo das referências e "um vídeo por vez" não divergem.
+// ---------------------------------------------------------------------------
+
+export interface PedidoRoteiro {
+  description: string;
+  brand?: string;
+  imageUrl: string;
+  // Fotos reais escolhidas no wizard — o roteiro só usa os lados/estados que elas mostram.
+  photoUrls?: string[];
+  productName?: string;
+  category?: string;
+  attributes?: Record<string, string>;
+}
+
+export async function gerarRoteiro(p: PedidoRoteiro): Promise<VideoScript> {
+  const photos = sanitizePhotoUrls(p.photoUrls).filter((u) => u !== p.imageUrl);
+  const images = await Promise.all([p.imageUrl, ...photos].map((u) => fetchImageAsBase64(u)));
+  return generateScript(
+    {
+      description: p.description,
+      brand: p.brand ?? '',
+      productName: p.productName ?? '',
+      category: p.category ?? '',
+      attributes: p.attributes ?? {},
+    },
+    images,
+  );
+}
+
+export interface InicioVideo {
+  productId: string;
+  productName: string;
+  script: VideoScript;
+  shotImageUrls: string[];
+  // Optional so older clients keep working; the current UI always sends it.
+  productReferenceUrl?: string;
+  // Fotos reais escolhidas no wizard (todas marcadas por padrão).
+  productPhotoUrls?: string[];
+}
+
+/**
+ * Debita, cria o job e roda o vídeo até o fim. `onJobId` é chamado assim que o
+ * job existe (o wizard manda o id ao navegador nesse momento); a promessa só
+ * resolve quando o vídeo termina — quem chama segura a requisição aberta, que é
+ * o que mantém a instância do Cloud Run viva.
+ */
+export async function iniciarVideo(
+  decoded: { uid: string; name?: string; email?: string },
+  params: InicioVideo,
+  onJobId: (jobId: string) => void | Promise<void>,
+): Promise<void> {
+  const { productId, productName, script, shotImageUrls, productReferenceUrl, productPhotoUrls } = params;
+  await assertNoActiveVideoJob(decoded.uid);
+
+  // Resolvido e validado ANTES de debitar crédito: sem isso, um
+  // OPENROUTER_API_KEY ausente só era detectado depois do débito (dentro do
+  // runSeedanceOperation), gerando um par débito+estorno em credit_logs (fonte
+  // de verdade do CRM pra "gerou conteúdo") por nada — achado do code
+  // review de 2026-09-28.
+  const provider = await getDefaultVideoProvider();
+  if (provider === 'seedance') getOpenRouterApiKey();
+
+  const creditMeta = { productName, userName: decoded.name ?? decoded.email ?? '' };
+  const creditCost = await debitCreditsAdmin(decoded.uid, CREDIT_ACTIONS.videoGeneration, creditMeta);
+
+  const jobRef = adminDb.collection('users').doc(decoded.uid).collection('videoJobs').doc();
+  const jobId = jobRef.id;
+
+  const photoUrls = sanitizePhotoUrls(productPhotoUrls);
+  let refs: { shotScenes: PreparedImage[]; photos: PreparedImage[]; sheet: PreparedImage | null };
+  try {
+    await jobRef.set({
+      jobId,
+      productId,
+      status: 'queued',
+      provider,
+      videoUrl: null,
+      error: null,
+      createdAt: now(),
+      updatedAt: now(),
+    });
+
+    // Each URL is downloaded once even when it drives two shots or is both
+    // a scene and a photo.
+    const prepared = await prepareReferenceImages([...shotImageUrls, ...photoUrls, ...(productReferenceUrl ? [productReferenceUrl] : [])]);
+    // O Seedance lê as referências por URL: vão cópias no nosso Storage,
+    // nunca a URL original (CDN de ERP, http://, anti-bot…).
+    if (provider === 'seedance') await stageReferenceImages(decoded.uid, jobId, prepared);
+    refs = {
+      shotScenes: shotImageUrls.map((url) => prepared.get(url)!),
+      photos: photoUrls.map((url) => prepared.get(url)!),
+      sheet: productReferenceUrl ? prepared.get(productReferenceUrl)! : null,
+    };
+  } catch (prepErr) {
+    // Refund + mark the job errored so credits aren't lost and it isn't orphaned in 'queued'.
+    if (creditCost > 0) {
+      await refundCreditsAdmin(decoded.uid, creditCost, creditMeta).catch(() => {});
+    }
+    await jobRef.update({
+      status: 'error',
+      error: prepErr instanceof Error ? prepErr.message : String(prepErr),
+      updatedAt: now(),
+    }).catch(() => {});
+    await deleteStagedReferences(decoded.uid, jobId);
+    throw prepErr;
+  }
+
+  await onJobId(jobId);
+  await runVideoJob(decoded.uid, jobId, productId, script, refs, creditCost, creditMeta, provider);
+}
+
 export function registerVideoRoutes(app: express.Application, deps: VideoDeps): void {
   const { verifyFirebaseToken } = deps;
 
   app.post('/api/video/generate-script', async (req, res) => {
     try {
       await verifyFirebaseToken(req);
-      const { description, brand, imageUrl, photoUrls, productName, category, attributes } = req.body as {
-        description: string;
-        brand?: string;
-        imageUrl: string;
-        // Fotos reais escolhidas no wizard — o roteiro só usa os lados/estados que elas mostram.
-        photoUrls?: string[];
-        productName?: string;
-        category?: string;
-        attributes?: Record<string, string>;
-      };
-      if (!description || !imageUrl) {
+      const body = req.body as Parameters<typeof gerarRoteiro>[0];
+      if (!body?.description || !body?.imageUrl) {
         return res.status(400).json({ error: 'description e imageUrl são obrigatórios' });
       }
-      const photos = sanitizePhotoUrls(photoUrls).filter((u) => u !== imageUrl);
-      const images = await Promise.all([imageUrl, ...photos].map((u) => fetchImageAsBase64(u)));
-      const script = await generateScript(
-        {
-          description,
-          brand: brand ?? '',
-          productName: productName ?? '',
-          category: category ?? '',
-          attributes: attributes ?? {},
-        },
-        images,
-      );
-      res.json({ script });
+      res.json({ script: await gerarRoteiro(body) });
     } catch (err) {
       sendError(res, err);
     }
@@ -596,94 +689,28 @@ export function registerVideoRoutes(app: express.Application, deps: VideoDeps): 
   app.post('/api/video/start-job', async (req, res) => {
     try {
       const decoded = await verifyFirebaseToken(req);
-      const { productId, productName, script, shotImageUrls, productReferenceUrl, productPhotoUrls } = req.body as {
-        productId: string;
-        productName: string;
-        script: VideoScript;
-        shotImageUrls: string[];
-        // Optional so older clients keep working; the current UI always sends it.
-        productReferenceUrl?: string;
-        // Fotos reais escolhidas no wizard (todas marcadas por padrão).
-        productPhotoUrls?: string[];
-      };
-      if (!productId || !script || !Array.isArray(shotImageUrls) || shotImageUrls.length !== SHOTS.length) {
+      const params = req.body as InicioVideo;
+      if (!params?.productId || !params.script || !Array.isArray(params.shotImageUrls) || params.shotImageUrls.length !== SHOTS.length) {
         return res.status(400).json({ error: `productId, script e shotImageUrls (${SHOTS.length} imagens) são obrigatórios` });
       }
-
-      await assertNoActiveVideoJob(decoded.uid);
-
-      // Resolvido e validado ANTES de debitar crédito: sem isso, um
-      // OPENROUTER_API_KEY ausente só era detectado depois do débito (dentro do
-      // runSeedanceOperation), gerando um par débito+estorno em credit_logs (fonte
-      // de verdade do CRM pra "gerou conteúdo") por nada — achado do code
-      // review de 2026-09-28.
-      const provider = await getDefaultVideoProvider();
-      if (provider === 'seedance') getOpenRouterApiKey();
-
-      const creditMeta = { productName, userName: decoded.name ?? decoded.email ?? '' };
-      const creditCost = await debitCreditsAdmin(decoded.uid, CREDIT_ACTIONS.videoGeneration, creditMeta);
-
-      const jobRef = adminDb
-        .collection('users')
-        .doc(decoded.uid)
-        .collection('videoJobs')
-        .doc();
-      const jobId = jobRef.id;
-
-      const photoUrls = sanitizePhotoUrls(productPhotoUrls);
-      let refs: { shotScenes: PreparedImage[]; photos: PreparedImage[]; sheet: PreparedImage | null };
-      try {
-        await jobRef.set({
-          jobId,
-          productId,
-          status: 'queued',
-          provider,
-          videoUrl: null,
-          error: null,
-          createdAt: now(),
-          updatedAt: now(),
-        });
-
-        // Each URL is downloaded once even when it drives two shots or is both
-        // a scene and a photo.
-        const prepared = await prepareReferenceImages([...shotImageUrls, ...photoUrls, ...(productReferenceUrl ? [productReferenceUrl] : [])]);
-        // O Seedance lê as referências por URL: vão cópias no nosso Storage,
-        // nunca a URL original (CDN de ERP, http://, anti-bot…).
-        if (provider === 'seedance') await stageReferenceImages(decoded.uid, jobId, prepared);
-        refs = {
-          shotScenes: shotImageUrls.map((url) => prepared.get(url)!),
-          photos: photoUrls.map((url) => prepared.get(url)!),
-          sheet: productReferenceUrl ? prepared.get(productReferenceUrl)! : null,
-        };
-      } catch (prepErr) {
-        // Refund + mark the job errored so credits aren't lost and it isn't orphaned in 'queued'.
-        if (creditCost > 0) {
-          await refundCreditsAdmin(decoded.uid, creditCost, creditMeta).catch(() => {});
-        }
-        await jobRef.update({
-          status: 'error',
-          error: prepErr instanceof Error ? prepErr.message : String(prepErr),
-          updatedAt: now(),
-        }).catch(() => {});
-        await deleteStagedReferences(decoded.uid, jobId);
-        throw prepErr;
-      }
-
       // Send the jobId immediately in the first chunk so the client can
       // start listening on Firestore without waiting for the full job.
       // Keeping the HTTP connection open (not calling res.end() here) is
       // intentional: Cloud Run will not scale down or kill an instance that
       // has an active request. The connection closes when the job finishes.
-      res.setHeader('Content-Type', 'application/json');
-      res.write(JSON.stringify({ jobId }));
-
+      let iniciou = false;
       try {
-        await runVideoJob(decoded.uid, jobId, productId, script, refs, creditCost, creditMeta, provider);
+        await iniciarVideo(decoded, params, (jobId) => {
+          iniciou = true;
+          res.setHeader('Content-Type', 'application/json');
+          res.write(JSON.stringify({ jobId }));
+        });
       } finally {
-        res.end();
+        if (iniciou) res.end();
       }
     } catch (err) {
-      sendError(res, err);
+      if (!res.headersSent) sendError(res, err);
+      else res.end();
     }
   });
 }

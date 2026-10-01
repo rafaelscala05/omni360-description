@@ -47,6 +47,11 @@ async function getCreditCosts(): Promise<Record<string, number>> {
   return (snap?.data()?.costs as Record<string, number>) ?? {};
 }
 
+/** Custo atual de uma ação de crédito — para ferramentas que debitam mais fundo (ex.: o vídeo, na rota que o roda). */
+export async function custoDaAcao(action: CreditAction): Promise<number> {
+  return resolveCreditCost(await getCreditCosts(), action.key);
+}
+
 /** Quanto a execução vai debitar — mostrado na aprovação, antes de gastar. */
 export async function estimateCredits(def: Pick<ToolDef<any>, 'name' | 'provider'>, preview: Pick<ActionPreview, 'payload'>): Promise<number> {
   const actions = creditActionsFor(def, preview);
