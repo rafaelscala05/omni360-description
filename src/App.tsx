@@ -1104,6 +1104,30 @@ export default function App() {
     localStorage.setItem('enableCategoryImagePrompts', String(enableCategoryImagePrompts));
   }, [enableCategoryImagePrompts]);
 
+  // "Prompt por categoria" também mora em users/{uid}/settings/imagens: o Alfred
+  // gera ambientadas no servidor e não enxerga o localStorage (que segue como
+  // cache para o ImageSearchModal e o CategoryManager). Quem ligou antes disso
+  // só no navegador tem a preferência levada ao Firestore no primeiro login.
+  useEffect(() => {
+    if (!user) return;
+    const ref = doc(db, `users/${user.uid}/settings/imagens`);
+    getDoc(ref).then((snap) => {
+      const salvo = snap.data()?.cenasPorCategoria;
+      if (typeof salvo === 'boolean') setEnableCategoryImagePrompts(salvo);
+      else if (localStorage.getItem('enableCategoryImagePrompts') === 'true') {
+        setDoc(ref, { cenasPorCategoria: true }, { merge: true }).catch(() => {});
+      }
+    }).catch(() => {});
+  }, [user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const alternarCenasPorCategoria = (ligado: boolean) => {
+    setEnableCategoryImagePrompts(ligado);
+    if (user) {
+      setDoc(doc(db, `users/${user.uid}/settings/imagens`), { cenasPorCategoria: ligado }, { merge: true })
+        .catch((e) => console.warn('Falha ao salvar a preferência de cenas por categoria:', e));
+    }
+  };
+
   useEffect(() => {
     localStorage.setItem('defaultAspectRatio', defaultAspectRatio);
   }, [defaultAspectRatio]);
@@ -5036,7 +5060,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                         type="checkbox"
                         id="enableCategoryImagePrompts"
                         checked={enableCategoryImagePrompts}
-                        onChange={(e) => setEnableCategoryImagePrompts(e.target.checked)}
+                        onChange={(e) => alternarCenasPorCategoria(e.target.checked)}
                         className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
                       />
                       <label htmlFor="enableCategoryImagePrompts" className="text-sm font-medium text-gray-900">

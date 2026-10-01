@@ -12,8 +12,8 @@ import { adminDb, adminStorage } from '../firebaseAdmin';
 import { buildAmbientPromptRequest } from '../../src/services/ambientPrompt';
 import { defaultTemplate, fillTemplate } from '../../src/services/descriptionTemplate';
 import {
-  normalizarAtributos, normalizarGeracao, skuDe, textoPuro, variacoesDoPai,
-  type CategoriaDoc, type DefAtributo, type DescricaoGerada, type ProdutoDoc,
+  cenasEfetivas, normalizarAtributos, normalizarGeracao, skuDe, textoPuro, variacoesDoPai,
+  type CategoriaDoc, type CenasCategoria, type DefAtributo, type DescricaoGerada, type ProdutoDoc,
 } from './produtosRules';
 import { fetchImageAsBase64 } from '../safeUrl';
 import type { ResultadoAmbientada, ResultadoAtributos } from '../../src/modules/agent/lote';
@@ -86,6 +86,22 @@ export function clienteVertex(): GoogleGenAI {
 // Atributos da categoria — o mesmo pedido de suggestProductAttributes
 // (src/services/productService.ts), mas texto e foto numa chamada só.
 // ---------------------------------------------------------------------------
+
+/**
+ * As cenas da categoria valem só com "Habilitar prompt por categoria" ligado
+ * (Configurações › Imagens). A preferência mora em users/{uid}/settings/imagens
+ * — o localStorage do navegador é só o cache dela, invisível para o servidor.
+ */
+export async function cenasPorCategoriaLigado(uid: string): Promise<boolean> {
+  const snap = await adminDb.collection('users').doc(uid).collection('settings').doc('imagens').get().catch(() => null);
+  return snap?.data()?.cenasPorCategoria === true;
+}
+
+/** Cenas que valem para o produto, ou null (modo automático). */
+export function cenasDoProduto(p: ProdutoDoc, categorias: CategoriaDoc[], ligado: boolean): CenasCategoria | null {
+  if (!ligado || typeof p.categoryId !== 'string') return null;
+  return cenasEfetivas(p.categoryId, categorias);
+}
 
 export async function lerCategorias(uid: string): Promise<CategoriaDoc[]> {
   const snap = await adminDb.collection('users').doc(uid).collection('categories').get();
@@ -228,7 +244,7 @@ async function comRetentativa<T>(fn: () => Promise<T>, tentativas = 3): Promise<
   throw ultimo;
 }
 
-export async function gerarAmbientadas(uid: string, ai: GoogleGenAI, produto: ProdutoDoc): Promise<ResultadoAmbientada> {
+export async function gerarAmbientadas(uid: string, ai: GoogleGenAI, produto: ProdutoDoc, cenas?: CenasCategoria | null): Promise<ResultadoAmbientada> {
   const url = fotoPrincipal(produto);
   if (!url) throw new Error('o produto não tem foto pública (https) para servir de base');
   const original = await fetchImageAsBase64(url, 8 * 1024 * 1024);
@@ -241,7 +257,7 @@ export async function gerarAmbientadas(uid: string, ai: GoogleGenAI, produto: Pr
     brand: String(produto['Marca'] ?? ''),
     category: String(produto['Categoria'] ?? ''),
     description: textoPuro(String(produto['Descrição complementar'] ?? '')).slice(0, 2000),
-  }, true);
+  }, true, cenas ?? undefined);
   const roteiro = await comRetentativa(async () => {
     const resp = await ai.models.generateContent({
       model: TEXT_MODEL,

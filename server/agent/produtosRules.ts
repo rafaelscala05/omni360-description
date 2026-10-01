@@ -159,6 +159,32 @@ export interface CategoriaDoc {
   name?: string;
   pathIds?: string[];
   attributes?: DefAtributo[];
+  parentId?: string | null;
+  inheritImagePrompts?: boolean;
+  imagePrompts?: CenasCategoria;
+}
+
+/** As 3 cenas de ambientada configuradas numa categoria (Categorias › cenas). */
+export interface CenasCategoria { scene1?: string; scene2?: string; scene3?: string }
+
+/**
+ * Mesma regra de getEffectiveImagePrompts (src/services/categoryService.ts):
+ * sobe pelos pais enquanto a categoria herda; a primeira que não herda (ou a
+ * raiz) decide, e sem nenhuma cena preenchida vale o modo automático (null).
+ */
+export function cenasEfetivas(categoryId: string | undefined, categorias: CategoriaDoc[]): CenasCategoria | null {
+  let atual = categorias.find((c) => c.id === categoryId);
+  const vistas = new Set<string>();
+  while (atual && !vistas.has(atual.id)) {
+    vistas.add(atual.id);
+    if (!atual.inheritImagePrompts || !atual.parentId) {
+      const c = atual.imagePrompts;
+      return c && (str(c.scene1) || str(c.scene2) || str(c.scene3)) ? c : null;
+    }
+    const pai = atual.parentId;
+    atual = categorias.find((c) => c.id === pai);
+  }
+  return null;
 }
 type ValorAtributo = { value?: string | string[]; confirmed?: boolean; source?: string };
 

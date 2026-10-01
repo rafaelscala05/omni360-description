@@ -21,7 +21,7 @@ import { assertNoActiveVideoJob } from '../../videoShared';
 import { escolherAvatar, faltaParaVideo, montarPedidoVideo, montarPedidoVideoUgc, type AvatarSalvo, type PedidoVideo } from '../videoPedido';
 import { criarLote } from '../loteStore';
 import { scheduleLote } from '../loteWorker';
-import { clienteVertex, fotoPrincipal, gerarArvore, lerCatalogo, lerCategorias, produtosCol } from '../produtosGeracao';
+import { cenasDoProduto, cenasPorCategoriaLigado, clienteVertex, fotoPrincipal, gerarArvore, lerCatalogo, lerCategorias, produtosCol } from '../produtosGeracao';
 import { comCache, esquecerPrevia } from '../previewCache';
 import {
   achatarArvore, arvoreEmTexto, categoriasSemVinculo, normalizarArvore, vinculosDeProdutos,
@@ -462,6 +462,13 @@ registerTool<{ segmento?: string }>({
 // ---------------------------------------------------------------------------
 
 const TOOL_AMBIENTADAS = 'produtos.ambientadas.gerar';
+
+/** Quem do lote usa as cenas configuradas na categoria (o resto, cenas automáticas pela foto). */
+function avisoCenas(comCenas: number, total: number): string {
+  return comCenas === total
+    ? 'Usa as cenas configuradas na categoria de cada produto.'
+    : `${comCenas} de ${total} usam as cenas configuradas na categoria; os outros, cenas automáticas pela foto.`;
+}
 /** Cada item são 4 chamadas de IA (cenas + 3 imagens): lote menor que o de texto. */
 export const MAX_AMBIENTADAS_POR_LOTE = 10;
 
@@ -509,8 +516,13 @@ registerTool<ArgsDescricoes>({
     if (saldo < custo) {
       throw Object.assign(new Error(`Este lote custa até ${custo} créditos e o saldo é ${saldo}. Peça menos produtos ou recarregue.`), { status: 402 });
     }
+    // Cenas por categoria: o worker aplica as mesmas; aqui só para o card dizer quem usa.
+    const cenasLigado = await cenasPorCategoriaLigado(ctx.uid);
+    const categorias = cenasLigado ? await lerCategorias(ctx.uid) : [];
+    const comCenas = escolhidos.filter((p) => cenasDoProduto(p, categorias, cenasLigado)).length;
     const avisos = [
       'As imagens são acrescentadas ao produto (as ambientadas que ele já tem continuam). A foto principal não muda, e nada vai ao ERP.',
+      ...(comCenas ? [avisoCenas(comCenas, escolhidos.length)] : []),
       ...(semFoto.length ? [`Sem foto pública, ficaram de fora: ${semFoto.join(', ')}.`] : []),
       ...(naoEncontrados.length ? [`SKUs não encontrados: ${naoEncontrados.join(', ')}.`] : []),
       ...(!a.skus?.length && total > escolhidos.length ? [`Depois deste lote ainda ficam ${total - escolhidos.length} produtos sem ambientada.`] : []),

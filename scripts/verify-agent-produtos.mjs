@@ -2,7 +2,7 @@
 // (server/agent/produtosRules.ts). Não chama o Vertex nem o Firestore.
 // Rodar com: npx tsx scripts/verify-agent-produtos.mjs
 import {
-  atributosEfetivos, atributosVazios, mesclarAtributos, normalizarAtributos, selecionarParaAtributos,
+  atributosEfetivos, atributosVazios, cenasEfetivas, mesclarAtributos, normalizarAtributos, selecionarParaAtributos,
   buscarProdutos, cortarHtml, faltando, normalizarGeracao, selecionarParaDescricao, textoPuro, variacoesDoPai,
   LOTE_PADRAO, MAX_DESCRICOES_POR_LOTE, MAX_HTML, MAX_SKUS_BUSCA,
 } from '../server/agent/produtosRules.ts';
@@ -276,6 +276,23 @@ check('envio a Bling e IdWorks debita uma ação do agente',
   check('UGC: o roteirista lê a folha de referência', ugc.roteiro.productImageUrl, 'https://ref/u.png');
   check('UGC usa as mesmas fotos e referência do clássico',
     [ugc.inicio.productPhotoUrls, ugc.inicio.productReferenceUrl], [classico.inicio.productPhotoUrls, classico.inicio.productReferenceUrl]);
+}
+
+// --- ambientadas com as cenas da categoria ------------------------------------
+{
+  const cats = [
+    { id: 'raiz', parentId: null, imagePrompts: { scene1: 'sala de estar' } },
+    { id: 'filha', parentId: 'raiz', inheritImagePrompts: true },
+    { id: 'neta', parentId: 'filha', inheritImagePrompts: true },
+    { id: 'propria', parentId: 'raiz', inheritImagePrompts: false, imagePrompts: { scene2: 'cozinha' } },
+    { id: 'vazia', parentId: 'raiz', inheritImagePrompts: false, imagePrompts: { scene1: '  ' } },
+    { id: 'ciclo-a', parentId: 'ciclo-b', inheritImagePrompts: true },
+    { id: 'ciclo-b', parentId: 'ciclo-a', inheritImagePrompts: true },
+  ];
+  check('herda as cenas subindo pelos pais', cenasEfetivas('neta', cats), { scene1: 'sala de estar' });
+  check('categoria que não herda usa as próprias', cenasEfetivas('propria', cats), { scene2: 'cozinha' });
+  check('sem cena preenchida vale o modo automático', [cenasEfetivas('vazia', cats), cenasEfetivas('nao-existe', cats), cenasEfetivas(undefined, cats)], [null, null, null]);
+  check('pais em ciclo não travam', cenasEfetivas('ciclo-a', cats), null);
 }
 
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');
