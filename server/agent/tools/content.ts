@@ -277,13 +277,33 @@ registerTool({
     },
     required: ['projectId', 'articleId'],
   },
-  preview: async (_ctx: ToolCtx, args: Record<string, unknown>) => makePreview({
-    resumo: `Publicar este artigo${args.destination ? ` em ${args.destination}` : ''}. Isso torna o conteúdo público.`,
-    alvo: requireStr(args, 'articleId'),
-    campos: [{ campo: 'status', antes: 'rascunho', depois: 'publicado', mudou: true }],
-    avisos: ['Ação pública e visível para terceiros — confira o artigo antes de aprovar.'],
-    payload: args,
-  }),
+  // A prévia lê o artigo: a aprovação (no chat ou na Atividade, A5) mostra
+  // título, meta description e o começo do texto — dá para decidir ali, sem
+  // abrir o Conteúdo. Antes o alvo era só o id do artigo.
+  preview: async (ctx: ToolCtx, args: Record<string, unknown>) => {
+    const projectId = requireStr(args, 'projectId');
+    const articleId = requireStr(args, 'articleId');
+    const snap = await projectRef(ctx.uid, projectId).collection('calendar').doc(articleId).get();
+    if (!snap.exists) throw Object.assign(new Error('Artigo não encontrado neste projeto.'), { status: 404 });
+    const art = snap.data() as Partial<CalendarArticle>;
+    if (!art.articleFinal) throw Object.assign(new Error('Este artigo ainda não tem a versão final — termine a produção antes de publicar.'), { status: 409 });
+    const texto = String(art.articleFinal).replace(/<[^>]+>/g, ' ').replace(/[#*_>`[\]()!-]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const palavras = texto ? texto.split(' ').length : 0;
+    const destino = args.destination ? String(args.destination) : 'o destino configurado no projeto';
+    return makePreview({
+      resumo: `Publicar "${art.titulo ?? 'artigo'}" em ${destino}`,
+      alvo: art.titulo ?? articleId,
+      campos: [
+        { campo: 'Status', antes: art.status ?? 'rascunho', depois: 'publicado', mudou: true },
+        { campo: 'Meta description', antes: null, depois: art.metaDescription ?? '(sem meta description)', mudou: true },
+        ...(art.slug ? [{ campo: 'Endereço', antes: null, depois: `/${art.slug}`, mudou: true }] : []),
+        { campo: 'Começo do texto', antes: null, depois: `${texto.slice(0, 420)}${texto.length > 420 ? '…' : ''}`, mudou: true },
+        { campo: 'Tamanho', antes: null, depois: `${palavras} palavras${art.imageUrl ? ' · com imagem de capa' : ' · sem imagem de capa'}`, mudou: true },
+      ],
+      avisos: ['Ação pública e visível para terceiros — confira o artigo antes de aprovar.'],
+      payload: args,
+    });
+  },
   execute: async (ctx: ToolCtx, _args, preview) => {
     const { projectId, articleId, destination } = preview.payload as {
       projectId: string; articleId: string; destination?: 'blog' | 'wordpress' | 'sanity';

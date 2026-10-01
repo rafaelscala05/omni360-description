@@ -10,7 +10,8 @@ import type { ProductModalTab } from '../../types/models';
 export type DestinoItem =
   | { tipo: 'produto'; sku: string; aba: ProductModalTab }
   | { tipo: 'produtos'; skus: string[] }
-  | { tipo: 'meli'; itemId: string };
+  | { tipo: 'meli'; itemId: string }
+  | { tipo: 'artigo'; projectId: string; articleId: string };
 
 /** Aba do modal do produto que mostra o que a ferramenta mexeu. */
 const ABA: Record<string, ProductModalTab> = {
@@ -27,6 +28,9 @@ export function destinoDaAcao(a: Pick<AgentAction, 'tool' | 'args'>): DestinoIte
   if (a.tool.startsWith('meli.proposta.') && typeof args.itemId === 'string' && args.itemId.trim()) {
     return { tipo: 'meli', itemId: args.itemId.trim().toUpperCase() };
   }
+  if (a.tool.startsWith('content.artigo.') && typeof args.projectId === 'string' && typeof args.articleId === 'string') {
+    return { tipo: 'artigo', projectId: args.projectId, articleId: args.articleId };
+  }
   const sku = typeof args.sku === 'string' ? args.sku.trim() : '';
   const skus = sku ? [sku] : skusDe(args.skus);
   if (!skus.length) return null;
@@ -39,6 +43,7 @@ export function destinoDaAcao(a: Pick<AgentAction, 'tool' | 'args'>): DestinoIte
 
 export function rotuloDestino(d: DestinoItem): string {
   if (d.tipo === 'meli') return 'Abrir o anúncio';
+  if (d.tipo === 'artigo') return 'Abrir o artigo no Conteúdo';
   if (d.tipo === 'produtos') return `Abrir os ${d.skus.length} produtos`;
   return 'Abrir o produto';
 }

@@ -24,11 +24,14 @@ interface Props {
   onSwitchToProduct: () => void;
   onBuyCredits: () => void;
   onLogout: () => void;
+  /** "Abrir o artigo no Conteúdo" vindo do Alfred. */
+  abrirArtigo?: { projectId: string; articleId: string } | null;
+  onArtigoAberto?: () => void;
 }
 
 type ContentView = 'dashboard' | 'clusters' | 'producao' | 'calendar' | 'integrations' | 'settings' | 'blog';
 
-const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToProduct, onBuyCredits, onLogout }) => {
+const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToProduct, onBuyCredits, onLogout, abrirArtigo, onArtigoAberto }) => {
   const uid = user.uid;
   const [projects, setProjects] = useState<ContentProject[]>([]);
   const [ready, setReady] = useState(false);
@@ -61,6 +64,16 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
     setOpenArticleId(articleId);
     setView('producao');
   };
+
+  useEffect(() => {
+    if (!abrirArtigo || !ready) return;
+    if (projects.some((p) => p.id === abrirArtigo.projectId)) {
+      setSelectedId(abrirArtigo.projectId);
+      goToArticle(abrirArtigo.articleId);
+    }
+    onArtigoAberto?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirArtigo, ready]);
 
   const navItem = (key: ContentView, label: string, Icon: React.ElementType) => (
     <button

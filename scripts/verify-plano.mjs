@@ -76,6 +76,7 @@ check('um SKU enviado ao ERP abre o produto', destinoDaAcao({ tool: 'bling.catal
 check('vários SKUs abrem a lista selecionada', destinoDaAcao({ tool: 'tiny.catalogo.enviar', args: { skus: ['A', 'B'] } }), { tipo: 'produtos', skus: ['A', 'B'] });
 check('proposta do MELI abre o anúncio', destinoDaAcao({ tool: 'meli.proposta.publicar', args: { itemId: 'mlb123' } }), { tipo: 'meli', itemId: 'MLB123' });
 check('ferramenta sem item não tem destino', [destinoDaAcao({ tool: 'wake.banner.criar', args: {} }), destinoDaAcao({ tool: 'content.artigo.publicar', args: { sku: 'x' } })], [null, null]);
+check('publicar artigo abre o artigo', destinoDaAcao({ tool: 'content.artigo.publicar', args: { projectId: 'p', articleId: 'a' } }), { tipo: 'artigo', projectId: 'p', articleId: 'a' });
 
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');
 process.exit(failures ? 1 : 0);

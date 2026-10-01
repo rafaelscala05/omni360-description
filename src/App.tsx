@@ -316,7 +316,13 @@ export default function App() {
   };
   // "Abrir na ferramenta" de um card do Alfred: a tela exata do item.
   const [meliAbrirItem, setMeliAbrirItem] = useState<string | null>(null);
+  const [conteudoAbrirArtigo, setConteudoAbrirArtigo] = useState<{ projectId: string; articleId: string } | null>(null);
   const abrirNaFerramenta = (d: DestinoItem) => {
+    if (d.tipo === 'artigo') {
+      setConteudoAbrirArtigo({ projectId: d.projectId, articleId: d.articleId });
+      setWorkspace('content');
+      return;
+    }
     if (d.tipo === 'meli') {
       setMeliAbrirItem(d.itemId);
       setMainView('meli');
@@ -3331,6 +3337,8 @@ Retorne APENAS um JSON válido no seguinte formato:
           credits={credits}
           hasBlogModule={hasBlogModule}
           onSwitchToProduct={() => setWorkspace('product')}
+          abrirArtigo={conteudoAbrirArtigo}
+          onArtigoAberto={() => setConteudoAbrirArtigo(null)}
           onBuyCredits={() => setIsCreditPurchaseOpen(true)}
           onLogout={handleLogout}
         />
