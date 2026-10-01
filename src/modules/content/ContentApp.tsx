@@ -1,3 +1,4 @@
+import type { PedidoAlfred } from '../../types/agent';
 import React, { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Layers, CalendarDays, Settings, Plus, Coins,
@@ -27,11 +28,13 @@ interface Props {
   /** "Abrir o artigo no Conteúdo" vindo do Alfred. */
   abrirArtigo?: { projectId: string; articleId: string } | null;
   onArtigoAberto?: () => void;
+  /** Com agente: "Pedir ao Alfred" da barra de seleção leva ao Alfred com os artigos marcados. */
+  onPedirAlfred?: (pedido: PedidoAlfred) => void;
 }
 
 type ContentView = 'dashboard' | 'clusters' | 'producao' | 'calendar' | 'integrations' | 'settings' | 'blog';
 
-const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToProduct, onBuyCredits, onLogout, abrirArtigo, onArtigoAberto }) => {
+const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToProduct, onBuyCredits, onLogout, abrirArtigo, onArtigoAberto, onPedirAlfred }) => {
   const uid = user.uid;
   const [projects, setProjects] = useState<ContentProject[]>([]);
   const [ready, setReady] = useState(false);
@@ -230,6 +233,7 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
               initialOpenId={openArticleId ?? undefined}
               onGoCluster={() => setView('clusters')}
               blogEnabled={hasBlogModule}
+              onPedirAlfred={onPedirAlfred}
             />
           ) : view === 'calendar' ? (
             <CalendarView uid={uid} projectId={selected.id} onOpenArticle={goToArticle} />

@@ -1,3 +1,6 @@
+import BarraProximoPasso from '../agent/BarraProximoPasso';
+import { MAX_SKUS_CONTEXTO } from '../agent/produtosAgente';
+import type { PedidoAlfred } from '../../types/agent';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle, Check, ChevronLeft, ChevronRight, Eye, Loader2, RefreshCw, Search, ShieldCheck, Sparkles, Store,
@@ -38,11 +41,13 @@ function Score({ value, label }: { value?: number | null; label: string }) {
   </div>;
 }
 
-export default function MeliOptimizer({ credits, abrirItemId, onItemAberto }: {
+export default function MeliOptimizer({ credits, abrirItemId, onItemAberto, onPedirAlfred }: {
   credits: MeliCreditHelpers;
   /** "Abrir o anúncio" vindo do Alfred: busca pelo código e abre o painel dele. */
   abrirItemId?: string | null;
   onItemAberto?: () => void;
+  /** Com agente: "Pedir ao Alfred" na barra de seleção, levando os anúncios marcados. */
+  onPedirAlfred?: (pedido: PedidoAlfred) => void;
 }) {
   const [connection, setConnection] = useState<MeliConnection | null>(null);
   const [listings, setListings] = useState<MeliListing[]>([]);
@@ -239,6 +244,33 @@ export default function MeliOptimizer({ credits, abrirItemId, onItemAberto }: {
           {pageInfo.total > 0 && <nav className="flex items-center justify-between gap-3 text-xs text-slate-500"><span>{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, pageInfo.total)} de {pageInfo.total} anúncios</span><div className="flex items-center gap-2"><button onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} className="inline-flex items-center gap-1 border border-slate-200 bg-white rounded-lg px-3 py-1.5 font-semibold text-slate-700 disabled:opacity-40"><ChevronLeft className="w-3.5 h-3.5" /> Anterior</button><span className="font-semibold text-slate-700 whitespace-nowrap">Página {page} de {pageInfo.totalPages}</span><button onClick={() => setPage((current) => Math.min(pageInfo.totalPages, current + 1))} disabled={page >= pageInfo.totalPages} className="inline-flex items-center gap-1 border border-slate-200 bg-white rounded-lg px-3 py-1.5 font-semibold text-slate-700 disabled:opacity-40">Próxima <ChevronRight className="w-3.5 h-3.5" /></button></div></nav>}
           {metrics && <details className="bg-white border border-slate-200 rounded-2xl"><summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-slate-500">Painel operacional</summary><div className="grid grid-cols-2 md:grid-cols-6 gap-2 px-4 pb-4">{([['Anúncios', metrics.listings.total], ['Análises concluídas', metrics.analyses.byStatus.completed || 0], ['Propostas', metrics.proposals.total], ['Publicações', metrics.mutations.total], ['Webhooks', metrics.webhooks.total], ['API hoje · 429', `${metrics.apiToday.calls} · ${metrics.apiToday.rateLimited}`]] as const).map(([label, value]) => <div key={label} className="border rounded-xl p-3"><p className="text-[10px] text-slate-400">{label}</p><p className="text-lg font-black">{value}</p></div>)}</div></details>}
         </>}
+    {/* F2: a mesma barra "Próximo passo · N selecionados" das telas de agente. */}
+    {checkedIds.size > 0 && (
+      <BarraProximoPasso
+        escopo
+        className="sticky bottom-0 mt-4 z-10 rounded-[22px] overflow-hidden"
+        n={checkedIds.size}
+        acao={{
+          rotulo: `Otimizar ${checkedIds.size === 1 ? '1 anúncio' : `${checkedIds.size} anúncios`}`,
+          detalhe: checkedIds.size > MAX_BULK_ANALYSES ? `máximo ${MAX_BULK_ANALYSES} por vez` : undefined,
+          onClick: bulkAnalyze,
+          desabilitada: bulkBusy || checkedIds.size > MAX_BULK_ANALYSES,
+          ocupada: bulkBusy,
+        }}
+        onPedirAlfred={onPedirAlfred ? () => onPedirAlfred(pedidoDosAnuncios([...checkedIds])) : undefined}
+      />
+    )}
     {selected && <ListingPanel listing={selected} connection={connection} credits={credits} onClose={() => setSelected(null)} onChanged={() => { loadListings().catch(() => undefined); }} />}
   </div>;
+}
+
+/** "Pedir ao Alfred" com os anúncios marcados — o grafo os recebe no contexto da tela. */
+export function pedidoDosAnuncios(ids: string[]): PedidoAlfred {
+  const anuncios = ids.slice(0, MAX_SKUS_CONTEXTO);
+  return {
+    texto: ids.length === 1
+      ? `Sobre o anúncio ${ids[0]}: tem proposta de melhoria pronta? O que ela muda?`
+      : `Destes ${ids.length} anúncios selecionados, quais têm proposta de melhoria pronta e o que cada uma muda?`,
+    contexto: { tela: 'meli', anuncios, totalSelecionados: ids.length },
+  };
 }

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, Menu, RefreshCw, Search, Sparkles, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Menu, Search, X } from 'lucide-react';
 import type { Product, ProductModalTab } from '../../types/models';
 import type { PedidoAlfred } from '../../types/agent';
+import BarraProximoPasso from './BarraProximoPasso';
 import { useAgentTheme } from './theme';
 import {
   ABA_DO_SEGMENTO, FILTROS_DO_SEGMENTO, ROTULO_FILTRO, contarFiltros, filtrarProdutos, nomeDe, pedidoDaSelecao,
@@ -313,42 +314,11 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
         </div>
 
         {(acao || (hasAgente && selecionaveis)) && (
-          <div className="ag-glass-strong shrink-0 px-4 sm:px-6 pt-3 pb-3" style={{ borderTop: '1px solid var(--ag-hairline)' }}>
-            <div className="max-w-3xl mx-auto flex flex-col gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--ag-text-2)] tabular-nums">
-                Próximo passo{n > 0 ? ` · ${n} selecionado${n === 1 ? '' : 's'}` : ''}
-              </span>
-              <div className="flex gap-2">
-                {acao && (
-                  <button
-                    onClick={acao.onClick}
-                    disabled={acao.desabilitada}
-                    className="flex-1 min-h-[48px] px-4 rounded-full flex items-center justify-center gap-2 text-[15px] font-semibold disabled:opacity-70"
-                    style={{ background: 'var(--ag-text)', color: 'var(--ag-bg-2)' }}
-                  >
-                    {gerando ? <RefreshCw className="w-4 h-4 animate-spin" /> : n > 0 ? <Sparkles className="w-4 h-4" /> : null}
-                    {acao.rotulo}
-                    {acao.detalhe && <span className="font-medium opacity-70 text-[13px]">· {acao.detalhe}</span>}
-                  </button>
-                )}
-                {hasAgente && (
-                  <button
-                    onClick={() => onPedirAlfred(pedidoDaSelecao(produtosSelecionados))}
-                    aria-label={n ? `Pedir ao Alfred sobre os ${n} selecionados` : 'Pedir ao Alfred'}
-                    title="Pedir ao Alfred"
-                    className={`min-h-[48px] rounded-full flex items-center justify-center gap-2 text-[14px] font-semibold ${acao ? 'w-12 shrink-0' : 'flex-1 px-4'}`}
-                    style={{ background: 'var(--ag-fill-2)', color: 'var(--ag-text)' }}
-                  >
-                    <span
-                      className="w-6 h-6 rounded-full shrink-0"
-                      style={{ background: 'var(--ag-accent)', boxShadow: 'inset 0 0 0 4px color-mix(in srgb, var(--ag-accent) 45%, var(--ag-bg-2))' }}
-                    />
-                    {!acao && 'Pedir ao Alfred'}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
+          <BarraProximoPasso
+            n={n}
+            acao={acao ? { ...acao, ocupada: gerando } : null}
+            onPedirAlfred={hasAgente ? () => onPedirAlfred(pedidoDaSelecao(produtosSelecionados)) : undefined}
+          />
         )}
       </div>
     </div>

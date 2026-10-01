@@ -111,6 +111,10 @@ export interface WorkspaceContext {
   skus?: string[];
   /** Quantos estavam selecionados de fato (pode passar do que coube em `skus`). */
   totalSelecionados?: number;
+  /** Mercado Livre: anúncios (MLB…) selecionados. */
+  anuncios?: string[];
+  /** Conteúdo: artigos selecionados na produção. */
+  artigos?: { id: string; titulo?: string }[];
 }
 
 /** "Pedir ao Alfred" de outra tela: a mensagem e o contexto que a acompanha. */

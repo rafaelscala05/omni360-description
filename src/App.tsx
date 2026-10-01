@@ -3368,6 +3368,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           onSwitchToProduct={() => setWorkspace('product')}
           abrirArtigo={conteudoAbrirArtigo}
           onArtigoAberto={() => setConteudoAbrirArtigo(null)}
+          onPedirAlfred={hasContentAgent || hasOperationsAgent ? (pedido) => { setWorkspace('product'); setPromptAlfred(pedido); setMainView('home'); } : undefined}
           onBuyCredits={() => setIsCreditPurchaseOpen(true)}
           onLogout={handleLogout}
         />
@@ -3896,7 +3897,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             renderHistoryView()
           ) : mainView === 'meli' && hasMeliListingOptimizer ? (
             <Suspense fallback={<div className="h-full flex items-center justify-center text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
-              <MeliOptimizer credits={{ ensureCredits, consumeCredit }} abrirItemId={meliAbrirItem} onItemAberto={() => setMeliAbrirItem(null)} />
+              <MeliOptimizer credits={{ ensureCredits, consumeCredit }} abrirItemId={meliAbrirItem} onItemAberto={() => setMeliAbrirItem(null)} onPedirAlfred={hasContentAgent || hasOperationsAgent ? (pedido) => { setPromptAlfred(pedido); setMainView('home'); } : undefined} />
             </Suspense>
           ) : mainView === 'integrations' ? (
             <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} onTinyImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getTinyPushPayload={buildTinyPushPayload} tinyPushCandidateCount={tinySelectedProducts(products).length} onBlingImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getBlingPushPayload={buildBlingPushPayload} getBlingPushCandidates={getBlingPushCandidates} onBlingPushed={handleBlingPushed} onIdworksImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getIdworksPushPayload={buildIdworksPushPayload} getIdworksPushCandidates={getIdworksPushCandidates} onIdworksPushed={handleIdworksPushed} />

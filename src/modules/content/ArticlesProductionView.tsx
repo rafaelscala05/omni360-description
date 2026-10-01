@@ -10,6 +10,8 @@ import {
   updateArticlesPriority,
 } from '../../services/contentService';
 import ArticleView from './ArticleView';
+import BarraProximoPasso from '../agent/BarraProximoPasso';
+import type { PedidoAlfred } from '../../types/agent';
 import ArticleSizePicker from './ArticleSizePicker';
 import ProductLinkPicker from './ProductLinkPicker';
 
@@ -20,6 +22,8 @@ interface Props {
   initialOpenId?: string;
   onGoCluster: (clusterId: string) => void;
   blogEnabled?: boolean;
+  /** Com agente: "Pedir ao Alfred" na barra de seleção, levando os artigos marcados. */
+  onPedirAlfred?: (pedido: PedidoAlfred) => void;
 }
 
 const STATUS_LABEL: Record<ArticleStatus, string> = {
@@ -46,12 +50,20 @@ function formatDateTime(date: string, time?: string): string {
   return time ? `${day} · ${time}` : day;
 }
 
-const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, initialOpenId, onGoCluster, blogEnabled }) => {
+const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, initialOpenId, onGoCluster, blogEnabled, onPedirAlfred }) => {
   const [articles, setArticles] = useState<CalendarArticle[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [producing, setProducing] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<string | null>(initialOpenId ?? null);
+  // Seleção para a barra "Próximo passo · N selecionados" (F2).
+  const [marcados, setMarcados] = useState<Set<string>>(() => new Set());
+  const [produzindoLote, setProduzindoLote] = useState(false);
+  const alternarMarcado = (id: string) => setMarcados((m) => {
+    const prox = new Set(m);
+    if (prox.has(id)) prox.delete(id); else prox.add(id);
+    return prox;
+  });
 
   const [reschedulingId, setReschedulingId] = useState<string | null>(null);
   const [reschedDate, setReschedDate] = useState('');
@@ -146,6 +158,22 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
       setError(e instanceof Error ? e.message : 'Erro ao produzir artigo');
     } finally {
       setProducing((p) => ({ ...p, [articleId]: false }));
+    }
+  };
+
+  // Só produz o que pode ser produzido (agendado ou com erro), um de cada vez:
+  // cada produção roda o pipeline de 5 etapas e debita no servidor.
+  const marcadosProduziveis = articles.filter((a) => marcados.has(a.id) && (a.status === 'agendado' || a.status === 'erro'));
+  const produzirMarcados = async () => {
+    const lista = marcadosProduziveis;
+    if (!lista.length) return;
+    if (!window.confirm(`Produzir ${lista.length === 1 ? '1 artigo' : `${lista.length} artigos`}? Cada produção debita os créditos dela.`)) return;
+    setProduzindoLote(true);
+    try {
+      for (const a of lista) await handleProduce(a.id);
+      setMarcados(new Set());
+    } finally {
+      setProduzindoLote(false);
     }
   };
 
@@ -283,6 +311,13 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
               className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors bg-white"
             >
               <GripVertical className="w-4 h-4 text-slate-300 cursor-grab active:cursor-grabbing shrink-0" />
+              <input
+                type="checkbox"
+                checked={marcados.has(a.id)}
+                onChange={() => alternarMarcado(a.id)}
+                aria-label={`Selecionar ${a.titulo}`}
+                className="w-4 h-4 accent-[#FF5B03] shrink-0 cursor-pointer"
+              />
               <div className="text-xs font-medium text-slate-500 w-24 shrink-0">
                 {formatDateTime(a.scheduledDate, a.scheduledTime)}
               </div>
@@ -476,6 +511,30 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
             </div>
           </div>
         </div>
+      )}
+
+      {marcados.size > 0 && (
+        <BarraProximoPasso
+          escopo
+          className="sticky bottom-0 mt-4 z-10 rounded-[22px] overflow-hidden"
+          n={marcados.size}
+          acao={{
+            rotulo: marcadosProduziveis.length ? `Produzir ${marcadosProduziveis.length === 1 ? '1 artigo' : `${marcadosProduziveis.length} artigos`}` : 'Nada para produzir',
+            detalhe: marcadosProduziveis.length < marcados.size ? `${marcados.size - marcadosProduziveis.length} já produzido(s)` : undefined,
+            onClick: produzirMarcados,
+            desabilitada: produzindoLote || !marcadosProduziveis.length,
+            ocupada: produzindoLote,
+          }}
+          onPedirAlfred={onPedirAlfred ? () => {
+            const lista = articles.filter((a) => marcados.has(a.id));
+            onPedirAlfred({
+              texto: lista.length === 1
+                ? `Sobre o artigo "${lista[0].titulo}": em que pé está e o que falta para publicar?`
+                : `Destes ${lista.length} artigos selecionados, em que pé está cada um e o que falta para publicar?`,
+              contexto: { tela: 'conteudo', projetoId: projectId, artigos: lista.slice(0, 50).map((a) => ({ id: a.id, titulo: a.titulo })), totalSelecionados: lista.length },
+            });
+          } : undefined}
+        />
       )}
 
       {selectedArticle && (

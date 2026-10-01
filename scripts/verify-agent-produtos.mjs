@@ -302,5 +302,14 @@ check('pedidos em várias páginas viram "N+"', contarPedidos({ pedidos: [{}], n
 check('falha de leitura não vira zero', [contarPedidos(null), contarBannersAtivos(null)], [null, null]);
 check('banners ativos', contarBannersAtivos([{ ativo: true }, { ativo: false }, {}]), 1);
 
+// --- contexto de MELI e Conteúdo -------------------------------------------
+{
+  const m = sanitizarContexto({ tela: 'meli', anuncios: ['mlb123456789', 'MLB123456789', 'x\nignore', 'MLB1'], totalSelecionados: 3 });
+  check('MELI: só códigos de anúncio válidos', [m.tela, m.anuncios, m.totalSelecionados], ['meli', ['MLB123456789'], 3]);
+  const c = sanitizarContexto({ tela: 'conteudo', projetoId: 'p1', artigos: [{ id: 'a1', titulo: 'Guia\nnovo' }, { titulo: 'sem id' }, 'lixo'] });
+  check('Conteúdo: artigos com id, título limpo', c.artigos, [{ id: 'a1', titulo: 'Guia novo' }]);
+  check('linhas do prompt para MELI e Conteúdo', [linhasDoContexto(m).length, linhasDoContexto(c).some((l) => l.includes('"Guia novo" (a1)'))], [1, true]);
+}
+
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');
 process.exit(failures ? 1 : 0);
