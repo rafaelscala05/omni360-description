@@ -94,3 +94,20 @@ export function itensRodando(
   }
   return linhas.sort((a, b) => Number(a.parado) - Number(b.parado) || String(b.desde).localeCompare(String(a.desde)));
 }
+
+/**
+ * "Feito hoje" da coluna de atividade do Alfred no desktop: o que foi gravado
+ * desde a meia-noite local, mais recente primeiro. Rejeitadas e falhas ficam
+ * de fora — a coluna responde "o que ele fez por mim hoje"; o histórico
+ * completo continua na Atividade.
+ */
+export function feitasHoje<T extends { status: string; resolvedAt?: string; createdAt: string }>(
+  acoes: T[],
+  agora = new Date(),
+): T[] {
+  const meiaNoite = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate()).getTime();
+  const quando = (a: T) => Date.parse(a.resolvedAt ?? a.createdAt);
+  return acoes
+    .filter((a) => a.status === 'executed' && quando(a) >= meiaNoite)
+    .sort((a, b) => quando(b) - quando(a));
+}

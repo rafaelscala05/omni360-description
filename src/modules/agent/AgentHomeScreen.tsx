@@ -10,12 +10,13 @@ import { listenProjects } from '../../services/contentService';
 import VoiceOrb from './VoiceOrb';
 import ConnectionsBar, { MARCA, type ConnectionItem } from './ConnectionsBar';
 import { useAgentTheme } from './theme';
-import { useAlturaTeclado, useTelaPequena } from './useViewport';
+import { useAlturaTeclado, useTelaLarga, useTelaPequena } from './useViewport';
 import ChatThread from './chat/ChatThread';
 import Composer from './chat/Composer';
 import LogsPanel from './chat/LogsPanel';
 import LoteEmAndamento from './chat/LoteEmAndamento';
 import SemanaPanel from './SemanaPanel';
+import ColunaAtividade from './ColunaAtividade';
 import { useSemana } from './useSemana';
 import { useEstadoMeli } from './useFontes';
 import { entradasDoApp, montarFontes, resumoFontes } from './conectores';
@@ -30,6 +31,8 @@ interface Props {
   onOpenIntegrations: () => void;
   /** Tela "Fontes e conectores" — rodapé da semana e o "+" da régua. */
   onAbrirFontes: () => void;
+  /** "Ver tudo" da coluna de atividade no desktop. */
+  onAbrirAtividade: () => void;
   /** Módulo do otimizador do Mercado Livre — alimenta a semana com propostas. */
   hasMeli: boolean;
   /** "Abrir" de uma tarefa da semana: leva à ferramenta dona dela. */
@@ -49,11 +52,14 @@ const SUGESTOES = [
 ];
 
 const AgentHomeScreen: React.FC<Props> = ({
-  uid, credits, products, hasContentAgent, hasMeli, onOpenIntegrations, onAbrirFontes, onAbrirDestino,
+  uid, credits, products, hasContentAgent, hasMeli, onOpenIntegrations, onAbrirFontes, onAbrirAtividade, onAbrirDestino,
   onAbrirMenu, onFocoChange, promptInicial, onPromptConsumido,
 }) => {
   const { tema, alternar } = useAgentTheme();
   const telaPequena = useTelaPequena();
+  // Desktop largo (D1): semana | conversa | atividade lado a lado, sem
+  // alternar entre semana e conversa.
+  const larga = useTelaLarga();
   const alturaTeclado = useAlturaTeclado();
   const [composerFocado, setComposerFocado] = useState(false);
   // A tela abre na semana mesmo com conversa antiga; mandar algo leva ao chat
@@ -339,7 +345,7 @@ const AgentHomeScreen: React.FC<Props> = ({
           </div>
 
           <div className="ml-auto flex items-center gap-1.5">
-            {temConversa && (
+            {temConversa && !larga && (
               <button
                 onClick={() => setModo(semChat ? 'chat' : 'semana')}
                 className="h-9 px-3.5 rounded-full text-[12.5px] font-semibold text-[var(--ag-text)] transition-colors"
@@ -393,77 +399,153 @@ const AgentHomeScreen: React.FC<Props> = ({
           <ConnectionsBar itens={itensConexao} carregando={statusCarregando} onConectar={onOpenIntegrations} onAdicionar={onAbrirFontes} />
         </div>
 
-        {semChat ? (
-          <div className="ag-scroll flex-1 overflow-y-auto px-4 sm:px-6 py-6 sm:py-8">
-            {/* No modo foco os blocos recolhem para altura zero, mas o `gap` do
-                flex continua valendo e sobra um buraco no topo — por isso ele
-                também zera. */}
-            <div
-              className={`max-w-2xl mx-auto flex flex-col items-center text-center ${
-                // No modo foco o que sobra (os atalhos) desce e encosta no
-                // campo, em vez de ficar boiando embaixo do cabeçalho com o
-                // teclado ocupando o resto da tela.
-                emFoco ? 'gap-0 min-h-full justify-end' : 'gap-4'
-              }`}
-            >
-              {erro && (
-                <div
-                  className="w-full flex items-start gap-2 text-[13px] rounded-2xl px-3.5 py-2.5 text-left"
-                  style={{
-                    background: 'var(--ag-danger-soft)',
-                    border: '1px solid var(--ag-hairline)',
-                    color: 'var(--ag-danger)',
-                  }}
-                >
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{erro}</span>
+        {larga ? (
+          <div className="flex-1 min-h-0 flex gap-4 px-4 pt-3 pb-4">
+            <aside className="ag-glass ag-scroll w-[320px] shrink-0 overflow-y-auto rounded-[24px] p-4">
+              <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={(t) => enviar(t, {})} onAbrir={onAbrirDestino} fontes={resumoDasFontes} onAbrirFontes={onAbrirFontes} />
+            </aside>
+
+            <div className="flex-1 min-w-0 flex flex-col">
+              {temConversa ? (
+                <ChatThread
+                  uid={uid}
+                  mensagens={mensagens}
+                  acoes={acoes}
+                  parcial={parcial}
+                  leituras={leituras}
+                  streaming={streaming}
+                  erro={erro}
+                  onExecutar={executar}
+                  onRejeitar={rejeitar}
+                />
+              ) : (
+                <div className="ag-scroll flex-1 overflow-y-auto flex flex-col items-center justify-center gap-4 px-6 text-center">
+                  {erro && (
+                    <div
+                      className="w-full max-w-xl flex items-start gap-2 text-[13px] rounded-2xl px-3.5 py-2.5 text-left"
+                      style={{ background: 'var(--ag-danger-soft)', border: '1px solid var(--ag-hairline)', color: 'var(--ag-danger)' }}
+                    >
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{erro}</span>
+                    </div>
+                  )}
+                  <VoiceOrb size={56} ativo={streaming} />
+                  <p className="text-[15px] text-[var(--ag-text-2)] max-w-sm">
+                    Escolha uma tarefa da semana ou peça qualquer coisa ao Alfred.
+                  </p>
+                  <div className="flex flex-wrap justify-center gap-2 max-w-xl">
+                    {SUGESTOES.map((texto) => (
+                      <button
+                        key={texto}
+                        onClick={() => enviar(texto, {})}
+                        className="min-h-[36px] px-3.5 rounded-full text-[13px] font-medium text-[var(--ag-text-2)] hover:text-[var(--ag-text)] transition-colors"
+                        style={{ background: 'var(--ag-fill)', border: '1px solid var(--ag-hairline)' }}
+                      >
+                        {texto}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
-
-              {/* A semana recolhe no modo foco: com o teclado aberto o que
-                  importa é o campo, e os atalhos descem para encostar nele. */}
-              <div className="ag-recolhe w-full ag-rise" data-recolhido={emFoco} style={{ maxHeight: 2400 }}>
-                <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={(t) => enviar(t, {})} onAbrir={onAbrirDestino} fontes={resumoDasFontes} onAbrirFontes={onAbrirFontes} />
-              </div>
-
-              <div className="ag-scroll-x flex gap-2 w-full overflow-x-auto -mx-1 px-1 pt-1">
-                {SUGESTOES.map((texto) => (
-                  <button
-                    key={texto}
-                    onClick={() => enviar(texto, {})}
-                    className="shrink-0 min-h-[36px] px-3.5 rounded-full text-[13px] font-medium text-[var(--ag-text-2)] hover:text-[var(--ag-text)] transition-colors"
-                    style={{ background: 'var(--ag-fill)', border: '1px solid var(--ag-hairline)' }}
-                  >
-                    {texto}
-                  </button>
-                ))}
-              </div>
+              <Composer
+                disabled={false}
+                streaming={streaming}
+                onEnviar={(t) => enviar(t)}
+                onParar={parar}
+                onFoco={focar}
+                recuoTeclado={0}
+                emFoco={false}
+                acima={<LoteEmAndamento uid={uid} />}
+              />
             </div>
+
+            <aside className="ag-scroll w-[320px] shrink-0 overflow-y-auto">
+              <ColunaAtividade
+                uid={uid}
+                acoes={listaAcoes}
+                products={products}
+                onExecutar={executar}
+                onRejeitar={rejeitar}
+                onVerAtividade={onAbrirAtividade}
+                onVerLogs={() => setLogsAberto(true)}
+              />
+            </aside>
           </div>
         ) : (
-          <ChatThread
-            uid={uid}
-            mensagens={mensagens}
-            acoes={acoes}
-            parcial={parcial}
-            leituras={leituras}
-            streaming={streaming}
-            erro={erro}
-            onExecutar={executar}
-            onRejeitar={rejeitar}
-          />
-        )}
+          <>
+            {semChat ? (
+              <div className="ag-scroll flex-1 overflow-y-auto px-4 sm:px-6 py-6 sm:py-8">
+                {/* No modo foco os blocos recolhem para altura zero, mas o `gap` do
+                    flex continua valendo e sobra um buraco no topo — por isso ele
+                    também zera. */}
+                <div
+                  className={`max-w-2xl mx-auto flex flex-col items-center text-center ${
+                    // No modo foco o que sobra (os atalhos) desce e encosta no
+                    // campo, em vez de ficar boiando embaixo do cabeçalho com o
+                    // teclado ocupando o resto da tela.
+                    emFoco ? 'gap-0 min-h-full justify-end' : 'gap-4'
+                  }`}
+                >
+                  {erro && (
+                    <div
+                      className="w-full flex items-start gap-2 text-[13px] rounded-2xl px-3.5 py-2.5 text-left"
+                      style={{
+                        background: 'var(--ag-danger-soft)',
+                        border: '1px solid var(--ag-hairline)',
+                        color: 'var(--ag-danger)',
+                      }}
+                    >
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{erro}</span>
+                    </div>
+                  )}
 
-        <Composer
-          disabled={false}
-          streaming={streaming}
-          onEnviar={(t) => enviar(t)}
-          onParar={parar}
-          onFoco={focar}
-          recuoTeclado={alturaTeclado}
-          emFoco={emFoco}
-          acima={modo === 'chat' ? <LoteEmAndamento uid={uid} /> : undefined}
-        />
+                  {/* A semana recolhe no modo foco: com o teclado aberto o que
+                      importa é o campo, e os atalhos descem para encostar nele. */}
+                  <div className="ag-recolhe w-full ag-rise" data-recolhido={emFoco} style={{ maxHeight: 2400 }}>
+                    <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={(t) => enviar(t, {})} onAbrir={onAbrirDestino} fontes={resumoDasFontes} onAbrirFontes={onAbrirFontes} />
+                  </div>
+
+                  <div className="ag-scroll-x flex gap-2 w-full overflow-x-auto -mx-1 px-1 pt-1">
+                    {SUGESTOES.map((texto) => (
+                      <button
+                        key={texto}
+                        onClick={() => enviar(texto, {})}
+                        className="shrink-0 min-h-[36px] px-3.5 rounded-full text-[13px] font-medium text-[var(--ag-text-2)] hover:text-[var(--ag-text)] transition-colors"
+                        style={{ background: 'var(--ag-fill)', border: '1px solid var(--ag-hairline)' }}
+                      >
+                        {texto}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <ChatThread
+                uid={uid}
+                mensagens={mensagens}
+                acoes={acoes}
+                parcial={parcial}
+                leituras={leituras}
+                streaming={streaming}
+                erro={erro}
+                onExecutar={executar}
+                onRejeitar={rejeitar}
+              />
+            )}
+
+            <Composer
+              disabled={false}
+              streaming={streaming}
+              onEnviar={(t) => enviar(t)}
+              onParar={parar}
+              onFoco={focar}
+              recuoTeclado={alturaTeclado}
+              emFoco={emFoco}
+              acima={modo === 'chat' ? <LoteEmAndamento uid={uid} /> : undefined}
+            />
+          </>
+        )}
       </div>
 
       <LogsPanel aberto={logsAberto} onFechar={() => setLogsAberto(false)} tema={tema} />

@@ -3750,6 +3750,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               hasMeli={hasMeliListingOptimizer}
               onOpenIntegrations={() => setMainView('integrations')}
               onAbrirFontes={() => setMainView('fontes')}
+              onAbrirAtividade={() => setMainView('atividade')}
               onAbrirDestino={abrirDestino}
               onAbrirMenu={() => setIsSidebarOpen(true)}
               onFocoChange={setAlfredFocado}

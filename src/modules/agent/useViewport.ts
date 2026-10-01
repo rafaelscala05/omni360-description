@@ -56,3 +56,24 @@ export function useAlturaTeclado(): number {
 
   return altura;
 }
+
+/**
+ * Desktop largo (`xl` do Tailwind): onde o Alfred cabe em três colunas —
+ * semana, conversa e atividade — em vez de alternar entre semana e conversa.
+ * Abaixo disso a barra lateral do app come espaço demais para três colunas.
+ */
+export function useTelaLarga(): boolean {
+  const [larga, setLarga] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth >= 1280,
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1280px)');
+    const aplicar = () => setLarga(mq.matches);
+    aplicar();
+    mq.addEventListener('change', aplicar);
+    return () => mq.removeEventListener('change', aplicar);
+  }, []);
+
+  return larga;
+}
