@@ -43,7 +43,7 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 - [x] **Progresso dentro do passo (A2)** — lote em job (`lote.ts`, `loteWorker.ts`, `LoteCard.tsx`); o texto original era: "7 de 12 · agora: Luminária Pendente Aço". Hoje a geração do lote acontece inteira dentro do `preview()`; precisa emitir progresso por item (evento SSE novo ou doc de job) e mostrar no PlanoCard.
 - [x] **Revisar parcial (A2/A3)** — aprovação por item no `LoteCard`, com descarte por item: "As 5 primeiras estão prontas — revisar enquanto termino o resto" e "Aprovar 5 prontas". Depende do item acima (lote em job, não num único preview).
 - [x] **Pausar (A2)**: faixa acima do composer (`LoteEmAndamento.tsx`) e no card, com Continuar e "Parar aqui".
-- [ ] **"Ajustar no chat" na aprovação (A3)**: abrir o composer já com o contexto da ação pendente.
+- [x] **"Ajustar no chat" na aprovação (A3)** — retoma o interrupt com `{ aprovado: false, ajuste }` (`POST /api/agent/actions/:id/ajustar`) e o modelo propõe de novo no mesmo turno: abrir o composer já com o contexto da ação pendente.
 - [x] **Régua de fontes no rodapé da semana (D1)**: "4 fontes · +2 para conectar ›" → A4.
 
 ### Ferramentas (F1, F2, D2)

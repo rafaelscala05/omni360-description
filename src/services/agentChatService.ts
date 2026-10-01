@@ -225,3 +225,7 @@ export const executarAcao = (actionId: string, h: StreamHandlers, contexto?: Wor
 
 export const rejeitarAcao = (actionId: string, h: StreamHandlers, contexto?: WorkspaceContext) =>
   stream(`/api/agent/actions/${actionId}/reject`, { contexto }, h);
+
+/** "Ajustar no chat": recusa a proposta dizendo o que mudar; o Alfred propõe de novo. */
+export const ajustarAcao = (actionId: string, texto: string, h: StreamHandlers, contexto?: WorkspaceContext) =>
+  stream(`/api/agent/actions/${actionId}/ajustar`, { texto, contexto }, h);

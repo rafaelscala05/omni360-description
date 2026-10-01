@@ -16,6 +16,7 @@ interface Props {
   erro: string | null;
   onExecutar: (id: string) => Promise<void>;
   onRejeitar: (id: string) => Promise<void>;
+  onAjustar?: (action: AgentAction) => void;
 }
 
 type Leitura = { tool: string; ok: boolean; erro?: string };
@@ -98,7 +99,7 @@ const Pensando = () => (
 );
 
 const ChatThread: React.FC<Props> = ({
-  uid, mensagens, acoes, parcial, leituras, streaming, erro, onExecutar, onRejeitar,
+  uid, mensagens, acoes, parcial, leituras, streaming, erro, onExecutar, onRejeitar, onAjustar,
 }) => {
   const areaRef = useRef<HTMLDivElement>(null);
   const grudarRef = useRef(true);
@@ -161,7 +162,7 @@ const ChatThread: React.FC<Props> = ({
                   : !!m.leituras?.length && <Trilha leituras={m.leituras} />}
                 {m.texto && <Markdown texto={m.texto} />}
                 {cards.map((a) => (
-                  <ActionCard key={a.id} uid={uid} action={a} onExecutar={onExecutar} onRejeitar={onRejeitar} />
+                  <ActionCard key={a.id} uid={uid} action={a} onExecutar={onExecutar} onRejeitar={onRejeitar} onAjustar={onAjustar} />
                 ))}
               </div>
             </div>

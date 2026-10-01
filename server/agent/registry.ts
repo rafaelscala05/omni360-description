@@ -186,8 +186,14 @@ export function toLangChainTools(
             // usa args.provider/args.projectId pra saber qual formulário
             // mostrar) sem precisar inventar um novo campo por caso de uso.
             args,
-          }) as { aprovado: boolean };
+          }) as { aprovado: boolean; ajuste?: string };
 
+          // "Ajustar no chat" (A3): não aprovou, mas disse o que mudar. Volta ao
+          // modelo como resultado desta chamada — o turno segue e ele propõe de
+          // novo, já ajustado, em vez de a conversa terminar num "cancelado".
+          if (!decisao?.aprovado && decisao?.ajuste) {
+            return `Proposta NÃO aprovada. Antes de gravar, o usuário pediu este ajuste: "${decisao.ajuste}". Refaça a proposta com o ajuste, chamando ${def.name} de novo com os argumentos corrigidos. Se o ajuste não couber nesta ferramenta, explique em uma frase.`;
+          }
           if (!decisao?.aprovado) return 'Ação cancelada pelo usuário.';
           return await runApprovedWrite(ctx, def, args, preview);
         } catch (err) {

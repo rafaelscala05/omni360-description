@@ -50,6 +50,8 @@ interface ContentAgentAction {
   result?: unknown;
   error?: string;
   dryRun?: boolean;
+  /** "Ajustar no chat": o que o usuário pediu para mudar quando recusou. */
+  ajuste?: string;
 }
 
 const messagesCol = (uid: string, threadId: string) => contentThreadRef(uid, threadId).collection('messages');
@@ -380,16 +382,17 @@ async function sendUserMessage(
 }
 
 async function resolveAndContinue(
-  uid: string, action: ContentAgentAction, aprovado: boolean, emit: Emit, contexto?: WorkspaceContext,
+  uid: string, action: ContentAgentAction, aprovado: boolean, emit: Emit, contexto?: WorkspaceContext, ajuste?: string,
 ): Promise<void> {
-  const result = await streamRun(uid, action.threadId, { command: { resume: { aprovado } } }, emit, contexto);
+  const resume = ajuste ? { aprovado: false, ajuste } : { aprovado };
+  const result = await streamRun(uid, action.threadId, { command: { resume } }, emit, contexto);
 
   const toolResult = result.lastToolResult;
   let status: ContentAgentAction['status'];
   let patch: Partial<ContentAgentAction>;
   if (!aprovado) {
     status = 'rejected';
-    patch = { status };
+    patch = ajuste ? { status, ajuste } : { status };
   } else if (toolResult?.content?.startsWith('Erro ao executar')) {
     status = 'failed';
     patch = { status, error: toolResult.content };
@@ -469,6 +472,31 @@ export function registerContentAgentChatRoutes(app: express.Express, { verifyFir
     } catch (e: any) {
       if (emit) {
         emit('erro', { message: e?.message ?? 'Falha ao executar a ação.' });
+        res.end();
+      } else {
+        res.status(httpStatus(e)).json({ message: e?.message });
+      }
+    }
+  });
+
+  // "Ajustar no chat" (A3): recusa a proposta pendente dizendo o que mudar; o
+  // grafo retoma com o ajuste e o modelo propõe de novo no mesmo turno.
+  app.post('/api/agent/actions/:id/ajustar', async (req, res) => {
+    let emit: Emit | null = null;
+    try {
+      const { uid } = await verifyFirebaseToken(req);
+      await requireAnyModule(uid);
+      const texto = String(req.body?.texto ?? '').trim().slice(0, 2000);
+      if (!texto) return res.status(400).json({ message: 'Diga o que ajustar.' });
+      const action = await claimAction(uid, req.params.id);
+      const contexto = sanitizarContexto(req.body?.contexto);
+      await saveMessage(uid, action.threadId, { role: 'user', texto, createdAt: new Date().toISOString() });
+      emit = openSse(res);
+      await resolveAndContinue(uid, action, false, emit, contexto, texto);
+      res.end();
+    } catch (e: any) {
+      if (emit) {
+        emit('erro', { message: e?.message ?? 'Falha ao ajustar a ação.' });
         res.end();
       } else {
         res.status(httpStatus(e)).json({ message: e?.message });

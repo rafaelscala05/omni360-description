@@ -15,6 +15,8 @@ interface Props {
   onAbrirAlfred: () => void;
   /** Para dar nome aos vídeos em produção (o job só guarda o id do produto). */
   products?: Product[];
+  /** "Ajustar no chat": leva ao Alfred com o composer ajustando esta proposta. */
+  onAjustarNoChat?: (actionId: string) => void;
 }
 
 type Aba = 'voce' | 'rodando' | 'feito';
@@ -55,7 +57,7 @@ const LinhaRodando: React.FC<{ item: ItemRodando }> = ({ item }) => {
  * que já gravou, venha do chat ou de um botão numa ferramenta. É a resposta
  * para "o que está sendo aprovado e o que já foi feito" sem rolar a conversa.
  */
-const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirMenu, onAbrirAlfred, products = [] }) => {
+const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirMenu, onAbrirAlfred, products = [], onAjustarNoChat }) => {
   const { tema } = useAgentTheme();
   const nomes = useMemo(() => new Map(products.map((p) => [p._id, String(p['Descrição'] ?? '')])), [products]);
   const rodando = useRodando(uid, nomes);
@@ -169,6 +171,7 @@ const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirMenu, onAbrirAlfred, pro
                   action={a}
                   onExecutar={resolver(executarAcao)}
                   onRejeitar={resolver(rejeitarAcao)}
+                  onAjustar={onAjustarNoChat ? (ac) => onAjustarNoChat(ac.id) : undefined}
                 />
               ))
             )}

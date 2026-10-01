@@ -3,7 +3,7 @@ import { AlertCircle, Coins, Menu, Moon, ScrollText, Sun } from 'lucide-react';
 import type { Category, Product } from '../../types/models';
 import type { AgentAction, PedidoAlfred, ThreadMessage, WorkspaceContext } from '../../types/agent';
 import {
-  enviarMensagem, executarAcao, fetchTools, listenActions, listenMessages, rejeitarAcao,
+  ajustarAcao, enviarMensagem, executarAcao, fetchTools, listenActions, listenMessages, rejeitarAcao,
 } from '../../services/agentChatService';
 import { fetchIntegrationsOverview, desde, type IntegrationSummary } from '../../services/integrationsStatusService';
 import { listenProjects } from '../../services/contentService';
@@ -243,9 +243,36 @@ const AgentHomeScreen: React.FC<Props> = ({
   useEffect(() => {
     if (!promptInicial) return;
     onPromptConsumido?.();
+    if (promptInicial.ajustarAcaoId) {
+      setModo('chat');
+      setAjustandoId(promptInicial.ajustarAcaoId);
+      return;
+    }
     void enviar(promptInicial.texto, promptInicial.contexto ?? {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promptInicial]);
+
+  // "Ajustar no chat" (A3): a próxima mensagem do composer vira o ajuste da
+  // proposta pendente, não uma mensagem nova (o grafo está parado no interrupt
+  // dela). Vindo da Atividade, o id chega antes das ações carregarem.
+  const [ajustandoId, setAjustandoId] = useState<string | null>(null);
+  const ajustando = ajustandoId ? acoes[ajustandoId] : undefined;
+  useEffect(() => {
+    if (ajustando && ajustando.status !== 'pending') setAjustandoId(null);
+  }, [ajustando]);
+  const comecarAjuste = (a: AgentAction) => { setModo('chat'); setAjustandoId(a.id); };
+  const enviarDoComposer = (texto: string) => {
+    if (ajustando?.status === 'pending') {
+      const id = ajustando.id;
+      setAjustandoId(null);
+      setModo('chat');
+      return responder(() => ajustarAcao(id, texto, handlers, contextoRef.current));
+    }
+    return enviar(texto);
+  };
+  const etiquetaAjuste = ajustando?.status === 'pending'
+    ? { resumo: ajustando.preview.resumo, onCancelar: () => setAjustandoId(null) }
+    : null;
 
   const executar = (id: string) => responder(() => executarAcao(id, handlers, contextoRef.current));
   const rejeitar = (id: string) => responder(() => rejeitarAcao(id, handlers, contextoRef.current));
@@ -437,6 +464,7 @@ const AgentHomeScreen: React.FC<Props> = ({
                   erro={erro}
                   onExecutar={executar}
                   onRejeitar={rejeitar}
+                  onAjustar={comecarAjuste}
                 />
               ) : (
                 <div className="ag-scroll flex-1 overflow-y-auto px-6 py-8 flex flex-col items-center justify-center gap-4 text-center">
@@ -470,7 +498,8 @@ const AgentHomeScreen: React.FC<Props> = ({
               <Composer
                 disabled={false}
                 streaming={streaming}
-                onEnviar={(t) => enviar(t)}
+                onEnviar={(t) => { void enviarDoComposer(t); }}
+                ajustando={etiquetaAjuste}
                 onParar={parar}
                 onFoco={focar}
                 recuoTeclado={0}
@@ -548,13 +577,15 @@ const AgentHomeScreen: React.FC<Props> = ({
               erro={erro}
               onExecutar={executar}
               onRejeitar={rejeitar}
+                  onAjustar={comecarAjuste}
             />
           )}
 
           <Composer
             disabled={false}
             streaming={streaming}
-            onEnviar={(t) => enviar(t)}
+            onEnviar={(t) => { void enviarDoComposer(t); }}
+                ajustando={etiquetaAjuste}
             onParar={parar}
             onFoco={focar}
             recuoTeclado={alturaTeclado}

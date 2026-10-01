@@ -45,6 +45,8 @@ export interface AgentAction {
   result?: unknown;
   error?: string;
   dryRun?: boolean;
+  /** "Ajustar no chat": o que o usuário pediu para mudar quando recusou a proposta. */
+  ajuste?: string;
   /** Rodou no modo automático, sem passar pela aprovação (threadId 'auto'). */
   auto?: boolean;
 }
@@ -115,4 +117,6 @@ export interface WorkspaceContext {
 export interface PedidoAlfred {
   texto: string;
   contexto?: WorkspaceContext;
+  /** "Ajustar no chat" vindo da Atividade: abre o composer ajustando esta ação, sem enviar nada. */
+  ajustarAcaoId?: string;
 }

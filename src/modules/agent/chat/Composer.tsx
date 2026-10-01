@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowUp, ChevronDown, Square } from 'lucide-react';
+import { ArrowUp, ChevronDown, PencilLine, Square, X } from 'lucide-react';
 
 interface Props {
   disabled: boolean;
@@ -15,10 +15,12 @@ interface Props {
   emFoco?: boolean;
   /** Faixa logo acima do campo — o lote do Alfred em andamento, com Pausar. */
   acima?: React.ReactNode;
+  /** "Ajustar no chat": a proposta que a próxima mensagem vai ajustar, com o X para desistir. */
+  ajustando?: { resumo: string; onCancelar: () => void } | null;
 }
 
 const Composer: React.FC<Props> = ({
-  disabled, streaming, onEnviar, onParar, placeholder, onFoco, recuoTeclado = 0, emFoco = false, acima,
+  disabled, streaming, onEnviar, onParar, placeholder, onFoco, recuoTeclado = 0, emFoco = false, acima, ajustando,
 }) => {
   const [texto, setTexto] = useState('');
   const [focado, setFocado] = useState(false);
@@ -48,6 +50,11 @@ const Composer: React.FC<Props> = ({
 
   const podeEnviar = !disabled && !!texto.trim();
 
+  // Entrou em modo ajuste: o campo ganha o foco, pronto para dizer o que mudar.
+  useEffect(() => {
+    if (ajustando) areaRef.current?.focus();
+  }, [ajustando?.resumo]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div
       className="px-3 sm:px-4 pt-2 shrink-0 transition-[padding] duration-200"
@@ -75,6 +82,19 @@ const Composer: React.FC<Props> = ({
 
         {!emFoco && acima}
 
+        {ajustando && (
+          <div
+            className="flex items-center gap-2 mb-2 pl-3 pr-1.5 py-1.5 rounded-full text-[12.5px]"
+            style={{ background: 'var(--ag-accent-soft)', color: 'var(--ag-accent)' }}
+          >
+            <PencilLine className="w-3.5 h-3.5 shrink-0" />
+            <span className="flex-1 min-w-0 truncate">Ajustando: <span className="font-semibold">{ajustando.resumo}</span></span>
+            <button onClick={ajustando.onCancelar} title="Não ajustar" className="w-7 h-7 rounded-full grid place-items-center shrink-0">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         <div
           className="ag-glass-strong rounded-[26px] overflow-hidden transition-all duration-200"
           style={{
@@ -95,7 +115,7 @@ const Composer: React.FC<Props> = ({
             }}
             rows={1}
             disabled={disabled}
-            placeholder={placeholder ?? 'Pergunte algo ou peça uma ação…'}
+            placeholder={ajustando ? 'O que mudar antes de gravar?' : (placeholder ?? 'Pergunte algo ou peça uma ação…')}
             // 16px não é escolha estética: abaixo disso o Safari do iOS dá zoom
             // no campo ao focar e a tela inteira sai do lugar.
             className="ag-scroll w-full resize-none bg-transparent px-5 pt-4 pb-2 text-[16px] leading-[1.5] text-[var(--ag-text)] placeholder:text-[var(--ag-text-3)] focus:outline-none disabled:opacity-60"

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, ArrowRight, Check, Loader2, ShieldCheck, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Check, Loader2, PencilLine, ShieldCheck, X } from 'lucide-react';
 import type { AgentAction, PreviewField } from '../../../types/agent';
 import { definirAutonomia, iniciarVideoDoAlfred } from '../../../services/agentChatService';
 import { estadoVideo } from '../videoAlfred';
@@ -48,6 +48,8 @@ interface Props {
   action: AgentAction;
   onExecutar: (id: string) => Promise<void>;
   onRejeitar: (id: string) => Promise<void>;
+  /** "Ajustar no chat" (A3): recusar dizendo o que mudar. Ausente = sem o botão. */
+  onAjustar?: (action: AgentAction) => void;
 }
 
 /**
@@ -87,7 +89,7 @@ const Linha: React.FC<{ campo: PreviewField; primeira: boolean }> = ({ campo, pr
  * pelo modelo), então o formulário grava o segredo direto no Firestore e só
  * então resolve a ação (aprovando ou rejeitando o interrupt).
  */
-const ActionCard: React.FC<Props> = ({ uid, action, onExecutar, onRejeitar }) => {
+const ActionCard: React.FC<Props> = ({ uid, action, onExecutar, onRejeitar, onAjustar }) => {
   const [busy, setBusy] = useState<'executar' | 'rejeitar' | null>(null);
   const [podeAuto, setPodeAuto] = useState(false);
   const [autoMarcado, setAutoMarcado] = useState(false);
@@ -257,6 +259,13 @@ const ActionCard: React.FC<Props> = ({ uid, action, onExecutar, onRejeitar }) =>
 
       {action.status === 'executed' && action.resolvedAt && <Recibo action={action} />}
 
+      {action.status === 'rejected' && action.ajuste && (
+        <div className="px-4 py-2 text-[12px] text-[var(--ag-text-2)] flex items-start gap-1.5" style={{ borderTop: '1px solid var(--ag-hairline)' }}>
+          <PencilLine className="w-3.5 h-3.5 shrink-0 mt-px" />
+          <span>Você pediu para ajustar: “{action.ajuste}”</span>
+        </div>
+      )}
+
       {!pendente && action.auto && (
         <div className="px-4 py-2 text-[12px] text-[var(--ag-text-3)]" style={{ borderTop: '1px solid var(--ag-hairline)' }}>
           Aprovado sozinho, pela autonomia que você ligou para esta ação.
@@ -290,6 +299,17 @@ const ActionCard: React.FC<Props> = ({ uid, action, onExecutar, onRejeitar }) =>
             {busy === 'rejeitar' ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
             Recusar
           </button>
+          {onAjustar && (
+            <button
+              onClick={() => onAjustar(action)}
+              disabled={!!busy}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-semibold transition-transform active:scale-95 disabled:opacity-50"
+              style={{ background: 'var(--ag-fill-2)', color: 'var(--ag-text-2)' }}
+            >
+              <PencilLine className="w-4 h-4" />
+              Ajustar no chat
+            </button>
+          )}
           <div className="ml-auto flex items-center gap-1.5 text-[11px] text-[var(--ag-text-3)]">
             <ShieldCheck className="w-3.5 h-3.5" />
             {semMudanca ? 'Nada muda' : custo && !itens.length ? `${custo} ${custo === 1 ? 'crédito' : 'créditos'} · nada muda até você aprovar` : 'Nada é alterado até você aprovar'}
