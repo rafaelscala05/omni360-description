@@ -11,6 +11,9 @@ import {
   PROMPT_MELI,
   PROMPT_ATRIBUTOS,
   PROMPT_AMBIENTADAS,
+  PROMPT_BANNER,
+  PROMPT_PEDIDOS_TINY,
+  textoEstimativa,
 } from '../src/modules/agent/semana.ts';
 
 let failures = 0;
@@ -132,4 +135,42 @@ if (failures) {
   console.error(`\n${failures} verificação(ões) falharam.`);
   process.exit(1);
 }
+// --- estimativas e fontes novas ---------------------------------------------
+{
+  const custos = { descricao: 3, ambientada: 5, video: 40 };
+  const t = montarSemana({ ...base, produtosSemDescricao: 12, produtosSemAtributos: 2, produtosSemAmbientada: 9, custos, alfredFaz: { produtos: true } });
+  const est = (id) => t.find((x) => x.id === id).estimativa;
+  check('descrições: lote de 5, 3 créditos cada', est('produtos-descricao'), { minutos: 2, creditos: 15 });
+  check('atributos são grátis', est('produtos-atributos'), { minutos: 1, creditos: 0 });
+  check('ambientadas: lote de 3', est('produtos-ambientada'), { minutos: 2, creditos: 15 });
+  check('texto da estimativa', [textoEstimativa({ minutos: 2, creditos: 15 }), textoEstimativa({ minutos: 1, creditos: 0 })], ['~2 min · 15 créditos', '~1 min · grátis']);
+  check('sem custos carregados, só o tempo', montarSemana({ ...base, produtosSemDescricao: 1, alfredFaz: { produtos: true } })[0].estimativa, { minutos: 1, creditos: 0 });
+
+  const seo = montarSemana({ ...base, alfredFaz: { content: true }, seoAchados: [
+    { projeto: 'Loja', titulo: 'Sem H1', severidade: 'warning', paginas: 40 },
+    { projeto: 'Loja', titulo: 'Links quebrados', severidade: 'error', paginas: 3 },
+    { projeto: 'Loja', titulo: 'Title longo', severidade: 'warning', paginas: 12 },
+    { projeto: 'Loja', titulo: 'Alt vazio', severidade: 'warning', paginas: 2 },
+  ] });
+  check('SEO: os 3 mais graves, erro primeiro', seo.map((x) => x.titulo), ['Corrigir: Links quebrados', 'Corrigir: Sem H1', 'Corrigir: Title longo']);
+  check('SEO com ferramenta de conteúdo ganha prompt', !!seo[0].prompt, true);
+
+  const ops = montarSemana({ ...base, alfredFaz: { tiny: true, wake: true }, produtosForaDoErp: 4 });
+  check('pedidos do Tiny e banner da Wake viram tarefa', ['tiny-pedidos', 'wake-banner-fds'].map((id) => ops.find((x) => x.id === id)?.prompt), [PROMPT_PEDIDOS_TINY, PROMPT_BANNER]);
+  check('banner do fim de semana cai na quinta', ops.find((x) => x.id === 'wake-banner-fds').dia, 3);
+  check('no sábado não sugere banner', montarSemana({ ...base, hoje: new Date(2026, 9, 3, 10), alfredFaz: { wake: true } }).some((x) => x.id === 'wake-banner-fds'), false);
+  check('fora do ERP leva à tela, sem prompt', [ops.find((x) => x.id === 'produtos-fora-erp').titulo, ops.find((x) => x.id === 'produtos-fora-erp').prompt], ['4 produtos estão fora do ERP', undefined]);
+
+  const video = montarSemana({ ...base, videoSugerido: { sku: 'V1', nome: 'Luminária' }, alfredFaz: { produtos: true }, custos });
+  check('vídeo sugerido', [video[0].titulo, video[0].prompt, video[0].estimativa], ['Vídeo para Luminária', 'Produza o vídeo do produto de SKU V1.', { minutos: 5, creditos: 40 }]);
+  check('sem ferramenta de produto não sugere vídeo', montarSemana({ ...base, videoSugerido: { sku: 'V1', nome: 'x' } }), []);
+
+  const m = montarSemana({ ...base, produtosSemDescricao: 2, missoes: [
+    { id: 'erp', titulo: 'Conectar seu ERP', meta: 'publica direto', estado: 'agora' },
+    { id: 'empresa', titulo: 'Completar dados da empresa', meta: 'nota', estado: 'opcional' },
+  ] });
+  check('missões abertas vêm primeiro, opcionais por último', m.map((x) => x.id), ['missao-erp', 'produtos-descricao', 'missao-empresa']);
+  check('missão leva à própria missão', [m[0].destino, m[0].missao], ['missao', 'erp']);
+}
+
 console.log('\nTudo certo.');

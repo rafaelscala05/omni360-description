@@ -19,7 +19,10 @@ import type { AgentAction } from '../../types/agent';
 
 export type OrigemTarefa = 'produto' | 'conteudo' | 'meli' | 'operacoes';
 export type EstadoTarefa = 'aberta' | 'precisa' | 'feita';
-export type DestinoTarefa = 'produtos' | 'conteudo' | 'meli' | 'integracoes' | 'atividade';
+export type DestinoTarefa = 'produtos' | 'conteudo' | 'meli' | 'integracoes' | 'atividade' | 'missao';
+
+/** As missões de onboarding que viram tarefas da primeira semana (ver trilha.ts). */
+export type MissaoSemana = 'produto' | 'conteudo' | 'catalogo' | 'erp' | 'publicar-blog' | 'empresa';
 
 export interface TarefaSemana {
   id: string;
@@ -32,6 +35,10 @@ export interface TarefaSemana {
   /** Mensagem mandada ao chat em "Fazer com Alfred". Ausente = sem ferramenta. */
   prompt?: string;
   destino: DestinoTarefa;
+  /** Quanto o "Fazer com Alfred" leva e custa, no tamanho do lote que o prompt pede. */
+  estimativa?: { minutos: number; creditos: number };
+  /** destino === 'missao': qual missão abrir. */
+  missao?: MissaoSemana;
 }
 
 export interface ArtigoAgendado {
@@ -55,12 +62,33 @@ export interface SinaisSemana {
   meliPropostasAguardando: number | null;
   integracoesComAlerta: string[];
   /** Providers com ferramenta no registry para esta conta. Ausente = nenhum. */
-  alfredFaz?: { produtos?: boolean; meli?: boolean };
+  alfredFaz?: { produtos?: boolean; meli?: boolean; content?: boolean; tiny?: boolean; wake?: boolean };
+  /** Créditos por item (config/credits) — para a estimativa de cada tarefa. */
+  custos?: { descricao: number; ambientada: number; video: number };
+  /** Achados da última auditoria SEO de cada projeto (erros antes de avisos). */
+  seoAchados?: { projeto: string; titulo: string; severidade: 'error' | 'warning' | 'notice'; paginas: number }[];
+  /** Pais sem vínculo com nenhum ERP, quando há ERP conectado. */
+  produtosForaDoErp?: number;
+  /** Primeiro produto pronto para vídeo (descrição, título SEO e referência) e ainda sem. */
+  videoSugerido?: { sku: string; nome: string } | null;
+  /** Coorte de onboarding: as missões ainda abertas viram as primeiras tarefas. */
+  missoes?: { id: MissaoSemana; titulo: string; meta: string; estado: 'agora' | 'opcional' }[];
 }
 
 export const PROMPT_DESCRICOES = 'Complete as descrições dos produtos que estão sem, num lote de 5, e me mostre uma amostra antes de gravar.';
 export const PROMPT_ATRIBUTOS = 'Preencha os atributos da categoria dos produtos que estão sem, num lote de 5, e me mostre antes de gravar.';
 export const PROMPT_AMBIENTADAS = 'Crie imagens ambientadas para os produtos com foto que ainda não têm, num lote de 3, e me mostre antes de gravar.';
+export const PROMPT_PEDIDOS_TINY = 'Liste os pedidos do Tiny parados há mais de 2 dias (em aberto ou aprovados sem faturar) e me diga o que fazer com cada um.';
+export const PROMPT_BANNER = 'Quais banners estão ativos na home da loja? Proponha um banner para a campanha deste fim de semana.';
+export const promptVideo = (sku: string) => `Produza o vídeo do produto de SKU ${sku}.`;
+export const promptSeo = (projeto: string, titulo: string) => `Na última auditoria SEO do projeto ${projeto}, o achado "${titulo}" apareceu. Explique o que é, quais páginas têm e como corrigir.`;
+
+/** Tamanho dos lotes que os prompts pedem — a estimativa usa o mesmo número. */
+export const LOTE_SEMANA = { descricoes: 5, atributos: 5, ambientadas: 3 };
+/** Segundos por item, medidos à mão: texto ~20s, atributos ~10s, 3 imagens ~45s, vídeo ~5 min. */
+const SEG = { descricao: 20, atributo: 10, ambientada: 45, video: 300 };
+const minutos = (seg: number) => Math.max(1, Math.round(seg / 60));
+
 export const PROMPT_MELI = 'Quais anúncios do Mercado Livre têm proposta de melhoria esperando? Me mostre a de maior impacto.';
 
 export const MAX_POR_DIA = 3;
@@ -174,6 +202,7 @@ export function montarSemana(s: SinaisSemana): TarefaSemana[] {
       estado: 'aberta',
       prompt: s.alfredFaz?.produtos ? PROMPT_DESCRICOES : undefined,
       destino: 'produtos',
+      ...estimar(s, 'descricao', Math.min(LOTE_SEMANA.descricoes, s.produtosSemDescricao)),
     });
   }
 
@@ -199,6 +228,7 @@ export function montarSemana(s: SinaisSemana): TarefaSemana[] {
       estado: 'aberta',
       prompt: s.alfredFaz?.produtos ? PROMPT_ATRIBUTOS : undefined,
       destino: 'produtos',
+      ...estimar(s, 'atributo', Math.min(LOTE_SEMANA.atributos, s.produtosSemAtributos)),
     });
   }
 
@@ -211,8 +241,91 @@ export function montarSemana(s: SinaisSemana): TarefaSemana[] {
       estado: 'aberta',
       prompt: s.alfredFaz?.produtos ? PROMPT_AMBIENTADAS : undefined,
       destino: 'produtos',
+      ...estimar(s, 'ambientada', Math.min(LOTE_SEMANA.ambientadas, s.produtosSemAmbientada)),
     });
   }
+
+  if (s.videoSugerido && s.alfredFaz?.produtos) {
+    flexiveis.push({
+      id: `video-${s.videoSugerido.sku}`,
+      origem: 'produto',
+      titulo: `Vídeo para ${s.videoSugerido.nome}`,
+      detalhe: 'Já tem descrição, título SEO e a referência do produto',
+      estado: 'aberta',
+      prompt: promptVideo(s.videoSugerido.sku),
+      destino: 'produtos',
+      ...estimar(s, 'video', 1),
+    });
+  }
+
+  if (s.produtosForaDoErp) {
+    flexiveis.push({
+      id: 'produtos-fora-erp',
+      origem: 'operacoes',
+      titulo: `${plural(s.produtosForaDoErp, 'produto está fora', 'produtos estão fora')} do ERP`,
+      detalhe: 'Sem cadastro no ERP o Alfred não consegue enviar o que escreveu',
+      estado: 'aberta',
+      destino: 'produtos',
+    });
+  }
+
+  // Auditoria SEO: uma tarefa por achado, os 3 mais graves.
+  const graves = [...(s.seoAchados ?? [])]
+    .sort((a, b) => ordemSeveridade(a.severidade) - ordemSeveridade(b.severidade) || b.paginas - a.paginas)
+    .slice(0, 3);
+  for (const [i, a] of graves.entries()) {
+    flexiveis.push({
+      id: `seo-${i}-${a.titulo}`,
+      origem: 'conteudo',
+      titulo: `Corrigir: ${a.titulo}`,
+      detalhe: `${a.projeto} · ${plural(a.paginas, 'página', 'páginas')} na auditoria SEO`,
+      estado: 'aberta',
+      prompt: s.alfredFaz?.content ? promptSeo(a.projeto, a.titulo) : undefined,
+      destino: 'conteudo',
+    });
+  }
+
+  if (s.alfredFaz?.tiny) {
+    flexiveis.push({
+      id: 'tiny-pedidos',
+      origem: 'operacoes',
+      titulo: 'Conferir pedidos parados no Tiny',
+      detalhe: 'Em aberto ou aprovados sem faturar há mais de 2 dias',
+      estado: 'aberta',
+      prompt: PROMPT_PEDIDOS_TINY,
+      destino: 'integracoes',
+      estimativa: { minutos: 1, creditos: 0 },
+    });
+  }
+
+  // O banner do fim de semana tem data: entra na quinta (ou hoje, se já passou), nunca no fim de semana.
+  if (s.alfredFaz?.wake && hoje <= 4) {
+    fixas.push({
+      id: 'wake-banner-fds',
+      origem: 'operacoes',
+      titulo: 'Banner da campanha de fim de semana',
+      detalhe: 'O Alfred vê os banners ativos e propõe um novo',
+      dia: Math.max(3, hoje),
+      estado: 'aberta',
+      prompt: PROMPT_BANNER,
+      destino: 'integracoes',
+      estimativa: { minutos: 2, creditos: 0 },
+    });
+  }
+
+  // Coorte de onboarding: as missões abertas são a primeira semana, na frente
+  // de tudo que não precisa do usuário (sem trilha paralela).
+  const missoes = (s.missoes ?? []).map<Omit<TarefaSemana, 'dia'>>((m) => ({
+    id: `missao-${m.id}`,
+    origem: m.id === 'conteudo' || m.id === 'publicar-blog' ? 'conteudo' : m.id === 'produto' || m.id === 'catalogo' ? 'produto' : 'operacoes',
+    titulo: m.titulo,
+    detalhe: m.meta,
+    estado: 'aberta',
+    destino: 'missao',
+    missao: m.id,
+  }));
+  flexiveis.unshift(...missoes.filter((_, i) => (s.missoes ?? [])[i].estado === 'agora'));
+  flexiveis.push(...missoes.filter((_, i) => (s.missoes ?? [])[i].estado === 'opcional'));
 
   // `precisa` na frente; dentro do mesmo estado, a ordem de inserção acima.
   flexiveis.sort((a, b) => Number(b.estado === 'precisa') - Number(a.estado === 'precisa'));
@@ -228,6 +341,22 @@ export function montarSemana(s: SinaisSemana): TarefaSemana[] {
   return [...fixas, ...distribuidas].sort(
     (a, b) => a.dia - b.dia || ordemEstado(a.estado) - ordemEstado(b.estado),
   );
+}
+
+function ordemSeveridade(s: 'error' | 'warning' | 'notice'): number {
+  return s === 'error' ? 0 : s === 'warning' ? 1 : 2;
+}
+
+/** Estimativa de um "Fazer com Alfred" com `n` itens; sem custos carregados, só o tempo. */
+function estimar(s: SinaisSemana, tipo: 'descricao' | 'atributo' | 'ambientada' | 'video', n: number): Pick<TarefaSemana, 'estimativa'> {
+  if (n <= 0) return {};
+  const porItem = tipo === 'descricao' ? s.custos?.descricao : tipo === 'ambientada' ? s.custos?.ambientada : tipo === 'video' ? s.custos?.video : 0;
+  return { estimativa: { minutos: minutos(SEG[tipo] * n), creditos: (porItem ?? 0) * n } };
+}
+
+/** "~2 min · 15 créditos", "~1 min · grátis". */
+export function textoEstimativa(e: { minutos: number; creditos: number }): string {
+  return `~${e.minutos} min · ${e.creditos ? `${e.creditos} ${e.creditos === 1 ? 'crédito' : 'créditos'}` : 'grátis'}`;
 }
 
 /** De qual agente veio uma ação do Alfred, na legenda de cores da semana. */

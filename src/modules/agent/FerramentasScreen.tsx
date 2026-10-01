@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronRight, Coins, Menu, Sparkles } from 'lucide-react';
-import type { Category, Product } from '../../types/models';
+import type { Product } from '../../types/models';
+import type { ExtrasSemana } from './useSemana';
 import type { AgentAction } from '../../types/agent';
 import { listenActions } from '../../services/agentChatService';
 import { fetchIntegrationsOverview, type IntegrationSummary } from '../../services/integrationsStatusService';
 import { useAgentTheme } from './theme';
 import { useProvidersAlfred, useSemana } from './useSemana';
-import { diaNaSemana, inicioDaSemana, proximoPasso, semImagem, type DestinoTarefa, type OrigemTarefa } from './semana';
+import { diaNaSemana, inicioDaSemana, proximoPasso, semImagem, type DestinoTarefa, type OrigemTarefa, type TarefaSemana } from './semana';
 import { ORIGEM } from './SemanaPanel';
 
 export type ViewConta = 'categories' | 'history' | 'company' | 'missoes';
@@ -14,15 +15,15 @@ export type ViewConta = 'categories' | 'history' | 'company' | 'missoes';
 interface Props {
   uid: string;
   products: Product[];
-  /** Para a semana saber quais produtos têm atributo da categoria por preencher. */
-  categories?: Category[];
+  /** O que só o App sabe e a semana usa (categorias, vídeo, missões). */
+  extras?: ExtrasSemana;
   credits: number;
   hasAgente: boolean;
   hasContentAgent: boolean;
   hasMeli: boolean;
   /** Missões só existem para a coorte que tem a trilha de onboarding. */
   mostrarMissoes: boolean;
-  onAbrir: (destino: DestinoTarefa) => void;
+  onAbrir: (destino: DestinoTarefa, tarefa?: TarefaSemana) => void;
   onAbrirView: (view: ViewConta) => void;
   /** Leva ao chat já mandando `prompt` — o Alfred recebe o contexto da tela. */
   onPedirAlfred: (prompt: string) => void;
@@ -72,7 +73,7 @@ const Cartao: React.FC<{
  * discordarem sobre o que vem primeiro.
  */
 const FerramentasScreen: React.FC<Props> = ({
-  uid, products, categories, credits, hasAgente, hasContentAgent, hasMeli, mostrarMissoes, onAbrir, onAbrirView, onPedirAlfred, onAbrirMenu,
+  uid, products, extras, credits, hasAgente, hasContentAgent, hasMeli, mostrarMissoes, onAbrir, onAbrirView, onPedirAlfred, onAbrirMenu,
 }) => {
   const { tema } = useAgentTheme();
   const [acoes, setAcoes] = useState<AgentAction[]>([]);
@@ -87,7 +88,7 @@ const FerramentasScreen: React.FC<Props> = ({
 
   const providers = useProvidersAlfred(uid, hasAgente);
   const { tarefas, hoje, artigos, meliPropostasAguardando } = useSemana({
-    uid, products, acoes, integracoes, hasContentAgent, hasMeli, providers, categories,
+    uid, products, acoes, integracoes, hasContentAgent, hasMeli, providers, extras,
   });
   const passo = proximoPasso(tarefas, hoje);
 
@@ -159,7 +160,7 @@ const FerramentasScreen: React.FC<Props> = ({
                     </button>
                   )}
                   <button
-                    onClick={() => onAbrir(passo.destino)}
+                    onClick={() => onAbrir(passo.destino, passo)}
                     className="flex-1 sm:flex-none min-h-[44px] px-5 rounded-full text-[14px] font-semibold"
                     style={{ background: 'var(--ag-bg-2)', color: 'var(--ag-text)' }}
                   >

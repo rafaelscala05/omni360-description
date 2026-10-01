@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { ArrowUpRight, Check, Sparkles } from 'lucide-react';
-import { DIAS_CURTOS, inicioDaSemana, type DestinoTarefa, type OrigemTarefa, type TarefaSemana } from './semana';
+import { DIAS_CURTOS, inicioDaSemana, textoEstimativa, type DestinoTarefa, type OrigemTarefa, type TarefaSemana } from './semana';
 
 interface Props {
   tarefas: TarefaSemana[];
   hoje: number;
   onFazer: (prompt: string, tarefa: TarefaSemana) => void;
-  onAbrir: (destino: DestinoTarefa) => void;
+  onAbrir: (destino: DestinoTarefa, tarefa?: TarefaSemana) => void;
 }
 
 export const ORIGEM: Record<OrigemTarefa, { rotulo: string; cor: string }> = {
@@ -22,6 +22,7 @@ const ROTULO_DESTINO: Record<DestinoTarefa, string> = {
   meli: 'Abrir Mercado Livre',
   integracoes: 'Abrir Integrações',
   atividade: 'Revisar',
+  missao: 'Começar',
 };
 
 export const Origem: React.FC<{ origem: OrigemTarefa }> = ({ origem }) => (
@@ -62,6 +63,9 @@ const Tarefa: React.FC<{ t: TarefaSemana } & Pick<Props, 'onFazer' | 'onAbrir'>>
       </div>
       <div className="text-[15.5px] font-semibold leading-snug text-[var(--ag-text)]">{t.titulo}</div>
       {t.detalhe && <div className="text-[13px] text-[var(--ag-text-2)] -mt-1">{t.detalhe}</div>}
+      {t.prompt && t.estimativa && (
+        <div className="text-[12px] text-[var(--ag-text-3)] -mt-1 tabular-nums">{textoEstimativa(t.estimativa)} com o Alfred</div>
+      )}
       <div className="flex gap-2 pt-0.5">
         {t.prompt && (
           <button
@@ -74,7 +78,7 @@ const Tarefa: React.FC<{ t: TarefaSemana } & Pick<Props, 'onFazer' | 'onAbrir'>>
           </button>
         )}
         <button
-          onClick={() => onAbrir(t.destino)}
+          onClick={() => onAbrir(t.destino, t)}
           className={`${t.prompt ? '' : 'flex-1'} min-h-[44px] px-4 rounded-full flex items-center justify-center gap-1.5 text-[14px] font-semibold transition-colors`}
           style={t.prompt
             ? { background: 'var(--ag-fill-2)', color: 'var(--ag-text)' }

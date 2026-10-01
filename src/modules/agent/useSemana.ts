@@ -11,11 +11,15 @@ import type { Category, Product } from '../../types/models';
 import { getEffectiveAttributes } from '../../services/categoryService';
 import type { AgentAction } from '../../types/agent';
 import type { IntegrationSummary } from '../../services/integrationsStatusService';
-import { listenCalendar, listenProjects } from '../../services/contentService';
+import { listenCalendar, listenLatestSeoAudit, listenProjects } from '../../services/contentService';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../firebase';
+import { CREDIT_ACTIONS, resolveCreditCost } from '../../credits';
 import { getMeliOperationalMetrics } from '../../services/meliService';
 import { fetchTools, iniciarVideoDoAlfred, listenActions } from '../../services/agentChatService';
 import { videosParaIniciar } from './videoAlfred';
-import { diaNaSemana, inicioDaSemana, montarSemana, semImagem, type ArtigoAgendado, type TarefaSemana } from './semana';
+import { diaNaSemana, inicioDaSemana, montarSemana, semImagem, type ArtigoAgendado, type SinaisSemana, type TarefaSemana } from './semana';
+import { noErp } from './produtosAgente';
 
 export function useArtigosDaSemana(uid: string, ativo: boolean): ArtigoAgendado[] {
   const [artigos, setArtigos] = useState<ArtigoAgendado[]>([]);
@@ -93,8 +97,70 @@ interface Opcoes {
   hasMeli: boolean;
   /** Providers com ferramenta no registry (ver useProvidersAlfred). */
   providers?: string[];
+  extras?: ExtrasSemana;
+}
+
+/** O que só o App sabe e a semana usa — num objeto só, para não virar uma prop por fonte. */
+export interface ExtrasSemana {
   /** Sem categorias carregadas, a tarefa de atributos não aparece (não dá para saber o que falta). */
   categories?: Category[];
+  /** Módulo de vídeo ligado: só então a semana sugere um vídeo. */
+  hasVideo?: boolean;
+  /** Coorte de onboarding: as missões abertas (montarTrilha). */
+  missoes?: SinaisSemana['missoes'];
+}
+
+/** Custos por item de config/credits, lidos uma vez por sessão. */
+let custosCache: Promise<Record<string, number>> | null = null;
+function useCustos(): SinaisSemana['custos'] {
+  const [costs, setCosts] = useState<Record<string, number> | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    custosCache ??= getDoc(doc(db, 'config', 'credits'))
+      .then((s) => (s.data()?.costs as Record<string, number>) ?? {})
+      .catch(() => { custosCache = null; return {}; });
+    custosCache.then((c) => { if (vivo) setCosts(c); });
+    return () => { vivo = false; };
+  }, []);
+  return useMemo(() => costs && ({
+    descricao: resolveCreditCost(costs, CREDIT_ACTIONS.generateSeoMass.key),
+    ambientada: resolveCreditCost(costs, CREDIT_ACTIONS.ambientImage.key),
+    video: resolveCreditCost(costs, CREDIT_ACTIONS.videoGeneration.key),
+  }) || undefined, [costs]);
+}
+
+/** Achados (erro/aviso) da última auditoria SEO de cada projeto de conteúdo. */
+function useAchadosSeo(uid: string, ativo: boolean): NonNullable<SinaisSemana['seoAchados']> {
+  const [achados, setAchados] = useState<NonNullable<SinaisSemana['seoAchados']>>([]);
+  useEffect(() => {
+    if (!ativo) { setAchados([]); return; }
+    const porProjeto = new Map<string, NonNullable<SinaisSemana['seoAchados']>>();
+    const subs = new Map<string, () => void>();
+    const emitir = () => setAchados([...porProjeto.values()].flat());
+    const off = listenProjects(uid, (projetos) => {
+      for (const p of projetos) {
+        if (subs.has(p.id)) continue;
+        const nome = p.config?.nomeEmpresa || 'projeto';
+        subs.set(p.id, listenLatestSeoAudit(uid, p.id, (audit) => {
+          porProjeto.set(p.id, (audit?.topIssues ?? [])
+            .filter((i) => i.severity !== 'notice' && i.count > 0)
+            .map((i) => ({ projeto: nome, titulo: i.title, severidade: i.severity, paginas: i.count })));
+          emitir();
+        }));
+      }
+    });
+    return () => { off(); subs.forEach((f) => f()); };
+  }, [uid, ativo]);
+  return achados;
+}
+
+/** O primeiro produto pronto para vídeo (descrição, título SEO e referência) que ainda não tem. */
+export function sugerirVideo(pais: Product[]): { sku: string; nome: string } | null {
+  const ok = (v: unknown) => !!String(v ?? '').trim();
+  const p = pais.find((x) => ok(x['Descrição complementar']) && ok(x['Título SEO'])
+    && ok((x as { _productReference?: { imageUrl?: string } })._productReference?.imageUrl)
+    && !ok(x._videoUrl) && !ok(x._ugcVideoUrl) && !x._videoJobId && !x._ugcVideoJobId && ok(x['Código (SKU)']));
+  return p ? { sku: String(p['Código (SKU)']).trim(), nome: String(p['Descrição'] ?? p['Código (SKU)']) } : null;
 }
 
 const vazio = (v: unknown) => (Array.isArray(v) ? v.length === 0 : !String(v ?? '').trim());
@@ -124,13 +190,16 @@ export function useProvidersAlfred(uid: string, ativo: boolean): string[] {
   return providers;
 }
 
-export function useSemana({ uid, products, acoes, integracoes, hasContentAgent, hasMeli, providers = [], categories }: Opcoes): {
+export function useSemana({ uid, products, acoes, integracoes, hasContentAgent, hasMeli, providers = [], extras = {} }: Opcoes): {
   tarefas: TarefaSemana[];
   hoje: number;
   artigos: ArtigoAgendado[];
   meliPropostasAguardando: number | null;
 } {
   const artigos = useArtigosDaSemana(uid, hasContentAgent);
+  const custos = useCustos();
+  const seoAchados = useAchadosSeo(uid, hasContentAgent);
+  const { categories, hasVideo, missoes } = extras;
   const meliPropostasAguardando = useMeliPropostasAguardando(hasMeli);
 
   // Variação herda descrição e foto do pai na vitrine — contar as filhas
@@ -150,6 +219,15 @@ export function useSemana({ uid, products, acoes, integracoes, hasContentAgent, 
     return contarSemAtributos(products.filter((p) => !String(p['Código do pai'] ?? '').trim()), categories);
   }, [products, categories]);
 
+  const erpConectado = integracoes.some((i) => i.chave !== 'wake' && i.conectado);
+  const { foraDoErp, videoSugerido } = useMemo(() => {
+    const pais = products.filter((p) => !String(p['Código do pai'] ?? '').trim() && !p._blingDeleted && !p._idworksDeleted);
+    return {
+      foraDoErp: erpConectado ? pais.filter((p) => !noErp(p)).length : 0,
+      videoSugerido: hasVideo ? sugerirVideo(pais) : null,
+    };
+  }, [products, erpConectado, hasVideo]);
+
   const integracoesComAlerta = useMemo(
     () => integracoes.filter((i) => i.conectado && !i.validado).map((i) => i.nome),
     [integracoes],
@@ -168,13 +246,21 @@ export function useSemana({ uid, products, acoes, integracoes, hasContentAgent, 
         artigos,
         meliPropostasAguardando,
         integracoesComAlerta,
-        alfredFaz: { produtos: providers.includes('produtos'), meli: providers.includes('meli') },
+        alfredFaz: {
+          produtos: providers.includes('produtos'), meli: providers.includes('meli'), content: providers.includes('content'),
+          tiny: providers.includes('tiny'), wake: providers.includes('wake'),
+        },
+        custos,
+        seoAchados,
+        produtosForaDoErp: foraDoErp,
+        videoSugerido,
+        missoes,
       }),
       hoje: diaNaSemana(inicioDaSemana(agora), agora) ?? 0,
       artigos,
       meliPropostasAguardando,
     };
-  }, [semDescricao, semFoto, semAtributos, semAmbientada, acoes, artigos, meliPropostasAguardando, integracoesComAlerta, providers]);
+  }, [semDescricao, semFoto, semAtributos, semAmbientada, custos, seoAchados, foraDoErp, videoSugerido, missoes, acoes, artigos, meliPropostasAguardando, integracoesComAlerta, providers]);
 }
 
 /**

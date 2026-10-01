@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Coins, Menu, Moon, ScrollText, Sun } from 'lucide-react';
-import type { Category, Product } from '../../types/models';
+import type { Product } from '../../types/models';
+import type { ExtrasSemana } from './useSemana';
 import type { AgentAction, PedidoAlfred, ThreadMessage, WorkspaceContext } from '../../types/agent';
 import {
   ajustarAcao, enviarMensagem, executarAcao, fetchTools, listenActions, listenMessages, rejeitarAcao,
@@ -26,8 +27,8 @@ interface Props {
   uid: string;
   credits: number;
   products: Product[];
-  /** Para a semana saber quais produtos têm atributo da categoria por preencher. */
-  categories?: Category[];
+  /** O que só o App sabe e a semana usa (categorias, vídeo, missões). */
+  extras?: ExtrasSemana;
   hasContentAgent: boolean;
   hasOperationsAgent: boolean;
   /** A4 · Fontes e conectores — a régua e o rodapé da semana levam até ela. */
@@ -37,7 +38,7 @@ interface Props {
   /** Módulo do otimizador do Mercado Livre — alimenta a semana com propostas. */
   hasMeli: boolean;
   /** "Abrir" de uma tarefa da semana: leva à ferramenta dona dela. */
-  onAbrirDestino: (destino: DestinoTarefa) => void;
+  onAbrirDestino: (destino: DestinoTarefa, tarefa?: TarefaSemana) => void;
   onAbrirMenu: () => void;
   /** Campo focado no telefone — o App esconde a tab bar para o teclado. */
   onFocoChange?: (focado: boolean) => void;
@@ -77,7 +78,7 @@ const RodapeFontes: React.FC<{ fontes: { fontes: number; paraConectar: number; a
 const LARGURA_TRES_COLUNAS = 1100;
 
 const AgentHomeScreen: React.FC<Props> = ({
-  uid, credits, products, categories, hasContentAgent, hasMeli, onAbrirConectores, onAbrirAtividade, onAbrirDestino,
+  uid, credits, products, extras, hasContentAgent, hasMeli, onAbrirConectores, onAbrirAtividade, onAbrirDestino,
   onAbrirMenu, onFocoChange, promptInicial, onPromptConsumido,
 }) => {
   const { tema, alternar } = useAgentTheme();
@@ -171,7 +172,7 @@ const AgentHomeScreen: React.FC<Props> = ({
   }, [uid, hasContentAgent]);
 
   const { tarefas, hoje } = useSemana({
-    uid, products, acoes: listaAcoes, integracoes, hasContentAgent, hasMeli, providers, categories,
+    uid, products, acoes: listaAcoes, integracoes, hasContentAgent, hasMeli, providers, extras,
   });
 
   const focar = (f: boolean) => { setComposerFocado(f); onFocoChange?.(f); };

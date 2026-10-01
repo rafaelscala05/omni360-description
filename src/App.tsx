@@ -6,6 +6,7 @@ import AgentHomeScreen from './modules/agent/AgentHomeScreen';
 import AtividadeScreen from './modules/agent/AtividadeScreen';
 import { AbrirNaFerramentaProvider } from './modules/agent/AbrirNaFerramentaContext';
 import type { DestinoItem } from './modules/agent/abrirNaFerramenta';
+import type { ExtrasSemana } from './modules/agent/useSemana';
 import ConectoresScreen from './modules/agent/ConectoresScreen';
 import FerramentasScreen from './modules/agent/FerramentasScreen';
 import ProximoPassoBar from './modules/agent/ProximoPassoBar';
@@ -305,7 +306,8 @@ export default function App() {
   // Vídeo aprovado no chat: o app aberto o inicia e segura a requisição, como o wizard.
   useVideosDoAlfred(!!user && (hasContentAgent || hasOperationsAgent));
   // "Abrir" de uma tarefa da semana / de um cartão de Ferramentas.
-  const abrirDestino = (destino: DestinoTarefa) => {
+  const abrirDestino = (destino: DestinoTarefa, tarefa?: { missao?: ItemId }) => {
+    if (destino === 'missao') { if (tarefa?.missao) void acaoDaTrilha(tarefa.missao, 'agora'); return; }
     // Com agente, Produtos abre a tela do agente (F2); a tabela fica a um toque dela.
     if (destino === 'produtos') setMainView(hasContentAgent || hasOperationsAgent ? 'agenteProdutos' : 'products');
     else if (destino === 'conteudo') setWorkspace('content');
@@ -654,6 +656,22 @@ export default function App() {
       unsubscribeCredits?.();
     };
   }, []);
+
+  // O que só o App sabe e a semana do Alfred usa (ver ExtrasSemana em useSemana.ts).
+  const extrasSemana = useMemo<ExtrasSemana>(() => ({
+    categories: existingCategories,
+    hasVideo: hasVideoModule,
+    // Coorte de onboarding: as missões ainda abertas viram a primeira semana.
+    missoes: isCoorteMissao(cohort)
+      ? montarTrilha({
+        missoes: todasMissoes,
+        produtos: products.length,
+        erpConectado: products.some((p) => p._tinyProductId || p._blingProductId || p._idworksProductId),
+        empresaCompleta: !!companyData?.cnpj,
+      }).filter((m) => m.estado === 'agora' || m.estado === 'opcional')
+        .map((m) => ({ id: m.id, titulo: m.titulo, meta: m.meta, estado: m.estado as 'agora' | 'opcional' }))
+      : undefined,
+  }), [existingCategories, hasVideoModule, cohort, todasMissoes, products, companyData?.cnpj]);
 
   // Cost of a given action, resolved against the loaded config (fallbacks inside).
   const getCreditCost = (key: string) => resolveCreditCost(creditCosts, key);
@@ -3755,7 +3773,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           <ProximoPassoBar
             uid={user.uid}
             products={products}
-            categories={existingCategories}
+            extras={extrasSemana}
             hasContentAgent={hasContentAgent}
             hasMeli={hasMeliListingOptimizer}
             onAbrir={abrirDestino}
@@ -3791,7 +3809,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               uid={user.uid}
               credits={credits}
               products={products}
-              categories={existingCategories}
+              extras={extrasSemana}
               hasContentAgent={hasContentAgent}
               hasOperationsAgent={hasOperationsAgent}
               hasMeli={hasMeliListingOptimizer}
@@ -3823,7 +3841,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             <FerramentasScreen
               uid={user.uid}
               products={products}
-              categories={existingCategories}
+              extras={extrasSemana}
               credits={credits}
               hasAgente={hasContentAgent || hasOperationsAgent}
               hasContentAgent={hasContentAgent}

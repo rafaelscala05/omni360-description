@@ -1,22 +1,23 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowRight, Sparkles } from 'lucide-react';
-import type { Category, Product } from '../../types/models';
+import type { Product } from '../../types/models';
+import type { ExtrasSemana } from './useSemana';
 import type { AgentAction } from '../../types/agent';
 import { listenActions } from '../../services/agentChatService';
 import { fetchIntegrationsOverview, type IntegrationSummary } from '../../services/integrationsStatusService';
 import { useAgentTheme } from './theme';
 import { useProvidersAlfred, useSemana } from './useSemana';
-import { proximoPasso, type DestinoTarefa } from './semana';
+import { proximoPasso, type DestinoTarefa, type TarefaSemana } from './semana';
 import { ORIGEM } from './SemanaPanel';
 
 interface Props {
   uid: string;
   products: Product[];
-  /** Para a semana saber quais produtos têm atributo da categoria por preencher. */
-  categories?: Category[];
+  /** O que só o App sabe e a semana usa (categorias, vídeo, missões). */
+  extras?: ExtrasSemana;
   hasContentAgent: boolean;
   hasMeli: boolean;
-  onAbrir: (destino: DestinoTarefa) => void;
+  onAbrir: (destino: DestinoTarefa, tarefa?: TarefaSemana) => void;
   onPedirAlfred: (prompt: string) => void;
 }
 
@@ -27,7 +28,7 @@ interface Props {
  * discordarem. No telefone quem cumpre esse papel é a própria semana, então a
  * barra só existe de `md` para cima.
  */
-const ProximoPassoBar: React.FC<Props> = ({ uid, products, categories, hasContentAgent, hasMeli, onAbrir, onPedirAlfred }) => {
+const ProximoPassoBar: React.FC<Props> = ({ uid, products, extras, hasContentAgent, hasMeli, onAbrir, onPedirAlfred }) => {
   const { tema } = useAgentTheme();
   const [acoes, setAcoes] = useState<AgentAction[]>([]);
   const [integracoes, setIntegracoes] = useState<IntegrationSummary[]>([]);
@@ -40,7 +41,7 @@ const ProximoPassoBar: React.FC<Props> = ({ uid, products, categories, hasConten
   }, [uid]);
 
   const providers = useProvidersAlfred(uid, true);
-  const { tarefas, hoje } = useSemana({ uid, products, acoes, integracoes, hasContentAgent, hasMeli, providers, categories });
+  const { tarefas, hoje } = useSemana({ uid, products, acoes, integracoes, hasContentAgent, hasMeli, providers, extras });
   const passo = proximoPasso(tarefas, hoje);
   if (!passo) return null;
 
@@ -67,7 +68,7 @@ const ProximoPassoBar: React.FC<Props> = ({ uid, products, categories, hasConten
             </button>
           )}
           <button
-            onClick={() => onAbrir(passo.destino)}
+            onClick={() => onAbrir(passo.destino, passo)}
             className="shrink-0 min-h-[40px] px-4 rounded-full flex items-center gap-1.5 text-[13.5px] font-semibold"
             style={{ background: 'var(--ag-bg-2)', color: 'var(--ag-text)' }}
           >

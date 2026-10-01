@@ -62,9 +62,9 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 - [ ] **Notificação só quando precisa de você**: push para aprovação pendente ou tarefa bloqueada; progresso e conclusão sem barulho. Não existe infraestrutura de push hoje.
 
 ### Semana (Conselho · "a semana é o produto")
-- [ ] **Missões viram a primeira semana** (sem trilha paralela) para a coorte de onboarding.
-- [ ] **Custo e tempo estimado em cada tarefa** ("~4 min · 12 créditos").
-- [ ] **Mais fontes de tarefa**: achados da auditoria SEO (uma tarefa por achado), "vídeo para o produto mais vendido", "banner da campanha de fim de semana", "pedidos parados" (Tiny), produtos não enviados ao ERP, anúncios do MELI sem vídeo.
+- [x] **Missões viram a primeira semana** (coorte: `ExtrasSemana.missoes`, destino `missao` abre a missão) (sem trilha paralela) para a coorte de onboarding.
+- [x] **Custo e tempo estimado em cada tarefa** (`estimativa`, custos de `config/credits`, tamanho do lote do prompt) ("~4 min · 12 créditos").
+- [x] **Mais fontes de tarefa** — feitas: achados da auditoria SEO (3 mais graves), vídeo sugerido (primeiro produto pronto para vídeo; não há dado de vendas para "o mais vendido"), banner do fim de semana (Wake, quinta), pedidos parados (Tiny), produtos fora do ERP. Falta: anúncios do MELI sem vídeo (as métricas do MELI não trazem essa contagem). Original: achados da auditoria SEO (uma tarefa por achado), "vídeo para o produto mais vendido", "banner da campanha de fim de semana", "pedidos parados" (Tiny), produtos não enviados ao ERP, anúncios do MELI sem vídeo.
 - [ ] **Recalcular toda segunda** e guardar a semana (hoje é recalculada a cada render a partir do estado atual; não há histórico de semanas).
 
 ### Ferramentas do agente que faltam (Inventário: "falta tool")
