@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Coins, Menu, Moon, ScrollText, Sun } from 'lucide-react';
 import type { Product } from '../../types/models';
-import type { AgentAction, ThreadMessage } from '../../types/agent';
+import type { AgentAction, PedidoAlfred, ThreadMessage, WorkspaceContext } from '../../types/agent';
 import {
   enviarMensagem, executarAcao, fetchTools, listenActions, listenMessages, rejeitarAcao,
 } from '../../services/agentChatService';
@@ -32,8 +32,8 @@ interface Props {
   onAbrirMenu: () => void;
   /** Campo focado no telefone — o App esconde a tab bar para o teclado. */
   onFocoChange?: (focado: boolean) => void;
-  /** Pedido vindo de outra tela ("Pedir ao Alfred"): enviado ao montar. */
-  promptInicial?: string | null;
+  /** Pedido vindo de outra tela ("Pedir ao Alfred"): enviado ao montar, com o contexto dela. */
+  promptInicial?: PedidoAlfred | null;
   onPromptConsumido?: () => void;
 }
 
@@ -81,6 +81,7 @@ const AgentHomeScreen: React.FC<Props> = ({
   const [logsAberto, setLogsAberto] = useState(false);
   const [interagiu, setInteragiu] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const contextoRef = useRef<WorkspaceContext | undefined>(undefined);
   // Só true durante um turno que teve evento `erro` — usado pra não marcar
   // `interagiu` num turno que falhou sem persistir nenhuma mensagem (ver
   // handlers.onFim). Ref porque é lido e escrito dentro do mesmo ciclo
@@ -169,7 +170,11 @@ const AgentHomeScreen: React.FC<Props> = ({
     },
   }), []);
 
-  const enviar = async (texto: string) => {
+  const enviar = async (texto: string, contextoNovo?: WorkspaceContext) => {
+    // O contexto de um "Pedir ao Alfred" vale para a conversa que ele abriu,
+    // não só para a primeira mensagem: "agora gere as descrições deles" tem de
+    // saber quem são "eles". Um pedido novo de outra tela o substitui.
+    if (contextoNovo) contextoRef.current = contextoNovo;
     setModo('chat');
     setErro(null);
     setParcial('');
@@ -180,7 +185,7 @@ const AgentHomeScreen: React.FC<Props> = ({
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
-      await enviarMensagem(texto, handlers, ctrl.signal);
+      await enviarMensagem(texto, handlers, ctrl.signal, contextoRef.current);
     } catch (e: any) {
       if (e?.name !== 'AbortError') setErro(e?.message ?? 'Falha ao falar com o agente.');
     } finally {
@@ -215,12 +220,12 @@ const AgentHomeScreen: React.FC<Props> = ({
   useEffect(() => {
     if (!promptInicial) return;
     onPromptConsumido?.();
-    void enviar(promptInicial);
+    void enviar(promptInicial.texto, promptInicial.contexto ?? {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promptInicial]);
 
-  const executar = (id: string) => responder(() => executarAcao(id, handlers));
-  const rejeitar = (id: string) => responder(() => rejeitarAcao(id, handlers));
+  const executar = (id: string) => responder(() => executarAcao(id, handlers, contextoRef.current));
+  const rejeitar = (id: string) => responder(() => rejeitarAcao(id, handlers, contextoRef.current));
   const parar = () => { abortRef.current?.abort(); setStreaming(false); };
 
   const pendentesPorProvider = useMemo(() => {
@@ -414,14 +419,14 @@ const AgentHomeScreen: React.FC<Props> = ({
               {/* A semana recolhe no modo foco: com o teclado aberto o que
                   importa é o campo, e os atalhos descem para encostar nele. */}
               <div className="ag-recolhe w-full ag-rise" data-recolhido={emFoco} style={{ maxHeight: 2400 }}>
-                <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={enviar} onAbrir={onAbrirDestino} />
+                <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={(t) => enviar(t, {})} onAbrir={onAbrirDestino} />
               </div>
 
               <div className="ag-scroll-x flex gap-2 w-full overflow-x-auto -mx-1 px-1 pt-1">
                 {SUGESTOES.map((texto) => (
                   <button
                     key={texto}
-                    onClick={() => enviar(texto)}
+                    onClick={() => enviar(texto, {})}
                     className="shrink-0 min-h-[36px] px-3.5 rounded-full text-[13px] font-medium text-[var(--ag-text-2)] hover:text-[var(--ag-text)] transition-colors"
                     style={{ background: 'var(--ag-fill)', border: '1px solid var(--ag-hairline)' }}
                   >
@@ -448,7 +453,7 @@ const AgentHomeScreen: React.FC<Props> = ({
         <Composer
           disabled={false}
           streaming={streaming}
-          onEnviar={enviar}
+          onEnviar={(t) => enviar(t)}
           onParar={parar}
           onFoco={focar}
           recuoTeclado={alturaTeclado}

@@ -62,6 +62,35 @@ export function selecionarParaDescricao(
   };
 }
 
+export const MAX_SKUS_BUSCA = 50;
+
+/**
+ * Busca do `produtos.buscar`. Com `skus`, lê exatamente esses (na ordem pedida,
+ * até MAX_SKUS_BUSCA) e diz quais não existem — é o caminho da seleção vinda da
+ * tela. Sem, procura por SKU exato ou parte do nome (até 20).
+ */
+export function buscarProdutos<T extends Record<string, unknown>>(
+  produtos: T[],
+  opts: { pesquisa?: string; skus?: string[] },
+): { achados: T[]; naoEncontrados: string[] } {
+  if (opts.skus?.length) {
+    const porSku = new Map(produtos.map((p) => [skuDe(p).toLowerCase(), p]));
+    const achados: T[] = [];
+    const naoEncontrados: string[] = [];
+    for (const sku of opts.skus.slice(0, MAX_SKUS_BUSCA)) {
+      const p = porSku.get(String(sku).trim().toLowerCase());
+      if (p) { if (!achados.includes(p)) achados.push(p); } else naoEncontrados.push(String(sku));
+    }
+    return { achados, naoEncontrados };
+  }
+  const q = String(opts.pesquisa ?? '').trim().toLowerCase();
+  if (!q) return { achados: [], naoEncontrados: [] };
+  return {
+    achados: produtos.filter((p) => skuDe(p).toLowerCase() === q || nomeDe(p).toLowerCase().includes(q)).slice(0, 20),
+    naoEncontrados: [],
+  };
+}
+
 /** Variações do grupo (campo `Variações` das filhas), como o prompt do cliente espera. */
 export function variacoesDoPai(produtos: Record<string, unknown>[], skuPai: string): string {
   if (!skuPai) return 'Nenhuma';

@@ -50,9 +50,9 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 - [ ] **F1 em lista**: no celular, um agente por linha com chip de pendência ("12", "em dia") em vez dos cartões grandes; bloco Conta com Créditos e Integrações ("4 ativas · 1 alerta").
 - [ ] **D2 "Alfred sugere"**: coluna lateral com pedidos prontos ("Resumir pedidos parados há mais de 2 dias", "Criar banner para o fim de semana") e Missões "2 de 5".
 - [ ] **Cartões com mais números (D2)**: Produtos "não enviados ao ERP", Conteúdo "achados da auditoria SEO" e "publicados no mês", MELI "anúncios sem vídeo", Operações "pedidos em aberto no Tiny" e "banners ativos na Wake".
-- [ ] **F2 · Agente Produtos**: tela própria com segmentos Catálogo · Categorias · Imagens · Vídeos · Envio ERP; filtros Incompletos · Todos · Não enviados; pílulas por produto (descrição / atributos / foto / ambientada); seleção em massa.
-- [ ] **Barra "Próximo passo · N selecionados" fixa na base de toda tela de agente** com a ação principal ("Gerar descrições") e o atalho "Pedir ao Alfred".
-- [ ] **"Pedir ao Alfred" com contexto da tela e da seleção**: estender `WorkspaceContext` (hoje só projeto/artigo de conteúdo) para tela + SKUs selecionados, e o system prompt do grafo usar isso.
+- [x] **F2 · Agente Produtos** (`ProdutosAgenteScreen.tsx`, `produtosAgente.ts`): segmentos Catálogo · Categorias · Imagens · Vídeos · Envio ERP; filtros Incompletos · Todos · Fora do ERP; pílulas por produto (descrição / atributos / foto / ambientada); seleção em massa. Imagens e Vídeos são listas que abrem o modal do produto na aba certa; Categorias e Envio ERP ainda levam às telas antigas. "Não enviados" virou **Fora do ERP** (sem vínculo com Tiny/Bling/IdWorks/Wake): não há registro de push por produto para saber o que foi enviado.
+- [ ] **Barra "Próximo passo · N selecionados" fixa na base de toda tela de agente** com a ação principal ("Gerar descrições") e o atalho "Pedir ao Alfred". Feita em Produtos; falta Conteúdo e Mercado Livre.
+- [x] **"Pedir ao Alfred" com contexto da tela e da seleção**: `WorkspaceContext` ganhou `tela` + `skus` + `totalSelecionados` (`server/agent/workspaceContext.ts`, saneado no Express antes de ir ao system prompt); vale para a conversa toda até outro pedido de outra tela; `produtos.buscar` aceita `skus`. Só Produtos manda seleção por enquanto.
 - [ ] **"Abrir na ferramenta" do chat com o item selecionado**: link que cai na tela exata (ex.: produto aberto no modal, anúncio do MELI aberto).
 
 ### Atividade e conectores (A4, A5)
@@ -81,7 +81,7 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 ## Ordem sugerida
 
 1. **Validação com login** (lista acima) e correções que aparecerem.
-2. **F2 + barra de seleção + "Pedir ao Alfred" com contexto** — fecha o ciclo da porta Ferramentas, que hoje só leva às telas antigas.
+2. ~~**F2 + barra de seleção + "Pedir ao Alfred" com contexto**~~ — feito para Produtos; falta validar com login (abrir Ferramentas › Produtos, selecionar, "Gerar N descrições" → confirmação com custo → progresso na barra; e "Pedir ao Alfred" → o grafo deve chamar `produtos.buscar` com os SKUs selecionados). Exige republicar o serviço do grafo.
 3. **Lote em job com progresso** (A2 "7 de 12", revisar parcial, pausar) — é o que destrava as ferramentas caras (atributos, ambientadas, vídeo) sem um `preview()` de minutos.
 4. **Novas ferramentas** na ordem do valor: atributos → envio ao ERP pelo chat → vídeo → categorias → ambientadas.
 5. **A4 Conectores** e **D1 em 3 colunas**.

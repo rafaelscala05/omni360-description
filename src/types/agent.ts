@@ -99,4 +99,16 @@ export interface WorkspaceContext {
   projetoId?: string;
   projetoNome?: string;
   articleId?: string;
+  /** Tela de onde veio o "Pedir ao Alfred" (ex.: 'produtos'). */
+  tela?: string;
+  /** SKUs selecionados nessa tela — no máximo MAX_SKUS_CONTEXTO. */
+  skus?: string[];
+  /** Quantos estavam selecionados de fato (pode passar do que coube em `skus`). */
+  totalSelecionados?: number;
+}
+
+/** "Pedir ao Alfred" de outra tela: a mensagem e o contexto que a acompanha. */
+export interface PedidoAlfred {
+  texto: string;
+  contexto?: WorkspaceContext;
 }

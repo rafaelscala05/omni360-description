@@ -20,12 +20,8 @@ import { DEFAULT_AGENT_SETTINGS, type AgentSettings } from '../agent/agentSettin
 import { buildContext } from '../agent/connections';
 import type { ToolCtx, ToolProvider } from '../agent/types';
 import { FirestoreCheckpointSaver } from './firestoreCheckpointer';
+import { linhasDoContexto, type WorkspaceContext } from './workspaceContext';
 
-interface WorkspaceContext {
-  projetoId?: string;
-  projetoNome?: string;
-  articleId?: string;
-}
 
 interface ContentGraphConfig {
   configurable?: {
@@ -84,10 +80,7 @@ function buildSystemPrompt(config: ContentGraphConfig): string {
     partes.push('Mercado Livre: meli.propostas.listar e meli.proposta.ver leem as propostas do otimizador; meli.proposta.publicar publica as mudanças escolhidas e sempre pede aprovação.');
   }
 
-  if (contexto?.projetoId) {
-    partes.push(`Contexto do workspace: o projeto aberto agora é "${contexto.projetoNome ?? contexto.projetoId}" (projectId: ${contexto.projetoId}).`);
-    if (contexto.articleId) partes.push(`Artigo em foco: ${contexto.articleId}.`);
-  }
+  partes.push(...linhasDoContexto(contexto));
 
   return partes.join(' ');
 }

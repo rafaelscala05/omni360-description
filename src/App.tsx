@@ -8,6 +8,8 @@ import FerramentasScreen from './modules/agent/FerramentasScreen';
 import ProximoPassoBar from './modules/agent/ProximoPassoBar';
 import { usePendentesAlfred } from './modules/agent/useSemana';
 import type { DestinoTarefa } from './modules/agent/semana';
+import ProdutosAgenteScreen from './modules/agent/ProdutosAgenteScreen';
+import type { PedidoAlfred } from './types/agent';
 import AppTabBar from './components/AppTabBar';
 import { COORTE_ATUAL, isCoorteMissao } from './modules/onboarding/mission/missionTypes';
 import type { MissionState } from './modules/onboarding/mission/missionTypes';
@@ -224,10 +226,10 @@ export default function App() {
   useEffect(() => { productsRef.current = products; }, [products]);
   const [originalHeaders, setOriginalHeaders] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [mainView, setMainView] = useState<'home' | 'atividade' | 'ferramentas' | 'products' | 'meli' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company' | 'missoes'>('products');
+  const [mainView, setMainView] = useState<'home' | 'atividade' | 'ferramentas' | 'agenteProdutos' | 'products' | 'meli' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company' | 'missoes'>('products');
   // Pedido que outra tela (Ferramentas) manda ao Alfred — a tela do agente
   // envia ao montar e limpa, para voltar ao chat não repetir o pedido.
-  const [promptAlfred, setPromptAlfred] = useState<string | null>(null);
+  const [promptAlfred, setPromptAlfred] = useState<PedidoAlfred | null>(null);
   // Campo do Alfred focado no telefone: a tab bar sai para o teclado.
   const [alfredFocado, setAlfredFocado] = useState(false);
   // Top-level workspace: the Product agent (this App) or the Content agency module.
@@ -299,7 +301,8 @@ export default function App() {
   const pendentesAlfred = usePendentesAlfred(!!user && (hasContentAgent || hasOperationsAgent), () => catalogoAlteradoRef.current());
   // "Abrir" de uma tarefa da semana / de um cartão de Ferramentas.
   const abrirDestino = (destino: DestinoTarefa) => {
-    if (destino === 'produtos') setMainView('products');
+    // Com agente, Produtos abre a tela do agente (F2); a tabela fica a um toque dela.
+    if (destino === 'produtos') setMainView(hasContentAgent || hasOperationsAgent ? 'agenteProdutos' : 'products');
     else if (destino === 'conteudo') setWorkspace('content');
     else if (destino === 'meli') setMainView(hasMeliListingOptimizer ? 'meli' : 'products');
     else if (destino === 'integracoes') setMainView('integrations');
@@ -2584,11 +2587,15 @@ Retorne APENAS um JSON válido no seguinte formato:
     }
   };
 
-  const handleGenerateMass = async () => {
-    if (selectedIds.size === 0) return;
+  // `ids` vem da tela Agente Produtos, que acabou de trocar a seleção (o
+  // setSelectedIds ainda não chegou neste closure). Do botão da tabela chega o
+  // evento de clique — por isso o instanceof.
+  const handleGenerateMass = async (ids?: unknown) => {
+    const alvo = ids instanceof Set ? (ids as Set<string>) : selectedIds;
+    if (alvo.size === 0) return;
     
     // Total cost check
-    const count = selectedIds.size;
+    const count = alvo.size;
     const generateNeeded = count * getCreditCost(CREDIT_ACTIONS.generateSeoMass.key);
     if (credits < generateNeeded) {
       alert(`Você não possui créditos suficientes. Necessário: ${generateNeeded}, Disponível: ${credits}`);
@@ -2605,15 +2612,16 @@ Retorne APENAS um JSON válido no seguinte formato:
       return;
     }
 
-    startGenerateMass();
+    startGenerateMass(alvo);
   };
 
-  const startGenerateMass = async () => {
+  const startGenerateMass = async (ids?: Set<string>) => {
+    const alvo = ids ?? selectedIds;
     setShowMassActionConfirm(null);
     setIsGeneratingMass(true);
-    setGenerationProgress({ current: 0, total: selectedIds.size });
+    setGenerationProgress({ current: 0, total: alvo.size });
 
-    const idsToProcess: string[] = Array.from(selectedIds);
+    const idsToProcess: string[] = Array.from(alvo);
     let successCount = 0;
 
     // Work against a local copy + index maps instead of calling setProducts([...prev]) twice
@@ -2681,7 +2689,7 @@ Retorne APENAS um JSON válido no seguinte formato:
 
       if (i % FLUSH_EVERY === 0 || i === idsToProcess.length - 1) flush();
 
-      setGenerationProgress({ current: i + 1, total: selectedIds.size });
+      setGenerationProgress({ current: i + 1, total: idsToProcess.length });
       // Small delay to prevent UI freezing and respect rate limits
       await new Promise(resolve => setTimeout(resolve, 500));
     }
@@ -3687,14 +3695,14 @@ Retorne APENAS um JSON válido no seguinte formato:
 
         {/* Princípio "um próximo passo sempre visível": no desktop, em toda
             tela menos Ferramentas (que já abre com o mesmo cartão no topo). */}
-        {(hasContentAgent || hasOperationsAgent) && mainView !== 'ferramentas' && (
+        {(hasContentAgent || hasOperationsAgent) && mainView !== 'ferramentas' && mainView !== 'agenteProdutos' && (
           <ProximoPassoBar
             uid={user.uid}
             products={products}
             hasContentAgent={hasContentAgent}
             hasMeli={hasMeliListingOptimizer}
             onAbrir={abrirDestino}
-            onPedirAlfred={(p) => { setPromptAlfred(p); setMainView('home'); }}
+            onPedirAlfred={(p) => { setPromptAlfred({ texto: p }); setMainView('home'); }}
           />
         )}
 
@@ -3705,6 +3713,8 @@ Retorne APENAS um JSON válido no seguinte formato:
           // para o cabeçalho dele), então dispensa a reserva de 5rem embaixo
           // e usa um respiro menor nas laterais — a tela toda é a conversa.
           mainView === 'atividade' || mainView === 'ferramentas' ? "p-3 sm:p-6" :
+          // A barra Próximo passo é o pé da própria tela, então ela termina acima da tab bar.
+          mainView === 'agenteProdutos' ? "p-3 pb-24 sm:p-6 md:pb-6" :
           mainView === 'home' ? (alfredFocado ? "p-3 sm:p-6" : "p-3 pb-24 sm:p-6 md:pb-6") : "p-6 pb-20 md:pb-6",
         )}>
           {mainView === 'missoes' ? (
@@ -3751,8 +3761,24 @@ Retorne APENAS um JSON válido no seguinte formato:
               mostrarMissoes={isCoorteMissao(cohort)}
               onAbrir={abrirDestino}
               onAbrirView={(v) => { if (v === 'history') fetchCreditLogs(); setMainView(v); }}
-              onPedirAlfred={(p) => { setPromptAlfred(p); setMainView('home'); }}
+              onPedirAlfred={(p) => { setPromptAlfred({ texto: p }); setMainView('home'); }}
               onAbrirMenu={() => setIsSidebarOpen(true)}
+            />
+          ) : mainView === 'agenteProdutos' ? (
+            <ProdutosAgenteScreen
+              products={products}
+              selecionados={selectedIds}
+              onSelecionar={setSelectedIds}
+              custoPorDescricao={getCreditCost(CREDIT_ACTIONS.generateSeoMass.key)}
+              gerando={isGeneratingMass}
+              progresso={generationProgress}
+              onGerarDescricoes={(ids) => { setSelectedIds(ids); void handleGenerateMass(ids); }}
+              onAbrirProduto={(p, aba) => openPreview(p, aba)}
+              onAbrirView={(v) => setMainView(v)}
+              onPedirAlfred={(pedido) => { setPromptAlfred(pedido); setMainView('home'); }}
+              onVoltar={() => setMainView('ferramentas')}
+              onAbrirMenu={() => setIsSidebarOpen(true)}
+              hasAgente={hasContentAgent || hasOperationsAgent}
             />
           ) : mainView === 'categories' ? (
             <div className="animate-in fade-in h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -5430,7 +5456,7 @@ Retorne APENAS um JSON válido no seguinte formato:
 
       {!(mainView === 'home' && alfredFocado) && (
         <AppTabBar
-          atual={mainView}
+          atual={mainView === 'agenteProdutos' ? 'ferramentas' : mainView}
           mostrarAgente={hasContentAgent || hasOperationsAgent}
           pendentes={pendentesAlfred}
           onNavegar={setMainView}

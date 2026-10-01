@@ -19,6 +19,7 @@ import type express from 'express';
 import { adminDb } from '../firebaseAdmin';
 import { contentThreadRef } from './firestoreCheckpointer';
 import { resolveAgentContext, requireAnyModule } from './connections';
+import { sanitizarContexto, type WorkspaceContext } from './workspaceContext';
 
 const CONTENT_AGENT_URL = process.env.CONTENT_AGENT_LANGGRAPH_URL || 'http://localhost:8123';
 const GRAPH_ID = 'content_agent';
@@ -33,15 +34,6 @@ interface PreviewField { campo: string; antes: unknown; depois: unknown; mudou: 
 interface ContentActionPreview {
   resumo: string; alvo: string; campos: PreviewField[]; avisos: string[];
   ferramenta?: string; args?: Record<string, unknown>;
-}
-// Espelha WorkspaceContext em server/agent/contentGraph.ts — o que está
-// aberto no workspace agora (ContentAgentPanel.tsx manda isso a cada envio),
-// pra o modelo não precisar perguntar o ID de um projeto que o usuário já
-// tem na tela.
-interface WorkspaceContext {
-  projetoId?: string;
-  projetoNome?: string;
-  articleId?: string;
 }
 
 interface ContentAgentAction {
@@ -421,7 +413,7 @@ export function registerContentAgentChatRoutes(app: express.Express, { verifyFir
 
       const texto = String(req.body?.texto ?? '');
       if (!texto.trim()) return res.status(400).json({ message: 'Mensagem vazia.' });
-      const contexto = req.body?.contexto as WorkspaceContext | undefined;
+      const contexto = sanitizarContexto(req.body?.contexto);
 
       emit = openSse(res);
       await sendUserMessage(uid, AGENT_THREAD_ID, texto, emit, contexto);
@@ -442,7 +434,7 @@ export function registerContentAgentChatRoutes(app: express.Express, { verifyFir
       const { uid } = await verifyFirebaseToken(req);
       await requireAnyModule(uid);
       const action = await claimAction(uid, req.params.id);
-      const contexto = req.body?.contexto as WorkspaceContext | undefined;
+      const contexto = sanitizarContexto(req.body?.contexto);
       emit = openSse(res);
       await resolveAndContinue(uid, action, true, emit, contexto);
       res.end();
@@ -462,7 +454,7 @@ export function registerContentAgentChatRoutes(app: express.Express, { verifyFir
       const { uid } = await verifyFirebaseToken(req);
       await requireAnyModule(uid);
       const action = await claimAction(uid, req.params.id);
-      const contexto = req.body?.contexto as WorkspaceContext | undefined;
+      const contexto = sanitizarContexto(req.body?.contexto);
       emit = openSse(res);
       await resolveAndContinue(uid, action, false, emit, contexto);
       res.end();

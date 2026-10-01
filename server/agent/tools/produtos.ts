@@ -20,8 +20,8 @@ import { makePreview } from '../preview';
 import { comCache, esquecerPrevia } from '../previewCache';
 import { defaultTemplate, fillTemplate } from '../../../src/services/descriptionTemplate';
 import {
-  ehPai, faltando, nomeDe, normalizarGeracao, selecionarParaDescricao, semDescricao, semImagem, skuDe,
-  textoPuro, variacoesDoPai, LOTE_PADRAO, MAX_DESCRICOES_POR_LOTE,
+  buscarProdutos, ehPai, faltando, nomeDe, normalizarGeracao, selecionarParaDescricao, semDescricao, semImagem, skuDe,
+  textoPuro, variacoesDoPai, LOTE_PADRAO, MAX_DESCRICOES_POR_LOTE, MAX_SKUS_BUSCA,
   type DescricaoGerada, type ProdutoDoc,
 } from '../produtosRules';
 import type { PreviewField } from '../types';
@@ -126,18 +126,19 @@ registerTool({
   name: 'produtos.buscar',
   provider: 'produtos',
   mode: 'read',
-  description: 'Busca produtos no catálogo do OMNI360 por SKU ou parte do nome e devolve o cadastro (nome, categoria, marca, preço, descrição atual, SEO, ERP vinculado).',
+  description: 'Busca produtos no catálogo do OMNI360 por SKU ou parte do nome — ou vários de uma vez por "skus" (ex.: os selecionados na tela) — e devolve o cadastro (nome, categoria, marca, preço, descrição atual, SEO, ERP vinculado, o que falta).',
   schema: {
     type: 'object',
-    properties: { pesquisa: { type: 'string', description: 'SKU ou parte do nome.' } },
-    required: ['pesquisa'],
+    properties: {
+      pesquisa: { type: 'string', description: 'SKU ou parte do nome.' },
+      skus: { type: 'array', items: { type: 'string' }, description: `Lista de SKUs exatos (até ${MAX_SKUS_BUSCA}). Use em vez de "pesquisa" para ler vários produtos de uma vez.` },
+    },
   },
-  read: async (ctx, a: { pesquisa: string }) => {
-    const q = String(a.pesquisa ?? '').trim().toLowerCase();
-    const achados = (await lerCatalogo(ctx.uid))
-      .filter((p) => skuDe(p).toLowerCase() === q || nomeDe(p).toLowerCase().includes(q))
-      .slice(0, 20);
+  read: async (ctx, a: { pesquisa?: string; skus?: string[] }) => {
+    const catalogo = await lerCatalogo(ctx.uid);
+    const { achados, naoEncontrados } = buscarProdutos(catalogo, a);
     return {
+      ...(naoEncontrados.length ? { naoEncontrados } : {}),
       produtos: achados.map((p) => ({
         sku: skuDe(p),
         nome: nomeDe(p),
