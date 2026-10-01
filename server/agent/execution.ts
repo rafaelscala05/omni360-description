@@ -31,6 +31,9 @@ export function creditActionsFor(def: Pick<ToolDef<any>, 'name' | 'provider'>, p
       const n = Array.isArray(preview?.payload?.itens) ? (preview!.payload!.itens as unknown[]).length : 0;
       return Array.from({ length: n }, () => CREDIT_ACTIONS.generateSeoMass);
     }
+    // Mesmo débito da hierarquia por IA na importação de planilha.
+    case 'produtos.categorias.organizar':
+      return [CREDIT_ACTIONS.generateHierarchy];
     case 'content.clusters.gerar':
       return [CREDIT_ACTIONS.contentClusters, CREDIT_ACTIONS.seoKeywordResearch];
     case 'content.calendario.gerar':

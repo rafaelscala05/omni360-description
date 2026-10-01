@@ -9,6 +9,7 @@ import {
 import { linhasDoContexto, sanitizarContexto, MAX_SKUS_CONTEXTO } from '../server/agent/workspaceContext.ts';
 import { camposDoEnvio, imagensParaTiny, paraTinyPush } from '../server/agent/tinyCatalogo.ts';
 import { faltaParaVideo, imagensDasCenas, montarPedidoVideo } from '../server/agent/videoPedido.ts';
+import { achatarArvore, arvoreEmTexto, categoriasSemVinculo, normalizarArvore, vinculosDeProdutos, MAX_NIVEIS } from '../server/agent/categoriasRules.ts';
 import { chavePrevia } from '../server/agent/previewCache.ts';
 import { resolveApprovalMode } from '../server/agent/agentSettings.ts';
 import { creditActionsFor } from '../server/agent/execution.ts';
@@ -171,6 +172,38 @@ check('publicar no MELI não debita', creditActionsFor({ name: 'meli.proposta.pu
     [ped.roteiro.imageUrl, ped.roteiro.photoUrls, ped.roteiro.attributes, ped.roteiro.productName],
     ['https://ref', ['https://f1', 'https://f2', 'https://f3'], { cor: 'Preto', usos: 'Sala, Quarto' }, 'Título']);
   check('pedido: job usa o id do documento e a referência', [ped.inicio.productId, ped.inicio.productReferenceUrl, ped.inicio.shotImageUrls.length], ['d-V1', 'https://ref', 4]);
+}
+
+// --- categorias ---------------------------------------------------------------
+{
+  const existentes = [{ id: 'e1', name: 'Móveis', path: ['Móveis'], pathIds: ['e1'], level: 0 }];
+  const cat = [
+    p('A', { Categoria: 'Mesas' }), p('B', { Categoria: 'mesas ' }), p('C', { Categoria: 'Cadeiras' }),
+    p('D', { Categoria: 'Móveis' }), p('E', { Categoria: 'Tapetes', categoryId: 'x' }), p('F'),
+  ];
+  check('nomes sem vínculo: sem repetir (caixa/espaço), sem os que já existem nem os já vinculados',
+    categoriasSemVinculo(cat, existentes), { nomes: ['Mesas', 'Cadeiras'], produtos: 4 });
+
+  const arv = normalizarArvore({ hierarchy: [
+    { name: 'Móveis', children: [{ name: 'Mesas', children: [{ name: 'Fundo', children: [{ name: 'Fundo demais', children: [] }] }] }, { name: 'Mesas', children: [] }] },
+    { name: '', children: [] },
+  ] }, ['Mesas', 'Cadeiras']);
+  check('árvore: irmão repetido some, nível além do teto sobe, nome esquecido entra na raiz',
+    arv.map((n) => [n.name, n.children.map((c) => [c.name, c.children.map((g) => g.name)])]),
+    [['Móveis', [['Mesas', ['Fundo', 'Fundo demais']]]], ['Cadeiras', []]]);
+  check('teto de níveis', MAX_NIVEIS, 3);
+
+  const { novas, todas } = achatarArvore(arv, existentes);
+  check('achatar: reaproveita a raiz existente e pendura as novas nela',
+    novas.map((c) => [c.id, c.parentId, c.level, c.path.join('>')]),
+    [['cat_moveis__mesas', 'e1', 1, 'Móveis>Mesas'], ['cat_moveis__mesas__fundo', 'cat_moveis__mesas', 2, 'Móveis>Mesas>Fundo'],
+      ['cat_moveis__mesas__fundo-demais', 'cat_moveis__mesas', 2, 'Móveis>Mesas>Fundo demais'], ['cat_cadeiras', null, 0, 'Cadeiras']]);
+  check('achatar é determinístico (aprovar duas vezes não duplica)', achatarArvore(arv, existentes).novas.map((c) => c.id), novas.map((c) => c.id));
+  check('pathIds do filho começam pelo pai existente', novas[0].pathIds, ['e1', 'cat_moveis__mesas']);
+  check('vínculos pelo nome, ignorando quem já tem categoria',
+    vinculosDeProdutos(cat, todas).map((v) => [v.docId, v.categoryId]),
+    [['d-A', 'cat_moveis__mesas'], ['d-B', 'cat_moveis__mesas'], ['d-C', 'cat_cadeiras'], ['d-D', 'e1']]);
+  check('texto da árvore marca o que já existe', arvoreEmTexto(arv, existentes).split('\n')[0], 'Móveis (já existe)');
 }
 
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');

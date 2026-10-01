@@ -155,3 +155,35 @@ Retorne APENAS este JSON:
   }
   throw ultimoErro;
 }
+
+// ---------------------------------------------------------------------------
+// Árvore de categorias — o pedido de generateCategoryHierarchy
+// (src/services/categoryService.ts), sabendo também das categorias que já existem.
+// ---------------------------------------------------------------------------
+
+export async function gerarArvore(ai: GoogleGenAI, nomes: string[], existentes: string[], segmento?: string): Promise<unknown> {
+  const prompt = `
+Você é um especialista em arquitetura de dados e e-commerce.
+O catálogo da loja usa estes nomes de categoria, que ainda não estão organizados:
+[${nomes.join(', ')}]
+${existentes.length ? `\nCategorias que a loja JÁ TEM (use o mesmo nome se uma delas for o pai certo): [${existentes.join(', ')}]\n` : ''}
+${segmento ? `O segmento do negócio é: ${segmento}` : ''}
+
+Organize os nomes em uma estrutura pai/filho.
+
+Diretrizes:
+1. Use EXATAMENTE os nomes passados (eles casam com os produtos); você pode criar categorias-pai novas para agrupá-los.
+2. No máximo 3 níveis.
+3. Não invente subcategorias que nenhum produto usa.
+4. Nomes em PORTUGUÊS DO BRASIL.
+
+Retorne SOMENTE este JSON:
+{ "hierarchy": [ { "name": "Calçados", "children": [ { "name": "Tênis", "children": [] } ] } ] }`;
+  const resp = await ai.models.generateContent({
+    model: TEXT_MODEL,
+    contents: prompt,
+    config: { temperature: 0.2, maxOutputTokens: 8192, responseMimeType: 'application/json' },
+  });
+  const texto = (resp.text ?? '').trim().replace(/^```json\s*/i, '').replace(/```$/, '');
+  return JSON.parse(texto || '{}');
+}

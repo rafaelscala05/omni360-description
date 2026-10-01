@@ -21,7 +21,12 @@ import { assertNoActiveVideoJob } from '../../videoShared';
 import { faltaParaVideo, montarPedidoVideo, type PedidoVideo } from '../videoPedido';
 import { criarLote } from '../loteStore';
 import { scheduleLote } from '../loteWorker';
-import { lerCatalogo, lerCategorias, produtosCol } from '../produtosGeracao';
+import { clienteVertex, gerarArvore, lerCatalogo, lerCategorias, produtosCol } from '../produtosGeracao';
+import { comCache, esquecerPrevia } from '../previewCache';
+import {
+  achatarArvore, arvoreEmTexto, categoriasSemVinculo, normalizarArvore, vinculosDeProdutos,
+  type CategoriaExistente, type NovaCategoria,
+} from '../categoriasRules';
 import {
   buscarProdutos, ehPai, faltando, mesclarAtributos, nomeDe, selecionarParaAtributos, selecionarParaDescricao,
   semDescricao, semImagem, skuDe,
@@ -347,5 +352,76 @@ registerTool<{ sku: string }>({
     if (ctx.dryRun) return { dryRun: true, produto: pedido.inicio.productName };
     // Só registra o pedido aprovado; quem roda é /api/agent/video/:actionId/iniciar.
     return { pedidoVideo: pedido, status: 'aguardando início' };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Categorias — propõe a árvore; uma aprovação cria tudo e vincula os produtos
+// ---------------------------------------------------------------------------
+
+const TOOL_CATEGORIAS = 'produtos.categorias.organizar';
+
+registerTool<{ segmento?: string }>({
+  name: TOOL_CATEGORIAS,
+  provider: 'produtos',
+  mode: 'write',
+  description: 'Organiza em árvore (pai/filho, até 3 níveis) os nomes da coluna "Categoria" do catálogo que ainda não viraram categoria, reaproveitando as categorias que já existem, e vincula os produtos a elas. Uma aprovação cria a árvore inteira. Não cria atributos — isso continua em Categorias.',
+  schema: {
+    type: 'object',
+    properties: { segmento: { type: 'string', description: 'Segmento da loja, se o usuário disser (ajuda a agrupar).' } },
+  },
+  preview: async (ctx, a) => {
+    const args = { segmento: a.segmento ?? '' };
+    const proposta = await comCache(ctx.uid, TOOL_CATEGORIAS, args, async () => {
+      const [catalogo, categorias] = await Promise.all([lerCatalogo(ctx.uid), lerCategorias(ctx.uid)]);
+      const existentes = categorias.map((c) => ({ id: c.id, name: String(c.name ?? ''), path: (c as { path?: string[] }).path, pathIds: c.pathIds, level: (c as { level?: number }).level }));
+      const { nomes, produtos } = categoriasSemVinculo(catalogo, existentes);
+      if (!nomes.length) {
+        throw Object.assign(new Error(produtos
+          ? 'Os produtos sem categoria usam nomes que já existem como categoria — dá para vinculá-los em Categorias, sem criar nada.'
+          : 'Não há produto sem categoria com o campo "Categoria" preenchido.'), { status: 409 });
+      }
+      const arvore = normalizarArvore(await gerarArvore(clienteVertex(), nomes, existentes.map((c) => c.name), a.segmento), nomes);
+      return { arvore, existentes, nomes, produtos };
+    });
+    const { novas, todas } = achatarArvore(proposta.arvore, proposta.existentes);
+    return makePreview({
+      resumo: `Criar ${novas.length === 1 ? '1 categoria' : `${novas.length} categorias`} e organizar o catálogo`,
+      alvo: `Categorias · ${proposta.nomes.length} ${proposta.nomes.length === 1 ? 'nome' : 'nomes'} do catálogo`,
+      campos: [
+        { campo: 'Árvore proposta', antes: null, depois: arvoreEmTexto(proposta.arvore, proposta.existentes), mudou: true },
+        { campo: 'Produtos a vincular', antes: null, depois: `${proposta.produtos} sem categoria hoje`, mudou: true },
+      ],
+      avisos: [
+        'Cria só as categorias novas — as que já existem são reaproveitadas, nada é apagado nem renomeado.',
+        'Os produtos ganham a categoria pelo nome do campo "Categoria". Atributos de categoria você define depois, em Categorias.',
+      ],
+      payload: { novas, todas: todas.map((c) => ({ id: c.id, name: c.name, path: c.path, pathIds: c.pathIds, level: c.level })) },
+    });
+  },
+  execute: async (ctx, a, preview) => {
+    const { novas, todas } = preview.payload as { novas: NovaCategoria[]; todas: CategoriaExistente[] };
+    if (ctx.dryRun) return { dryRun: true, categorias: novas.length };
+    const userRef = adminDb.collection('users').doc(ctx.uid);
+    const agora = new Date().toISOString();
+    let batch = adminDb.batch();
+    let n = 0;
+    const commit = async () => { if (n) { await batch.commit(); batch = adminDb.batch(); n = 0; } };
+    for (const c of novas) {
+      batch.set(userRef.collection('categories').doc(c.id), {
+        ...c, attributes: [], inheritParentAttributes: true, inheritImagePrompts: true,
+        productCount: 0, aiGenerated: true, createdAt: agora, updatedAt: agora,
+      }, { merge: true });
+      if (++n >= 400) await commit();
+    }
+    // Vínculo com o catálogo de agora, não o da prévia: produto vinculado à mão no meio fica como está.
+    const vinculos = vinculosDeProdutos(await lerCatalogo(ctx.uid), todas);
+    for (const v of vinculos) {
+      batch.update(userRef.collection('products').doc(v.docId), { categoryId: v.categoryId, categoryPath: v.categoryPath, updatedAt: agora });
+      if (++n >= 400) await commit();
+    }
+    await commit();
+    await esquecerPrevia(ctx.uid, TOOL_CATEGORIAS, { segmento: a.segmento ?? '' });
+    return { categorias: novas.length, gravados: vinculos.length, produtos: novas.map((c) => c.path.join(' › ')) };
   },
 });
