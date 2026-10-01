@@ -5,7 +5,7 @@ import { DIAS_CURTOS, inicioDaSemana, type DestinoTarefa, type OrigemTarefa, typ
 interface Props {
   tarefas: TarefaSemana[];
   hoje: number;
-  onFazer: (prompt: string) => void;
+  onFazer: (prompt: string, tarefa: TarefaSemana) => void;
   onAbrir: (destino: DestinoTarefa) => void;
 }
 
@@ -65,7 +65,7 @@ const Tarefa: React.FC<{ t: TarefaSemana } & Pick<Props, 'onFazer' | 'onAbrir'>>
       <div className="flex gap-2 pt-0.5">
         {t.prompt && (
           <button
-            onClick={() => onFazer(t.prompt!)}
+            onClick={() => onFazer(t.prompt!, t)}
             className="flex-1 min-h-[44px] px-4 rounded-full flex items-center justify-center gap-1.5 text-[14px] font-semibold transition-transform active:scale-[.98]"
             style={{ background: 'var(--ag-text)', color: 'var(--ag-bg-2)' }}
           >

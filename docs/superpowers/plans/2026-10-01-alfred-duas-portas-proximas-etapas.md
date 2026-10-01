@@ -39,7 +39,7 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 
 ### Alfred (A1–A3, D1)
 - [x] **Desktop em 3 colunas (D1)**: Semana | Chat | coluna "Precisa de você · Rodando · Feito hoje" ao lado (`ColunaAtividade.tsx`), a partir de 1100 px de contêiner. A coluna resume e leva à Atividade; a aprovação inline ("Aprovar 5 prontas" no próprio cartão) ainda não existe ali.
-- [ ] **Cabeçalho da tarefa no chat (A2)**: "‹ Semana · Descrições · 12 produtos · Trabalhando" quando a conversa nasceu de uma tarefa da semana.
+- [x] **Cabeçalho da tarefa no chat (A2)** (`chat/CabecalhoTarefa.tsx`; dura a sessão, some num pedido de outra tela): "‹ Semana · Descrições · 12 produtos · Trabalhando" quando a conversa nasceu de uma tarefa da semana.
 - [x] **Progresso dentro do passo (A2)** — lote em job (`lote.ts`, `loteWorker.ts`, `LoteCard.tsx`); o texto original era: "7 de 12 · agora: Luminária Pendente Aço". Hoje a geração do lote acontece inteira dentro do `preview()`; precisa emitir progresso por item (evento SSE novo ou doc de job) e mostrar no PlanoCard.
 - [x] **Revisar parcial (A2/A3)** — aprovação por item no `LoteCard`, com descarte por item: "As 5 primeiras estão prontas — revisar enquanto termino o resto" e "Aprovar 5 prontas". Depende do item acima (lote em job, não num único preview).
 - [x] **Pausar (A2)**: faixa acima do composer (`LoteEmAndamento.tsx`) e no card, com Continuar e "Parar aqui".

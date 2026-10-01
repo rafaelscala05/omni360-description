@@ -19,7 +19,8 @@ import LogsPanel from './chat/LogsPanel';
 import LoteEmAndamento from './chat/LoteEmAndamento';
 import SemanaPanel from './SemanaPanel';
 import { useSemana } from './useSemana';
-import type { DestinoTarefa } from './semana';
+import type { DestinoTarefa, TarefaSemana } from './semana';
+import CabecalhoTarefa from './chat/CabecalhoTarefa';
 
 interface Props {
   uid: string;
@@ -243,6 +244,7 @@ const AgentHomeScreen: React.FC<Props> = ({
   useEffect(() => {
     if (!promptInicial) return;
     onPromptConsumido?.();
+    setTarefaAtual(null);
     if (promptInicial.ajustarAcaoId) {
       setModo('chat');
       setAjustandoId(promptInicial.ajustarAcaoId);
@@ -273,6 +275,10 @@ const AgentHomeScreen: React.FC<Props> = ({
   const etiquetaAjuste = ajustando?.status === 'pending'
     ? { resumo: ajustando.preview.resumo, onCancelar: () => setAjustandoId(null) }
     : null;
+
+  // A2: a conversa que nasceu de uma tarefa da semana mostra de qual, no topo.
+  const [tarefaAtual, setTarefaAtual] = useState<TarefaSemana | null>(null);
+  const fazerTarefa = (prompt: string, t: TarefaSemana) => { setTarefaAtual(t); void enviar(prompt, {}); };
 
   const executar = (id: string) => responder(() => executarAcao(id, handlers, contextoRef.current));
   const rejeitar = (id: string) => responder(() => rejeitarAcao(id, handlers, contextoRef.current));
@@ -445,7 +451,7 @@ const AgentHomeScreen: React.FC<Props> = ({
         {tresColunas ? (
           <div className="flex-1 min-h-0 flex gap-4 p-4">
             <aside className="w-[320px] shrink-0 overflow-y-auto ag-scroll flex flex-col gap-3 pr-1">
-              <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={(t) => enviar(t, {})} onAbrir={onAbrirDestino} />
+              <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={fazerTarefa} onAbrir={onAbrirDestino} />
               <RodapeFontes fontes={fontes} onClick={onAbrirConectores} />
             </aside>
 
@@ -453,6 +459,9 @@ const AgentHomeScreen: React.FC<Props> = ({
               className="flex-1 min-w-0 flex flex-col rounded-[22px] overflow-hidden"
               style={{ border: '1px solid var(--ag-hairline)', background: 'var(--ag-fill)' }}
             >
+              {tarefaAtual && temConversa && (
+                <CabecalhoTarefa tarefa={tarefaAtual} streaming={streaming} pendentes={pendentesTotal} />
+              )}
               {temConversa ? (
                 <ChatThread
                   uid={uid}
@@ -548,7 +557,7 @@ const AgentHomeScreen: React.FC<Props> = ({
                 {/* A semana recolhe no modo foco: com o teclado aberto o que
                     importa é o campo, e os atalhos descem para encostar nele. */}
                 <div className="ag-recolhe w-full ag-rise" data-recolhido={emFoco} style={{ maxHeight: 2400 }}>
-                  <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={(t) => enviar(t, {})} onAbrir={onAbrirDestino} />
+                  <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={fazerTarefa} onAbrir={onAbrirDestino} />
                   <div className="mt-3"><RodapeFontes fontes={fontes} onClick={onAbrirConectores} /></div>
                 </div>
 
@@ -567,6 +576,10 @@ const AgentHomeScreen: React.FC<Props> = ({
               </div>
             </div>
           ) : (
+            <>
+            {tarefaAtual && (
+              <CabecalhoTarefa tarefa={tarefaAtual} streaming={streaming} pendentes={pendentesTotal} onVoltar={() => setModo('semana')} />
+            )}
             <ChatThread
               uid={uid}
               mensagens={mensagens}
@@ -579,6 +592,7 @@ const AgentHomeScreen: React.FC<Props> = ({
               onRejeitar={rejeitar}
                   onAjustar={comecarAjuste}
             />
+            </>
           )}
 
           <Composer
