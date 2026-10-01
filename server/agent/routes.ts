@@ -5,6 +5,9 @@
 // docs/superpowers/specs/2026-08-31-unified-agent-design.md.
 
 import type express from 'express';
+// Registra as ferramentas neste processo também: sem isto /api/agent/tools
+// listava zero ferramentas e a aprovação de lote não acharia o execute().
+import './tools/index';
 import { adminDb } from '../firebaseAdmin';
 import { describeTools } from './registry';
 import { agentSettingsRef, loadAgentSettings, resolveAgentContext, requireAnyModule } from './connections';

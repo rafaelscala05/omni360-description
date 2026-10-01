@@ -4,14 +4,7 @@
 // pela ponte REST+SSE (server/agent/contentAgentChat.ts, streamRun()) a
 // partir do usuário autenticado — nunca a partir de algo que o modelo decide.
 
-import '../agent/tools/content';
-import '../agent/tools/contentSeo';
-import '../agent/tools/contentBlog';
-import '../agent/tools/wake';
-import '../agent/tools/tiny';
-import '../agent/tools/discovery';
-import '../agent/tools/produtos';
-import '../agent/tools/meli';
+import '../agent/tools/index';
 import { StateGraph, START, END, MessagesAnnotation } from '@langchain/langgraph';
 import { ToolNode } from '@langchain/langgraph/prebuilt';
 import { ChatVertexAI } from '@langchain/google-vertexai';
@@ -74,7 +67,7 @@ function buildSystemPrompt(config: ContentGraphConfig): string {
 
   const providers = config.configurable?.providers ?? [];
   if (providers.includes('produtos')) {
-    partes.push('Catálogo do OMNI360: você lê os produtos (produtos.incompletos.listar, produtos.buscar) e escreve descrição + SEO em lote com produtos.descricoes.gerar — isso grava só no catálogo do OMNI360, não no ERP. Antes de gravar, diga em uma frase o plano: quantos produtos, o que muda e que o usuário revisa uma amostra antes.');
+    partes.push('Catálogo do OMNI360: você lê os produtos (produtos.incompletos.listar, produtos.buscar) e escreve descrição + SEO em lote com produtos.descricoes.gerar — isso grava só no catálogo do OMNI360, não no ERP. Essa ferramenta roda em segundo plano: ela devolve na hora que o lote começou, e o card na conversa mostra o progresso e as descrições prontas para o usuário aprovar. Depois de chamá-la, diga em uma ou duas frases quantos produtos estão sendo escritos e que ele pode revisar e aprovar as prontas no card enquanto o resto termina; não espere o fim, não chame de novo e não peça confirmação no chat.');
   }
   if (providers.includes('meli')) {
     partes.push('Mercado Livre: meli.propostas.listar e meli.proposta.ver leem as propostas do otimizador; meli.proposta.publicar publica as mudanças escolhidas e sempre pede aprovação.');

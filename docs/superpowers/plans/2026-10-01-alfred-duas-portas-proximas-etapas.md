@@ -40,9 +40,9 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 ### Alfred (A1–A3, D1)
 - [ ] **Desktop em 3 colunas (D1)**: Semana | Chat | coluna "Precisa de você · Rodando · Feito hoje" ao lado, em vez de alternar Semana/Conversa.
 - [ ] **Cabeçalho da tarefa no chat (A2)**: "‹ Semana · Descrições · 12 produtos · Trabalhando" quando a conversa nasceu de uma tarefa da semana.
-- [ ] **Progresso dentro do passo (A2)**: "7 de 12 · agora: Luminária Pendente Aço". Hoje a geração do lote acontece inteira dentro do `preview()`; precisa emitir progresso por item (evento SSE novo ou doc de job) e mostrar no PlanoCard.
-- [ ] **Revisar parcial (A2/A3)**: "As 5 primeiras estão prontas — revisar enquanto termino o resto" e "Aprovar 5 prontas". Depende do item acima (lote em job, não num único preview).
-- [ ] **Pausar (A2)**: botão de pausa no composer durante o trabalho (hoje existe só o "parar" do streaming).
+- [x] **Progresso dentro do passo (A2)** — lote em job (`lote.ts`, `loteWorker.ts`, `LoteCard.tsx`); o texto original era: "7 de 12 · agora: Luminária Pendente Aço". Hoje a geração do lote acontece inteira dentro do `preview()`; precisa emitir progresso por item (evento SSE novo ou doc de job) e mostrar no PlanoCard.
+- [x] **Revisar parcial (A2/A3)** — aprovação por item no `LoteCard`, com descarte por item: "As 5 primeiras estão prontas — revisar enquanto termino o resto" e "Aprovar 5 prontas". Depende do item acima (lote em job, não num único preview).
+- [x] **Pausar (A2)**: faixa acima do composer (`LoteEmAndamento.tsx`) e no card, com Continuar e "Parar aqui".
 - [ ] **"Ajustar no chat" na aprovação (A3)**: abrir o composer já com o contexto da ação pendente.
 - [ ] **Régua de fontes no rodapé da semana (D1)**: "4 fontes · +2 para conectar ›".
 
@@ -82,7 +82,7 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 
 1. **Validação com login** (lista acima) e correções que aparecerem.
 2. ~~**F2 + barra de seleção + "Pedir ao Alfred" com contexto**~~ — feito para Produtos; falta validar com login (abrir Ferramentas › Produtos, selecionar, "Gerar N descrições" → confirmação com custo → progresso na barra; e "Pedir ao Alfred" → o grafo deve chamar `produtos.buscar` com os SKUs selecionados). Exige republicar o serviço do grafo.
-3. **Lote em job com progresso** (A2 "7 de 12", revisar parcial, pausar) — é o que destrava as ferramentas caras (atributos, ambientadas, vídeo) sem um `preview()` de minutos.
+3. ~~**Lote em job com progresso**~~ — feito para descrições (`produtos.descricoes.gerar`, teto subiu de 10 para 50). Para outra ferramenta virar lote: `lote: true` no registro, o `preview()` chama `criarLote`, e um gerador em `GERADORES` (`loteWorker.ts`). Falta validar com login: pedir 12 descrições, aprovar as prontas no meio, pausar/continuar, e ver o servidor principal retomar um lote se o serviço do grafo cair. Exige deploy das regras e índices do Firestore (`agent_jobs`) e do serviço do grafo.
 4. **Novas ferramentas** na ordem do valor: atributos → envio ao ERP pelo chat → vídeo → categorias → ambientadas.
 5. **A4 Conectores** e **D1 em 3 colunas**.
 6. **Liquid Glass no app todo + trilho desktop** (maior raio de impacto visual; fazer por último e por tela).

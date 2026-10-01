@@ -234,6 +234,12 @@ service cloud.firestore {
         allow read: if isOwner(userId);
         allow write: if false;
       }
+      // Lote em job do agente (src/modules/agent/lote.ts): o card lê o
+      // progresso e os itens prontos; só o servidor escreve.
+      match /agent_jobs/{jobId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
       // Log de diagnóstico das chamadas HTTP do agente. Só o servidor escreve.
       match /agent_logs/{logId} {
         allow read: if isOwner(userId);

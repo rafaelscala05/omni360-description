@@ -28,6 +28,8 @@ export interface ToolCtx {
   dryRun: boolean;
   wakeToken(): Promise<string>;
   tinyToken(): Promise<string>;
+  /** Modo de aprovação resolvido para a chamada atual — só ferramentas de lote leem (lote.auto). */
+  aprovacao?: 'ask' | 'auto';
 }
 
 /** One row of the before/after table rendered in the approval card. */
@@ -74,6 +76,13 @@ export interface ToolDef<A = Record<string, unknown>> {
   preview?: (ctx: ToolCtx, args: A) => Promise<ActionPreview>;
   /** Required when mode === 'write'. Only ever called from actions.ts, after approval. */
   execute?: (ctx: ToolCtx, args: A, preview: ActionPreview) => Promise<unknown>;
+  /**
+   * Escrita em lote em job (src/modules/agent/lote.ts): o preview() cria o lote
+   * e devolve na hora; não há interrupt(). execute() só roda pela rota de
+   * aprovação do lote (loteAprovacao.ts), com os itens prontos que o usuário
+   * aprovou em `preview.payload.itens`.
+   */
+  lote?: boolean;
 }
 
 export type AgentActionStatus = 'pending' | 'executed' | 'failed' | 'rejected';

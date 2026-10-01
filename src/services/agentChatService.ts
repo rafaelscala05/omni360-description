@@ -8,11 +8,12 @@
 // ('principal', mesmo id que server/agent/contentAgentChat.ts usa), sem
 // lista de conversas.
 
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, doc, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import type {
   AgentAction, AgentConnections, AgentLog, AgentSettings, AgentToolInfo, ThreadMessage, WorkspaceContext,
 } from '../types/agent';
+import type { LoteJob } from '../modules/agent/lote';
 
 const AGENT_THREAD_ID = 'principal';
 
@@ -99,6 +100,29 @@ export function listenActions(cb: (actions: AgentAction[]) => void): () => void 
     cb(snap.docs.map((d) => d.data() as AgentAction));
   });
 }
+
+// --- Lote em job ------------------------------------------------------------
+
+/** Progresso e itens de um lote (agent_jobs/{id}); null enquanto não chega ou se sumiu. */
+export function listenLote(id: string, cb: (job: LoteJob | null) => void): () => void {
+  return onSnapshot(
+    doc(userCol('agent_jobs'), id),
+    (snap) => cb(snap.exists() ? (snap.data() as LoteJob) : null),
+    () => cb(null),
+  );
+}
+
+/** Lotes ainda trabalhando — para Atividade › Rodando e o "Pausar" do composer. */
+export function listenLotesAtivos(cb: (jobs: LoteJob[]) => void): () => void {
+  const q = query(userCol('agent_jobs'), where('status', 'in', ['rodando', 'pausado']));
+  return onSnapshot(q, (snap) => cb(snap.docs.map((d) => d.data() as LoteJob)), () => cb([]));
+}
+
+export type AcaoLote = 'aprovar' | 'descartar' | 'pausar' | 'retomar' | 'parar';
+
+/** `itens` ausente = todos os elegíveis (aprovar: todos os prontos; descartar: tudo o que falta). */
+export const agirNoLote = (id: string, acao: AcaoLote, itens?: string[]) =>
+  call<{ status: string | null }>(`/api/agent/lotes/${encodeURIComponent(id)}/${acao}`, 'POST', itens ? { itens } : {});
 
 // --- SSE ----------------------------------------------------------------
 

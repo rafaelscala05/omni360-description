@@ -13,10 +13,12 @@ interface Props {
   recuoTeclado?: number;
   /** true no telefone com o campo focado: o composer assume a tela. */
   emFoco?: boolean;
+  /** Faixa logo acima do campo — o lote do Alfred em andamento, com Pausar. */
+  acima?: React.ReactNode;
 }
 
 const Composer: React.FC<Props> = ({
-  disabled, streaming, onEnviar, onParar, placeholder, onFoco, recuoTeclado = 0, emFoco = false,
+  disabled, streaming, onEnviar, onParar, placeholder, onFoco, recuoTeclado = 0, emFoco = false, acima,
 }) => {
   const [texto, setTexto] = useState('');
   const [focado, setFocado] = useState(false);
@@ -70,6 +72,8 @@ const Composer: React.FC<Props> = ({
             </button>
           </div>
         )}
+
+        {!emFoco && acima}
 
         <div
           className="ag-glass-strong rounded-[26px] overflow-hidden transition-all duration-200"

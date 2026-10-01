@@ -26,6 +26,8 @@ export interface ActionPreview {
    * todo interrupt(), de qualquer provider. */
   ferramenta?: string;
   args?: Record<string, unknown>;
+  /** Ação de lote em job (src/modules/agent/lote.ts): o card lê o progresso em agent_jobs/{id}. */
+  lote?: { id: string; total: number };
 }
 
 export type AgentActionStatus = 'pending' | 'executed' | 'failed' | 'rejected';

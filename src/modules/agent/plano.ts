@@ -9,7 +9,7 @@
 
 import type { AgentAction } from '../../types/agent';
 
-export type TipoPasso = 'leitura' | 'voce' | 'gravacao';
+export type TipoPasso = 'leitura' | 'trabalho' | 'voce' | 'gravacao';
 export type EstadoPasso = 'feito' | 'agora' | 'depois' | 'erro' | 'cancelado';
 
 export interface PassoPlano {
@@ -87,6 +87,30 @@ export function montarPlano(input: {
   }
 
   const { status, provider, preview } = acao;
+  // Lote em job: o Alfred escreve em segundo plano e a revisão começa antes do
+  // fim — o progresso ao vivo fica no card do lote, o plano só nomeia o passo.
+  if (preview.lote) {
+    const m = preview.lote.total;
+    passos.push({
+      titulo: `Escrever ${m === 1 ? '1 item' : `${m} itens`} em segundo plano`,
+      detalhe: 'Um por vez — o progresso aparece no card',
+      tipo: 'trabalho',
+      estado: status === 'pending' ? 'agora' : 'feito',
+    });
+    passos.push({
+      titulo: 'Você revisa as prontas',
+      detalhe: 'Pode aprovar antes de terminar todas',
+      tipo: 'voce',
+      estado: status === 'pending' ? 'agora' : status === 'rejected' ? 'cancelado' : 'feito',
+    });
+    passos.push({
+      titulo: `Gravar ${destinoGravacao(provider)}`.trim(),
+      detalhe: preview.alvo,
+      tipo: 'gravacao',
+      estado: status === 'executed' ? 'feito' : status === 'failed' ? 'erro' : status === 'rejected' ? 'cancelado' : 'depois',
+    });
+    return { passos, ...(typeof preview.custo === 'number' ? { custo: preview.custo } : {}) };
+  }
   const n = preview.itens?.length;
   passos.push({
     titulo: 'Você revisa',

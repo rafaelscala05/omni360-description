@@ -1,10 +1,13 @@
 // O que está "Rodando" na aba Atividade: trabalho longo em segundo plano, com
-// progresso real — hoje os vídeos de produto (clássico e UGC), que levam
-// minutos e antes só apareciam dentro do modal do produto.
+// progresso real — os vídeos de produto (clássico e UGC), que levam minutos e
+// antes só apareciam dentro do modal do produto, e os lotes do Alfred
+// (agent_jobs, ver lote.ts).
 //
 // Puro: recebe os jobs já lidos (users/{uid}/videoJobs e ugcVideoJobs) e os
 // nomes dos produtos, devolve as linhas. Verificar com
 // `npx tsx scripts/verify-rodando.mjs`.
+
+import { resumoLote, type LoteJob } from './lote';
 
 export interface JobVideo {
   jobId: string;
@@ -21,6 +24,7 @@ export interface JobVideo {
 
 export interface ItemRodando {
   id: string;
+  tipo: 'video' | 'lote';
   titulo: string;
   etapa: string;
   feito: number | null;
@@ -43,7 +47,7 @@ const ETAPAS: Record<string, string> = {
 };
 
 export function itensRodando(
-  jobs: { classico: JobVideo[]; ugc: JobVideo[] },
+  jobs: { classico: JobVideo[]; ugc: JobVideo[]; lotes?: LoteJob[] },
   nomeDoProduto: (productId: string) => string | undefined,
   agora = Date.now(),
 ): ItemRodando[] {
@@ -56,6 +60,7 @@ export function itensRodando(
     const nome = nomeDoProduto(j.productId);
     linhas.push({
       id: `${tipo}-${j.jobId}`,
+      tipo: 'video',
       titulo: `${tipo}${nome ? ` · ${nome}` : ''}`,
       etapa: j.status === 'queued' ? 'na fila' : ETAPAS[j.step ?? ''] ?? 'em produção',
       feito: typeof feito === 'number' ? feito : null,
@@ -66,5 +71,26 @@ export function itensRodando(
   };
   jobs.classico.forEach((j) => add(j, 'Vídeo', j.shotsDone, j.totalShots));
   jobs.ugc.forEach((j) => add(j, 'Vídeo UGC', j.clipsDone, j.totalClips));
+  for (const l of jobs.lotes ?? []) {
+    if (l.status !== 'rodando' && l.status !== 'pausado') continue;
+    const ts = Date.parse(l.updatedAt ?? l.createdAt ?? '');
+    const idade = Number.isFinite(ts) ? agora - ts : 0;
+    if (idade > ESQUECER_MS) continue;
+    const r = resumoLote(l);
+    const total = r.total - l.itens.filter((i) => i.estado === 'descartado' && !i.resultado).length;
+    linhas.push({
+      id: `Lote-${l.id}`,
+      tipo: 'lote',
+      titulo: l.tool === 'produtos.descricoes.gerar' ? `Descrições · ${total === 1 ? '1 produto' : `${total} produtos`}` : `Lote · ${total} itens`,
+      etapa: l.status === 'pausado'
+        ? 'pausado'
+        : r.agora ? `agora: ${r.agora}` : 'na fila',
+      feito: r.gerados,
+      total,
+      // Pausado não está parado: está esperando o usuário.
+      parado: l.status === 'rodando' && idade > PARADO_MS,
+      desde: Number.isFinite(ts) ? new Date(ts).toISOString() : null,
+    });
+  }
   return linhas.sort((a, b) => Number(a.parado) - Number(b.parado) || String(b.desde).localeCompare(String(a.desde)));
 }

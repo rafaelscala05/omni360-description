@@ -37,5 +37,10 @@ check('uma leitura só, turno pronto: sem plano', temPlano({ leituras: [L('docs.
 check('escrita sempre tem plano', temPlano({ leituras: [], acao: {} }), true);
 check('duas leituras têm plano', temPlano({ leituras: [L('a.b'), L('c.d')] }), true);
 
+const lote = (status) => ({ status, provider: 'produtos', preview: { resumo: 'r', alvo: '12 produtos do catálogo', campos: [], avisos: [], custo: 12, lote: { id: 'j', total: 12 } } });
+check('lote: Alfred escreve, você revisa as prontas, grava', montarPlano({ leituras: [], acao: lote('pending') }).passos.map((p) => [p.tipo, p.estado]),
+  [['trabalho', 'agora'], ['voce', 'agora'], ['gravacao', 'depois']]);
+check('lote concluído fecha tudo', montarPlano({ leituras: [], acao: lote('executed') }).passos.map((p) => p.estado), ['feito', 'feito', 'feito']);
+
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');
 process.exit(failures ? 1 : 0);

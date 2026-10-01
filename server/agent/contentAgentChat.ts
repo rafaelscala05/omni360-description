@@ -20,6 +20,7 @@ import { adminDb } from '../firebaseAdmin';
 import { contentThreadRef } from './firestoreCheckpointer';
 import { resolveAgentContext, requireAnyModule } from './connections';
 import { sanitizarContexto, type WorkspaceContext } from './workspaceContext';
+import { getTool } from './registry';
 
 const CONTENT_AGENT_URL = process.env.CONTENT_AGENT_LANGGRAPH_URL || 'http://localhost:8123';
 const GRAPH_ID = 'content_agent';
@@ -40,6 +41,7 @@ interface ContentAgentAction {
   id: string;
   threadId: string;
   tool: string;
+  provider?: string;
   args: Record<string, unknown>;
   preview: ContentActionPreview;
   status: 'pending' | 'executed' | 'failed' | 'rejected';
@@ -93,6 +95,9 @@ async function createAction(input: {
     id: ref.id,
     threadId: input.threadId,
     tool: input.tool,
+    // Sem o provider o card não sabe onde a gravação cai e o App não relê o
+    // catálogo depois de uma aprovação de Produtos (usePendentesAlfred).
+    provider: getTool(input.tool)?.provider ?? 'content',
     args: input.args,
     preview: input.preview,
     status: 'pending',
@@ -119,6 +124,11 @@ async function claimAction(uid: string, actionId: string): Promise<ContentAgentA
     const snap = await tx.get(ref);
     if (!snap.exists) throw Object.assign(new Error('Ação não encontrada.'), { status: 404 });
     const action = snap.data() as ContentAgentAction;
+    // Ação de lote não tem interrupt para retomar: aprova-se item a item em
+    // /api/agent/lotes/:id/* (loteRoutes.ts).
+    if (action.threadId === 'lote') {
+      throw Object.assign(new Error('Esta ação é um lote — aprove pelos botões do próprio card.'), { status: 409 });
+    }
     if (action.status !== 'pending') {
       throw Object.assign(
         new Error(`Esta ação já foi ${action.status === 'executed' ? 'executada' : action.status === 'rejected' ? 'rejeitada' : 'processada'}.`),
@@ -187,6 +197,17 @@ interface RunResult {
   finalText: string;
   lastToolResult: { toolCallId: string; content: string } | null;
   leituras: { tool: string; ok: boolean; erro?: string }[];
+  /** Ações de lote criadas no turno (ferramentas com `lote`, que não interrompem). */
+  acoesLote: string[];
+}
+
+function acaoDeLote(conteudo: string): string | null {
+  try {
+    const r = JSON.parse(conteudo) as { acaoLote?: unknown };
+    return typeof r?.acaoLote === 'string' ? r.acaoLote : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -245,6 +266,7 @@ async function streamRun(
   let lastValues: any = null;
   const seenToolCallIds = new Set<string>();
   const leituras: { tool: string; ok: boolean; erro?: string }[] = [];
+  const acoesLote: string[] = [];
 
   for (;;) {
     const { done, value } = await reader.read();
@@ -294,13 +316,17 @@ async function streamRun(
           const item = { tool, ok, ...(ok ? {} : { erro: conteudo }) };
           leituras.push(item);
           emit('leitura', item);
+          // Uma ferramenta de lote não pausa o grafo: a ação dela já existe e
+          // vai presa à mensagem do turno, para o card aparecer na conversa.
+          const acaoLote = ok ? acaoDeLote(conteudo) : null;
+          if (acaoLote && !acoesLote.includes(acaoLote)) acoesLote.push(acaoLote);
         }
       }
     }
   }
 
   if (lastValues?.__interrupt__?.length) {
-    return { interrupted: { value: lastValues.__interrupt__[0].value }, finalText: '', lastToolResult: null, leituras };
+    return { interrupted: { value: lastValues.__interrupt__[0].value }, finalText: '', lastToolResult: null, leituras, acoesLote };
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -313,6 +339,7 @@ async function streamRun(
     finalText: finalAi?.content ?? '',
     lastToolResult: toolMsg ? { toolCallId: toolMsg.tool_call_id, content: String(toolMsg.content) } : null,
     leituras,
+    acoesLote,
   };
 }
 
@@ -337,6 +364,7 @@ async function afterRun(uid: string, threadId: string, result: RunResult, emit: 
 
   await saveMessage(uid, threadId, {
     role: 'model', texto: result.finalText,
+    ...(result.acoesLote.length ? { actionIds: result.acoesLote } : {}),
     ...(result.leituras.length ? { leituras: result.leituras } : {}),
     createdAt: new Date().toISOString(),
   });

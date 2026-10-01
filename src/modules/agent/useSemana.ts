@@ -169,7 +169,11 @@ export function usePendentesAlfred(ativo: boolean, onCatalogoAlterado?: () => vo
     let vistas: Set<string> | null = null;
     return listenActions((lista) => {
       setN(lista.filter((a) => a.status === 'pending').length);
-      const executadas = lista.filter((a) => a.provider === 'produtos' && a.status === 'executed').map((a) => a.id);
+      // Um lote grava aos poucos (aprovar as prontas antes do fim): a chave
+      // inclui quantos já foram gravados, para reler a cada leva, não só no fim.
+      const executadas = lista
+        .filter((a) => a.provider === 'produtos' && (a.status === 'executed' || ((a.result as { gravados?: number } | undefined)?.gravados ?? 0) > 0))
+        .map((a) => `${a.id}:${(a.result as { gravados?: number } | undefined)?.gravados ?? ''}`);
       if (vistas && executadas.some((id) => !vistas!.has(id))) cbRef.current?.();
       vistas = new Set(executadas);
     });

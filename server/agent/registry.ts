@@ -137,8 +137,27 @@ export function toLangChainTools(
             return await def.read!(ctx, args);
           }
 
-          const preview = await def.preview!(ctx, args);
           const mode = resolveApprovalMode(settings, def.name);
+
+          // Lote em job: o preview() criou o lote e a ação e já devolveu. Não
+          // há interrupt — a aprovação é por item, no card, pela rota do lote
+          // (loteRoutes.ts), e no automático o próprio worker grava cada item
+          // pronto. O modelo só fica sabendo que começou.
+          if (def.lote) {
+            const preview = await def.preview!({ ...ctx, aprovacao: mode }, args);
+            const lote = (preview.payload?.lote ?? {}) as { id?: string; actionId?: string; reaproveitado?: boolean };
+            return {
+              acaoLote: lote.actionId,
+              lote: lote.id,
+              resumo: preview.resumo,
+              status: lote.reaproveitado ? 'este mesmo lote já estava em andamento' : 'iniciado',
+              proximoPasso: mode === 'auto'
+                ? 'Roda em segundo plano e grava cada item assim que fica pronto (aprovação automática ligada). Não chame de novo.'
+                : 'Roda em segundo plano. As descrições aparecem no card conforme ficam prontas, e o usuário revisa e aprova lá — inclusive as prontas antes do fim. Não chame de novo nem peça confirmação no chat.',
+            };
+          }
+
+          const preview = await def.preview!(ctx, args);
           if (mode === 'auto') {
             try {
               const result = await runApprovedWrite(ctx, def, args, preview);

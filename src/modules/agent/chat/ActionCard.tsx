@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, ArrowRight, Check, ChevronLeft, ChevronRight, Loader2, ShieldCheck, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Check, Loader2, ShieldCheck, X } from 'lucide-react';
 import type { AgentAction, PreviewField } from '../../../types/agent';
-import { definirAutonomia, fetchAgentSettings } from '../../../services/agentChatService';
+import { definirAutonomia } from '../../../services/agentChatService';
+import { carregarAutonomia, esquecerAutonomia, rotuloAutonomia } from './autonomia';
 import { CredentialForm } from './CredentialForm';
+import { Amostra, formatar } from './Amostra';
+import LoteCard from './LoteCard';
 import { destinoGravacao } from '../plano';
 
 /** Uma linha do resultado da execução, quando a ferramenta devolve contagens conhecidas. */
@@ -15,102 +18,11 @@ function recibo(result: unknown): string | null {
   return partes.length ? partes.join(' · ') : null;
 }
 
-// As travas fixas (publicar, credencial…) vêm do servidor uma vez por sessão:
-// nelas o "aprovar sozinho" não aparece, porque o servidor ignoraria.
-let travasCache: Promise<{ travas: Set<string>; auto: Set<string> }> | null = null;
-function carregarAutonomia() {
-  travasCache ??= fetchAgentSettings()
-    .then(({ settings, travas }) => ({
-      travas: new Set(travas),
-      auto: new Set(Object.entries(settings.toolOverrides ?? {}).filter(([, m]) => m === 'auto').map(([t]) => t)),
-    }))
-    .catch(() => { travasCache = null; return { travas: new Set<string>(), auto: new Set<string>() }; });
-  return travasCache;
-}
-
-/** Nome da ação para o "Próximas … : aprovar sozinho". */
-function rotuloAutonomia(tool: string): string {
-  if (tool === 'produtos.descricoes.gerar') return 'Próximas descrições';
-  if (tool.startsWith('wake.') || tool.startsWith('tiny.')) return 'Próximas alterações deste tipo';
-  return 'Próximas vezes';
-}
-
-const Bloco: React.FC<{ rotulo: string; valor: unknown; destaque?: boolean }> = ({ rotulo, valor, destaque }) => (
-  <div
-    className="rounded-[14px] px-3 py-2.5"
-    style={destaque
-      ? { background: 'var(--ag-ok-soft)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--ag-ok) 30%, transparent)' }
-      : { background: 'var(--ag-fill)' }}
-  >
-    <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em] mb-1" style={{ color: destaque ? 'var(--ag-ok)' : 'var(--ag-text-3)' }}>{rotulo}</div>
-    <div className="text-[13px] leading-[1.5] break-words whitespace-pre-wrap" style={{ color: destaque ? 'var(--ag-text)' : 'var(--ag-text-2)' }}>
-      {formatar(valor) === '—' ? 'vazio' : formatar(valor)}
-    </div>
-  </div>
-);
-
-/**
- * Lote: um item por vez, com antes e depois empilhados e setas para navegar —
- * "aprovar 12" sem ver nenhum seria aprovar às cegas, e uma tabela com 36
- * linhas ninguém lê no celular.
- */
-const Amostra: React.FC<{ itens: NonNullable<AgentAction['preview']['itens']> }> = ({ itens }) => {
-  const [i, setI] = useState(0);
-  const item = itens[Math.min(i, itens.length - 1)];
-  return (
-    <div className="px-4 py-3 flex flex-col gap-2.5" style={{ borderTop: '1px solid var(--ag-hairline)' }}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[13.5px] font-semibold text-[var(--ag-text)] truncate" title={item.alvo}>{item.alvo}</span>
-        {itens.length > 1 && (
-          <span className="flex items-center gap-1 shrink-0">
-            <button
-              onClick={() => setI((v) => Math.max(0, v - 1))}
-              disabled={i === 0}
-              aria-label="Item anterior"
-              className="w-9 h-9 rounded-full grid place-items-center disabled:opacity-35"
-              style={{ background: 'var(--ag-fill-2)', color: 'var(--ag-text)' }}
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="text-[12px] tabular-nums text-[var(--ag-text-2)] min-w-[3.2rem] text-center">{i + 1} / {itens.length}</span>
-            <button
-              onClick={() => setI((v) => Math.min(itens.length - 1, v + 1))}
-              disabled={i >= itens.length - 1}
-              aria-label="Próximo item"
-              className="w-9 h-9 rounded-full grid place-items-center disabled:opacity-35"
-              style={{ background: 'var(--ag-fill-2)', color: 'var(--ag-text)' }}
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </span>
-        )}
-      </div>
-      {item.campos.map((c, k) => (
-        c.antes === null || c.antes === undefined || !c.mudou
-          ? <Bloco key={k} rotulo={c.campo} valor={c.depois} destaque={c.mudou} />
-          : (
-            <div key={k} className="grid gap-2">
-              <Bloco rotulo={`${c.campo} · antes`} valor={c.antes} />
-              <Bloco rotulo={`${c.campo} · depois`} valor={c.depois} destaque />
-            </div>
-          )
-      ))}
-    </div>
-  );
-};
-
 interface Props {
   uid: string;
   action: AgentAction;
   onExecutar: (id: string) => Promise<void>;
   onRejeitar: (id: string) => Promise<void>;
-}
-
-function formatar(v: unknown): string {
-  if (v === null || v === undefined || v === '') return '—';
-  if (typeof v === 'boolean') return v ? 'Sim' : 'Não';
-  if (typeof v === 'object') return JSON.stringify(v);
-  return String(v);
 }
 
 /**
@@ -179,7 +91,7 @@ const ActionCard: React.FC<Props> = ({ uid, action, onExecutar, onRejeitar }) =>
         const jaEra = (await carregarAutonomia()).auto.has(action.tool);
         if (jaEra !== autoMarcado) {
           await definirAutonomia(action.tool, autoMarcado).catch(() => {});
-          travasCache = null;
+          esquecerAutonomia();
         }
       }
       await (qual === 'executar' ? onExecutar(action.id) : onRejeitar(action.id));
@@ -187,6 +99,9 @@ const ActionCard: React.FC<Props> = ({ uid, action, onExecutar, onRejeitar }) =>
       setBusy(null);
     }
   };
+
+  // Lote em job: progresso ao vivo e aprovação por item, não o Aprovar/Recusar único.
+  if (action.preview.lote) return <LoteCard action={action} />;
 
   if (pendente && action.tool === 'content.credencial.conectar') {
     const args = action.args as { provider?: 'wordpress' | 'sanity'; projectId?: string };

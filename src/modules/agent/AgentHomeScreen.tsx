@@ -14,6 +14,7 @@ import { useAlturaTeclado, useTelaPequena } from './useViewport';
 import ChatThread from './chat/ChatThread';
 import Composer from './chat/Composer';
 import LogsPanel from './chat/LogsPanel';
+import LoteEmAndamento from './chat/LoteEmAndamento';
 import SemanaPanel from './SemanaPanel';
 import { useSemana } from './useSemana';
 import type { DestinoTarefa } from './semana';
@@ -458,6 +459,7 @@ const AgentHomeScreen: React.FC<Props> = ({
           onFoco={focar}
           recuoTeclado={alturaTeclado}
           emFoco={emFoco}
+          acima={modo === 'chat' ? <LoteEmAndamento uid={uid} /> : undefined}
         />
       </div>
 

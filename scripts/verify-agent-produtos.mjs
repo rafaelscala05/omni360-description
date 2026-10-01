@@ -30,7 +30,11 @@ const catalogo = [
 const s1 = selecionarParaDescricao(catalogo, {});
 check('lote padrão só com pais sem descrição', s1.escolhidos.map((x) => x['Código (SKU)']), ['A', 'C0', 'C1', 'C2', 'C3'].slice(0, LOTE_PADRAO));
 check('conta os pais sem descrição (variações não entram)', s1.totalSemDescricao, 13);
-check('limite é travado no máximo', selecionarParaDescricao(catalogo, { limite: 50 }).escolhidos.length, MAX_DESCRICOES_POR_LOTE);
+{
+  const grande = Array.from({ length: MAX_DESCRICOES_POR_LOTE + 20 }, (_, i) => p(`G${i}`));
+  check('limite é travado no máximo', selecionarParaDescricao(grande, { limite: 999 }).escolhidos.length, MAX_DESCRICOES_POR_LOTE);
+  check('com SKUs, o padrão é levar todos (seleção da tela)', selecionarParaDescricao(grande, { skus: grande.slice(0, 12).map((x) => x['Código (SKU)']) }).escolhidos.length, 12);
+}
 check('limite mínimo é 1', selecionarParaDescricao(catalogo, { limite: 0 }).escolhidos.length, 1);
 
 // Com SKUs: pedido explícito vale mesmo com descrição, e reporta o que não achou.

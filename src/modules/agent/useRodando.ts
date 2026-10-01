@@ -1,4 +1,4 @@
-// Escuta os vídeos em produção (clássico e UGC) para a aba "Rodando" da
+// Escuta os vídeos em produção (clássico e UGC) e os lotes do Alfred para a aba "Rodando" da
 // Atividade. As duas coleções são legíveis pelo dono (firestore.rules) e só o
 // servidor escreve nelas.
 
@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { itensRodando, type ItemRodando, type JobVideo } from './rodando';
+import type { LoteJob } from './lote';
+import { listenLotesAtivos } from '../../services/agentChatService';
 
 function useJobsAtivos(uid: string, colecao: 'videoJobs' | 'ugcVideoJobs'): JobVideo[] {
   const [jobs, setJobs] = useState<JobVideo[]>([]);
@@ -24,11 +26,13 @@ function useJobsAtivos(uid: string, colecao: 'videoJobs' | 'ugcVideoJobs'): JobV
 export function useRodando(uid: string, nomes: Map<string, string>): ItemRodando[] {
   const classico = useJobsAtivos(uid, 'videoJobs');
   const ugc = useJobsAtivos(uid, 'ugcVideoJobs');
+  const [lotes, setLotes] = useState<LoteJob[]>([]);
+  useEffect(() => (uid ? listenLotesAtivos(setLotes) : undefined), [uid]);
   // Recalcula a cada minuto para "parado" aparecer sem precisar de snapshot novo.
   const [agora, setAgora] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setAgora(Date.now()), 60_000);
     return () => clearInterval(t);
   }, []);
-  return useMemo(() => itensRodando({ classico, ugc }, (id) => nomes.get(id), agora), [classico, ugc, nomes, agora]);
+  return useMemo(() => itensRodando({ classico, ugc, lotes }, (id) => nomes.get(id), agora), [classico, ugc, lotes, nomes, agora]);
 }

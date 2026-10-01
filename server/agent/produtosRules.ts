@@ -8,7 +8,8 @@
 
 export type ProdutoDoc = Record<string, unknown> & { _docId: string };
 
-export const MAX_DESCRICOES_POR_LOTE = 10;
+/** Teto de um lote. Com a geração em job (lote.ts) o limite não é mais o tempo de um preview(). */
+export const MAX_DESCRICOES_POR_LOTE = 50;
 export const LOTE_PADRAO = 5;
 /** Mesmo teto do prompt (descricaoTemplate.ts) — acima disso o ERP corta. */
 export const MAX_HTML = 2500;
@@ -40,7 +41,8 @@ export function selecionarParaDescricao(
   produtos: ProdutoDoc[],
   opts: { skus?: string[]; limite?: number },
 ): { escolhidos: ProdutoDoc[]; naoEncontrados: string[]; totalSemDescricao: number } {
-  const limite = Math.min(MAX_DESCRICOES_POR_LOTE, Math.max(1, Math.floor(opts.limite ?? LOTE_PADRAO)));
+  // Com SKUs (a seleção da tela), o padrão é levar todos eles.
+  const limite = Math.min(MAX_DESCRICOES_POR_LOTE, Math.max(1, Math.floor(opts.limite ?? (opts.skus?.length || LOTE_PADRAO))));
   const pais = produtos.filter(ehPai);
   const totalSemDescricao = pais.filter(semDescricao).length;
 

@@ -4,6 +4,7 @@ import type { EstadoPasso, Plano, TipoPasso } from '../plano';
 
 const CHIP: Record<TipoPasso, { texto: string; fundo: string; cor: string }> = {
   leitura: { texto: 'leitura', fundo: 'var(--ag-fill-2)', cor: 'var(--ag-text-2)' },
+  trabalho: { texto: 'Alfred', fundo: 'var(--ag-blue-soft)', cor: 'var(--ag-blue)' },
   voce: { texto: 'você', fundo: 'var(--ag-accent-soft)', cor: 'var(--ag-accent)' },
   gravacao: { texto: 'gravação', fundo: 'var(--ag-fill-2)', cor: 'var(--ag-text-2)' },
 };

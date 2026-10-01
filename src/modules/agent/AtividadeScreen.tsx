@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Clapperboard, Inbox, Menu } from 'lucide-react';
+import { AlertCircle, Clapperboard, Inbox, Menu, Sparkles } from 'lucide-react';
 import type { AgentAction } from '../../types/agent';
 import type { Product } from '../../types/models';
 import { useRodando } from './useRodando';
@@ -25,12 +25,14 @@ const LinhaRodando: React.FC<{ item: ItemRodando }> = ({ item }) => {
     <div className="ag-glass rounded-[22px] p-4 flex flex-col gap-2.5">
       <div className="flex items-center gap-2.5">
         <span className="w-9 h-9 rounded-full grid place-items-center shrink-0" style={{ background: 'var(--ag-blue-soft)', color: 'var(--ag-blue)' }}>
-          <Clapperboard className="w-[18px] h-[18px]" />
+          {item.tipo === 'lote' ? <Sparkles className="w-[18px] h-[18px]" /> : <Clapperboard className="w-[18px] h-[18px]" />}
         </span>
         <div className="min-w-0 flex-1">
           <div className="text-[14.5px] font-semibold text-[var(--ag-text)] truncate">{item.titulo}</div>
           <div className="text-[12.5px]" style={{ color: item.parado ? 'var(--ag-warn)' : 'var(--ag-text-2)' }}>
-            {item.parado ? 'Sem atualização há mais de 30 min — confira no produto' : item.etapa}
+            {item.parado
+              ? (item.tipo === 'lote' ? 'Sem atualização há mais de 30 min — o servidor retoma sozinho' : 'Sem atualização há mais de 30 min — confira no produto')
+              : item.etapa}
           </div>
         </div>
         {item.feito !== null && item.total !== null && (

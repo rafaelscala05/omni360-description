@@ -29,6 +29,8 @@ import { registerIdworksWebhookRoutes } from "./server/idworksWebhook";
 import { registerMercadoLivreWebhookRoutes } from "./server/mercadoLivreWebhook";
 import { registerMeliRoutes } from "./server/meli/routes";
 import { startMeliScheduler } from "./server/meli/scheduler";
+import { registerLoteRoutes } from "./server/agent/loteRoutes";
+import { startLoteScheduler } from "./server/agent/loteWorker";
 import { registerBlogPublic } from "./server/blogPublic";
 import { registerBlogAdminRoutes } from "./server/blogAdmin";
 import { registerMetaEventsRoutes } from "./server/metaEvents";
@@ -181,6 +183,7 @@ async function startServer() {
   // Agente de Conteúdo conversacional (LangGraph.js nativo via SSE + Firestore,
   // mesmo padrão do Agente Operacional acima — ver server/agent/contentAgentChat.ts).
   registerContentAgentChatRoutes(app, { verifyFirebaseToken });
+  registerLoteRoutes(app, { verifyFirebaseToken });
 
   // Blog nativo (CMS) — serving público SSR. Precisa vir antes do Vite/static
   // para que /b/{slug} e domínios customizados não caiam no SPA.
@@ -542,6 +545,7 @@ async function startServer() {
 
   // MELI: retoma jobs/análises sem lease válido após restart e mantém a fila limitada.
   startMeliScheduler();
+  startLoteScheduler();
 
   // CRM: reconcilia os marcos da jornada a partir do estado do Firestore.
   startCrmScheduler();
