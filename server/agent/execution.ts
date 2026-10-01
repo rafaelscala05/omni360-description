@@ -10,6 +10,8 @@
 
 import { adminDb } from '../firebaseAdmin';
 import { CREDIT_ACTIONS, resolveCreditCost, type CreditAction } from '../../src/credits';
+import { randomUUID } from 'node:crypto';
+import { execucaoAtual } from './telemetry';
 import type { ActionPreview, ToolCtx, ToolDef } from './types';
 
 const auditCol = (uid: string) => adminDb.collection('users').doc(uid).collection('agent_audit');
@@ -117,8 +119,12 @@ export async function runApprovedWrite(
 ): Promise<unknown> {
   await debitCredits(ctx.uid, creditActionsFor(def, preview), preview.alvo);
 
+  const execucaoId = randomUUID();
   try {
-    const result = await def.execute!(ctx, args, preview);
+    const bruto = await execucaoAtual.run({ execucaoId }, () => def.execute!(ctx, args, preview));
+    // O id volta no resultado (que vira agent_actions.result): o recibo da
+    // ação o usa para achar as chamadas HTTP dela em agent_logs.
+    const result = bruto && typeof bruto === 'object' && !Array.isArray(bruto) ? { ...(bruto as object), execucaoId } : bruto;
     await auditCol(ctx.uid).add({
       tool: def.name,
       provider: def.provider,

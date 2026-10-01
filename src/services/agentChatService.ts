@@ -79,6 +79,10 @@ export const fetchLogs = (opts: { apenasErros?: boolean; limit?: number } = {}) 
   return call<{ logs: AgentLog[] }>(`/api/agent/logs?${p}`).then((r) => r.logs);
 };
 
+/** Recibo de uma ação executada: o resultado e as chamadas HTTP daquela execução. */
+export const fetchRecibo = (actionId: string) =>
+  call<{ acao: AgentAction; logs: AgentLog[] }>(`/api/agent/actions/${encodeURIComponent(actionId)}/recibo`);
+
 // --- Listeners em tempo real -------------------------------------------------
 
 const userCol = (...path: string[]) => {

@@ -9,6 +9,7 @@
 // Gravar é best-effort: uma falha aqui nunca pode derrubar a operação que o
 // usuário pediu — o log é diagnóstico, não parte da transação.
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { adminDb } from '../firebaseAdmin';
 
 const logsCol = (uid: string) => adminDb.collection('users').doc(uid).collection('agent_logs');
@@ -52,6 +53,14 @@ export function redact(value: unknown, depth = 0): unknown {
   return out;
 }
 
+/**
+ * A execução aprovada em curso (runApprovedWrite): toda chamada HTTP feita
+ * dentro dela sai marcada com o mesmo `execucaoId`, que também volta no
+ * resultado da ação — é assim que o "Recibo" acha exatamente as chamadas de
+ * uma ação, sem ter de passar o id por cada ferramenta.
+ */
+export const execucaoAtual = new AsyncLocalStorage<{ execucaoId: string }>();
+
 export interface CallLog {
   provider: 'wake' | 'tiny' | 'bling' | 'idworks';
   tool?: string;
@@ -66,12 +75,14 @@ export interface CallLog {
   ms: number;
   threadId?: string;
   actionId?: string;
+  execucaoId?: string;
 }
 
 export async function logCall(uid: string, entry: CallLog): Promise<void> {
   try {
     await logsCol(uid).add({
       ...entry,
+      execucaoId: entry.execucaoId ?? execucaoAtual.getStore()?.execucaoId ?? null,
       requisicao: redact(entry.requisicao ?? null),
       resposta: redact(entry.resposta ?? null),
       erro: entry.erro ?? null,

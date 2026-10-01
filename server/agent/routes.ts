@@ -71,6 +71,30 @@ export function registerOperationsRoutes(app: express.Express, { verifyFirebaseT
   // Diagnóstico: as últimas chamadas HTTP que o agente fez para Wake/Tiny, com
   // requisição, resposta e status. É o que transforma um "Erro ao inserir
   // banner!" da Wake em algo acionável.
+  // Recibo de uma ação executada: o que foi gravado (o resultado) e as chamadas
+  // HTTP feitas para gravar, achadas pelo execucaoId que runApprovedWrite pôs
+  // nos logs e no resultado. Escrita que só mexe no Firestore (catálogo,
+  // conteúdo) não tem chamada — o recibo é o resultado.
+  app.get('/api/agent/actions/:id/recibo', async (req, res) => {
+    try {
+      const { uid } = await verifyFirebaseToken(req);
+      await requireAnyModule(uid);
+      const userRef = adminDb.collection('users').doc(uid);
+      const snap = await userRef.collection('agent_actions').doc(req.params.id).get();
+      if (!snap.exists) return res.status(404).json({ message: 'Ação não encontrada.' });
+      const acao = snap.data() as { result?: { execucaoId?: string } };
+      const execucaoId = acao.result?.execucaoId;
+      const logs = execucaoId
+        ? (await userRef.collection('agent_logs').where('execucaoId', '==', execucaoId).limit(100).get())
+          .docs.map((d) => ({ id: d.id, ...d.data() }))
+          .sort((a: any, b: any) => String(a.at).localeCompare(String(b.at)))
+        : [];
+      return res.json({ acao: { id: snap.id, ...acao }, logs });
+    } catch (e: any) {
+      return res.status(httpStatus(e)).json({ message: e?.message });
+    }
+  });
+
   app.get('/api/agent/logs', async (req, res) => {
     try {
       const { uid } = await verifyFirebaseToken(req);

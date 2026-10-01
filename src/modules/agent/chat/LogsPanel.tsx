@@ -25,7 +25,7 @@ const Json: React.FC<{ titulo: string; valor: unknown }> = ({ titulo, valor }) =
   );
 };
 
-const Linha: React.FC<{ log: AgentLog }> = ({ log }) => {
+export const Linha: React.FC<{ log: AgentLog }> = ({ log }) => {
   const [aberto, setAberto] = useState(!log.ok);
   const hora = new Date(log.at).toLocaleTimeString('pt-BR');
 

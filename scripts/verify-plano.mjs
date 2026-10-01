@@ -2,6 +2,7 @@
 // Rodar com: npx tsx scripts/verify-plano.mjs
 import { videosParaIniciar, VALIDADE_PEDIDO_MS } from '../src/modules/agent/videoAlfred.ts';
 import { montarPlano, rotuloFerramenta, temPlano } from '../src/modules/agent/plano.ts';
+import { linhasDoRecibo, resumoRecibo } from '../src/modules/agent/chat/reciboTexto.ts';
 
 let failures = 0;
 function check(label, actual, expected) {
@@ -56,6 +57,16 @@ check('lote concluído fecha tudo', montarPlano({ leituras: [], acao: lote('exec
     v('pendente', { pedidoVideo: {} }, undefined, 'pending'),
     { ...v('outra', { pedidoVideo: {} }), tool: 'x' },
   ], AG), ['ok']);
+}
+
+// --- recibo ---------------------------------------------------------------
+{
+  const r = { enviados: 2, enviado: [{ sku: 'A', campos: ['Descrição complementar', 'Título SEO'] }, { sku: 'B', campos: [] }], falhas: ['C: Token inválido'], execucaoId: 'x' };
+  check('resumo do recibo', resumoRecibo(r), '2 produtos enviados · 1 com falha');
+  check('linhas por produto e falhas', linhasDoRecibo(r), [
+    { texto: 'A: Descrição complementar, Título SEO' }, { texto: 'B: nada mudou' }, { texto: 'C: Token inválido', falha: true },
+  ]);
+  check('resultado sem contagem não tem resumo', [resumoRecibo({ ok: true }), resumoRecibo(undefined)], [null, null]);
 }
 
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');

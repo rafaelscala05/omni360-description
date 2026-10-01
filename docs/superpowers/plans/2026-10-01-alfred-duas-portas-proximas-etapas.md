@@ -58,7 +58,7 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 ### Atividade e conectores (A4, A5)
 - [x] **A4 · Fontes e conectores** (`ConectoresScreen.tsx`; "Verificar" checa o status de novo, "Conectar"/"Reconectar" abrem Integrações): tela com "Precisa de atenção" (checagem falhou → Verificar), "Conectados" (com quantas ferramentas cada um libera) e "Disponíveis" ("Libera: banners, preço, SEO da loja" → Conectar). Hoje é a régua no topo do Alfred + a tela de Integrações antiga.
 - [ ] **Publicar artigo direto da Atividade (A5)**: trava fixa de conteúdo com "Ver prévia" / "Publicar" no próprio card.
-- [ ] **Recibo abrindo o log**: "Recibo" → o que foi gravado + as chamadas HTTP (`agent_logs`) daquela ação.
+- [x] **Recibo abrindo o log** (`chat/Recibo.tsx`, logs ligados à execução por `execucaoId`): "Recibo" → o que foi gravado + as chamadas HTTP (`agent_logs`) daquela ação.
 - [ ] **Notificação só quando precisa de você**: push para aprovação pendente ou tarefa bloqueada; progresso e conclusão sem barulho. Não existe infraestrutura de push hoje.
 
 ### Semana (Conselho · "a semana é o produto")
