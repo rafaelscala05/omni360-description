@@ -18,7 +18,15 @@ const WAKE_SECRET = (uid: string) =>
 export interface Connections {
   wake: boolean;
   tiny: boolean;
+  bling: boolean;
+  idworks: boolean;
   providers: ToolProvider[];
+}
+
+/** Bling e IdWorks: a credencial existe (o fetch de cada um renova/reautentica sozinho). */
+async function temSegredo(uid: string, chave: 'bling' | 'idworks'): Promise<boolean> {
+  const snap = await adminDb.collection('users').doc(uid).collection('integration_secrets').doc(chave).get();
+  return snap.exists;
 }
 
 async function wakeToken(uid: string): Promise<string | null> {
@@ -28,25 +36,29 @@ async function wakeToken(uid: string): Promise<string | null> {
 }
 
 export async function resolveConnections(uid: string): Promise<Connections> {
-  const [wake, tiny] = await Promise.all([
+  const [wake, tiny, bling, idworks] = await Promise.all([
     wakeToken(uid).catch(() => null),
     // The operational agent is v2-only: getV2Token returns null for accounts on
     // the v3/OAuth path, which correctly leaves tiny.* out of the tool list.
     getV2Token(uid).catch(() => null),
+    temSegredo(uid, 'bling').catch(() => false),
+    temSegredo(uid, 'idworks').catch(() => false),
   ]);
 
   const providers: ToolProvider[] = [];
   if (wake) providers.push('wake');
   if (tiny) providers.push('tiny');
+  if (bling) providers.push('bling');
+  if (idworks) providers.push('idworks');
   // Documentation lookup is always available — it reads docs, never the store.
   providers.push('docs');
 
-  return { wake: !!wake, tiny: !!tiny, providers };
+  return { wake: !!wake, tiny: !!tiny, bling, idworks, providers };
 }
 
 export interface AgentContext {
   providers: ToolProvider[];
-  conexoes: { wake: boolean; tiny: boolean };
+  conexoes: { wake: boolean; tiny: boolean; bling: boolean; idworks: boolean };
   settings: AgentSettings;
 }
 
@@ -74,7 +86,7 @@ export async function resolveAgentContext(uid: string): Promise<AgentContext> {
 
   const conns = modules.operationsAgent === true
     ? await resolveConnections(uid)
-    : { wake: false, tiny: false, providers: [] as ToolProvider[] };
+    : { wake: false, tiny: false, bling: false, idworks: false, providers: [] as ToolProvider[] };
 
   const providers: ToolProvider[] = [...conns.providers];
   if (modules.contentAgent === true) providers.push('content');
@@ -83,7 +95,7 @@ export async function resolveAgentContext(uid: string): Promise<AgentContext> {
   if (modules.contentAgent === true || modules.operationsAgent === true) providers.push('produtos');
   if (modules.meliListingOptimizer === true) providers.push('meli');
 
-  return { providers, conexoes: { wake: conns.wake, tiny: conns.tiny }, settings: await loadAgentSettings(uid) };
+  return { providers, conexoes: { wake: conns.wake, tiny: conns.tiny, bling: conns.bling, idworks: conns.idworks }, settings: await loadAgentSettings(uid) };
 }
 
 /** users/{uid}.modules.contentAgent or .operationsAgent must be on — the account needs at least one of the two features this agent covers. */

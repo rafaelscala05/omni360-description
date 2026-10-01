@@ -8,6 +8,7 @@ import {
 } from '../server/agent/produtosRules.ts';
 import { linhasDoContexto, sanitizarContexto, MAX_SKUS_CONTEXTO } from '../server/agent/workspaceContext.ts';
 import { camposDoEnvio, imagensParaTiny, paraTinyPush } from '../server/agent/tinyCatalogo.ts';
+import { atualBling, atualWake, diffCatalogo, paraBlingPush, paraIdworksPush, paraWakePush, SUPORTE } from '../server/agent/erpCatalogo.ts';
 import { faltaParaVideo, imagensDasCenas, montarPedidoVideo } from '../server/agent/videoPedido.ts';
 import { achatarArvore, arvoreEmTexto, categoriasSemVinculo, normalizarArvore, vinculosDeProdutos, MAX_NIVEIS } from '../server/agent/categoriasRules.ts';
 import { chavePrevia } from '../server/agent/previewCache.ts';
@@ -213,6 +214,48 @@ check('categorias debitam a hierarquia uma vez', creditActionsFor({ name: 'produ
 check('atributos e vídeo não debitam aqui (atributos é grátis; o vídeo debita na rota que o roda)',
   [creditActionsFor({ name: 'produtos.atributos.gerar', provider: 'produtos' }).length, creditActionsFor({ name: 'produtos.video.gerar', provider: 'produtos' }).length], [0, 0]);
 check('envio ao Tiny debita uma ação do agente', creditActionsFor({ name: 'tiny.catalogo.enviar', provider: 'tiny' }).map((x) => x.key), ['agent_action']);
+
+// --- envio a Wake, Bling e IdWorks pelo chat --------------------------------
+{
+  const prod = p('W', {
+    _wakeProductId: '7', _blingProductId: '8', _idworksProductId: '9', _wakeInformacaoId: 3,
+    'Descrição complementar': '<p>Nova</p>', 'Título SEO': 'Título novo', 'Descrição SEO': '', 'Palavras chave SEO': 'a, b',
+    'URL imagem 1': 'https://img/1.jpg', 'URL imagem 2': 'https://img/2.jpg',
+    'NCM (Classificação fiscal)': '1234', 'GTIN/EAN': '789', 'Peso líquido (Kg)': '2',
+  });
+  const local = { descricaoHtml: '<p>Nova</p>', seoTitle: 'Título novo', seoKeywords: 'a, b', imagens: ['https://img/1.jpg', 'https://img/2.jpg'] };
+
+  const igual = diffCatalogo({ ...local }, local, SUPORTE.idworks);
+  check('nada muda quando o ERP já tem o mesmo conteúdo', [igual.campos.length, igual.grupos], [0, { descricao: false, seo: false, imagens: false }]);
+
+  const d = diffCatalogo({ descricaoHtml: '<p>Velha</p>', seoTitle: 'Título novo', seoKeywords: 'x', imagens: ['https://img/1.jpg'] }, local, SUPORTE.idworks);
+  check('só o que difere vai, e imagem só a que o ERP não tem', [d.grupos, d.imagensNovas, d.campos.map((c) => c.campo)],
+    [{ descricao: true, seo: true, imagens: true }, ['https://img/2.jpg'], ['Descrição complementar', 'Palavras-chave SEO', 'Imagens']]);
+  check('campo vazio no catálogo nunca apaga o do ERP', diffCatalogo({ seoDescription: 'existe' }, { seoDescription: undefined }, SUPORTE.idworks).campos.length, 0);
+  check('Bling não leva SEO (v3 não tem) e a Wake não leva imagem pelo chat',
+    [diffCatalogo({}, local, SUPORTE.bling).grupos.seo, diffCatalogo({}, local, SUPORTE.wake).grupos.imagens], [false, false]);
+
+  const g = { descricao: true, seo: true, imagens: true };
+  const fiscais = ['ncm', 'gtin', 'cest', 'pesoLiquido', 'pesoBruto', 'largura', 'altura', 'comprimento'];
+  const bling = paraBlingPush(prod, g, ['https://img/2.jpg']);
+  const idw = paraIdworksPush(prod, g, ['https://img/2.jpg']);
+  const wake = paraWakePush(prod, g);
+  check('nenhum payload leva dado fiscal ou logístico', [bling, idw, wake].map((x) => fiscais.filter((k) => k in x)), [[], [], []]);
+  check('grupo fiscal e atributos sempre desligados', [bling.campos.fiscal, idw.campos.fiscal, wake.campos.atributos, wake.campos.imagens], [false, false, false, false]);
+  check('Bling: id, só as imagens novas, SEO desligado', [bling.blingId, bling.imagens, bling.campos.seo], ['8', ['https://img/2.jpg'], false]);
+  check('grupo sem mudança não leva o campo', paraIdworksPush(prod, { descricao: false, seo: true, imagens: false }, []).descricaoHtml, undefined);
+  check('Wake: SKU e bloco de informação do import', [wake.sku, wake.informacaoId, wake.produtoId], ['W', 3, '7']);
+
+  check('Wake: lê o bloco do import e o SEO das metatags',
+    atualWake([{ informacaoId: 1, texto: 'outro' }, { informacaoId: 3, texto: '<p>X</p>' }], { title: 'T', metaTags: [{ name: 'description', content: 'D' }, { name: 'Keywords', content: 'K' }] }, 3),
+    { descricaoHtml: '<p>X</p>', seoTitle: 'T', seoDescription: 'D', seoKeywords: 'K' });
+  check('Bling: descrição complementar e links das imagens externas',
+    atualBling({ descricaoComplementar: '<p>B</p>', midia: { imagens: { externas: [{ link: 'https://a' }, { url: 'https://b' }] } } }),
+    { descricaoHtml: '<p>B</p>', imagens: ['https://a', 'https://b'] });
+}
+check('envio a Wake/Bling/IdWorks é trava fixa', ['wake', 'bling', 'idworks'].map((e) => resolveApprovalMode({ approvalMode: 'auto' }, `${e}.catalogo.enviar`)), ['ask', 'ask', 'ask']);
+check('envio a Bling e IdWorks debita uma ação do agente',
+  ['bling', 'idworks'].map((e) => creditActionsFor({ name: `${e}.catalogo.enviar`, provider: e }).map((x) => x.key)), [['agent_action'], ['agent_action']]);
 
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');
 process.exit(failures ? 1 : 0);

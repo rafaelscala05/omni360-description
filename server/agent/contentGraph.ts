@@ -22,7 +22,7 @@ interface ContentGraphConfig {
     settings?: AgentSettings;
     contexto?: WorkspaceContext;
     providers?: ToolProvider[];
-    conexoes?: { wake: boolean; tiny: boolean };
+    conexoes?: { wake: boolean; tiny: boolean; bling?: boolean; idworks?: boolean };
   };
 }
 
@@ -59,8 +59,10 @@ function buildSystemPrompt(config: ContentGraphConfig): string {
 
   if (conexoes) {
     const plataformas = [
-      conexoes.wake ? '- Wake Commerce (loja/e-commerce): banners, hotsites, produtos, preço, estoque e SEO.' : null,
+      conexoes.wake ? '- Wake Commerce (loja/e-commerce): banners, hotsites, produtos, preço, estoque e SEO. Para levar à Wake a descrição e o SEO escritos no catálogo do OMNI360, use wake.catalogo.enviar com os SKUs.' : null,
       conexoes.tiny ? '- Tiny ERP (v2): produtos, preço, estoque, pedidos e contatos. Para levar ao Tiny o que foi escrito no catálogo do OMNI360 (descrição, SEO, imagens), use tiny.catalogo.enviar com os SKUs — não tiny.produto.atualizar.' : null,
+      conexoes.bling ? '- Bling ERP: para levar ao Bling a descrição e as imagens escritas no catálogo do OMNI360, use bling.catalogo.enviar com os SKUs.' : null,
+      conexoes.idworks ? '- IdWorks (ERP): para levar à IdWorks a descrição, o SEO e as imagens escritos no catálogo do OMNI360, use idworks.catalogo.enviar com os SKUs.' : null,
     ].filter(Boolean).join('\n');
     partes.push(`Plataformas de e-commerce/ERP conectadas nesta conta:\n${plataformas || '- Nenhuma plataforma conectada.'}`);
   }

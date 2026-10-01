@@ -348,6 +348,43 @@ export function buildProductPutBody(current: any, prod: BlingPushProduct): { bod
   return { body, enviado };
 }
 
+/** Uma chamada à API do Bling já autenticada — a rota passa blingFetch com o uid; o agente, o mesmo envolto em withLog. */
+export type BlingCaller = (method: string, path: string, body?: unknown) => Promise<any>;
+
+/**
+ * Escreve um produto no Bling — o corpo do POST /api/bling/push, também usado
+ * pelo Alfred (bling.catalogo.enviar) para o chat e a tela gravarem igual.
+ */
+export async function pushBlingProduto(call: BlingCaller, prod: BlingPushProduct): Promise<BlingPushResult> {
+  const steps: BlingPushResult['steps'] = { descricao: 'skip', seo: 'skip', fiscal: 'skip', imagens: 'skip' };
+  let enviado: PushLogEntry[] = [];
+  if (!prod.blingId) {
+    return { blingId: prod.blingId, sku: prod.sku, ok: false, steps: {
+      descricao: 'Sem ID Bling', seo: 'Sem ID Bling', fiscal: 'Sem ID Bling', imagens: 'Sem ID Bling',
+    } };
+  }
+  try {
+    const current = (await call('GET', `/produtos/${prod.blingId}`))?.data ?? {};
+    const built = buildProductPutBody(current, prod);
+    enviado = built.enviado;
+    await call('PUT', `/produtos/${prod.blingId}`, built.body);
+    if (prod.campos.descricao) steps.descricao = prod.descricaoHtml ? 'ok' : 'sem descrição';
+    // Bling v3 has no rich SEO block on the product — nothing is pushed.
+    if (prod.campos.seo) steps.seo = 'não suportado no Bling v3';
+    if (prod.campos.fiscal) steps.fiscal = 'ok';
+    if (prod.campos.imagens) steps.imagens = prod.imagens?.length ? 'ok' : 'sem imagens';
+  } catch (e: any) {
+    const msg = e?.message ?? 'erro';
+    if (prod.campos.descricao) steps.descricao = msg;
+    if (prod.campos.seo) steps.seo = msg;
+    if (prod.campos.fiscal) steps.fiscal = msg;
+    if (prod.campos.imagens) steps.imagens = msg;
+  }
+  const ok = (['descricao', 'seo', 'fiscal', 'imagens'] as const)
+    .every((k) => steps[k] === 'ok' || steps[k] === 'skip' || steps[k].startsWith('sem ') || steps[k].startsWith('não suportado'));
+  return { blingId: prod.blingId, sku: prod.sku, ok, steps, enviado };
+}
+
 // --- Routes ----------------------------------------------------------------
 
 interface Deps {
@@ -491,36 +528,8 @@ export function registerBlingRoutes(app: express.Express, { verifyFirebaseToken 
       const produtos: BlingPushProduct[] = Array.isArray(req.body?.produtos) ? req.body.produtos : [];
       const resultados: BlingPushResult[] = [];
 
-      for (const prod of produtos) {
-        const steps: BlingPushResult['steps'] = { descricao: 'skip', seo: 'skip', fiscal: 'skip', imagens: 'skip' };
-        let enviado: PushLogEntry[] = [];
-        if (!prod.blingId) {
-          resultados.push({ blingId: prod.blingId, sku: prod.sku, ok: false, steps: {
-            descricao: 'Sem ID Bling', seo: 'Sem ID Bling', fiscal: 'Sem ID Bling', imagens: 'Sem ID Bling',
-          } });
-          continue;
-        }
-        try {
-          const current = (await blingFetch<any>(uid, 'GET', `/produtos/${prod.blingId}`))?.data ?? {};
-          const built = buildProductPutBody(current, prod);
-          enviado = built.enviado;
-          await blingFetch(uid, 'PUT', `/produtos/${prod.blingId}`, built.body);
-          if (prod.campos.descricao) steps.descricao = prod.descricaoHtml ? 'ok' : 'sem descrição';
-          // Bling v3 has no rich SEO block on the product — nothing is pushed.
-          if (prod.campos.seo) steps.seo = 'não suportado no Bling v3';
-          if (prod.campos.fiscal) steps.fiscal = 'ok';
-          if (prod.campos.imagens) steps.imagens = prod.imagens?.length ? 'ok' : 'sem imagens';
-        } catch (e: any) {
-          const msg = e?.message ?? 'erro';
-          if (prod.campos.descricao) steps.descricao = msg;
-          if (prod.campos.seo) steps.seo = msg;
-          if (prod.campos.fiscal) steps.fiscal = msg;
-          if (prod.campos.imagens) steps.imagens = msg;
-        }
-        const ok = (['descricao', 'seo', 'fiscal', 'imagens'] as const)
-          .every((k) => steps[k] === 'ok' || steps[k] === 'skip' || steps[k].startsWith('sem ') || steps[k].startsWith('não suportado'));
-        resultados.push({ blingId: prod.blingId, sku: prod.sku, ok, steps, enviado });
-      }
+      const call: BlingCaller = (method, path, body) => blingFetch(uid, method, path, body);
+      for (const prod of produtos) resultados.push(await pushBlingProduto(call, prod));
       return res.json({ resultados });
     } catch (e: any) {
       return res.status(e?.status === 401 ? 401 : 500).json({ message: e?.message ?? 'Falha no envio.' });

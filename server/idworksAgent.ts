@@ -291,6 +291,42 @@ export function buildSkuUpdateBody(current: any, prod: IdworksPushProduct): { bo
   return { body, steps, enviado };
 }
 
+/** Uma chamada à API da IdWorks já autenticada — a rota passa idworksFetch com o uid; o agente, o mesmo envolto em withLog. */
+export type IdworksCaller = (method: 'GET' | 'PUT' | 'POST', path: string, body?: unknown) => Promise<any>;
+
+/**
+ * Escreve um SKU na IdWorks — o corpo do POST /api/idworks/push, também usado
+ * pelo Alfred (idworks.catalogo.enviar) para o chat e a tela gravarem igual.
+ */
+export async function pushIdworksProduto(call: IdworksCaller, prod: IdworksPushProduct): Promise<IdworksPushResult> {
+  if (!prod.idworksId) {
+    return { idworksId: prod.idworksId, sku: prod.sku, ok: false, steps: { descricao: 'Sem ID IdWorks', seo: 'Sem ID IdWorks', fiscal: 'Sem ID IdWorks', imagens: 'Sem ID IdWorks' } };
+  }
+  try {
+    const currentArr = await call('GET', `/sku/${prod.idworksId}`);
+    const current = Array.isArray(currentArr) ? currentArr[0] : currentArr;
+    const { body, steps, enviado } = buildSkuUpdateBody(current, prod);
+    if (Object.keys(body).length) await call('PUT', `/sku/${prod.idworksId}`, body);
+
+    if (prod.campos.imagens && prod.imagens?.length) {
+      const currentImages = new Set(normalizeProduct(current).imagens);
+      const novas = prod.imagens.filter((u) => !currentImages.has(u));
+      if (novas.length) {
+        for (const url of novas) await call('POST', `/sku/image/${prod.idworksId}`, { Url: url });
+        steps.imagens = 'ok';
+        pushLog(enviado, logLista('Imagens novas', novas));
+      } else {
+        steps.imagens = 'sem alteração';
+      }
+    }
+
+    return { idworksId: prod.idworksId, sku: prod.sku, ok: true, steps, enviado };
+  } catch (e: any) {
+    const msg = e?.message ?? 'erro';
+    return { idworksId: prod.idworksId, sku: prod.sku, ok: false, steps: { descricao: msg, seo: msg, fiscal: msg, imagens: msg } };
+  }
+}
+
 // --- Routes ------------------------------------------------------------------
 
 interface Deps {
@@ -357,35 +393,8 @@ export function registerIdworksRoutes(app: express.Express, { verifyFirebaseToke
         return res.status(400).json({ message: `Selecione no máximo ${MAX_PUSH_BATCH} produtos por envio.` });
       }
       const resultados: IdworksPushResult[] = [];
-      for (const prod of produtos) {
-        if (!prod.idworksId) {
-          resultados.push({ idworksId: prod.idworksId, sku: prod.sku, ok: false, steps: { descricao: 'Sem ID IdWorks', seo: 'Sem ID IdWorks', fiscal: 'Sem ID IdWorks', imagens: 'Sem ID IdWorks' } });
-          continue;
-        }
-        try {
-          const currentArr = await idworksFetch<any[]>(uid, 'GET', `/sku/${prod.idworksId}`);
-          const current = Array.isArray(currentArr) ? currentArr[0] : currentArr;
-          const { body, steps, enviado } = buildSkuUpdateBody(current, prod);
-          if (Object.keys(body).length) await idworksFetch(uid, 'PUT', `/sku/${prod.idworksId}`, body);
-
-          if (prod.campos.imagens && prod.imagens?.length) {
-            const currentImages = new Set(normalizeProduct(current).imagens);
-            const novas = prod.imagens.filter((u) => !currentImages.has(u));
-            if (novas.length) {
-              for (const url of novas) await idworksFetch(uid, 'POST', `/sku/image/${prod.idworksId}`, { Url: url });
-              steps.imagens = 'ok';
-              pushLog(enviado, logLista('Imagens novas', novas));
-            } else {
-              steps.imagens = 'sem alteração';
-            }
-          }
-
-          resultados.push({ idworksId: prod.idworksId, sku: prod.sku, ok: true, steps, enviado });
-        } catch (e: any) {
-          const msg = e?.message ?? 'erro';
-          resultados.push({ idworksId: prod.idworksId, sku: prod.sku, ok: false, steps: { descricao: msg, seo: msg, fiscal: msg, imagens: msg } });
-        }
-      }
+      const call: IdworksCaller = (method, path, body) => idworksFetch(uid, method, path, body);
+      for (const prod of produtos) resultados.push(await pushIdworksProduto(call, prod));
       return res.json({ resultados });
     } catch (e: any) {
       return res.status(e?.status === 401 ? 401 : 500).json({ message: e?.message ?? 'Falha no envio.' });

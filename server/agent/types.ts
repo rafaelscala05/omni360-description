@@ -15,7 +15,7 @@ export interface ToolSchema {
   additionalProperties?: boolean;
 }
 
-export type ToolProvider = 'wake' | 'tiny' | 'docs' | 'content' | 'produtos' | 'meli';
+export type ToolProvider = 'wake' | 'tiny' | 'bling' | 'idworks' | 'docs' | 'content' | 'produtos' | 'meli';
 
 /**
  * Per-request execution context handed to every tool. Credentials are resolved

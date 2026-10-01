@@ -24,7 +24,7 @@ const auditCol = (uid: string) => adminDb.collection('users').doc(uid).collectio
  * which this change does not touch.
  */
 export function creditActionsFor(def: Pick<ToolDef<any>, 'name' | 'provider'>, preview?: Pick<ActionPreview, 'payload'>): CreditAction[] {
-  if (def.provider === 'wake' || def.provider === 'tiny') return [CREDIT_ACTIONS.agentAction];
+  if (def.provider === 'wake' || def.provider === 'tiny' || def.provider === 'bling' || def.provider === 'idworks') return [CREDIT_ACTIONS.agentAction];
   switch (def.name) {
     // Mesmo débito da geração em massa do botão: um por produto do lote.
     case 'produtos.descricoes.gerar': {

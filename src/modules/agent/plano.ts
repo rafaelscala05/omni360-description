@@ -36,7 +36,7 @@ const ROTULOS: Record<string, string> = {
 };
 
 const MARCAS: Record<string, string> = {
-  wake: 'Wake', tiny: 'Tiny', content: 'Conteúdo', docs: 'Documentação', produtos: 'Catálogo', meli: 'Mercado Livre',
+  wake: 'Wake', tiny: 'Tiny', bling: 'Bling', idworks: 'IdWorks', content: 'Conteúdo', docs: 'Documentação', produtos: 'Catálogo', meli: 'Mercado Livre',
 };
 
 /** Nome técnico em algo legível: `tiny.produto.obter` → "Tiny · produto obter". */
@@ -55,6 +55,8 @@ export function destinoGravacao(provider: string): string {
     case 'meli': return 'no Mercado Livre';
     case 'wake': return 'na Wake';
     case 'tiny': return 'no Tiny';
+    case 'bling': return 'no Bling';
+    case 'idworks': return 'na IdWorks';
     case 'content': return 'no Conteúdo';
     default: return '';
   }

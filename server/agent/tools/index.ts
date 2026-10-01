@@ -7,6 +7,7 @@ import './contentSeo';
 import './contentBlog';
 import './wake';
 import './tiny';
+import './erps';
 import './discovery';
 import './produtos';
 import './meli';

@@ -238,7 +238,7 @@ const AgentHomeScreen: React.FC<Props> = ({
     return contagem;
   }, [acoes]);
 
-  const acoesPendentesOperacionais = (pendentesPorProvider.wake ?? 0) + (pendentesPorProvider.tiny ?? 0);
+  const acoesPendentesOperacionais = ['wake', 'tiny', 'bling', 'idworks'].reduce((n, k) => n + (pendentesPorProvider[k] ?? 0), 0);
   const acoesPendentesConteudo = pendentesPorProvider.content ?? 0;
   const pendentesTotal = acoesPendentesOperacionais + acoesPendentesConteudo;
 

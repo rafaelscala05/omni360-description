@@ -27,6 +27,9 @@ const ALWAYS_ASK_TOOLS: readonly string[] = [
   'produtos.video.gerar',
   // Escreve no ERP do cliente, fora do OMNI360.
   'tiny.catalogo.enviar',
+  'wake.catalogo.enviar',
+  'bling.catalogo.enviar',
+  'idworks.catalogo.enviar',
 ];
 
 /** Trava fixa: o modo automático não vale para ela. */

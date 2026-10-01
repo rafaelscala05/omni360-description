@@ -53,7 +53,7 @@ export function redact(value: unknown, depth = 0): unknown {
 }
 
 export interface CallLog {
-  provider: 'wake' | 'tiny';
+  provider: 'wake' | 'tiny' | 'bling' | 'idworks';
   tool?: string;
   /** GET/POST/PUT na Wake; o nome do endpoint .php no Tiny. */
   operacao: string;

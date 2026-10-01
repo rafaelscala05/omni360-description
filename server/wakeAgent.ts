@@ -215,6 +215,125 @@ export function buildProductPutBody(
   return body;
 }
 
+/** Uma chamada à API da Wake já autenticada — a rota passa fbitsFetch com o token; o agente, o mesmo envolto em withLog. */
+export type WakeCaller = (method: string, path: string, body?: unknown) => Promise<any>;
+
+/**
+ * Escreve um produto na Wake — o corpo do POST /api/wake/push, também usado
+ * pelo Alfred (wake.catalogo.enviar) para o chat e a tela gravarem igual.
+ * Erro de um passo fica no `steps` dele, nunca derruba os outros.
+ */
+export async function pushWakeProduto(call: WakeCaller, prod: WakePushProduct): Promise<WakePushResult> {
+  const steps: WakePushResult['steps'] = { descricao: 'skip', seo: 'skip', atributos: 'skip', imagens: 'skip' };
+  const enviado: PushLogEntry[] = [];
+
+  // Writes are keyed by SKU — the only identifier accepted across all
+  // write endpoints (produto, informacoes, seo, imagens). ProdutoId is
+  // rejected by the images endpoint, so we never use it here.
+  if (!prod.sku) {
+    return { produtoId: prod.produtoId, sku: prod.sku, ok: false, steps: {
+      descricao: 'Sem SKU', seo: 'Sem SKU', atributos: 'Sem SKU', imagens: 'Sem SKU',
+    } };
+  }
+  const id = encodeURIComponent(prod.sku);
+  const q = `?tipoIdentificador=Sku`;
+
+  // 1) Description -> product information block
+  if (prod.campos.descricao && prod.descricaoHtml) {
+    try {
+      // Fetch the current info block to preserve its title/visibility and
+      // resolve the id when the import didn't capture it.
+      const infos = await call('GET', `/produtos/${id}/informacoes${q}`).catch(() => []);
+      const block = Array.isArray(infos)
+        ? (infos.find((i) => i?.informacaoId === prod.informacaoId)
+           ?? infos.find((i) => i?.tipoInformacao === 'Informacoes')
+           ?? infos[0])
+        : undefined;
+      const infoId = block?.informacaoId ?? prod.informacaoId;
+      if (infoId) {
+        await call('PUT', `/produtos/${id}/informacoes/${infoId}${q}`, {
+          titulo: block?.titulo ?? 'Informações',
+          texto: prod.descricaoHtml,
+          exibirSite: block?.exibirSite ?? true,
+          tipoInformacao: block?.tipoInformacao ?? 'Informacoes',
+        });
+        steps.descricao = 'ok';
+        pushLog(enviado, logTexto('Descrição complementar', prod.descricaoHtml));
+      } else {
+        steps.descricao = 'Sem bloco de informação para atualizar';
+      }
+    } catch (e: any) { steps.descricao = e?.message ?? 'erro'; }
+  }
+
+  // 2) SEO + metatags — PUT (update/replace) to avoid duplicating metatags.
+  // Preserve the existing tagCanonical by reading the current SEO first.
+  if (prod.campos.seo && (prod.seoTitle || prod.seoDescription || prod.seoKeywords)) {
+    try {
+      const metaTags: { name: string; content: string }[] = [];
+      if (prod.seoDescription) metaTags.push({ name: 'description', content: prod.seoDescription });
+      if (prod.seoKeywords) metaTags.push({ name: 'keywords', content: prod.seoKeywords });
+      const currentSeo = await call('GET', `/produtos/${id}/seo${q}`).catch(() => null);
+      await call('PUT', `/produtos/${id}/seo${q}`, {
+        tagCanonical: currentSeo?.tagCanonical ?? undefined,
+        title: prod.seoTitle,
+        metaTags,
+      });
+      steps.seo = 'ok';
+      pushLog(enviado, logTexto('Título SEO', prod.seoTitle));
+      pushLog(enviado, logTexto('Descrição SEO', prod.seoDescription));
+      pushLog(enviado, logTexto('Palavras-chave SEO', prod.seoKeywords));
+    } catch (e: any) { steps.seo = e?.message ?? 'erro'; }
+  }
+
+  // 3) Attributes -> full-product PUT. The product PUT is atomic and
+  // requires a valid body (price, stock, etc.), so we fetch the current
+  // product and echo its fields, only swapping in the merged attributes.
+  if (prod.campos.atributos && prod.atributos?.length) {
+    try {
+      // Fetch stock + attributes so the atomic PUT body stays valid.
+      const current = await call(
+        'GET',
+        `/produtos/${id}${q}&camposAdicionais=Estoque&camposAdicionais=Atributo`,
+      );
+      // Create the definition for any attribute the product doesn't have
+      // yet (Wake rejects unknown attributes in the product PUT). POST is
+      // a no-op error if the definition already exists globally.
+      const existentes = new Set(
+        (Array.isArray(current?.atributos) ? current.atributos : []).map((a: any) => a?.nome),
+      );
+      for (const a of prod.atributos) {
+        if (!existentes.has(a.nome)) {
+          await call('POST', '/atributos', {
+            nome: a.nome, tipo: 'Comparacao', tipoExibicao: 'Div', prioridade: 0,
+          }).catch(() => { /* já existe globalmente — segue */ });
+        }
+      }
+      const body = buildProductPutBody(current, prod.atributos, prod.nome);
+      await call('PUT', `/produtos/${id}${q}`, body);
+      steps.atributos = 'ok';
+      if (prod.nome) pushLog(enviado, logTexto('Nome do produto', prod.nome));
+      for (const a of prod.atributos) pushLog(enviado, logTexto(`Atributo · ${a.nome}`, a.valor));
+    } catch (e: any) { steps.atributos = e?.message ?? 'erro'; }
+  }
+
+  // 4) Ambient images
+  if (prod.campos.imagens && prod.imagensBase64?.length) {
+    try {
+      await call('POST', `/produtos/${id}/imagens${q}`, prod.imagensBase64.map((img, i) => ({
+        base64: img.base64, formato: img.formato, exibirMiniatura: false, estampa: false, ordem: 100 + i,
+      })));
+      steps.imagens = 'ok';
+      // Wake takes images as base64, so there is no URL to show — report
+      // how many were uploaded instead.
+      pushLog(enviado, logTexto('Imagens enviadas', `${prod.imagensBase64.length} imagem(ns)`));
+    } catch (e: any) { steps.imagens = e?.message ?? 'erro'; }
+  }
+
+  const ok = (['descricao', 'seo', 'atributos', 'imagens'] as const)
+    .every((k) => steps[k] === 'ok' || steps[k] === 'skip');
+  return { produtoId: id, sku: prod.sku, ok, steps, enviado };
+}
+
 interface Deps {
   verifyFirebaseToken: (req: express.Request) => Promise<{ uid: string }>;
 }
@@ -308,117 +427,8 @@ export function registerWakeRoutes(app: express.Express, { verifyFirebaseToken }
       const produtos: WakePushProduct[] = Array.isArray(req.body?.produtos) ? req.body.produtos : [];
       const resultados: WakePushResult[] = [];
 
-      for (const prod of produtos) {
-        const steps: WakePushResult['steps'] = { descricao: 'skip', seo: 'skip', atributos: 'skip', imagens: 'skip' };
-        const enviado: PushLogEntry[] = [];
-
-        // Writes are keyed by SKU — the only identifier accepted across all
-        // write endpoints (produto, informacoes, seo, imagens). ProdutoId is
-        // rejected by the images endpoint, so we never use it here.
-        if (!prod.sku) {
-          resultados.push({ produtoId: prod.produtoId, sku: prod.sku, ok: false, steps: {
-            descricao: 'Sem SKU', seo: 'Sem SKU', atributos: 'Sem SKU', imagens: 'Sem SKU',
-          } });
-          continue;
-        }
-        const id = encodeURIComponent(prod.sku);
-        const q = `?tipoIdentificador=Sku`;
-
-        // 1) Description -> product information block
-        if (prod.campos.descricao && prod.descricaoHtml) {
-          try {
-            // Fetch the current info block to preserve its title/visibility and
-            // resolve the id when the import didn't capture it.
-            const infos = await fbitsFetch<any[]>(token, 'GET', `/produtos/${id}/informacoes${q}`).catch(() => []);
-            const block = Array.isArray(infos)
-              ? (infos.find((i) => i?.informacaoId === prod.informacaoId)
-                 ?? infos.find((i) => i?.tipoInformacao === 'Informacoes')
-                 ?? infos[0])
-              : undefined;
-            const infoId = block?.informacaoId ?? prod.informacaoId;
-            if (infoId) {
-              await fbitsFetch(token, 'PUT', `/produtos/${id}/informacoes/${infoId}${q}`, {
-                titulo: block?.titulo ?? 'Informações',
-                texto: prod.descricaoHtml,
-                exibirSite: block?.exibirSite ?? true,
-                tipoInformacao: block?.tipoInformacao ?? 'Informacoes',
-              });
-              steps.descricao = 'ok';
-              pushLog(enviado, logTexto('Descrição complementar', prod.descricaoHtml));
-            } else {
-              steps.descricao = 'Sem bloco de informação para atualizar';
-            }
-          } catch (e: any) { steps.descricao = e?.message ?? 'erro'; }
-        }
-
-        // 2) SEO + metatags — PUT (update/replace) to avoid duplicating metatags.
-        // Preserve the existing tagCanonical by reading the current SEO first.
-        if (prod.campos.seo && (prod.seoTitle || prod.seoDescription || prod.seoKeywords)) {
-          try {
-            const metaTags: { name: string; content: string }[] = [];
-            if (prod.seoDescription) metaTags.push({ name: 'description', content: prod.seoDescription });
-            if (prod.seoKeywords) metaTags.push({ name: 'keywords', content: prod.seoKeywords });
-            const currentSeo = await fbitsFetch<any>(token, 'GET', `/produtos/${id}/seo${q}`).catch(() => null);
-            await fbitsFetch(token, 'PUT', `/produtos/${id}/seo${q}`, {
-              tagCanonical: currentSeo?.tagCanonical ?? undefined,
-              title: prod.seoTitle,
-              metaTags,
-            });
-            steps.seo = 'ok';
-            pushLog(enviado, logTexto('Título SEO', prod.seoTitle));
-            pushLog(enviado, logTexto('Descrição SEO', prod.seoDescription));
-            pushLog(enviado, logTexto('Palavras-chave SEO', prod.seoKeywords));
-          } catch (e: any) { steps.seo = e?.message ?? 'erro'; }
-        }
-
-        // 3) Attributes -> full-product PUT. The product PUT is atomic and
-        // requires a valid body (price, stock, etc.), so we fetch the current
-        // product and echo its fields, only swapping in the merged attributes.
-        if (prod.campos.atributos && prod.atributos?.length) {
-          try {
-            // Fetch stock + attributes so the atomic PUT body stays valid.
-            const current = await fbitsFetch<any>(
-              token, 'GET',
-              `/produtos/${id}${q}&camposAdicionais=Estoque&camposAdicionais=Atributo`,
-            );
-            // Create the definition for any attribute the product doesn't have
-            // yet (Wake rejects unknown attributes in the product PUT). POST is
-            // a no-op error if the definition already exists globally.
-            const existentes = new Set(
-              (Array.isArray(current?.atributos) ? current.atributos : []).map((a: any) => a?.nome),
-            );
-            for (const a of prod.atributos) {
-              if (!existentes.has(a.nome)) {
-                await fbitsFetch(token, 'POST', '/atributos', {
-                  nome: a.nome, tipo: 'Comparacao', tipoExibicao: 'Div', prioridade: 0,
-                }).catch(() => { /* já existe globalmente — segue */ });
-              }
-            }
-            const body = buildProductPutBody(current, prod.atributos, prod.nome);
-            await fbitsFetch(token, 'PUT', `/produtos/${id}${q}`, body);
-            steps.atributos = 'ok';
-            if (prod.nome) pushLog(enviado, logTexto('Nome do produto', prod.nome));
-            for (const a of prod.atributos) pushLog(enviado, logTexto(`Atributo · ${a.nome}`, a.valor));
-          } catch (e: any) { steps.atributos = e?.message ?? 'erro'; }
-        }
-
-        // 4) Ambient images
-        if (prod.campos.imagens && prod.imagensBase64?.length) {
-          try {
-            await fbitsFetch(token, 'POST', `/produtos/${id}/imagens${q}`, prod.imagensBase64.map((img, i) => ({
-              base64: img.base64, formato: img.formato, exibirMiniatura: false, estampa: false, ordem: 100 + i,
-            })));
-            steps.imagens = 'ok';
-            // Wake takes images as base64, so there is no URL to show — report
-            // how many were uploaded instead.
-            pushLog(enviado, logTexto('Imagens enviadas', `${prod.imagensBase64.length} imagem(ns)`));
-          } catch (e: any) { steps.imagens = e?.message ?? 'erro'; }
-        }
-
-        const ok = (['descricao', 'seo', 'atributos', 'imagens'] as const)
-          .every((k) => steps[k] === 'ok' || steps[k] === 'skip');
-        resultados.push({ produtoId: id, sku: prod.sku, ok, steps, enviado });
-      }
+      const call: WakeCaller = (method, path, body) => fbitsFetch(token, method, path, body);
+      for (const prod of produtos) resultados.push(await pushWakeProduto(call, prod));
 
       return res.json({ resultados });
     } catch (e: any) {

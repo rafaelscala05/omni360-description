@@ -2,7 +2,7 @@
 // módulo e pelo serviço. Espelham server/agent/types.ts — mantenha os dois
 // em sincronia.
 
-export type ToolProvider = 'wake' | 'tiny' | 'docs' | 'content' | 'produtos' | 'meli';
+export type ToolProvider = 'wake' | 'tiny' | 'bling' | 'idworks' | 'docs' | 'content' | 'produtos' | 'meli';
 
 export interface PreviewField {
   campo: string;
@@ -66,6 +66,8 @@ export interface ThreadMessage {
 export interface AgentConnections {
   wake: boolean;
   tiny: boolean;
+  bling?: boolean;
+  idworks?: boolean;
   providers: ToolProvider[];
 }
 
@@ -78,7 +80,7 @@ export interface AgentToolInfo {
 
 export interface AgentLog {
   id: string;
-  provider: 'wake' | 'tiny';
+  provider: 'wake' | 'tiny' | 'bling' | 'idworks';
   tool?: string;
   /** GET/POST/PUT na Wake; nome do endpoint .php no Tiny. */
   operacao: string;
