@@ -35,10 +35,24 @@ export interface ConnectionItem {
   cor: string;
 }
 
+/** Identidade visual de cada plataforma — a régua e a tela de fontes usam a mesma. */
+export const MARCA: Record<string, { glifo: string; cor: string }> = {
+  wake: { glifo: 'W', cor: 'linear-gradient(135deg,#ff5b03,#ff9a52)' },
+  tiny: { glifo: 'T', cor: 'linear-gradient(135deg,#3053ff,#7e94ff)' },
+  bling: { glifo: 'B', cor: 'linear-gradient(135deg,#0f9d58,#4ade80)' },
+  idworks: { glifo: 'ID', cor: 'linear-gradient(135deg,#828ed1,#b8c0ea)' },
+  content: { glifo: 'C', cor: 'linear-gradient(135deg,#7c3aed,#c4b5fd)' },
+  meli: { glifo: 'ML', cor: 'linear-gradient(135deg,#8a7600,#c9ad00)' },
+  produtos: { glifo: 'Pr', cor: 'linear-gradient(135deg,#0f172a,#475569)' },
+};
+
 interface Props {
   itens: ConnectionItem[];
   carregando: boolean;
+  /** "Gerenciar"/"Conectar" no detalhe de uma plataforma. */
   onConectar: () => void;
+  /** O "+" da régua: a lista de fontes, com o que ainda dá para conectar. */
+  onAdicionar?: () => void;
 }
 
 const Ponto: React.FC<{ estado: 'on' | 'warn' | 'off' }> = ({ estado }) => {
@@ -162,7 +176,7 @@ const Detalhe: React.FC<{ item: ConnectionItem; onConectar: () => void }> = ({ i
   </div>
 );
 
-const ConnectionsBar: React.FC<Props> = ({ itens, carregando, onConectar }) => {
+const ConnectionsBar: React.FC<Props> = ({ itens, carregando, onConectar, onAdicionar }) => {
   const [abertoId, setAbertoId] = useState<string | null>(null);
   const conectadas = itens.filter((i) => i.conectado);
   const aberto = itens.find((i) => i.id === abertoId) ?? null;
@@ -193,8 +207,8 @@ const ConnectionsBar: React.FC<Props> = ({ itens, carregando, onConectar }) => {
             ))}
 
           <button
-            onClick={onConectar}
-            title="Adicionar integração"
+            onClick={onAdicionar ?? onConectar}
+            title="Fontes e conectores"
             className="w-8 h-8 rounded-full grid place-items-center shrink-0 transition-colors"
             style={{ border: '1px dashed var(--ag-hairline-2)', color: 'var(--ag-text-3)' }}
           >

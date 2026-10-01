@@ -8,7 +8,7 @@ import {
 import { fetchIntegrationsOverview, desde, type IntegrationSummary } from '../../services/integrationsStatusService';
 import { listenProjects } from '../../services/contentService';
 import VoiceOrb from './VoiceOrb';
-import ConnectionsBar, { type ConnectionItem } from './ConnectionsBar';
+import ConnectionsBar, { MARCA, type ConnectionItem } from './ConnectionsBar';
 import { useAgentTheme } from './theme';
 import { useAlturaTeclado, useTelaPequena } from './useViewport';
 import ChatThread from './chat/ChatThread';
@@ -17,6 +17,8 @@ import LogsPanel from './chat/LogsPanel';
 import LoteEmAndamento from './chat/LoteEmAndamento';
 import SemanaPanel from './SemanaPanel';
 import { useSemana } from './useSemana';
+import { useEstadoMeli } from './useFontes';
+import { entradasDoApp, montarFontes, resumoFontes } from './conectores';
 import type { DestinoTarefa } from './semana';
 
 interface Props {
@@ -26,6 +28,8 @@ interface Props {
   hasContentAgent: boolean;
   hasOperationsAgent: boolean;
   onOpenIntegrations: () => void;
+  /** Tela "Fontes e conectores" — rodapé da semana e o "+" da régua. */
+  onAbrirFontes: () => void;
   /** Módulo do otimizador do Mercado Livre — alimenta a semana com propostas. */
   hasMeli: boolean;
   /** "Abrir" de uma tarefa da semana: leva à ferramenta dona dela. */
@@ -44,17 +48,8 @@ const SUGESTOES = [
   'Como estão os artigos desta semana?',
 ];
 
-/** Identidade visual de cada plataforma na régua de conexões. */
-const MARCA: Record<string, { glifo: string; cor: string }> = {
-  wake: { glifo: 'W', cor: 'linear-gradient(135deg,#ff5b03,#ff9a52)' },
-  tiny: { glifo: 'T', cor: 'linear-gradient(135deg,#3053ff,#7e94ff)' },
-  bling: { glifo: 'B', cor: 'linear-gradient(135deg,#0f9d58,#4ade80)' },
-  idworks: { glifo: 'ID', cor: 'linear-gradient(135deg,#828ed1,#b8c0ea)' },
-  content: { glifo: 'C', cor: 'linear-gradient(135deg,#7c3aed,#c4b5fd)' },
-};
-
 const AgentHomeScreen: React.FC<Props> = ({
-  uid, credits, products, hasContentAgent, hasMeli, onOpenIntegrations, onAbrirDestino,
+  uid, credits, products, hasContentAgent, hasMeli, onOpenIntegrations, onAbrirFontes, onAbrirDestino,
   onAbrirMenu, onFocoChange, promptInicial, onPromptConsumido,
 }) => {
   const { tema, alternar } = useAgentTheme();
@@ -280,6 +275,14 @@ const AgentHomeScreen: React.FC<Props> = ({
     return base;
   }, [integracoes, ferramentas, pendentesPorProvider, hasContentAgent, projetosCount, acoesPendentesConteudo]);
 
+  // Rodapé da semana: a mesma conta da tela de fontes, para o "+2 para
+  // conectar" bater com a lista que abre. Só depois da primeira checagem —
+  // antes disso toda integração pareceria "para conectar".
+  const meli = useEstadoMeli(hasMeli);
+  const resumoDasFontes = useMemo(() => (statusCarregando || (hasMeli && !meli) ? null : resumoFontes(montarFontes(
+    entradasDoApp({ integracoes, meli, hasMeli, hasContentAgent, projetos: projetosCount }),
+  ))), [statusCarregando, integracoes, meli, hasMeli, hasContentAgent, projetosCount]);
+
   // `mensagens` só reflete o Firestore quando o listener entrega o snapshot,
   // o que chega depois do fim do SSE — sem `interagiu`, essa janela faz a
   // tela voltar para o estado inicial entre o streaming acabar e a mensagem
@@ -387,7 +390,7 @@ const AgentHomeScreen: React.FC<Props> = ({
         {/* Com o teclado aberto no telefone a régua vira ruído: some para o
             campo ficar com o que sobrou da viewport. */}
         <div className="ag-recolhe px-3 sm:px-4 pt-3 shrink-0" data-recolhido={emFoco} style={{ maxHeight: 220 }}>
-          <ConnectionsBar itens={itensConexao} carregando={statusCarregando} onConectar={onOpenIntegrations} />
+          <ConnectionsBar itens={itensConexao} carregando={statusCarregando} onConectar={onOpenIntegrations} onAdicionar={onAbrirFontes} />
         </div>
 
         {semChat ? (
@@ -420,7 +423,7 @@ const AgentHomeScreen: React.FC<Props> = ({
               {/* A semana recolhe no modo foco: com o teclado aberto o que
                   importa é o campo, e os atalhos descem para encostar nele. */}
               <div className="ag-recolhe w-full ag-rise" data-recolhido={emFoco} style={{ maxHeight: 2400 }}>
-                <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={(t) => enviar(t, {})} onAbrir={onAbrirDestino} />
+                <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={(t) => enviar(t, {})} onAbrir={onAbrirDestino} fontes={resumoDasFontes} onAbrirFontes={onAbrirFontes} />
               </div>
 
               <div className="ag-scroll-x flex gap-2 w-full overflow-x-auto -mx-1 px-1 pt-1">

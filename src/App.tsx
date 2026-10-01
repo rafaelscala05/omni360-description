@@ -9,6 +9,8 @@ import ProximoPassoBar from './modules/agent/ProximoPassoBar';
 import { usePendentesAlfred, useVideosDoAlfred } from './modules/agent/useSemana';
 import type { DestinoTarefa } from './modules/agent/semana';
 import ProdutosAgenteScreen from './modules/agent/ProdutosAgenteScreen';
+import ConectoresScreen from './modules/agent/ConectoresScreen';
+import type { ChaveFonte } from './modules/agent/conectores';
 import type { PedidoAlfred } from './types/agent';
 import AppTabBar from './components/AppTabBar';
 import { COORTE_ATUAL, isCoorteMissao } from './modules/onboarding/mission/missionTypes';
@@ -226,7 +228,7 @@ export default function App() {
   useEffect(() => { productsRef.current = products; }, [products]);
   const [originalHeaders, setOriginalHeaders] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [mainView, setMainView] = useState<'home' | 'atividade' | 'ferramentas' | 'agenteProdutos' | 'products' | 'meli' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company' | 'missoes'>('products');
+  const [mainView, setMainView] = useState<'home' | 'atividade' | 'ferramentas' | 'agenteProdutos' | 'fontes' | 'products' | 'meli' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company' | 'missoes'>('products');
   // Pedido que outra tela (Ferramentas) manda ao Alfred — a tela do agente
   // envia ao montar e limpa, para voltar ao chat não repetir o pedido.
   const [promptAlfred, setPromptAlfred] = useState<PedidoAlfred | null>(null);
@@ -309,6 +311,14 @@ export default function App() {
     else if (destino === 'meli') setMainView(hasMeliListingOptimizer ? 'meli' : 'products');
     else if (destino === 'integracoes') setMainView('integrations');
     else setMainView('atividade');
+  };
+  // Conectar/revalidar/gerenciar na tela de fontes: cada fonte se liga na
+  // tela que já existe para ela — a de Integrações para ERPs e a Wake.
+  const conectarFonte = (chave: ChaveFonte) => {
+    if (chave === 'meli') abrirDestino('meli');
+    else if (chave === 'content') abrirDestino('conteudo');
+    else if (chave === 'produtos') abrirDestino('produtos');
+    else setMainView('integrations');
   };
   const [missao, setMissao] = useState<MissionState | null>(null);
   const [missoesCarregadas, setMissoesCarregadas] = useState(false);
@@ -3714,7 +3724,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           // O chat do agente não tem barra inferior no telefone (o menu foi
           // para o cabeçalho dele), então dispensa a reserva de 5rem embaixo
           // e usa um respiro menor nas laterais — a tela toda é a conversa.
-          mainView === 'atividade' || mainView === 'ferramentas' ? "p-3 sm:p-6" :
+          mainView === 'atividade' || mainView === 'ferramentas' || mainView === 'fontes' ? "p-3 sm:p-6" :
           // A barra Próximo passo é o pé da própria tela, então ela termina acima da tab bar.
           mainView === 'agenteProdutos' ? "p-3 pb-24 sm:p-6 md:pb-6" :
           mainView === 'home' ? (alfredFocado ? "p-3 sm:p-6" : "p-3 pb-24 sm:p-6 md:pb-6") : "p-6 pb-20 md:pb-6",
@@ -3739,11 +3749,21 @@ Retorne APENAS um JSON válido no seguinte formato:
               hasOperationsAgent={hasOperationsAgent}
               hasMeli={hasMeliListingOptimizer}
               onOpenIntegrations={() => setMainView('integrations')}
+              onAbrirFontes={() => setMainView('fontes')}
               onAbrirDestino={abrirDestino}
               onAbrirMenu={() => setIsSidebarOpen(true)}
               onFocoChange={setAlfredFocado}
               promptInicial={promptAlfred}
               onPromptConsumido={() => setPromptAlfred(null)}
+            />
+          ) : mainView === 'fontes' ? (
+            <ConectoresScreen
+              uid={user.uid}
+              hasMeli={hasMeliListingOptimizer}
+              hasContentAgent={hasContentAgent}
+              onVoltar={() => setMainView('home')}
+              onAbrirMenu={() => setIsSidebarOpen(true)}
+              onConectar={conectarFonte}
             />
           ) : mainView === 'atividade' ? (
             <AtividadeScreen
@@ -5458,7 +5478,7 @@ Retorne APENAS um JSON válido no seguinte formato:
 
       {!(mainView === 'home' && alfredFocado) && (
         <AppTabBar
-          atual={mainView === 'agenteProdutos' ? 'ferramentas' : mainView}
+          atual={mainView === 'agenteProdutos' ? 'ferramentas' : mainView === 'fontes' ? 'home' : mainView}
           mostrarAgente={hasContentAgent || hasOperationsAgent}
           pendentes={pendentesAlfred}
           onNavegar={setMainView}
