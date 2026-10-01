@@ -7,6 +7,8 @@ interface Props {
   hoje: number;
   onFazer: (prompt: string, tarefa: TarefaSemana) => void;
   onAbrir: (destino: DestinoTarefa, tarefa?: TarefaSemana) => void;
+  /** Do histórico (users/{uid}/semanas): como foi a semana anterior. */
+  semanaPassada?: { feitas: number; total: number } | null;
 }
 
 export const ORIGEM: Record<OrigemTarefa, { rotulo: string; cor: string }> = {
@@ -96,7 +98,7 @@ const Tarefa: React.FC<{ t: TarefaSemana } & Pick<Props, 'onFazer' | 'onAbrir'>>
  * "Sua semana": o que o Alfred montou a partir das fontes conectadas, por dia.
  * É o estado inicial da tela do agente — ela nunca abre num campo vazio.
  */
-const SemanaPanel: React.FC<Props> = ({ tarefas, hoje, onFazer, onAbrir }) => {
+const SemanaPanel: React.FC<Props> = ({ tarefas, hoje, onFazer, onAbrir, semanaPassada }) => {
   const [dia, setDia] = useState(hoje);
   const inicio = inicioDaSemana(new Date());
   const feitas = tarefas.filter((t) => t.estado === 'feita').length;
@@ -111,6 +113,12 @@ const SemanaPanel: React.FC<Props> = ({ tarefas, hoje, onFazer, onAbrir }) => {
           <span className="text-[13px] text-[var(--ag-text-2)] tabular-nums pb-1">{feitas} de {tarefas.length} feitas</span>
         )}
       </div>
+
+      {semanaPassada && (
+        <div className="-mt-3 text-[12px] text-[var(--ag-text-3)] tabular-nums">
+          Semana passada: {semanaPassada.feitas} de {semanaPassada.total} feitas
+        </div>
+      )}
 
       {tarefas.length > 0 && (
         <div className="h-1.5 rounded-full overflow-hidden -mt-2" style={{ background: 'var(--ag-fill-2)' }}>

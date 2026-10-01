@@ -256,6 +256,17 @@ service cloud.firestore {
         allow write: if isOwner(userId);
       }
 
+      // Histórico da "Sua semana" do Alfred (src/modules/agent/semana.ts):
+      // um doc por segunda-feira, escrito pelo próprio app do dono. É um
+      // resumo do que foi proposto e feito, não autorização de nada.
+      match /semanas/{semanaId} {
+        allow read: if isOwner(userId);
+        allow write: if isOwner(userId)
+          && request.resource.data.keys().hasOnly(['inicio', 'total', 'feitas', 'tarefas', 'atualizadaEm'])
+          && request.resource.data.tarefas is list
+          && request.resource.data.tarefas.size() <= 200;
+      }
+
       // Estado das missões de onboarding. O dono lê e escreve: a missão roda
       // no cliente (como o resto da geração do app) e o que ela guarda é
       // progresso, não autorização. É o que dá retomada entre dispositivos.

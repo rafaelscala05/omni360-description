@@ -298,8 +298,9 @@ export function montarSemana(s: SinaisSemana): TarefaSemana[] {
     });
   }
 
-  // O banner do fim de semana tem data: entra na quinta (ou hoje, se já passou), nunca no fim de semana.
-  if (s.alfredFaz?.wake && hoje <= 4) {
+  // O banner do fim de semana tem data: entra na quinta (ou hoje, se já passou).
+  // Fica até domingo — tarefa que some da lista conta como feita no histórico.
+  if (s.alfredFaz?.wake) {
     fixas.push({
       id: 'wake-banner-fds',
       origem: 'operacoes',
@@ -357,6 +358,49 @@ function estimar(s: SinaisSemana, tipo: 'descricao' | 'atributo' | 'ambientada' 
 /** "~2 min · 15 créditos", "~1 min · grátis". */
 export function textoEstimativa(e: { minutos: number; creditos: number }): string {
   return `~${e.minutos} min · ${e.creditos ? `${e.creditos} ${e.creditos === 1 ? 'crédito' : 'créditos'}` : 'grátis'}`;
+}
+
+/** Id do documento da semana em users/{uid}/semanas: a segunda-feira, `YYYY-MM-DD` local. */
+export function chaveDaSemana(inicio: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${inicio.getFullYear()}-${p(inicio.getMonth() + 1)}-${p(inicio.getDate())}`;
+}
+
+export interface SemanaGuardada {
+  inicio: string;
+  total: number;
+  feitas: number;
+  tarefas: Pick<TarefaSemana, 'id' | 'titulo' | 'origem' | 'estado' | 'dia'>[];
+}
+
+/**
+ * O que fica guardado da semana: o suficiente para o histórico ("semana
+ * passada: 7 de 9") e para ver depois o que foi proposto, sem prompts nem
+ * estimativas (que mudam de preço). Uma tarefa feita nunca volta a aberta no
+ * histórico: a semana é recalculada a partir do estado atual, e o produto que
+ * ganhou descrição some da lista — `anterior` preserva quem já foi riscado.
+ */
+export function semanaParaGuardar(inicio: Date, tarefas: TarefaSemana[], anterior?: SemanaGuardada | null): SemanaGuardada {
+  const atuais = new Map(tarefas.map((t) => [t.id, { id: t.id, titulo: t.titulo, origem: t.origem, estado: t.estado, dia: t.dia }]));
+  for (const t of anterior?.tarefas ?? []) {
+    const agora = atuais.get(t.id);
+    // Sumiu da lista porque foi resolvida, ou já estava feita: fica como feita.
+    if (!agora) atuais.set(t.id, { ...t, estado: 'feita' });
+    else if (t.estado === 'feita') atuais.set(t.id, { ...agora, estado: 'feita' });
+  }
+  const lista = [...atuais.values()].sort((a, b) => a.dia - b.dia);
+  return {
+    inicio: chaveDaSemana(inicio),
+    total: lista.length,
+    feitas: lista.filter((t) => t.estado === 'feita').length,
+    tarefas: lista,
+  };
+}
+
+/** Só grava quando algo mudou de fato. */
+export function mesmaSemana(a: SemanaGuardada | null | undefined, b: SemanaGuardada): boolean {
+  return !!a && a.total === b.total && a.feitas === b.feitas
+    && a.tarefas.map((t) => `${t.id}:${t.estado}`).join('|') === b.tarefas.map((t) => `${t.id}:${t.estado}`).join('|');
 }
 
 /** De qual agente veio uma ação do Alfred, na legenda de cores da semana. */

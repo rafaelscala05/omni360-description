@@ -12,13 +12,16 @@ import { getEffectiveAttributes } from '../../services/categoryService';
 import type { AgentAction } from '../../types/agent';
 import type { IntegrationSummary } from '../../services/integrationsStatusService';
 import { listenCalendar, listenLatestSeoAudit, listenProjects } from '../../services/contentService';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { CREDIT_ACTIONS, resolveCreditCost } from '../../credits';
 import { getMeliOperationalMetrics } from '../../services/meliService';
 import { fetchTools, iniciarVideoDoAlfred, listenActions } from '../../services/agentChatService';
 import { videosParaIniciar } from './videoAlfred';
-import { diaNaSemana, inicioDaSemana, montarSemana, semImagem, type ArtigoAgendado, type SinaisSemana, type TarefaSemana } from './semana';
+import {
+  chaveDaSemana, diaNaSemana, inicioDaSemana, mesmaSemana, montarSemana, semanaParaGuardar, semImagem,
+  type ArtigoAgendado, type SemanaGuardada, type SinaisSemana, type TarefaSemana,
+} from './semana';
 import { noErp } from './produtosAgente';
 
 export function useArtigosDaSemana(uid: string, ativo: boolean): ArtigoAgendado[] {
@@ -152,6 +155,55 @@ function useAchadosSeo(uid: string, ativo: boolean): NonNullable<SinaisSemana['s
     return () => { off(); subs.forEach((f) => f()); };
   }, [uid, ativo]);
   return achados;
+}
+
+/**
+ * Guarda a semana em users/{uid}/semanas/{segunda} e devolve o resumo da
+ * anterior. A semana é recalculada a cada render a partir do estado atual;
+ * o doc é o que sobra dela — inclusive o que foi resolvido e saiu da lista.
+ * Grava só quando algo mudou, e no máximo uma vez por minuto.
+ */
+export function useHistoricoSemana(uid: string, tarefas: TarefaSemana[], ativo: boolean): { feitas: number; total: number } | null {
+  const [passada, setPassada] = useState<{ feitas: number; total: number } | null>(null);
+  const guardadaRef = useRef<SemanaGuardada | null | undefined>(undefined);
+  const ultimaGravacaoRef = useRef(0);
+  const [lido, setLido] = useState(0);
+  const inicio = inicioDaSemana(new Date());
+  const chave = chaveDaSemana(inicio);
+
+  useEffect(() => {
+    if (!ativo || !uid) return;
+    let vivo = true;
+    const anterior = new Date(inicio);
+    anterior.setDate(anterior.getDate() - 7);
+    guardadaRef.current = undefined;
+    Promise.all([
+      getDoc(doc(db, 'users', uid, 'semanas', chave)).catch(() => null),
+      getDoc(doc(db, 'users', uid, 'semanas', chaveDaSemana(anterior))).catch(() => null),
+    ]).then(([atual, ant]) => {
+      if (!vivo) return;
+      guardadaRef.current = (atual?.data() as SemanaGuardada | undefined) ?? null;
+      const a = ant?.data() as SemanaGuardada | undefined;
+      setPassada(a && a.total ? { feitas: a.feitas, total: a.total } : null);
+      setLido((n) => n + 1);
+    });
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid, ativo, chave]);
+
+  useEffect(() => {
+    // undefined = o doc desta semana ainda não foi lido; gravar antes apagaria o histórico.
+    if (!ativo || !uid || guardadaRef.current === undefined || !tarefas.length) return;
+    const nova = semanaParaGuardar(inicio, tarefas, guardadaRef.current);
+    if (mesmaSemana(guardadaRef.current, nova)) return;
+    if (Date.now() - ultimaGravacaoRef.current < 60_000) return;
+    ultimaGravacaoRef.current = Date.now();
+    guardadaRef.current = nova;
+    setDoc(doc(db, 'users', uid, 'semanas', chave), { ...nova, atualizadaEm: new Date().toISOString() }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid, ativo, chave, tarefas, lido]);
+
+  return passada;
 }
 
 /** O primeiro produto pronto para vídeo (descrição, título SEO e referência) que ainda não tem. */

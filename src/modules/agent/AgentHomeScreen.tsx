@@ -19,7 +19,7 @@ import Composer from './chat/Composer';
 import LogsPanel from './chat/LogsPanel';
 import LoteEmAndamento from './chat/LoteEmAndamento';
 import SemanaPanel from './SemanaPanel';
-import { useSemana } from './useSemana';
+import { useHistoricoSemana, useSemana } from './useSemana';
 import type { DestinoTarefa, TarefaSemana } from './semana';
 import CabecalhoTarefa from './chat/CabecalhoTarefa';
 
@@ -174,6 +174,8 @@ const AgentHomeScreen: React.FC<Props> = ({
   const { tarefas, hoje } = useSemana({
     uid, products, acoes: listaAcoes, integracoes, hasContentAgent, hasMeli, providers, extras,
   });
+  // Só esta tela grava o histórico (Ferramentas e a barra também calculam a semana).
+  const semanaPassada = useHistoricoSemana(uid, tarefas, true);
 
   const focar = (f: boolean) => { setComposerFocado(f); onFocoChange?.(f); };
 
@@ -452,7 +454,7 @@ const AgentHomeScreen: React.FC<Props> = ({
         {tresColunas ? (
           <div className="flex-1 min-h-0 flex gap-4 p-4">
             <aside className="w-[320px] shrink-0 overflow-y-auto ag-scroll flex flex-col gap-3 pr-1">
-              <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={fazerTarefa} onAbrir={onAbrirDestino} />
+              <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={fazerTarefa} onAbrir={onAbrirDestino} semanaPassada={semanaPassada} />
               <RodapeFontes fontes={fontes} onClick={onAbrirConectores} />
             </aside>
 
@@ -558,7 +560,7 @@ const AgentHomeScreen: React.FC<Props> = ({
                 {/* A semana recolhe no modo foco: com o teclado aberto o que
                     importa é o campo, e os atalhos descem para encostar nele. */}
                 <div className="ag-recolhe w-full ag-rise" data-recolhido={emFoco} style={{ maxHeight: 2400 }}>
-                  <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={fazerTarefa} onAbrir={onAbrirDestino} />
+                  <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={fazerTarefa} onAbrir={onAbrirDestino} semanaPassada={semanaPassada} />
                   <div className="mt-3"><RodapeFontes fontes={fontes} onClick={onAbrirConectores} /></div>
                 </div>
 

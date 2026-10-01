@@ -14,6 +14,9 @@ import {
   PROMPT_BANNER,
   PROMPT_PEDIDOS_TINY,
   textoEstimativa,
+  chaveDaSemana,
+  semanaParaGuardar,
+  mesmaSemana,
 } from '../src/modules/agent/semana.ts';
 
 let failures = 0;
@@ -158,7 +161,7 @@ if (failures) {
   const ops = montarSemana({ ...base, alfredFaz: { tiny: true, wake: true }, produtosForaDoErp: 4 });
   check('pedidos do Tiny e banner da Wake viram tarefa', ['tiny-pedidos', 'wake-banner-fds'].map((id) => ops.find((x) => x.id === id)?.prompt), [PROMPT_PEDIDOS_TINY, PROMPT_BANNER]);
   check('banner do fim de semana cai na quinta', ops.find((x) => x.id === 'wake-banner-fds').dia, 3);
-  check('no sábado não sugere banner', montarSemana({ ...base, hoje: new Date(2026, 9, 3, 10), alfredFaz: { wake: true } }).some((x) => x.id === 'wake-banner-fds'), false);
+  check('no sábado o banner fica no próprio dia', montarSemana({ ...base, hoje: new Date(2026, 9, 3, 10), alfredFaz: { wake: true } }).find((x) => x.id === 'wake-banner-fds')?.dia, 5);
   check('fora do ERP leva à tela, sem prompt', [ops.find((x) => x.id === 'produtos-fora-erp').titulo, ops.find((x) => x.id === 'produtos-fora-erp').prompt], ['4 produtos estão fora do ERP', undefined]);
 
   const video = montarSemana({ ...base, videoSugerido: { sku: 'V1', nome: 'Luminária' }, alfredFaz: { produtos: true }, custos });
@@ -173,4 +176,20 @@ if (failures) {
   check('missão leva à própria missão', [m[0].destino, m[0].missao], ['missao', 'erp']);
 }
 
-console.log('\nTudo certo.');
+// --- histórico semanal --------------------------------------------------------
+{
+  const ini = inicioDaSemana(QUARTA);
+  check('chave da semana é a segunda local', chaveDaSemana(ini), '2026-09-28');
+  const t1 = montarSemana({ ...base, produtosSemDescricao: 3, produtosSemImagem: 1 });
+  const g1 = semanaParaGuardar(ini, t1);
+  check('guarda total e feitas', [g1.total, g1.feitas], [2, 0]);
+  // O usuário completou as descrições: a tarefa some da lista recalculada.
+  const t2 = montarSemana({ ...base, produtosSemImagem: 1 });
+  const g2 = semanaParaGuardar(ini, t2, g1);
+  check('tarefa que sumiu fica como feita no histórico', g2.tarefas.map((t) => [t.id, t.estado]).sort(), [['produtos-descricao', 'feita'], ['produtos-imagem', 'aberta']]);
+  check('feitas sobe', [g2.total, g2.feitas], [2, 1]);
+  check('nada mudou, não grava de novo', [mesmaSemana(g1, semanaParaGuardar(ini, t1)), mesmaSemana(g1, g2), mesmaSemana(null, g1)], [true, false, false]);
+}
+
+console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');
+process.exit(failures ? 1 : 0);
