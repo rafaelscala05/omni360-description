@@ -10,6 +10,8 @@ import { usePendentesAlfred, useVideosDoAlfred } from './modules/agent/useSemana
 import type { DestinoTarefa } from './modules/agent/semana';
 import ProdutosAgenteScreen from './modules/agent/ProdutosAgenteScreen';
 import ConectoresScreen from './modules/agent/ConectoresScreen';
+import TrilhoDesktop, { type DestinoTrilho, type ItemConta } from './components/TrilhoDesktop';
+import { useAgentTheme } from './modules/agent/theme';
 import type { ChaveFonte } from './modules/agent/conectores';
 import type { PedidoAlfred } from './types/agent';
 import AppTabBar from './components/AppTabBar';
@@ -217,6 +219,9 @@ async function raceTimeout(promise: Promise<unknown>, ms: number): Promise<boole
 export default function App() {
   // State
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  // Tema do agente: com módulo de agente, o fundo do app acompanha o claro/escuro
+  // do Alfred nas telas dele (as telas antigas têm cores fixas e ficam claras).
+  const { tema: temaAgente } = useAgentTheme();
   // Rail colapsada por padrão — a tela Início (chat) é o ponto de entrada
   // agora, e a sidebar não deve competir por espaço com ela. Afeta só
   // desktop (md:); no mobile a sidebar já era um overlay controlado por
@@ -3370,6 +3375,32 @@ Retorne APENAS um JSON válido no seguinte formato:
     }
   }
 
+  // Com agente, o desktop navega pelo trilho de vidro (três portas + Conta);
+  // o menu escuro fica só como gaveta do telefone. Telas de ferramenta contam
+  // como Ferramentas; as de conta (créditos, empresa…) não acendem porta.
+  const temAgente = hasContentAgent || hasOperationsAgent;
+  const telaDoAgente = ['home', 'atividade', 'ferramentas', 'agenteProdutos', 'fontes'].includes(mainView);
+  const portaAtual: DestinoTrilho | null =
+    mainView === 'home' || mainView === 'fontes' ? 'home'
+      : mainView === 'atividade' ? 'atividade'
+        : ['ferramentas', 'agenteProdutos', 'products', 'categories', 'meli'].includes(mainView) ? 'ferramentas'
+          : null;
+  const abrirItemConta = (item: ItemConta) => {
+    if (item === 'creditos') { setIsCreditPurchaseOpen(true); trackCreditPurchaseOpen(); }
+    else if (item === 'historico') { setMainView('history'); fetchCreditLogs(); setIsCreditHistoryOpen(false); }
+    else if (item === 'missoes') setMainView('missoes');
+    else if (item === 'integracoes') setMainView('integrations');
+    else if (item === 'empresa') setMainView('company');
+    else if (item === 'indique') {
+      setMainView('referral');
+      if (!referralNavSeen) { setReferralNavSeen(true); localStorage.setItem('referralNavSeen', '1'); }
+    }
+    else if (item === 'tutorial') setMainView('tutorial');
+    else if (item === 'ajuda') openSupportChat().catch((err) => console.error('[suporte] falha ao abrir o chat de ajuda', err));
+    else if (item === 'configuracoes') setIsTemplateModalOpen(true);
+    else if (item === 'sair') handleLogout();
+  };
+
   const renderApp = () => (
     <div className="h-screen bg-[#f7f9fb] flex font-sans overflow-hidden">
       <input type="file" accept=".xlsx, .xls" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
@@ -3388,10 +3419,26 @@ Retorne APENAS um JSON válido no seguinte formato:
         />
       )}
 
-      {/* Sidebar */}
+      {temAgente && (
+        <TrilhoDesktop
+          atual={portaAtual}
+          pendentes={pendentesAlfred}
+          credits={credits}
+          nome={user.displayName ?? ''}
+          email={user.email ?? ''}
+          foto={user.photoURL}
+          mostrarMissoes={isCoorteMissao(cohort)}
+          indiqueNovo={!referralNavSeen}
+          logo={logoAlfreds}
+          onNavegar={(d) => setMainView(d)}
+          onConta={abrirItemConta}
+        />
+      )}
+
+      {/* Sidebar — com agente, só a gaveta do telefone (no desktop vale o trilho). */}
       <aside className={`
         fixed inset-y-0 left-0 w-[260px] ${sidebarCollapsed ? 'md:w-[76px]' : 'md:w-[260px]'} bg-[#141311] text-white flex-shrink-0 flex flex-col z-40
-        shadow-[4px_0_24px_rgba(0,0,0,0.05)] pt-4 transition-[width,transform] duration-300 md:static md:translate-x-0
+        shadow-[4px_0_24px_rgba(0,0,0,0.05)] pt-4 transition-[width,transform] duration-300 md:static md:translate-x-0 ${temAgente ? 'md:hidden' : ''}
         ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}
       `}>
         <div className="h-16 px-5 flex items-center justify-between border-b border-white/5 mx-3 mb-4 pb-4">
@@ -3625,9 +3672,15 @@ Retorne APENAS um JSON válido no seguinte formato:
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 bg-[#f7f9fb] h-screen overflow-hidden">
+      <div
+        className={cn("flex-1 flex flex-col min-w-0 h-screen overflow-hidden", temAgente ? "alfreds" : "bg-[#f7f9fb]")}
+        data-tema={temAgente ? (telaDoAgente ? temaAgente : 'claro') : undefined}
+        style={temAgente ? { background: 'var(--ag-bg)' } : undefined}
+      >
         {/* Top Bar */}
-        <header className="h-16 bg-white border-b border-slate-200 px-4 md:px-6 flex items-center justify-between flex-shrink-0 z-10 sticky top-0 shadow-sm gap-3">
+        {/* As telas do agente têm cabeçalho próprio; no desktop, com o trilho
+            levando créditos e conta, a barra de topo só sobra nas telas antigas. */}
+        <header className={cn("h-16 bg-white border-b border-slate-200 px-4 md:px-6 flex items-center justify-between flex-shrink-0 z-10 sticky top-0 shadow-sm gap-3", temAgente && telaDoAgente && "md:hidden")}>
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <button 
               onClick={() => setIsSidebarOpen(true)} 
@@ -3720,7 +3773,8 @@ Retorne APENAS um JSON válido no seguinte formato:
 
         {/* Dynamic View Content */}
         <main className={cn(
-          "flex-1 overflow-y-auto w-full bg-[#f7f9fb]",
+          "flex-1 overflow-y-auto w-full",
+          !temAgente && "bg-[#f7f9fb]",
           // O chat do agente não tem barra inferior no telefone (o menu foi
           // para o cabeçalho dele), então dispensa a reserva de 5rem embaixo
           // e usa um respiro menor nas laterais — a tela toda é a conversa.

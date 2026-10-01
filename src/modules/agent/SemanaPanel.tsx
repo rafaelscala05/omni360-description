@@ -162,13 +162,13 @@ const SemanaPanel: React.FC<Props> = ({ tarefas, hoje, onFazer, onAbrir, fontes,
       {fontes && onAbrirFontes && (
         <button
           onClick={onAbrirFontes}
-          className="min-h-[44px] px-4 rounded-[16px] flex items-center justify-between gap-3 text-[13px] transition-colors"
+          className="min-h-[44px] px-3.5 rounded-[16px] flex items-center justify-between gap-2 text-[12.5px] whitespace-nowrap transition-colors"
           style={{ background: fontes.alerta ? 'var(--ag-warn-soft)' : 'var(--ag-fill)' }}
         >
           <span className="flex items-center gap-2 font-medium" style={{ color: fontes.alerta ? 'var(--ag-warn)' : 'var(--ag-text)' }}>
             {fontes.alerta > 0 && <AlertTriangle className="w-3.5 h-3.5" />}
             {fontes.ativas} {fontes.ativas === 1 ? 'fonte' : 'fontes'}
-            {fontes.alerta > 0 && ` · ${fontes.alerta} ${fontes.alerta === 1 ? 'precisa' : 'precisam'} de atenção`}
+            {fontes.alerta > 0 && ` · ${fontes.alerta} ${fontes.alerta === 1 ? 'alerta' : 'alertas'}`}
           </span>
           <span className="flex items-center text-[var(--ag-text-2)]">
             {fontes.paraConectar > 0 ? `+${fontes.paraConectar} para conectar` : 'Ver fontes'}

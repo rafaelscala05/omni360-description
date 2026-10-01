@@ -33,7 +33,7 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 ## O que foi desenhado e ainda não existe
 
 ### Navegação e visual (DS1 · Liquid Glass)
-- [ ] **Trilho desktop de vidro (D1/D2)**: o menu lateral escuro continua; o desenho pede um trilho estreito com as 3 portas + avatar da Conta (Missões, Integrações, Empresa, Créditos, Indique viram o menu do avatar).
+- [x] **Trilho desktop de vidro (D1/D2)** (`src/components/TrilhoDesktop.tsx`): com agente, o desktop navega por um trilho de 96px com Alfred · Atividade · Ferramentas, o tema claro/escuro e o avatar da Conta, cujo menu leva Créditos, Histórico, Missões, Integrações, Empresa, Indique e Ganhe, Tutorial, Ajuda, Configurações e Sair. O menu escuro antigo ficou só como gaveta do telefone (e inteiro para quem não tem agente). A barra branca de topo some no desktop nas telas do agente, que têm cabeçalho próprio. A fila de vídeo do menu antigo não foi levada: o vídeo em produção já aparece em Atividade › Rodando.
 - [ ] **Liquid Glass no resto do app**: Produtos, Conteúdo, Mercado Livre, Integrações, Histórico ainda no visual antigo (fundo `#f7f9fb`, cores literais). Exige levar os tokens `--ag-*` para fora do escopo `.alfreds` e decidir se o tema escuro passa a valer no app todo.
 - [ ] **Avatar da Conta no topo (mobile)**: no desenho a Conta sai do Menu e vira o avatar no cabeçalho de Ferramentas.
 
