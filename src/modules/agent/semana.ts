@@ -45,6 +45,10 @@ export interface SinaisSemana {
   hoje: Date;
   produtosSemDescricao: number;
   produtosSemImagem: number;
+  /** Pais com categoria que define atributo ainda vazio. Ausente = categorias não carregadas. */
+  produtosSemAtributos?: number;
+  /** Pais com foto e nenhuma imagem ambientada. */
+  produtosSemAmbientada?: number;
   acoes: AgentAction[];
   artigos: ArtigoAgendado[];
   /** null = módulo desligado ou métrica indisponível. */
@@ -55,6 +59,8 @@ export interface SinaisSemana {
 }
 
 export const PROMPT_DESCRICOES = 'Complete as descrições dos produtos que estão sem, num lote de 5, e me mostre uma amostra antes de gravar.';
+export const PROMPT_ATRIBUTOS = 'Preencha os atributos da categoria dos produtos que estão sem, num lote de 5, e me mostre antes de gravar.';
+export const PROMPT_AMBIENTADAS = 'Crie imagens ambientadas para os produtos com foto que ainda não têm, num lote de 3, e me mostre antes de gravar.';
 export const PROMPT_MELI = 'Quais anúncios do Mercado Livre têm proposta de melhoria esperando? Me mostre a de maior impacto.';
 
 export const MAX_POR_DIA = 3;
@@ -177,6 +183,33 @@ export function montarSemana(s: SinaisSemana): TarefaSemana[] {
       origem: 'produto',
       titulo: `Adicionar foto a ${plural(s.produtosSemImagem, 'produto', 'produtos')}`,
       estado: 'aberta',
+      destino: 'produtos',
+    });
+  }
+
+  // Depois do que conta como incompleto (descrição, foto): atributos e
+  // ambientada melhoram o produto, mas não o deixam quebrado — por isso vêm
+  // no fim da fila do dia, nunca na frente.
+  if (s.produtosSemAtributos) {
+    flexiveis.push({
+      id: 'produtos-atributos',
+      origem: 'produto',
+      titulo: `Preencher os atributos de ${plural(s.produtosSemAtributos, 'produto', 'produtos')}`,
+      detalhe: 'Cor, material, medidas — viram filtro na loja',
+      estado: 'aberta',
+      prompt: s.alfredFaz?.produtos ? PROMPT_ATRIBUTOS : undefined,
+      destino: 'produtos',
+    });
+  }
+
+  if (s.produtosSemAmbientada) {
+    flexiveis.push({
+      id: 'produtos-ambientada',
+      origem: 'produto',
+      titulo: `Criar imagens ambientadas de ${plural(s.produtosSemAmbientada, 'produto', 'produtos')}`,
+      detalhe: 'O produto em uso, a partir da foto real',
+      estado: 'aberta',
+      prompt: s.alfredFaz?.produtos ? PROMPT_AMBIENTADAS : undefined,
       destino: 'produtos',
     });
   }

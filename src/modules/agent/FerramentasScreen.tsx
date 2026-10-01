@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronRight, Coins, Menu, Sparkles } from 'lucide-react';
-import type { Product } from '../../types/models';
+import type { Category, Product } from '../../types/models';
 import type { AgentAction } from '../../types/agent';
 import { listenActions } from '../../services/agentChatService';
 import { fetchIntegrationsOverview, type IntegrationSummary } from '../../services/integrationsStatusService';
@@ -14,6 +14,8 @@ export type ViewConta = 'categories' | 'history' | 'company' | 'missoes';
 interface Props {
   uid: string;
   products: Product[];
+  /** Para a semana saber quais produtos têm atributo da categoria por preencher. */
+  categories?: Category[];
   credits: number;
   hasAgente: boolean;
   hasContentAgent: boolean;
@@ -70,7 +72,7 @@ const Cartao: React.FC<{
  * discordarem sobre o que vem primeiro.
  */
 const FerramentasScreen: React.FC<Props> = ({
-  uid, products, credits, hasAgente, hasContentAgent, hasMeli, mostrarMissoes, onAbrir, onAbrirView, onPedirAlfred, onAbrirMenu,
+  uid, products, categories, credits, hasAgente, hasContentAgent, hasMeli, mostrarMissoes, onAbrir, onAbrirView, onPedirAlfred, onAbrirMenu,
 }) => {
   const { tema } = useAgentTheme();
   const [acoes, setAcoes] = useState<AgentAction[]>([]);
@@ -85,7 +87,7 @@ const FerramentasScreen: React.FC<Props> = ({
 
   const providers = useProvidersAlfred(uid, hasAgente);
   const { tarefas, hoje, artigos, meliPropostasAguardando } = useSemana({
-    uid, products, acoes, integracoes, hasContentAgent, hasMeli, providers,
+    uid, products, acoes, integracoes, hasContentAgent, hasMeli, providers, categories,
   });
   const passo = proximoPasso(tarefas, hoje);
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowRight, Sparkles } from 'lucide-react';
-import type { Product } from '../../types/models';
+import type { Category, Product } from '../../types/models';
 import type { AgentAction } from '../../types/agent';
 import { listenActions } from '../../services/agentChatService';
 import { fetchIntegrationsOverview, type IntegrationSummary } from '../../services/integrationsStatusService';
@@ -12,6 +12,8 @@ import { ORIGEM } from './SemanaPanel';
 interface Props {
   uid: string;
   products: Product[];
+  /** Para a semana saber quais produtos têm atributo da categoria por preencher. */
+  categories?: Category[];
   hasContentAgent: boolean;
   hasMeli: boolean;
   onAbrir: (destino: DestinoTarefa) => void;
@@ -25,7 +27,7 @@ interface Props {
  * discordarem. No telefone quem cumpre esse papel é a própria semana, então a
  * barra só existe de `md` para cima.
  */
-const ProximoPassoBar: React.FC<Props> = ({ uid, products, hasContentAgent, hasMeli, onAbrir, onPedirAlfred }) => {
+const ProximoPassoBar: React.FC<Props> = ({ uid, products, categories, hasContentAgent, hasMeli, onAbrir, onPedirAlfred }) => {
   const { tema } = useAgentTheme();
   const [acoes, setAcoes] = useState<AgentAction[]>([]);
   const [integracoes, setIntegracoes] = useState<IntegrationSummary[]>([]);
@@ -38,7 +40,7 @@ const ProximoPassoBar: React.FC<Props> = ({ uid, products, hasContentAgent, hasM
   }, [uid]);
 
   const providers = useProvidersAlfred(uid, true);
-  const { tarefas, hoje } = useSemana({ uid, products, acoes, integracoes, hasContentAgent, hasMeli, providers });
+  const { tarefas, hoje } = useSemana({ uid, products, acoes, integracoes, hasContentAgent, hasMeli, providers, categories });
   const passo = proximoPasso(tarefas, hoje);
   if (!passo) return null;
 

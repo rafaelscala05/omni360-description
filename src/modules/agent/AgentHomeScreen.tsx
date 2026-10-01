@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Coins, Menu, Moon, ScrollText, Sun } from 'lucide-react';
-import type { Product } from '../../types/models';
+import type { Category, Product } from '../../types/models';
 import type { AgentAction, PedidoAlfred, ThreadMessage, WorkspaceContext } from '../../types/agent';
 import {
   enviarMensagem, executarAcao, fetchTools, listenActions, listenMessages, rejeitarAcao,
@@ -23,6 +23,8 @@ interface Props {
   uid: string;
   credits: number;
   products: Product[];
+  /** Para a semana saber quais produtos têm atributo da categoria por preencher. */
+  categories?: Category[];
   hasContentAgent: boolean;
   hasOperationsAgent: boolean;
   onOpenIntegrations: () => void;
@@ -54,7 +56,7 @@ const MARCA: Record<string, { glifo: string; cor: string }> = {
 };
 
 const AgentHomeScreen: React.FC<Props> = ({
-  uid, credits, products, hasContentAgent, hasMeli, onOpenIntegrations, onAbrirDestino,
+  uid, credits, products, categories, hasContentAgent, hasMeli, onOpenIntegrations, onAbrirDestino,
   onAbrirMenu, onFocoChange, promptInicial, onPromptConsumido,
 }) => {
   const { tema, alternar } = useAgentTheme();
@@ -148,7 +150,7 @@ const AgentHomeScreen: React.FC<Props> = ({
   }, [uid, hasContentAgent]);
 
   const { tarefas, hoje } = useSemana({
-    uid, products, acoes: listaAcoes, integracoes, hasContentAgent, hasMeli, providers,
+    uid, products, acoes: listaAcoes, integracoes, hasContentAgent, hasMeli, providers, categories,
   });
 
   const focar = (f: boolean) => { setComposerFocado(f); onFocoChange?.(f); };

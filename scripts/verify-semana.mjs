@@ -9,6 +9,8 @@ import {
   semImagem,
   PROMPT_DESCRICOES,
   PROMPT_MELI,
+  PROMPT_ATRIBUTOS,
+  PROMPT_AMBIENTADAS,
 } from '../src/modules/agent/semana.ts';
 
 let failures = 0;
@@ -58,6 +60,15 @@ check('sem ferramenta de produto, não tem "Fazer com Alfred"', prod[0].prompt, 
   check('com ferramenta de produto, descrições ganham prompt', comTool.find((t) => t.id === 'produtos-descricao').prompt, PROMPT_DESCRICOES);
   check('foto de produto continua sem ferramenta', comTool.find((t) => t.id === 'produtos-imagem').prompt, undefined);
   check('com ferramenta do MELI, propostas ganham prompt', comTool.find((t) => t.id === 'meli-propostas').prompt, PROMPT_MELI);
+}
+{
+  const enriquecer = montarSemana({ ...base, produtosSemDescricao: 1, produtosSemAtributos: 5, produtosSemAmbientada: 1, alfredFaz: { produtos: true } });
+  check('atributos e ambientada viram tarefa com prompt', ['produtos-atributos', 'produtos-ambientada'].map((id) => enriquecer.find((t) => t.id === id)?.prompt), [PROMPT_ATRIBUTOS, PROMPT_AMBIENTADAS]);
+  check('vêm depois da descrição (melhoram, não completam)', enriquecer.map((t) => t.id), ['produtos-descricao', 'produtos-atributos', 'produtos-ambientada']);
+  check('título no singular e no plural', enriquecer.slice(1).map((t) => t.titulo), ['Preencher os atributos de 5 produtos', 'Criar imagens ambientadas de 1 produto']);
+  const semTool = montarSemana({ ...base, produtosSemAtributos: 2, produtosSemAmbientada: 2 });
+  check('sem ferramenta, levam à tela', semTool.map((t) => [t.prompt, t.destino]), [[undefined, 'produtos'], [undefined, 'produtos']]);
+  check('zero ou ausente não cria tarefa', montarSemana({ ...base, produtosSemAtributos: 0 }), []);
 }
 check('plural e singular no título', montarSemana({ ...base, produtosSemDescricao: 1 })[0].titulo, 'Completar a descrição de 1 produto');
 

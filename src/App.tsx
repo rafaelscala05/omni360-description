@@ -3725,6 +3725,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           <ProximoPassoBar
             uid={user.uid}
             products={products}
+            categories={existingCategories}
             hasContentAgent={hasContentAgent}
             hasMeli={hasMeliListingOptimizer}
             onAbrir={abrirDestino}
@@ -3759,6 +3760,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               uid={user.uid}
               credits={credits}
               products={products}
+              categories={existingCategories}
               hasContentAgent={hasContentAgent}
               hasOperationsAgent={hasOperationsAgent}
               hasMeli={hasMeliListingOptimizer}
@@ -3780,6 +3782,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             <FerramentasScreen
               uid={user.uid}
               products={products}
+              categories={existingCategories}
               credits={credits}
               hasAgente={hasContentAgent || hasOperationsAgent}
               hasContentAgent={hasContentAgent}

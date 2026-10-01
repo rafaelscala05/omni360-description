@@ -7,7 +7,8 @@
 // listener no mesmo documento.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Product } from '../../types/models';
+import type { Category, Product } from '../../types/models';
+import { getEffectiveAttributes } from '../../services/categoryService';
 import type { AgentAction } from '../../types/agent';
 import type { IntegrationSummary } from '../../services/integrationsStatusService';
 import { listenCalendar, listenProjects } from '../../services/contentService';
@@ -92,6 +93,23 @@ interface Opcoes {
   hasMeli: boolean;
   /** Providers com ferramenta no registry (ver useProvidersAlfred). */
   providers?: string[];
+  /** Sem categorias carregadas, a tarefa de atributos não aparece (não dá para saber o que falta). */
+  categories?: Category[];
+}
+
+const vazio = (v: unknown) => (Array.isArray(v) ? v.length === 0 : !String(v ?? '').trim());
+
+/**
+ * Pais cuja categoria define atributo ainda vazio — a mesma conta de
+ * selecionarParaAtributos (server/agent/produtosRules.ts), para "Fazer com
+ * Alfred" nunca abrir um lote vazio.
+ */
+export function contarSemAtributos(pais: Product[], categories: Category[]): number {
+  return pais.filter((p) => {
+    if (!p.categoryId) return false;
+    const defs = getEffectiveAttributes(p.categoryId, categories);
+    return defs.some((d) => vazio(p.attributes?.[d.key]?.value));
+  }).length;
 }
 
 /** Quais providers o Alfred consegue operar nesta conta — liga o "Fazer com Alfred". */
@@ -106,7 +124,7 @@ export function useProvidersAlfred(uid: string, ativo: boolean): string[] {
   return providers;
 }
 
-export function useSemana({ uid, products, acoes, integracoes, hasContentAgent, hasMeli, providers = [] }: Opcoes): {
+export function useSemana({ uid, products, acoes, integracoes, hasContentAgent, hasMeli, providers = [], categories }: Opcoes): {
   tarefas: TarefaSemana[];
   hoje: number;
   artigos: ArtigoAgendado[];
@@ -117,13 +135,20 @@ export function useSemana({ uid, products, acoes, integracoes, hasContentAgent, 
 
   // Variação herda descrição e foto do pai na vitrine — contar as filhas
   // multiplicaria a mesma pendência pelo número de grades.
-  const { semDescricao, semFoto } = useMemo(() => {
-    const pais = products.filter((p) => !String(p['Código do pai'] ?? '').trim());
+  const { semDescricao, semFoto, semAmbientada } = useMemo(() => {
+    const pais = products.filter((p) => !String(p['Código do pai'] ?? '').trim() && !p._blingDeleted && !p._idworksDeleted);
+    const comFoto = (p: Product) => !semImagem(p as unknown as Record<string, unknown>);
     return {
       semDescricao: pais.filter((p) => !String(p['Descrição complementar'] ?? '').trim()).length,
-      semFoto: pais.filter((p) => semImagem(p as unknown as Record<string, unknown>)).length,
+      semFoto: pais.filter((p) => !comFoto(p)).length,
+      semAmbientada: pais.filter((p) => comFoto(p) && !(p._ambientImages?.length)).length,
     };
   }, [products]);
+
+  const semAtributos = useMemo(() => {
+    if (!categories?.length) return 0;
+    return contarSemAtributos(products.filter((p) => !String(p['Código do pai'] ?? '').trim()), categories);
+  }, [products, categories]);
 
   const integracoesComAlerta = useMemo(
     () => integracoes.filter((i) => i.conectado && !i.validado).map((i) => i.nome),
@@ -137,6 +162,8 @@ export function useSemana({ uid, products, acoes, integracoes, hasContentAgent, 
         hoje: agora,
         produtosSemDescricao: semDescricao,
         produtosSemImagem: semFoto,
+        produtosSemAtributos: semAtributos,
+        produtosSemAmbientada: semAmbientada,
         acoes,
         artigos,
         meliPropostasAguardando,
@@ -147,7 +174,7 @@ export function useSemana({ uid, products, acoes, integracoes, hasContentAgent, 
       artigos,
       meliPropostasAguardando,
     };
-  }, [semDescricao, semFoto, acoes, artigos, meliPropostasAguardando, integracoesComAlerta, providers]);
+  }, [semDescricao, semFoto, semAtributos, semAmbientada, acoes, artigos, meliPropostasAguardando, integracoesComAlerta, providers]);
 }
 
 /**
