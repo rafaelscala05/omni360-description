@@ -3175,122 +3175,139 @@ Retorne APENAS um JSON válido no seguinte formato:
   // else (action debits) subtracts. Distinguishes which column/sign to render.
   const isCreditGrant = (log: CreditLog) => log.type === 'purchase' || log.type === 'bonus';
 
-  const renderHistoryView = () => (
-    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 mx-auto w-full">
-      <div className="flex justify-between items-end mb-6">
-         <div>
-           <h1 className="text-[28px] font-bold text-slate-900 tracking-tight leading-tight">Histórico de Créditos</h1>
-           <p className="text-sm text-slate-500 mt-1">Revise suas transações recentes e uso de créditos.</p>
-         </div>
-         <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-700 transition-colors">
-           <Download className="w-4 h-4" /> Exportar CSV
-         </button>
-      </div>
-  
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-           <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Saldo Disponível</div>
-           <div className="flex items-baseline gap-2 mb-4">
-              <span className="text-5xl font-bold text-slate-900 tracking-tight">{credits}</span>
-              <span className="text-base text-slate-500">créditos</span>
-           </div>
+  // Histórico de créditos — em tokens `--ag-*`, então segue o tema do Alfred
+  // (com agente) e abre o próprio escopo claro sem agente.
+  const exportarHistoricoCsv = () => {
+    const linhas = [['Data e hora', 'Ação', 'Produto / detalhes', 'SKU', 'Créditos']];
+    for (const log of creditLogs) {
+      const detalhe = log.type === 'purchase' ? `Compra de ${log.creditsAdded ?? 0} créditos` : log.type === 'bonus' ? log.actionType : (log.productName ?? '');
+      const valor = isCreditGrant(log) ? `+${log.creditsAdded ?? 0}` : `-${log.creditsConsumed || 0}`;
+      linhas.push([new Date(log.timestamp).toLocaleString('pt-BR'), log.actionType ?? '', detalhe, log.sku ?? '', valor]);
+    }
+    const csv = linhas.map((l) => l.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n');
+    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `historico-creditos-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const renderHistoryView = () => {
+    const agora = new Date();
+    const doMes = creditLogs.filter((l) => !isCreditGrant(l)
+      && new Date(l.timestamp).getMonth() === agora.getMonth()
+      && new Date(l.timestamp).getFullYear() === agora.getFullYear());
+    const usadoNoMes = doMes.reduce((acc, log) => acc + (log.creditsConsumed || 0), 0);
+    const porAcao = new Map<string, number>();
+    for (const l of doMes) porAcao.set(l.actionType, (porAcao.get(l.actionType) ?? 0) + (l.creditsConsumed || 0));
+    const maisUsado = [...porAcao.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? '—';
+    const rotulo = 'text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--ag-text-2)]';
+
+    return (
+      <div className="alfreds max-w-5xl mx-auto w-full flex flex-col gap-4" data-tema={temAgente ? temaAgente : 'claro'}>
+        <div className="flex flex-wrap justify-between items-end gap-3">
+          <div>
+            <h1 className="font-display text-[26px] sm:text-[30px] font-semibold tracking-tight text-[var(--ag-text)]">Histórico de créditos</h1>
+            <p className="mt-1 text-[14px] text-[var(--ag-text-2)]">Suas transações recentes e o uso de créditos.</p>
+          </div>
+          <button
+            onClick={exportarHistoricoCsv}
+            disabled={creditLogs.length === 0}
+            className="min-h-[40px] px-4 rounded-full flex items-center gap-2 text-[13.5px] font-semibold disabled:opacity-50"
+            style={{ background: 'var(--ag-fill-2)', color: 'var(--ag-text)' }}
+          >
+            <Download className="w-4 h-4" /> Exportar CSV
+          </button>
         </div>
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex items-center justify-between">
-           <div className="flex gap-12">
-              <div>
-                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Usado Este Mês</div>
-                 <div className="flex items-baseline gap-2">
-                   <span className="text-2xl font-bold text-slate-900">
-                     {creditLogs
-                       .filter((l) => !isCreditGrant(l) && new Date(l.timestamp).getMonth() === new Date().getMonth() && new Date(l.timestamp).getFullYear() === new Date().getFullYear())
-                       .reduce((acc, log) => acc + (log.creditsConsumed || 0), 0)}
-                   </span>
-                   <span className="text-sm text-slate-500">créditos</span>
-                 </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <section className="ag-glass ag-sheen rounded-[24px] p-5 flex flex-col gap-2">
+            <span className={rotulo}>Saldo disponível</span>
+            <div className="flex items-baseline gap-2">
+              <span className="font-display text-[44px] leading-none font-semibold tabular-nums text-[var(--ag-text)]">{credits}</span>
+              <span className="text-[14px] text-[var(--ag-text-2)]">créditos</span>
+            </div>
+          </section>
+          <section className="ag-glass ag-sheen rounded-[24px] p-5 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex gap-10">
+              <div className="flex flex-col gap-2">
+                <span className={rotulo}>Usado este mês</span>
+                <span className="text-[24px] font-semibold tabular-nums text-[var(--ag-text)]">{usadoNoMes}<span className="ml-1.5 text-[13px] font-normal text-[var(--ag-text-2)]">créditos</span></span>
               </div>
-              <div>
-                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Mais Usado</div>
-                 <div className="text-sm font-medium text-slate-900 mt-1">Geração IA</div>
+              <div className="flex flex-col gap-2 min-w-0">
+                <span className={rotulo}>Mais usado</span>
+                <span className="text-[14px] font-medium text-[var(--ag-text)] truncate max-w-[160px]" title={maisUsado}>{maisUsado}</span>
               </div>
-           </div>
-           <button className="flex items-center gap-2 px-4 py-2 font-medium text-sm text-white bg-[#FF5B03] hover:bg-[#E14E00] transition-colors rounded-lg shadow-sm">
-              <Plus className="w-4 h-4" /> Comprar Créditos
-           </button>
+            </div>
+            <button
+              onClick={() => { setIsCreditPurchaseOpen(true); trackCreditPurchaseOpen(); }}
+              className="min-h-[44px] px-5 rounded-full flex items-center gap-2 text-[14px] font-semibold"
+              style={{ background: 'var(--ag-text)', color: 'var(--ag-bg-2)' }}
+            >
+              <Plus className="w-4 h-4" /> Comprar créditos
+            </button>
+          </section>
         </div>
+
+        <section className="ag-glass ag-sheen rounded-[24px] overflow-hidden">
+          <h2 className="px-5 py-4 text-[16px] font-semibold text-[var(--ag-text)]" style={{ borderBottom: '1px solid var(--ag-hairline)' }}>
+            Transações recentes
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-[14px] whitespace-nowrap">
+              <thead style={{ background: 'var(--ag-fill)' }}>
+                <tr>
+                  <th className={`px-5 py-3 ${rotulo}`}>Data e hora</th>
+                  <th className={`px-5 py-3 ${rotulo}`}>Ação</th>
+                  <th className={`px-5 py-3 ${rotulo}`}>Produto / detalhes</th>
+                  <th className={`px-5 py-3 text-right ${rotulo}`}>Créditos</th>
+                </tr>
+              </thead>
+              <tbody>
+                {creditLogs.length === 0 ? (
+                  <tr><td colSpan={4} className="px-5 py-8 text-center text-[var(--ag-text-2)]">Nenhuma transação registrada.</td></tr>
+                ) : (
+                  creditLogs.map((log) => (
+                    <tr key={log.id} style={{ borderTop: '1px solid var(--ag-hairline)' }}>
+                      <td className="px-5 py-3.5 text-[var(--ag-text-2)] tabular-nums">{new Date(log.timestamp).toLocaleString('pt-BR')}</td>
+                      <td className="px-5 py-3.5">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium" style={{ background: 'var(--ag-fill-2)', color: 'var(--ag-text-2)' }}>
+                          {log.actionType}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-[var(--ag-text)] max-w-xs xl:max-w-md truncate" title={log.productName}>
+                        {log.type === 'purchase' ? (
+                          <>
+                            Compra de {log.creditsAdded ?? 0} créditos
+                            {log.amount != null && (
+                              <div className="text-[11px] text-[var(--ag-text-3)] font-mono mt-0.5">R$ {log.amount.toFixed(2).replace('.', ',')}</div>
+                            )}
+                          </>
+                        ) : log.type === 'bonus' ? (
+                          <span className="text-[var(--ag-text-2)]">{log.actionType}</span>
+                        ) : (
+                          <>
+                            {log.productName}
+                            <div className="text-[11px] text-[var(--ag-text-3)] font-mono mt-0.5">{log.sku}</div>
+                          </>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5 text-right font-semibold tabular-nums">
+                        {isCreditGrant(log)
+                          ? <span style={{ color: 'var(--ag-ok)' }}>+{log.creditsAdded ?? 0}</span>
+                          : <span style={{ color: 'var(--ag-danger)' }}>-{log.creditsConsumed || 0}</span>}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
-  
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-         <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-            <h2 className="text-base font-bold text-slate-900 tracking-tight">Transações Recentes</h2>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-slate-500">Filtrar por:</span>
-              <select className="text-sm border border-slate-200 rounded-md bg-white pr-8 pl-3 py-1.5 outline-none focus:border-[#FF5B03]">
-                 <option>Todos os Tipos</option>
-              </select>
-            </div>
-         </div>
-         <table className="w-full text-left text-sm whitespace-nowrap">
-           <thead className="bg-[#f7f9fb] border-b border-slate-200">
-             <tr>
-               <th className="px-6 py-3 font-semibold text-slate-500 text-xs tracking-wider uppercase">Data e Hora</th>
-               <th className="px-6 py-3 font-semibold text-slate-500 text-xs tracking-wider uppercase">Ação</th>
-               <th className="px-6 py-3 font-semibold text-slate-500 text-xs tracking-wider uppercase">Produto / Detalhes</th>
-               <th className="px-6 py-3 text-right font-semibold text-slate-500 text-xs tracking-wider uppercase">Créditos</th>
-             </tr>
-           </thead>
-           <tbody className="divide-y divide-slate-100">
-             {creditLogs.length === 0 ? (
-               <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-500">Nenhuma transação registrada.</td></tr>
-             ) : (
-               creditLogs.map((log) => (
-                 <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
-                   <td className="px-6 py-4 text-slate-600">{new Date(log.timestamp).toLocaleString('pt-BR')}</td>
-                   <td className="px-6 py-4">
-                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-100 text-slate-600 text-xs font-medium">
-                       <RefreshCw className="w-3 h-3" /> {log.actionType}
-                     </span>
-                   </td>
-                   <td className="px-6 py-4 text-slate-900 max-w-xs xl:max-w-md truncate" title={log.productName}>
-                     {log.type === 'purchase' ? (
-                       <>
-                         Compra de {log.creditsAdded ?? 0} créditos
-                         {log.amount != null && (
-                           <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                             R$ {log.amount.toFixed(2).replace('.', ',')}
-                           </div>
-                         )}
-                       </>
-                     ) : log.type === 'bonus' ? (
-                       <span className="text-slate-600">{log.actionType}</span>
-                     ) : (
-                       <>
-                         {log.productName}
-                         <div className="text-[10px] text-slate-400 font-mono mt-0.5">{log.sku}</div>
-                       </>
-                     )}
-                   </td>
-                   <td className="px-6 py-4 text-right font-medium">
-                     {isCreditGrant(log) ? (
-                       <span className="text-green-600">+{log.creditsAdded ?? 0}</span>
-                     ) : (
-                       <span className="text-red-500">-{log.creditsConsumed || 0}</span>
-                     )}
-                   </td>
-                 </tr>
-               ))
-             )}
-           </tbody>
-         </table>
-         <div className="px-6 py-3 border-t border-slate-200 bg-white flex justify-between items-center text-sm text-slate-500">
-            <span>Mostrando transações</span>
-            <div className="flex gap-2">
-              <button disabled className="p-1 text-slate-300"><ChevronLeft className="w-4 h-4"/></button>
-              <button disabled className="p-1 text-slate-300"><ChevronRight className="w-4 h-4"/></button>
-            </div>
-         </div>
-      </div>
-    </div>
-  );
+    );
+  };
 
   if (user && workspace === 'content') {
     return (
@@ -3380,6 +3397,8 @@ Retorne APENAS um JSON válido no seguinte formato:
   // como Ferramentas; as de conta (créditos, empresa…) não acendem porta.
   const temAgente = hasContentAgent || hasOperationsAgent;
   const telaDoAgente = ['home', 'atividade', 'ferramentas', 'agenteProdutos', 'fontes'].includes(mainView);
+  // Telas antigas já convertidas para os tokens `--ag-*`: seguem o tema do Alfred.
+  const telaComTokens = ['history'].includes(mainView);
   const portaAtual: DestinoTrilho | null =
     mainView === 'home' || mainView === 'fontes' ? 'home'
       : mainView === 'atividade' ? 'atividade'
@@ -3674,7 +3693,7 @@ Retorne APENAS um JSON válido no seguinte formato:
       {/* Main Content Area */}
       <div
         className={cn("flex-1 flex flex-col min-w-0 h-screen overflow-hidden", temAgente ? "alfreds" : "bg-[#f7f9fb]")}
-        data-tema={temAgente ? (telaDoAgente ? temaAgente : 'claro') : undefined}
+        data-tema={temAgente ? (telaDoAgente || telaComTokens ? temaAgente : 'claro') : undefined}
         style={temAgente ? { background: 'var(--ag-bg)' } : undefined}
       >
         {/* Top Bar */}

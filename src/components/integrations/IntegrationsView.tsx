@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plug, Store, Database } from 'lucide-react';
+import { MARCA } from '../../modules/agent/ConnectionsBar';
 import WakeConnector, { type WakePushFields } from './WakeConnector';
 import TinyConnector from './TinyConnector';
 import type { WakeNormalizedProduct, WakePushProduct } from '../../services/wakeService';
@@ -25,82 +25,53 @@ interface Props {
   onIdworksPushed: (results: IdworksPushResult[]) => void;
 }
 
+/**
+ * Seção de uma plataforma, em vidro (tokens `--ag-*`). A tela é sempre clara —
+ * os conectores aqui dentro ainda têm cores literais —, por isso a tela abre
+ * o próprio escopo `.alfreds` claro: sem agente o shell não é `.alfreds` e os
+ * tokens nem existiriam.
+ */
+const Secao: React.FC<{ chave: string; nome: string; papel: string; children: React.ReactNode }> = ({ chave, nome, papel, children }) => (
+  <section className="ag-glass ag-sheen rounded-[24px] overflow-hidden">
+    <header className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: '1px solid var(--ag-hairline)' }}>
+      <span
+        className="w-10 h-10 rounded-[12px] grid place-items-center text-[13px] font-bold text-white shrink-0"
+        style={{ background: MARCA[chave]?.cor }}
+      >
+        {MARCA[chave]?.glifo}
+      </span>
+      <div className="min-w-0">
+        <h3 className="text-[16px] font-semibold text-[var(--ag-text)]">{nome}</h3>
+        <p className="text-[13px] text-[var(--ag-text-2)]">{papel} · importe produtos e envie dados enriquecidos.</p>
+      </div>
+    </header>
+    <div className="px-5 py-5">{children}</div>
+  </section>
+);
+
 const IntegrationsView: React.FC<Props> = ({ onImport, getPushPayload, onTinyImported, getTinyPushPayload, tinyPushCandidateCount, onBlingImported, getBlingPushPayload, getBlingPushCandidates, onBlingPushed, onIdworksImported, getIdworksPushPayload, getIdworksPushCandidates, onIdworksPushed }) => {
   return (
-    <div className="max-w-3xl mx-auto px-4 md:px-6 py-6 space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="bg-[#FF5B03]/10 p-2 rounded-lg">
-          <Plug className="w-5 h-5 text-[#FF5B03]" />
-        </div>
-        <div>
-          <h2 className="text-lg font-bold text-slate-800">Integrações</h2>
-          <p className="text-sm text-slate-500">Conecte sua loja e seus sistemas para importar e enviar produtos.</p>
-        </div>
+    <div className="alfreds max-w-3xl mx-auto px-1 md:px-2 py-2 flex flex-col gap-4" data-tema="claro">
+      <div>
+        <h2 className="font-display text-[26px] sm:text-[30px] font-semibold tracking-tight text-[var(--ag-text)]">Integrações</h2>
+        <p className="mt-1 text-[14px] text-[var(--ag-text-2)]">Conecte sua loja e seus sistemas para importar e enviar produtos.</p>
       </div>
 
-      {/* Wake Commerce */}
-      <section className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        <header className="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
-          <div className="bg-slate-900 p-2 rounded-lg">
-            <Store className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-slate-800">Wake Commerce</h3>
-            <p className="text-xs text-slate-500">Importe produtos e envie dados enriquecidos.</p>
-          </div>
-        </header>
-        <div className="px-5 py-5">
-          <WakeConnector onImport={onImport} getPushPayload={getPushPayload} />
-        </div>
-      </section>
+      <Secao chave="wake" nome="Wake Commerce" papel="Loja">
+        <WakeConnector onImport={onImport} getPushPayload={getPushPayload} />
+      </Secao>
 
-      {/* ERP Tiny */}
-      <section className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        <header className="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
-          <div className="bg-slate-900 p-2 rounded-lg">
-            <Database className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-slate-800">ERP Tiny</h3>
-            <p className="text-xs text-slate-500">Importe produtos e envie dados enriquecidos.</p>
-          </div>
-        </header>
-        <div className="px-5 py-5">
-          <TinyConnector onImported={onTinyImported} getPushPayload={getTinyPushPayload} pushCandidateCount={tinyPushCandidateCount} />
-        </div>
-      </section>
+      <Secao chave="tiny" nome="Tiny ERP" papel="ERP">
+        <TinyConnector onImported={onTinyImported} getPushPayload={getTinyPushPayload} pushCandidateCount={tinyPushCandidateCount} />
+      </Secao>
 
-      {/* ERP Bling */}
-      <section className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        <header className="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
-          <div className="bg-slate-900 p-2 rounded-lg">
-            <Database className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-slate-800">ERP Bling</h3>
-            <p className="text-xs text-slate-500">Importe produtos e envie dados enriquecidos.</p>
-          </div>
-        </header>
-        <div className="px-5 py-5">
-          <BlingConnector onImported={onBlingImported} getPushPayload={getBlingPushPayload} getPushCandidates={getBlingPushCandidates} onPushed={onBlingPushed} />
-        </div>
-      </section>
+      <Secao chave="bling" nome="Bling" papel="ERP">
+        <BlingConnector onImported={onBlingImported} getPushPayload={getBlingPushPayload} getPushCandidates={getBlingPushCandidates} onPushed={onBlingPushed} />
+      </Secao>
 
-      {/* ERP IdWorks */}
-      <section className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        <header className="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
-          <div className="bg-slate-900 p-2 rounded-lg">
-            <Database className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-slate-800">ERP IdWorks</h3>
-            <p className="text-xs text-slate-500">Importe produtos e envie dados enriquecidos.</p>
-          </div>
-        </header>
-        <div className="px-5 py-5">
-          <IdworksConnector onImported={onIdworksImported} getPushPayload={getIdworksPushPayload} getPushCandidates={getIdworksPushCandidates} onPushed={onIdworksPushed} />
-        </div>
-      </section>
+      <Secao chave="idworks" nome="IdWorks" papel="ERP">
+        <IdworksConnector onImported={onIdworksImported} getPushPayload={getIdworksPushPayload} getPushCandidates={getIdworksPushCandidates} onPushed={onIdworksPushed} />
+      </Secao>
     </div>
   );
 };
