@@ -141,6 +141,8 @@ registrarEnvio({
   erp: 'wake',
   marca: 'Wake',
   campoId: '_wakeProductId',
+  // A Wake só aceita escrita por SKU (ver pushWakeProduto): sem SKU, não há como enviar.
+  removido: (p) => !String(p['Código (SKU)'] ?? '').trim(),
   lerAtual: async (ctx, p) => {
     const token = await ctx.wakeToken();
     const id = encodeURIComponent(String(p['Código (SKU)'] ?? '').trim());
