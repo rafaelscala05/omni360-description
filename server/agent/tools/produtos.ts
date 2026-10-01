@@ -18,7 +18,7 @@ import { makePreview } from '../preview';
 import { custoDaAcao, estimateCredits } from '../execution';
 import { CREDIT_ACTIONS } from '../../../src/credits';
 import { assertNoActiveVideoJob } from '../../videoShared';
-import { faltaParaVideo, montarPedidoVideo, type PedidoVideo } from '../videoPedido';
+import { escolherAvatar, faltaParaVideo, montarPedidoVideo, montarPedidoVideoUgc, type AvatarSalvo, type PedidoVideo } from '../videoPedido';
 import { criarLote } from '../loteStore';
 import { scheduleLote } from '../loteWorker';
 import { clienteVertex, fotoPrincipal, gerarArvore, lerCatalogo, lerCategorias, produtosCol } from '../produtosGeracao';
@@ -305,14 +305,18 @@ registerTool<ArgsDescricoes>({
 // Vídeo de produto — aprova o pedido; quem roda é o app (ver videoPedido.ts)
 // ---------------------------------------------------------------------------
 
-registerTool<{ sku: string }>({
+registerTool<{ sku: string; tipo?: 'classico' | 'ugc'; avatar?: string }>({
   name: 'produtos.video.gerar',
   provider: 'produtos',
   mode: 'write',
-  description: 'Produz o vídeo comercial vertical (~32s, narração e música) de UM produto do catálogo, o mesmo da aba Vídeo do produto: roteiro escrito a partir das fotos reais e da referência do produto, e geração das cenas. Leva alguns minutos e aparece em Atividade › Rodando. Exige descrição, título SEO e a referência do produto já criada. Um vídeo por vez.',
+  description: 'Produz o vídeo vertical de UM produto do catálogo, o mesmo da aba Vídeo do produto. tipo "classico" (padrão): ~32s com narração em off e música, cenas a partir das fotos reais e das ambientadas. tipo "ugc": um avatar salvo da conta fala para a câmera e usa o produto, estilo influenciador (use quando o usuário pedir UGC, avatar, influenciador, alguém falando). O roteiro é escrito a partir das fotos reais e da referência do produto. Leva alguns minutos e aparece em Atividade › Rodando. Exige descrição, título SEO e a referência do produto já criada. Um vídeo por vez.',
   schema: {
     type: 'object',
-    properties: { sku: { type: 'string', description: 'SKU do produto no catálogo do OMNI360.' } },
+    properties: {
+      sku: { type: 'string', description: 'SKU do produto no catálogo do OMNI360.' },
+      tipo: { type: 'string', enum: ['classico', 'ugc'], description: 'classico (narração e música) ou ugc (avatar falando). Padrão: classico.' },
+      avatar: { type: 'string', description: 'Só no UGC: nome do avatar salvo, se o usuário disser. Sem nome, usa o último usado neste produto ou o mais recente.' },
+    },
     required: ['sku'],
   },
   preview: async (ctx, a) => {
@@ -328,11 +332,38 @@ registerTool<{ sku: string }>({
       throw Object.assign(new Error(`Antes do vídeo, ${nomeDe(p)} precisa de: ${falta.join(', ')}.`), { status: 409 });
     }
     await assertNoActiveVideoJob(ctx.uid);
+    const alvo = `${nomeDe(p)}${skuDe(p) ? ` · ${skuDe(p)}` : ''}`;
+
+    if (a.tipo === 'ugc') {
+      const snap = await adminDb.collection('users').doc(ctx.uid).collection('avatars').get();
+      const avatares = snap.docs.map((d) => ({ ...(d.data() as Omit<AvatarSalvo, 'id'>), id: d.id }));
+      const { avatar, erro } = escolherAvatar(avatares, { nome: a.avatar, ultimoId: typeof p._ugcAvatarId === 'string' ? p._ugcAvatarId : undefined });
+      if (!avatar) throw Object.assign(new Error(erro), { status: 409 });
+      const pedido = montarPedidoVideoUgc(p, avatar);
+      const outros = avatares.filter((x) => x.id !== avatar.id).map((x) => x.nome).filter(Boolean);
+      const preview = makePreview({
+        resumo: `Produzir o vídeo UGC de ${nomeDe(p)} com ${avatar.nome}`,
+        alvo,
+        campos: [
+          { campo: 'Formato', antes: null, depois: 'Vertical 9:16, 2 a 3 falas de ~8s, o avatar falando para a câmera', mudou: true },
+          { campo: 'Avatar', antes: null, depois: avatar.nome, mudou: true },
+          { campo: 'Fotos de referência', antes: null, depois: `${pedido.inicio.productPhotoUrls.length} fotos reais + a referência do produto`, mudou: true },
+        ],
+        avisos: [
+          'As falas são escritas na hora, a partir das fotos — o avatar só mostra lados e estados do produto que aparecem nelas.',
+          ...(outros.length ? [`Outros avatares da conta: ${outros.join(', ')} — para usar um deles, peça de novo com o nome.`] : []),
+          'Leva alguns minutos e começa logo depois da aprovação, com o app aberto. Se falhar, os créditos voltam.',
+        ],
+        payload: { pedido },
+      });
+      return { ...preview, custo: await custoDaAcao(CREDIT_ACTIONS.ugcVideoGeneration) };
+    }
+
     const pedido = montarPedidoVideo(p);
     const ambientadas = ((p._ambientImages as string[] | undefined) ?? []).length;
     const preview = makePreview({
       resumo: `Produzir o vídeo de ${nomeDe(p)}`,
-      alvo: `${nomeDe(p)}${skuDe(p) ? ` · ${skuDe(p)}` : ''}`,
+      alvo,
       campos: [
         { campo: 'Formato', antes: null, depois: 'Vertical 9:16, ~32s, narração em off e música', mudou: true },
         { campo: 'Fotos de referência', antes: null, depois: `${pedido.inicio.productPhotoUrls?.length ?? 0} fotos reais + a referência do produto`, mudou: true },

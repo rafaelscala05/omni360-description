@@ -9,6 +9,7 @@
 import type express from 'express';
 import { adminDb } from '../firebaseAdmin';
 import { gerarRoteiro, iniciarVideo } from '../videoAgent';
+import { gerarRoteiroUgc, iniciarVideoUgc } from '../ugcVideoAgent';
 import { requireAnyModule } from './connections';
 import type { PedidoVideo } from './videoPedido';
 
@@ -47,12 +48,22 @@ export function registerVideoAlfredRoutes(app: express.Express, { verifyFirebase
         return a.result.pedidoVideo as PedidoVideo;
       });
 
-      const script = await gerarRoteiro(pedido.roteiro);
-      await iniciarVideo(decoded, { ...pedido.inicio, script }, async (jobId) => {
+      const aoCriarJob = async (jobId: string) => {
         await ref!.update({ 'result.videoJobId': jobId, 'result.status': 'gerando o vídeo' });
         res.setHeader('Content-Type', 'application/json');
         res.write(JSON.stringify({ jobId }));
-      });
+      };
+      if (pedido.tipo === 'ugc') {
+        const script = await gerarRoteiroUgc(pedido.roteiro);
+        // O mesmo vínculo que o wizard grava (handleUgcVideoJobStarted no App):
+        // o próximo vídeo UGC deste produto sugere o mesmo avatar.
+        await adminDb.collection('users').doc(decoded.uid).collection('products').doc(pedido.inicio.productId)
+          .update({ _ugcAvatarId: pedido.avatarId }).catch(() => {});
+        await iniciarVideoUgc(decoded, { ...pedido.inicio, script }, aoCriarJob);
+      } else {
+        const script = await gerarRoteiro(pedido.roteiro);
+        await iniciarVideo(decoded, { ...pedido.inicio, script }, aoCriarJob);
+      }
       res.end();
     } catch (e: any) {
       // Falhou antes de criar o job (roteiro, crédito, outro vídeo rodando):

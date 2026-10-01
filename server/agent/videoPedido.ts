@@ -11,6 +11,7 @@
 
 import { collectProductPhotos } from '../../src/services/productReferencePrompt';
 import type { InicioVideo, PedidoRoteiro } from '../videoAgent';
+import type { InicioVideoUgc, PedidoRoteiroUgc } from '../ugcVideoAgent';
 import type { ProdutoDoc } from './produtosRules';
 
 /** Mesmo teto do ProductPhotoPicker (videoWizardShared.tsx). */
@@ -18,9 +19,56 @@ export const MAX_FOTOS_VIDEO = 8;
 
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : v == null ? '' : String(v).trim());
 
-export interface PedidoVideo {
+export interface PedidoVideoClassico {
+  /** Ausente nos pedidos aprovados antes do UGC existir. */
+  tipo?: 'classico';
   roteiro: PedidoRoteiro;
   inicio: Omit<InicioVideo, 'script'>;
+}
+
+/** UGC: um avatar salvo fala para a câmera e usa o produto (server/ugcVideoAgent.ts). */
+export interface PedidoVideoUgc {
+  tipo: 'ugc';
+  avatarId: string;
+  avatarNome: string;
+  roteiro: PedidoRoteiroUgc;
+  inicio: Omit<InicioVideoUgc, 'script'>;
+}
+
+export type PedidoVideo = PedidoVideoClassico | PedidoVideoUgc;
+
+export interface AvatarSalvo {
+  id: string;
+  nome: string;
+  descricao: string;
+  referenceImageUrl: string;
+  createdAt?: string;
+}
+
+/**
+ * Qual avatar fala no vídeo: o que o usuário nomeou; sem nome, o último usado
+ * neste produto; senão o mais recente. A prévia mostra o escolhido — trocar é
+ * pedir de novo com o nome.
+ */
+export function escolherAvatar(
+  avatares: AvatarSalvo[],
+  opts: { nome?: string; ultimoId?: string } = {},
+): { avatar: AvatarSalvo | null; erro?: string } {
+  const validos = avatares.filter((a) => str(a.referenceImageUrl) && str(a.descricao));
+  if (!validos.length) {
+    return { avatar: null, erro: 'Esta conta ainda não tem avatar. Crie um na aba Vídeo de qualquer produto (UGC com avatar) e peça de novo.' };
+  }
+  const nome = str(opts.nome).toLowerCase();
+  if (nome) {
+    const exato = validos.find((a) => str(a.nome).toLowerCase() === nome);
+    const parecido = exato ?? validos.find((a) => str(a.nome).toLowerCase().includes(nome));
+    if (parecido) return { avatar: parecido };
+    return { avatar: null, erro: `Nenhum avatar chamado "${opts.nome}". Os avatares salvos são: ${validos.map((a) => a.nome).join(', ')}.` };
+  }
+  const ultimo = opts.ultimoId ? validos.find((a) => a.id === opts.ultimoId) : undefined;
+  if (ultimo) return { avatar: ultimo };
+  const recente = [...validos].sort((a, b) => str(b.createdAt).localeCompare(str(a.createdAt)))[0];
+  return { avatar: recente };
 }
 
 /**
@@ -44,7 +92,7 @@ export function faltaParaVideo(p: Record<string, unknown>): string[] {
   return falta;
 }
 
-export function montarPedidoVideo(p: ProdutoDoc): PedidoVideo {
+export function montarPedidoVideo(p: ProdutoDoc): PedidoVideoClassico {
   const ref = (p._productReference ?? {}) as { imageUrl?: string; sourceImages?: string[] };
   const galeria = collectProductPhotos(p as never);
   const fotos = [...new Set([...galeria, ...(ref.sourceImages ?? [])].filter(Boolean))].slice(0, MAX_FOTOS_VIDEO);
@@ -73,6 +121,37 @@ export function montarPedidoVideo(p: ProdutoDoc): PedidoVideo {
       shotImageUrls: imagensDasCenas((p._ambientImages as string[] | undefined) ?? [], galeria),
       productReferenceUrl: str(ref.imageUrl) || undefined,
       productPhotoUrls: fotos,
+    },
+  };
+}
+
+/** O pedido UGC do wizard (UgcVideoGenerationTab.tsx): mesmas fotos e referência do clássico, mais o avatar. */
+export function montarPedidoVideoUgc(p: ProdutoDoc, avatar: AvatarSalvo): PedidoVideoUgc {
+  const base = montarPedidoVideo(p);
+  const referencia = base.inicio.productReferenceUrl;
+  const fotos = base.inicio.productPhotoUrls ?? [];
+  return {
+    tipo: 'ugc',
+    avatarId: avatar.id,
+    avatarNome: avatar.nome,
+    roteiro: {
+      description: base.roteiro.description,
+      brand: base.roteiro.brand,
+      // O roteirista lê a folha: ela mostra todos os ângulos e detalhes.
+      productImageUrl: referencia || fotos[0] || '',
+      photoUrls: fotos,
+      avatarImageUrl: avatar.referenceImageUrl,
+      avatarDescricao: avatar.descricao,
+      productName: base.roteiro.productName,
+      category: base.roteiro.category,
+      attributes: base.roteiro.attributes,
+    },
+    inicio: {
+      productId: base.inicio.productId,
+      productName: base.inicio.productName,
+      avatarImageUrl: avatar.referenceImageUrl,
+      productPhotoUrls: fotos,
+      productReferenceUrl: referencia,
     },
   };
 }

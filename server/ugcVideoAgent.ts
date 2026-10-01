@@ -443,46 +443,137 @@ async function runUgcVideoJob(
   }
 }
 
+export interface PedidoRoteiroUgc {
+  description: string;
+  brand?: string;
+  /** A folha de referência do produto (ou a primeira foto, sem ela). */
+  productImageUrl: string;
+  // Fotos reais escolhidas no wizard — o roteiro só usa os lados/estados que elas mostram.
+  photoUrls?: string[];
+  avatarImageUrl: string;
+  avatarDescricao: string;
+  productName?: string;
+  category?: string;
+  attributes?: Record<string, string>;
+}
+
+/** O roteiro UGC do wizard — também usado pelo Alfred (server/agent/videoAlfred.ts). */
+export async function gerarRoteiroUgc(p: PedidoRoteiroUgc): Promise<UgcVideoScript> {
+  const photos = sanitizePhotoUrls(p.photoUrls).filter((u) => u !== p.productImageUrl);
+  const [avatarImage, ...productImages] = await Promise.all(
+    [p.avatarImageUrl, p.productImageUrl, ...photos].map((u) => fetchImageAsBase64(u)),
+  );
+  return generateUgcScript(
+    {
+      description: p.description,
+      brand: p.brand ?? '',
+      productName: p.productName ?? '',
+      category: p.category ?? '',
+      attributes: p.attributes ?? {},
+      avatarDescricao: p.avatarDescricao,
+    },
+    avatarImage,
+    productImages,
+  );
+}
+
+export interface InicioVideoUgc {
+  productId: string;
+  productName: string;
+  script: UgcVideoScript;
+  avatarImageUrl: string;
+  // Fotos reais escolhidas no wizard (todas marcadas por padrão).
+  productPhotoUrls: string[];
+  // Optional so older clients keep working; the current UI always sends it.
+  productReferenceUrl?: string;
+}
+
+/**
+ * Debita, cria o job e roda o vídeo UGC até o fim — o mesmo contrato de
+ * iniciarVideo (videoAgent.ts): `onJobId` assim que o job existe, e a promessa
+ * só resolve no fim, para quem chama segurar a requisição aberta.
+ */
+export async function iniciarVideoUgc(
+  decoded: { uid: string; name?: string; email?: string },
+  params: InicioVideoUgc,
+  onJobId: (jobId: string) => void | Promise<void>,
+): Promise<void> {
+  const { productId, productName, script, avatarImageUrl, productReferenceUrl } = params;
+  const photoUrls = sanitizePhotoUrls(params.productPhotoUrls);
+  if (!productId || !script || !avatarImageUrl || photoUrls.length === 0) {
+    throw Object.assign(new Error('productId, script, avatarImageUrl e ao menos uma foto do produto são obrigatórios'), { status: 400 });
+  }
+  if (!validateUgcScript(script)) throw Object.assign(new Error('script inválido'), { status: 400 });
+
+  await assertNoActiveVideoJob(decoded.uid);
+
+  // Resolvido e validado ANTES de debitar crédito — mesmo raciocínio do
+  // fluxo clássico (server/videoAgent.ts), achado do code review de 2026-09-28.
+  const provider = await getDefaultVideoProvider();
+  if (provider === 'seedance') getOpenRouterApiKey();
+
+  const creditMeta = { productName, userName: decoded.name ?? decoded.email ?? '' };
+  const creditCost = await debitCreditsAdmin(decoded.uid, CREDIT_ACTIONS.ugcVideoGeneration, creditMeta);
+
+  const jobRef = adminDb.collection('users').doc(decoded.uid).collection('ugcVideoJobs').doc();
+  const jobId = jobRef.id;
+
+  let refs: { avatar: PreparedImage; photos: PreparedImage[]; sheet: PreparedImage | null };
+  try {
+    await jobRef.set({
+      jobId, productId, status: 'queued', provider, videoUrl: null, error: null, createdAt: now(), updatedAt: now(),
+    });
+    const prepared = await prepareReferenceImages([avatarImageUrl, ...photoUrls, ...(productReferenceUrl ? [productReferenceUrl] : [])]);
+    // O Seedance lê as referências por URL: vão cópias no nosso Storage,
+    // nunca a URL original (CDN de ERP, http://, anti-bot…). O retrato do
+    // avatar não é copiado: ele nunca vai para o Seedance (só é lido pelo
+    // Gemini no nosso servidor — ver buildUgcSeedancePrompt).
+    if (provider === 'seedance') {
+      const productOnly = new Map(prepared);
+      if (!photoUrls.includes(avatarImageUrl) && avatarImageUrl !== productReferenceUrl) productOnly.delete(avatarImageUrl);
+      await stageReferenceImages(decoded.uid, jobId, productOnly);
+    }
+    refs = {
+      avatar: prepared.get(avatarImageUrl)!,
+      photos: photoUrls.map((url) => prepared.get(url)!),
+      sheet: productReferenceUrl ? prepared.get(productReferenceUrl)! : null,
+    };
+  } catch (prepErr) {
+    if (creditCost > 0) {
+      await refundCreditsAdmin(decoded.uid, creditCost, creditMeta, UGC_REFUND).catch(() => {});
+    }
+    await jobRef.update({
+      status: 'error',
+      error: prepErr instanceof Error ? prepErr.message : String(prepErr),
+      updatedAt: now(),
+    }).catch(() => {});
+    await deleteStagedReferences(decoded.uid, jobId);
+    throw prepErr;
+  }
+
+  // The server owns the persisted product status for the whole job lifecycle
+  // (queued here, done/error in runUgcVideoJob). If the client wrote 'queued'
+  // itself after receiving the jobId, a fast server-side 'error' could land
+  // first and then be overwritten back to 'queued'.
+  await adminDb.collection('users').doc(decoded.uid).collection('products').doc(productId)
+    .update({ _ugcVideoJobId: jobId, _ugcVideoStatus: 'queued', updatedAt: now() })
+    .catch(() => {});
+
+  await onJobId(jobId);
+  await runUgcVideoJob(decoded.uid, jobId, productId, script, refs, creditCost, creditMeta, provider);
+}
+
 export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps): void {
   const { verifyFirebaseToken } = deps;
 
   app.post('/api/video/ugc/generate-script', async (req, res) => {
     try {
       await verifyFirebaseToken(req);
-      const {
-        description, brand, productImageUrl, photoUrls, avatarImageUrl, avatarDescricao, productName, category, attributes,
-      } = req.body as {
-        description: string;
-        brand?: string;
-        productImageUrl: string;
-        // Fotos reais escolhidas no wizard — o roteiro só usa os lados/estados que elas mostram.
-        photoUrls?: string[];
-        avatarImageUrl: string;
-        avatarDescricao: string;
-        productName?: string;
-        category?: string;
-        attributes?: Record<string, string>;
-      };
-      if (!description || !productImageUrl || !avatarImageUrl || !avatarDescricao) {
+      const body = req.body as PedidoRoteiroUgc;
+      if (!body.description || !body.productImageUrl || !body.avatarImageUrl || !body.avatarDescricao) {
         return res.status(400).json({ error: 'description, productImageUrl, avatarImageUrl e avatarDescricao são obrigatórios' });
       }
-      const photos = sanitizePhotoUrls(photoUrls).filter((u) => u !== productImageUrl);
-      const [avatarImage, ...productImages] = await Promise.all(
-        [avatarImageUrl, productImageUrl, ...photos].map((u) => fetchImageAsBase64(u)),
-      );
-      const script = await generateUgcScript(
-        {
-          description,
-          brand: brand ?? '',
-          productName: productName ?? '',
-          category: category ?? '',
-          attributes: attributes ?? {},
-          avatarDescricao,
-        },
-        avatarImage,
-        productImages,
-      );
-      res.json({ script });
+      res.json({ script: await gerarRoteiroUgc(body) });
     } catch (err) {
       sendError(res, err);
     }
@@ -498,82 +589,22 @@ export function registerUgcVideoRoutes(app: express.Application, deps: VideoDeps
         avatarImageUrl: string;
         // Legado (uma foto só) — clientes atuais mandam productPhotoUrls.
         productImageUrl?: string;
-        // Fotos reais escolhidas no wizard (todas marcadas por padrão).
         productPhotoUrls?: string[];
-        // Optional so older clients keep working; the current UI always sends it.
         productReferenceUrl?: string;
       };
-      const photoUrls = sanitizePhotoUrls(productPhotoUrls?.length ? productPhotoUrls : [productImageUrl]);
-      if (!productId || !script || !avatarImageUrl || photoUrls.length === 0) {
-        return res.status(400).json({ error: 'productId, script, avatarImageUrl e ao menos uma foto do produto são obrigatórios' });
-      }
-      if (!validateUgcScript(script)) {
-        return res.status(400).json({ error: 'script inválido' });
-      }
-
-      await assertNoActiveVideoJob(decoded.uid);
-
-      // Resolvido e validado ANTES de debitar crédito — mesmo raciocínio do
-      // fluxo clássico (server/videoAgent.ts), achado do code review de 2026-09-28.
-      const provider = await getDefaultVideoProvider();
-      if (provider === 'seedance') getOpenRouterApiKey();
-
-      const creditMeta = { productName, userName: decoded.name ?? decoded.email ?? '' };
-      const creditCost = await debitCreditsAdmin(decoded.uid, CREDIT_ACTIONS.ugcVideoGeneration, creditMeta);
-
-      const jobRef = adminDb.collection('users').doc(decoded.uid).collection('ugcVideoJobs').doc();
-      const jobId = jobRef.id;
-
-      let refs: { avatar: PreparedImage; photos: PreparedImage[]; sheet: PreparedImage | null };
       try {
-        await jobRef.set({
-          jobId, productId, status: 'queued', provider, videoUrl: null, error: null, createdAt: now(), updatedAt: now(),
+        await iniciarVideoUgc(decoded, {
+          productId, productName, script, avatarImageUrl, productReferenceUrl,
+          productPhotoUrls: productPhotoUrls?.length ? productPhotoUrls : [productImageUrl ?? ''],
+        }, (jobId) => {
+          res.setHeader('Content-Type', 'application/json');
+          res.write(JSON.stringify({ jobId }));
         });
-        const prepared = await prepareReferenceImages([avatarImageUrl, ...photoUrls, ...(productReferenceUrl ? [productReferenceUrl] : [])]);
-        // O Seedance lê as referências por URL: vão cópias no nosso Storage,
-        // nunca a URL original (CDN de ERP, http://, anti-bot…). O retrato do
-        // avatar não é copiado: ele nunca vai para o Seedance (só é lido pelo
-        // Gemini no nosso servidor — ver buildUgcSeedancePrompt).
-        if (provider === 'seedance') {
-          const productOnly = new Map(prepared);
-          if (!photoUrls.includes(avatarImageUrl) && avatarImageUrl !== productReferenceUrl) productOnly.delete(avatarImageUrl);
-          await stageReferenceImages(decoded.uid, jobId, productOnly);
-        }
-        refs = {
-          avatar: prepared.get(avatarImageUrl)!,
-          photos: photoUrls.map((url) => prepared.get(url)!),
-          sheet: productReferenceUrl ? prepared.get(productReferenceUrl)! : null,
-        };
-      } catch (prepErr) {
-        if (creditCost > 0) {
-          await refundCreditsAdmin(decoded.uid, creditCost, creditMeta, UGC_REFUND).catch(() => {});
-        }
-        await jobRef.update({
-          status: 'error',
-          error: prepErr instanceof Error ? prepErr.message : String(prepErr),
-          updatedAt: now(),
-        }).catch(() => {});
-        await deleteStagedReferences(decoded.uid, jobId);
-        throw prepErr;
-      }
-
-      // The server owns the persisted product status for the whole job lifecycle
-      // (queued here, done/error in runUgcVideoJob). If the client wrote 'queued'
-      // itself after receiving the jobId, a fast server-side 'error' could land
-      // first and then be overwritten back to 'queued'.
-      await adminDb.collection('users').doc(decoded.uid).collection('products').doc(productId)
-        .update({ _ugcVideoJobId: jobId, _ugcVideoStatus: 'queued', updatedAt: now() })
-        .catch(() => {});
-
-      res.setHeader('Content-Type', 'application/json');
-      res.write(JSON.stringify({ jobId }));
-
-      try {
-        await runUgcVideoJob(decoded.uid, jobId, productId, script, refs, creditCost, creditMeta, provider);
       } finally {
-        res.end();
+        if (res.headersSent) res.end();
       }
     } catch (err) {
+      if (res.headersSent) return;
       sendError(res, err);
     }
   });

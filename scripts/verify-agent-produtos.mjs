@@ -9,7 +9,7 @@ import {
 import { linhasDoContexto, sanitizarContexto, MAX_SKUS_CONTEXTO } from '../server/agent/workspaceContext.ts';
 import { camposDoEnvio, imagensParaTiny, paraTinyPush } from '../server/agent/tinyCatalogo.ts';
 import { atualBling, atualWake, diffCatalogo, paraBlingPush, paraIdworksPush, paraWakePush, SUPORTE } from '../server/agent/erpCatalogo.ts';
-import { faltaParaVideo, imagensDasCenas, montarPedidoVideo } from '../server/agent/videoPedido.ts';
+import { escolherAvatar, faltaParaVideo, imagensDasCenas, montarPedidoVideo, montarPedidoVideoUgc } from '../server/agent/videoPedido.ts';
 import { achatarArvore, arvoreEmTexto, categoriasSemVinculo, normalizarArvore, vinculosDeProdutos, MAX_NIVEIS } from '../server/agent/categoriasRules.ts';
 import { chavePrevia } from '../server/agent/previewCache.ts';
 import { resolveApprovalMode } from '../server/agent/agentSettings.ts';
@@ -256,6 +256,27 @@ check('envio ao Tiny debita uma ação do agente', creditActionsFor({ name: 'tin
 check('envio a Wake/Bling/IdWorks é trava fixa', ['wake', 'bling', 'idworks'].map((e) => resolveApprovalMode({ approvalMode: 'auto' }, `${e}.catalogo.enviar`)), ['ask', 'ask', 'ask']);
 check('envio a Bling e IdWorks debita uma ação do agente',
   ['bling', 'idworks'].map((e) => creditActionsFor({ name: `${e}.catalogo.enviar`, provider: e }).map((x) => x.key)), [['agent_action'], ['agent_action']]);
+
+// --- vídeo UGC pelo chat ------------------------------------------------------
+{
+  const av = (id, nome, createdAt, over = {}) => ({ id, nome, descricao: `desc ${nome}`, referenceImageUrl: `https://av/${id}.png`, createdAt, ...over });
+  const lista = [av('a1', 'Ana', '2026-09-01'), av('a2', 'Bruno', '2026-09-20'), av('a3', 'Sem foto', '2026-09-30', { referenceImageUrl: '' })];
+  check('sem avatar válido, explica onde criar', escolherAvatar([av('x', 'X', '1', { descricao: '' })]).avatar, null);
+  check('pelo nome, sem caixa e por trecho', [escolherAvatar(lista, { nome: 'ana' }).avatar?.id, escolherAvatar(lista, { nome: 'brun' }).avatar?.id], ['a1', 'a2']);
+  check('nome desconhecido lista os que existem', escolherAvatar(lista, { nome: 'Carla' }).erro, 'Nenhum avatar chamado "Carla". Os avatares salvos são: Ana, Bruno.');
+  check('sem nome: o último usado no produto', escolherAvatar(lista, { ultimoId: 'a1' }).avatar?.id, 'a1');
+  check('sem nome nem histórico: o mais recente com retrato', escolherAvatar(lista).avatar?.id, 'a2');
+
+  const prod = p('U', { 'Descrição complementar': '<p>D</p>', 'Título SEO': 'T', 'URL imagem 1': 'https://img/u1.jpg', 'URL imagem 2': 'https://img/u2.jpg',
+    _productReference: { imageUrl: 'https://ref/u.png', sourceImages: ['https://img/u1.jpg'] } });
+  const ugc = montarPedidoVideoUgc(prod, lista[0]);
+  const classico = montarPedidoVideo(prod);
+  check('UGC leva o avatar ao roteiro e ao vídeo', [ugc.tipo, ugc.avatarId, ugc.roteiro.avatarImageUrl, ugc.inicio.avatarImageUrl, ugc.roteiro.avatarDescricao],
+    ['ugc', 'a1', 'https://av/a1.png', 'https://av/a1.png', 'desc Ana']);
+  check('UGC: o roteirista lê a folha de referência', ugc.roteiro.productImageUrl, 'https://ref/u.png');
+  check('UGC usa as mesmas fotos e referência do clássico',
+    [ugc.inicio.productPhotoUrls, ugc.inicio.productReferenceUrl], [classico.inicio.productPhotoUrls, classico.inicio.productReferenceUrl]);
+}
 
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');
 process.exit(failures ? 1 : 0);
