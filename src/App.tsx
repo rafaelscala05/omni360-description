@@ -3205,7 +3205,7 @@ Retorne APENAS um JSON válido no seguinte formato:
     const rotulo = 'text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--ag-text-2)]';
 
     return (
-      <div className="alfreds max-w-5xl mx-auto w-full flex flex-col gap-4" data-tema={temAgente ? temaAgente : 'claro'}>
+      <div className="alfreds max-w-5xl mx-auto w-full flex flex-col gap-4" data-tema={temaTelas}>
         <div className="flex flex-wrap justify-between items-end gap-3">
           <div>
             <h1 className="font-display text-[26px] sm:text-[30px] font-semibold tracking-tight text-[var(--ag-text)]">Histórico de créditos</h1>
@@ -3398,7 +3398,10 @@ Retorne APENAS um JSON válido no seguinte formato:
   const temAgente = hasContentAgent || hasOperationsAgent;
   const telaDoAgente = ['home', 'atividade', 'ferramentas', 'agenteProdutos', 'fontes'].includes(mainView);
   // Telas antigas já convertidas para os tokens `--ag-*`: seguem o tema do Alfred.
-  const telaComTokens = ['history'].includes(mainView);
+  const telaComTokens = ['history', 'products', 'categories', 'meli'].includes(mainView);
+  // Tema das telas convertidas que abrem o próprio escopo `.alfreds`: sem
+  // agente não há alternador, então ficam no claro.
+  const temaTelas = temAgente ? temaAgente : 'claro';
   const portaAtual: DestinoTrilho | null =
     mainView === 'home' || mainView === 'fontes' ? 'home'
       : mainView === 'atividade' ? 'atividade'
@@ -3692,30 +3695,31 @@ Retorne APENAS um JSON válido no seguinte formato:
 
       {/* Main Content Area */}
       <div
-        className={cn("flex-1 flex flex-col min-w-0 h-screen overflow-hidden", temAgente ? "alfreds" : "bg-[#f7f9fb]")}
-        data-tema={temAgente ? (telaDoAgente || telaComTokens ? temaAgente : 'claro') : undefined}
+        // Sempre `.alfreds` (o cabeçalho de topo é em tokens); sem agente, claro e no fundo antigo.
+        className={cn("alfreds flex-1 flex flex-col min-w-0 h-screen overflow-hidden", !temAgente && "bg-[#f7f9fb]")}
+        data-tema={temAgente && (telaDoAgente || telaComTokens) ? temaAgente : 'claro'}
         style={temAgente ? { background: 'var(--ag-bg)' } : undefined}
       >
         {/* Top Bar */}
         {/* As telas do agente têm cabeçalho próprio; no desktop, com o trilho
             levando créditos e conta, a barra de topo só sobra nas telas antigas. */}
-        <header className={cn("h-16 bg-white border-b border-slate-200 px-4 md:px-6 flex items-center justify-between flex-shrink-0 z-10 sticky top-0 shadow-sm gap-3", temAgente && telaDoAgente && "md:hidden")}>
+        <header className={cn("h-16 bg-(--ag-surface-solid) border-b border-(--ag-hairline) px-4 md:px-6 flex items-center justify-between flex-shrink-0 z-10 sticky top-0 shadow-sm gap-3", temAgente && telaDoAgente && "md:hidden")}>
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <button 
               onClick={() => setIsSidebarOpen(true)} 
-              className="md:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
+              className="md:hidden p-2 text-(--ag-text-2) hover:bg-(--ag-fill-2) rounded-lg transition-colors shrink-0"
               title="Abrir Menu"
             >
               <Menu className="w-5 h-5" />
             </button>
             <div className="w-full md:w-[360px] relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-(--ag-text-3) absolute left-3 top-1/2 -translate-y-1/2" />
               <input 
                 type="text" 
                 placeholder="Buscar produtos..." 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-full pl-9 pr-4 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03] focus:border-[#FF5B03] focus:bg-white transition-all text-slate-700 placeholder-slate-400" 
+                className="w-full bg-(--ag-fill) hover:bg-(--ag-fill-2) border border-(--ag-hairline) rounded-full pl-9 pr-4 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-(--ag-accent) focus:border-(--ag-accent) focus:bg-(--ag-surface-solid) transition-all text-(--ag-text) placeholder:text-(--ag-text-3)" 
               />
             </div>
           </div>
@@ -3724,7 +3728,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             {!onboardingCompleted && (
               <button
                 onClick={() => setIsOnboardingWizardOpen(true)}
-                className="hidden sm:flex items-center gap-1.5 text-xs md:text-sm font-semibold text-[#FF5B03] bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 px-2.5 md:px-3 py-1 rounded-full shadow-sm hover:border-orange-300 transition-colors animate-in fade-in"
+                className="hidden sm:flex items-center gap-1.5 text-xs md:text-sm font-semibold text-(--ag-accent) bg-gradient-to-r from-(--ag-accent-soft) to-(--ag-warn-soft) border border-(--ag-accent-line) px-2.5 md:px-3 py-1 rounded-full shadow-sm hover:border-(--ag-accent-line) transition-colors animate-in fade-in"
                 title="Complete seu cadastro e ganhe créditos"
               >
                 <Gift className="w-4 h-4 shrink-0" />
@@ -3733,18 +3737,18 @@ Retorne APENAS um JSON válido no seguinte formato:
             )}
             <button
               onClick={() => { setIsCreditPurchaseOpen(true); trackCreditPurchaseOpen(); }}
-              className="flex items-center gap-1.5 text-xs md:text-sm font-semibold text-slate-600 bg-slate-50 border border-slate-200 px-2.5 md:px-3 py-1 rounded-full shadow-sm hover:bg-amber-50 hover:border-amber-200 transition-colors"
+              className="flex items-center gap-1.5 text-xs md:text-sm font-semibold text-(--ag-text-2) bg-(--ag-fill) border border-(--ag-hairline) px-2.5 md:px-3 py-1 rounded-full shadow-sm hover:bg-(--ag-warn-soft) hover:border-(--ag-warn-line) transition-colors"
               title="Comprar créditos"
             >
-              <Coins className="w-4 h-4 text-amber-500 shrink-0" />
+              <Coins className="w-4 h-4 text-(--ag-warn) shrink-0" />
               <span className="hidden sm:inline">Créditos:</span>
-              <span className="text-slate-900 font-bold">{credits}</span>
+              <span className="text-(--ag-text) font-bold">{credits}</span>
             </button>
-            <div className="h-6 w-px bg-slate-200"></div>
+            <div className="h-6 w-px bg-(--ag-fill-2)"></div>
             <div className="relative">
-              <button onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)} className="flex items-center gap-2 group p-1 hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-full transition-colors focus:outline-none" title="Opções da conta">
-                 <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.email}`} alt="User Avatar" className="w-7 h-7 rounded-full border border-slate-200 group-hover:border-[#FF5B03] transition-colors" />
-                 <span className="text-xs font-medium text-slate-700 hidden lg:block truncate max-w-[100px]">{user.displayName || user.email?.split('@')[0]}</span>
+              <button onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)} className="flex items-center gap-2 group p-1 hover:bg-(--ag-fill) border border-transparent hover:border-(--ag-hairline) rounded-full transition-colors focus:outline-none" title="Opções da conta">
+                 <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.email}`} alt="User Avatar" className="w-7 h-7 rounded-full border border-(--ag-hairline) group-hover:border-(--ag-accent) transition-colors" />
+                 <span className="text-xs font-medium text-(--ag-text) hidden lg:block truncate max-w-[100px]">{user.displayName || user.email?.split('@')[0]}</span>
               </button>
               
               {isProfileDropdownOpen && (
@@ -3753,10 +3757,10 @@ Retorne APENAS um JSON válido no seguinte formato:
                     className="fixed inset-0 z-40" 
                     onClick={() => setIsProfileDropdownOpen(false)}
                   />
-                  <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 flex flex-col rounded-xl shadow-lg z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50">
-                      <p className="text-sm font-medium text-slate-900 truncate">{user.displayName || 'Usuário'}</p>
-                      <p className="text-xs text-slate-500 truncate mt-0.5">{user.email}</p>
+                  <div className="absolute right-0 mt-2 w-48 bg-(--ag-surface-solid) border border-(--ag-hairline) flex flex-col rounded-xl shadow-lg z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="px-4 py-3 border-b border-(--ag-hairline) bg-(--ag-fill)">
+                      <p className="text-sm font-medium text-(--ag-text) truncate">{user.displayName || 'Usuário'}</p>
+                      <p className="text-xs text-(--ag-text-2) truncate mt-0.5">{user.email}</p>
                     </div>
                     <div className="p-2">
                       <button 
@@ -3764,7 +3768,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                           setIsProfileDropdownOpen(false);
                           handleLogout();
                         }}
-                        className="w-full text-left px-3 py-2 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2 font-medium"
+                        className="w-full text-left px-3 py-2 text-sm text-(--ag-danger) hover:text-(--ag-danger) hover:bg-(--ag-danger-soft) rounded-lg transition-colors flex items-center gap-2 font-medium"
                       >
                         <LogOut className="w-4 h-4" />
                         Sair da conta
@@ -3879,10 +3883,10 @@ Retorne APENAS um JSON válido no seguinte formato:
           ) : mainView === 'categories' ? (
             <div
               className="alfreds animate-in fade-in h-full rounded-[24px] overflow-hidden"
-              data-tema="claro"
+              data-tema={temaTelas}
               style={{ background: 'var(--ag-surface-solid)', border: '1px solid var(--ag-hairline)', boxShadow: 'var(--ag-shadow)' }}
             >
-              <Suspense fallback={<div className="h-full flex items-center justify-center text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
+              <Suspense fallback={<div className="h-full flex items-center justify-center text-(--ag-text-3)"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
                 <CategoryManager onClose={async () => {
                   setMainView('products');
                   if (user) {
@@ -3895,8 +3899,8 @@ Retorne APENAS um JSON válido no seguinte formato:
           ) : mainView === 'history' ? (
             renderHistoryView()
           ) : mainView === 'meli' && hasMeliListingOptimizer ? (
-            <Suspense fallback={<div className="h-full flex items-center justify-center text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
-              <div className="alfreds" data-tema="claro"><MeliOptimizer credits={{ ensureCredits, consumeCredit }} /></div>
+            <Suspense fallback={<div className="h-full flex items-center justify-center text-(--ag-text-3)"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
+              <div className="alfreds" data-tema={temaTelas}><MeliOptimizer credits={{ ensureCredits, consumeCredit }} /></div>
             </Suspense>
           ) : mainView === 'integrations' ? (
             <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} onTinyImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getTinyPushPayload={buildTinyPushPayload} tinyPushCandidateCount={tinySelectedProducts(products).length} onBlingImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getBlingPushPayload={buildBlingPushPayload} getBlingPushCandidates={getBlingPushCandidates} onBlingPushed={handleBlingPushed} onIdworksImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getIdworksPushPayload={buildIdworksPushPayload} getIdworksPushCandidates={getIdworksPushCandidates} onIdworksPushed={handleIdworksPushed} />
@@ -3911,7 +3915,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               <CompanyProfile company={companyData} onSaved={setCompanyData} />
             </Suspense>
           ) : (
-            <div className="alfreds animate-in fade-in slide-in-from-bottom-4 duration-500 h-full flex flex-col max-w-[1600px] mx-auto" data-tema="claro">
+            <div className="alfreds animate-in fade-in slide-in-from-bottom-4 duration-500 h-full flex flex-col max-w-[1600px] mx-auto" data-tema={temaTelas}>
                {!onboardingCompleted && !onboardingBannerDismissed && (
                  <div className="relative mb-4 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-[#141311] to-[#1e3a8a] shadow-lg shadow-slate-900/10">
                    <div className="pointer-events-none absolute -right-6 -top-10 h-32 w-32 rounded-full bg-orange-500/30 blur-3xl" />
@@ -3967,33 +3971,33 @@ Retorne APENAS um JSON válido no seguinte formato:
                {products.length === 0 && (
                  <button
                    onClick={handleOpenProductUrlImport}
-                   className="sm:hidden mb-4 w-full shrink-0 flex items-center justify-center gap-2 px-4 py-3 bg-[#FF5B03] text-white rounded-xl shadow-md shadow-orange-200 font-bold text-sm hover:bg-[#E14E00] transition-all active:scale-95"
+                   className="sm:hidden mb-4 w-full shrink-0 flex items-center justify-center gap-2 px-4 py-3 bg-(--ag-accent) text-white rounded-xl shadow-md shadow-(color:--ag-accent-soft) font-bold text-sm hover:brightness-95 transition-all active:scale-95"
                  >
                    <LinkIcon className="w-4 h-4" /> Criar meu primeiro produto
                  </button>
                )}
                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-5 gap-4 flex-shrink-0">
                  <div>
-                   <h1 className="font-display text-xl md:text-2xl font-bold text-slate-900 tracking-tight">Catálogo de Produtos</h1>
-                   <p className="text-xs md:text-sm text-slate-500 mt-0.5">Gerencie e enriqueça seu inventário de produtos.</p>
+                   <h1 className="font-display text-xl md:text-2xl font-bold text-(--ag-text) tracking-tight">Catálogo de Produtos</h1>
+                   <p className="text-xs md:text-sm text-(--ag-text-2) mt-0.5">Gerencie e enriqueça seu inventário de produtos.</p>
                  </div>
 
                  {/* Legenda de Status */}
-                 <div className="hidden xl:flex items-center gap-3 px-4 py-2 bg-white/80 border border-slate-200 rounded-xl shadow-sm">
-                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Legenda</span>
-                   <div className="h-4 w-px bg-slate-200" />
+                 <div className="hidden xl:flex items-center gap-3 px-4 py-2 bg-(--ag-surface-solid) border border-(--ag-hairline) rounded-xl shadow-sm">
+                   <span className="text-[10px] font-bold text-(--ag-text-3) uppercase tracking-widest">Legenda</span>
+                   <div className="h-4 w-px bg-(--ag-fill-2)" />
                    <div className="flex items-center gap-3.5">
                      {([
-                       { Icon: Sparkles, label: 'Descrição', color: 'text-orange-600 bg-orange-50' },
-                       { Icon: Tag, label: 'Atributos', color: 'text-amber-600 bg-amber-50' },
-                       // { Icon: Search, label: 'Enriquecido', color: 'text-purple-600 bg-purple-50' }, // desativado temporariamente
-                       { Icon: ImageIcon, label: 'Imagens', color: 'text-orange-600 bg-orange-50' },
+                       { Icon: Sparkles, label: 'Descrição', color: 'text-(--ag-accent) bg-(--ag-accent-soft)' },
+                       { Icon: Tag, label: 'Atributos', color: 'text-(--ag-warn) bg-(--ag-warn-soft)' },
+                       // { Icon: Search, label: 'Enriquecido', color: 'text-(--ag-violet) bg-(--ag-violet-soft)' }, // desativado temporariamente
+                       { Icon: ImageIcon, label: 'Imagens', color: 'text-(--ag-accent) bg-(--ag-accent-soft)' },
                      ] as const).map(({ Icon, label, color }) => (
                        <div key={label} className="flex items-center gap-1.5">
-                         <span className={cn("flex items-center justify-center w-5 h-5 rounded-md border border-slate-200/60", color)}>
+                         <span className={cn("flex items-center justify-center w-5 h-5 rounded-md border border-(--ag-hairline)", color)}>
                            <Icon className="w-3 h-3" />
                          </span>
-                         <span className="text-[11px] font-medium text-slate-600">{label}</span>
+                         <span className="text-[11px] font-medium text-(--ag-text-2)">{label}</span>
                        </div>
                      ))}
                    </div>
@@ -4001,7 +4005,7 @@ Retorne APENAS um JSON válido no seguinte formato:
 
                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
                    {isLoadingFromCloud && (
-                     <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                     <div className="flex items-center gap-1.5 text-xs text-(--ag-text-2) font-medium">
                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                        <span>Sincronizando...</span>
                      </div>
@@ -4010,7 +4014,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                    <div className="flex items-center gap-2 w-full sm:w-auto">
                      <button
                        onClick={handleOpenProductUrlImport}
-                       className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 font-bold text-xs md:text-sm text-white bg-[#FF5B03] hover:bg-[#E14E00] transition-all rounded-lg shadow-md h-9 whitespace-nowrap"
+                       className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 font-bold text-xs md:text-sm text-white bg-(--ag-accent) hover:brightness-95 transition-all rounded-lg shadow-md h-9 whitespace-nowrap"
                      >
                        <Plus className="w-4 h-4" />
                        <span>Novo Produto</span>
@@ -4021,16 +4025,16 @@ Retorne APENAS um JSON válido no seguinte formato:
                        className={cn(
                          "flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 border rounded-lg shadow-sm text-xs md:text-sm font-semibold transition-all h-9 whitespace-nowrap",
                          hasUnsavedChanges 
-                           ? 'bg-orange-50 border-orange-200 text-[#FF5B03] hover:bg-orange-100' 
-                           : 'bg-slate-50 border-slate-200 text-slate-400 opacity-50'
+                           ? 'bg-(--ag-accent-soft) border-(--ag-accent-line) text-(--ag-accent) hover:bg-(--ag-accent-soft)' 
+                           : 'bg-(--ag-fill) border-(--ag-hairline) text-(--ag-text-3) opacity-50'
                        )}
                      >
-                       {isSavingToCloud ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className={cn("w-4 h-4", hasUnsavedChanges ? "text-[#FF5B03]" : "text-slate-400")} />}
+                       {isSavingToCloud ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className={cn("w-4 h-4", hasUnsavedChanges ? "text-(--ag-accent)" : "text-(--ag-text-3)")} />}
                        <span>{isSavingToCloud ? 'Salvando...' : 'Salvar'}</span>
                      </button>
                      <button 
                        onClick={() => fileInputRef.current?.click()} 
-                       className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 font-bold text-xs md:text-sm text-white bg-[#FF5B03] hover:bg-[#E14E00] transition-all rounded-lg shadow-md h-9 whitespace-nowrap"
+                       className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 font-bold text-xs md:text-sm text-white bg-(--ag-accent) hover:brightness-95 transition-all rounded-lg shadow-md h-9 whitespace-nowrap"
                      >
                        <Upload className="w-4 h-4" /> 
                        <span>Importar</span>
@@ -4045,10 +4049,10 @@ Retorne APENAS um JSON válido no seguinte formato:
                  >
 
                   {/* Toolbar */}
-                  <div className="px-3 md:px-5 py-3 md:py-3.5 flex flex-wrap items-center justify-between border-b border-slate-200 bg-white gap-2 md:gap-3 rounded-t-[24px] shrink-0 relative z-30">
+                  <div className="px-3 md:px-5 py-3 md:py-3.5 flex flex-wrap items-center justify-between border-b border-(--ag-hairline) bg-(--ag-surface-solid) gap-2 md:gap-3 rounded-t-[24px] shrink-0 relative z-30">
                       <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
                         <select
-                          className="w-[calc(50%-4px)] md:w-auto px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-700 font-medium focus:ring-[#FF5B03] outline-none focus:border-[#FF5B03] bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
+                          className="w-[calc(50%-4px)] md:w-auto px-2.5 py-1.5 text-sm rounded-lg border border-(--ag-hairline) text-(--ag-text) font-medium focus:ring-(--ag-accent) outline-none focus:border-(--ag-accent) bg-(--ag-fill) hover:bg-(--ag-fill-2) transition-colors cursor-pointer"
                           value={filterMarca}
                           onChange={(e) => setFilterMarca(e.target.value)}
                         >
@@ -4056,7 +4060,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                           {marcas.map(m => <option key={m} value={m}>{m}</option>)}
                         </select>
                         <select
-                          className="w-[calc(50%-4px)] md:w-auto px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-700 font-medium focus:ring-[#FF5B03] outline-none focus:border-[#FF5B03] bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
+                          className="w-[calc(50%-4px)] md:w-auto px-2.5 py-1.5 text-sm rounded-lg border border-(--ag-hairline) text-(--ag-text) font-medium focus:ring-(--ag-accent) outline-none focus:border-(--ag-accent) bg-(--ag-fill) hover:bg-(--ag-fill-2) transition-colors cursor-pointer"
                           value={filterCategoria}
                           onChange={(e) => setFilterCategoria(e.target.value)}
                         >
@@ -4064,7 +4068,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                           {categorias.map(m => <option key={m} value={m}>{m}</option>)}
                         </select>
                         <select
-                          className="w-[calc(50%-4px)] md:w-auto px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-700 font-medium focus:ring-[#FF5B03] outline-none focus:border-[#FF5B03] bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
+                          className="w-[calc(50%-4px)] md:w-auto px-2.5 py-1.5 text-sm rounded-lg border border-(--ag-hairline) text-(--ag-text) font-medium focus:ring-(--ag-accent) outline-none focus:border-(--ag-accent) bg-(--ag-fill) hover:bg-(--ag-fill-2) transition-colors cursor-pointer"
                           value={filterIntegracao}
                           onChange={(e) => setFilterIntegracao(e.target.value as typeof filterIntegracao)}
                           title="Filtrar por integração"
@@ -4093,18 +4097,18 @@ Retorne APENAS um JSON válido no seguinte formato:
                                 setIsColumnConfigOpen(false);
                                 setIsExportDropdownOpen(false);
                               }}
-                              className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-700 font-medium focus:ring-[#FF5B03] focus:border-[#FF5B03] outline-none bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer select-none"
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-(--ag-hairline) text-(--ag-text) font-medium focus:ring-(--ag-accent) focus:border-(--ag-accent) outline-none bg-(--ag-fill) hover:bg-(--ag-fill-2) transition-colors cursor-pointer select-none"
                             >
-                              <Filter className="w-4 h-4 text-slate-500" />
+                              <Filter className="w-4 h-4 text-(--ag-text-2)" />
                               <span>Filtrar por Status</span>
                               {activeStatusCount > 0 ? (
-                                <span className="inline-flex items-center justify-center bg-[#FF5B03] text-white rounded-md px-1.5 py-0.5 text-[10px] font-bold leading-none ml-1">
+                                <span className="inline-flex items-center justify-center bg-(--ag-accent) text-white rounded-md px-1.5 py-0.5 text-[10px] font-bold leading-none ml-1">
                                   {activeStatusCount}
                                 </span>
                               ) : (
-                                <span className="text-slate-400 text-xs ml-1 font-normal">Nenhum</span>
+                                <span className="text-(--ag-text-3) text-xs ml-1 font-normal">Nenhum</span>
                               )}
-                              <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-0.5" />
+                              <ChevronDown className="w-3.5 h-3.5 text-(--ag-text-3) ml-0.5" />
                             </button>
 
                             {isFilterDropdownOpen && (
@@ -4113,24 +4117,24 @@ Retorne APENAS um JSON válido no seguinte formato:
                                   className="fixed inset-0 z-30"
                                   onClick={() => setIsFilterDropdownOpen(false)}
                                 />
-                                <div className="absolute left-0 mt-1.5 w-64 bg-white border border-slate-200 rounded-lg shadow-lg z-40 py-2 animate-in fade-in slide-in-from-top-1">
+                                <div className="absolute left-0 mt-1.5 w-64 bg-(--ag-surface-solid) border border-(--ag-hairline) rounded-lg shadow-lg z-40 py-2 animate-in fade-in slide-in-from-top-1">
                                   <div className="flex items-center justify-between px-3.5 py-1.5">
                                     <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider">
                                       <button
                                         type="button"
                                         onClick={() => setStatusFilterMode('esconder')}
-                                        className={`px-1.5 py-0.5 rounded transition-colors ${statusFilterMode === 'esconder' ? 'bg-[#FF5B03] text-white' : 'text-slate-400 hover:text-slate-600'}`}
+                                        className={`px-1.5 py-0.5 rounded transition-colors ${statusFilterMode === 'esconder' ? 'bg-(--ag-accent) text-white' : 'text-(--ag-text-3) hover:text-(--ag-text-2)'}`}
                                       >
                                         Esconder
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => setStatusFilterMode('mostrar')}
-                                        className={`px-1.5 py-0.5 rounded transition-colors ${statusFilterMode === 'mostrar' ? 'bg-[#FF5B03] text-white' : 'text-slate-400 hover:text-slate-600'}`}
+                                        className={`px-1.5 py-0.5 rounded transition-colors ${statusFilterMode === 'mostrar' ? 'bg-(--ag-accent) text-white' : 'text-(--ag-text-3) hover:text-(--ag-text-2)'}`}
                                       >
                                         Mostrar
                                       </button>
-                                      <span className="text-slate-400 font-bold normal-case ml-0.5">produtos com</span>
+                                      <span className="text-(--ag-text-3) font-bold normal-case ml-0.5">produtos com</span>
                                     </div>
                                     {activeStatusCount > 0 && (
                                       <button
@@ -4138,20 +4142,20 @@ Retorne APENAS um JSON válido no seguinte formato:
                                           setStatusFilters({ descricao: false, enriquecido: false, imagens: false, atributos: false });
                                           setStatusFilterMode('esconder');
                                         }}
-                                        className="text-[10px] font-bold text-[#FF5B03] hover:underline"
+                                        className="text-[10px] font-bold text-(--ag-accent) hover:underline"
                                       >
                                         Limpar
                                       </button>
                                     )}
                                   </div>
-                                  <hr className="border-slate-100 my-1" />
+                                  <hr className="border-(--ag-hairline) my-1" />
                                   {statusFilterItems.map(item => (
-                                    <label key={item.key} className="flex items-center gap-2.5 px-3.5 py-2 cursor-pointer hover:bg-slate-50 transition-colors text-xs font-semibold text-slate-600 select-none">
+                                    <label key={item.key} className="flex items-center gap-2.5 px-3.5 py-2 cursor-pointer hover:bg-(--ag-fill) transition-colors text-xs font-semibold text-(--ag-text-2) select-none">
                                       <input
                                         type="checkbox"
                                         checked={statusFilters[item.key]}
                                         onChange={(e) => setStatusFilters(prev => ({ ...prev, [item.key]: e.target.checked }))}
-                                        className="rounded border-slate-300 text-[#FF5B03] focus:ring-[#FF5B03] w-4 h-4 cursor-pointer"
+                                        className="rounded border-(--ag-hairline-2) text-(--ag-accent) focus:ring-(--ag-accent) w-4 h-4 cursor-pointer"
                                       />
                                       <span>{item.label}</span>
                                     </label>
@@ -4163,12 +4167,12 @@ Retorne APENAS um JSON válido no seguinte formato:
                           );
                         })()}
 
-                        <div className="w-px h-5 bg-slate-200 mx-1 sm:mx-2"></div>
-                        <div className="text-xs text-slate-500 font-medium">{paginatedProducts.length} itens</div>
+                        <div className="w-px h-5 bg-(--ag-fill-2) mx-1 sm:mx-2"></div>
+                        <div className="text-xs text-(--ag-text-2) font-medium">{paginatedProducts.length} itens</div>
                       </div>
                      <div className="hidden md:flex items-center gap-2 ml-auto relative">
                         {generationLog && (
-                          <div className="mr-3 flex items-center gap-2 text-xs font-medium text-[#FF5B03] bg-orange-50 px-3 py-1.5 rounded-full border border-orange-100 shadow-sm animate-in fade-in slide-in-from-right-4">
+                          <div className="mr-3 flex items-center gap-2 text-xs font-medium text-(--ag-accent) bg-(--ag-accent-soft) px-3 py-1.5 rounded-full border border-(--ag-accent-line) shadow-sm animate-in fade-in slide-in-from-right-4">
                             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                             {generationProgress.current} / {generationProgress.total} 
                             <span className="opacity-0 sm:opacity-100 overflow-hidden truncate max-w-[150px]">- {generationLog}</span>
@@ -4178,7 +4182,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                         <button
                           onClick={handleEnrichMass}
                           disabled={selectedIds.size === 0 || isEnrichingMass || isGeneratingMass}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-purple-700 border border-purple-200 rounded-lg text-sm font-medium hover:bg-purple-50 hover:border-purple-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-(--ag-surface-solid) text-(--ag-violet) border border-(--ag-violet-line) rounded-lg text-sm font-medium hover:bg-(--ag-violet-soft) hover:border-(--ag-violet-line) transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                         >
                           {isEnrichingMass ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
                           <span className="hidden sm:inline">Enriquecer ({selectedIds.size})</span>
@@ -4187,7 +4191,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                         <button
                           onClick={handleGenerateMass}
                           disabled={selectedIds.size === 0 || isGeneratingMass || isEnrichingMass}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-[#FF5B03] border border-orange-200 rounded-lg text-sm font-medium hover:bg-orange-50 hover:border-[#FF5B03] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-(--ag-surface-solid) text-(--ag-accent) border border-(--ag-accent-line) rounded-lg text-sm font-medium hover:bg-(--ag-accent-soft) hover:border-(--ag-accent) transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                         >
                           {isGeneratingMass ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
                           <span className="hidden sm:inline">Gerar ({selectedIds.size})</span>
@@ -4196,7 +4200,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                         <button
                           onClick={handleDeleteSelected}
                           disabled={selectedIds.size === 0}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-red-600 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-50 hover:border-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-(--ag-surface-solid) text-(--ag-danger) border border-(--ag-danger-line) rounded-lg text-sm font-medium hover:bg-(--ag-danger-soft) hover:border-(--ag-danger-line) transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                           title="Excluir Selecionados"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -4208,7 +4212,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                             type="button"
                             onClick={() => setIsSendDropdownOpen((v) => !v)}
                             disabled={selectedIds.size === 0}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-blue-700 border border-blue-200 rounded-lg text-sm font-medium hover:bg-blue-50 hover:border-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-(--ag-surface-solid) text-(--ag-blue) border border-(--ag-blue-line) rounded-lg text-sm font-medium hover:bg-(--ag-blue-soft) hover:border-(--ag-blue-line) transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                             title="Enviar para integração"
                           >
                             <CloudUpload className="w-3.5 h-3.5" />
@@ -4219,8 +4223,8 @@ Retorne APENAS um JSON válido no seguinte formato:
                           {isSendDropdownOpen && (
                             <>
                               <div className="fixed inset-0 z-30" onClick={() => setIsSendDropdownOpen(false)} />
-                              <div className="absolute right-0 mt-1.5 w-60 bg-white border border-slate-200 rounded-lg shadow-lg z-40 py-1.5 animate-in fade-in slide-in-from-top-1">
-                                <div className="px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">Enviar produtos para</div>
+                              <div className="absolute right-0 mt-1.5 w-60 bg-(--ag-surface-solid) border border-(--ag-hairline) rounded-lg shadow-lg z-40 py-1.5 animate-in fade-in slide-in-from-top-1">
+                                <div className="px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-(--ag-text-3)">Enviar produtos para</div>
                                 {(Object.keys(INTEGRATION_META) as IntegrationKey[]).map((key) => {
                                   const meta = INTEGRATION_META[key];
                                   const connected = integrationConnections[key];
@@ -4231,11 +4235,11 @@ Retorne APENAS um JSON válido no seguinte formato:
                                       disabled={!connected}
                                       onClick={() => { setIsSendDropdownOpen(false); handleSendToIntegration(key); }}
                                       title={connected ? `Enviar selecionados para ${meta.label}` : `${meta.label} não conectado — configure em Integrações`}
-                                      className="w-full flex items-center gap-2 px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                                      className="w-full flex items-center gap-2 px-3.5 py-2 text-sm font-semibold text-(--ag-text) hover:bg-(--ag-fill) transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                                     >
                                       <meta.Icon className="w-3.5 h-3.5" />
                                       {meta.label}
-                                      {!connected && <span className="ml-auto text-[9px] font-bold uppercase text-slate-400">Não conectado</span>}
+                                      {!connected && <span className="ml-auto text-[9px] font-bold uppercase text-(--ag-text-3)">Não conectado</span>}
                                     </button>
                                   );
                                 })}
@@ -4244,7 +4248,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                           )}
                         </div>
 
-                        <div className="w-px h-5 bg-slate-200 mx-1 sm:mx-2"></div>
+                        <div className="w-px h-5 bg-(--ag-fill-2) mx-1 sm:mx-2"></div>
 
                         <button
                           onClick={() => {
@@ -4254,8 +4258,8 @@ Retorne APENAS um JSON válido no seguinte formato:
                           className={cn(
                             "p-1.5 border rounded-lg transition-colors shadow-sm",
                             isColumnConfigOpen
-                              ? "border-[#FF5B03]/30 bg-orange-50 text-[#FF5B03]"
-                              : "border-slate-200 bg-white text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                              ? "border-(--ag-accent-line) bg-(--ag-accent-soft) text-(--ag-accent)"
+                              : "border-(--ag-hairline) bg-(--ag-surface-solid) text-(--ag-text-2) hover:text-(--ag-text) hover:bg-(--ag-fill)"
                           )}
                           title="Colunas Visíveis"
                         >
@@ -4268,18 +4272,18 @@ Retorne APENAS um JSON válido no seguinte formato:
                               setIsExportDropdownOpen(!isExportDropdownOpen);
                               setIsColumnConfigOpen(false);
                             }}
-                            className="p-1.5 border border-slate-200 bg-white rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-all shadow-sm flex items-center justify-center gap-1 hover:border-slate-300"
+                            className="p-1.5 border border-(--ag-hairline) bg-(--ag-surface-solid) rounded-lg text-(--ag-text-2) hover:text-(--ag-text) hover:bg-(--ag-fill) transition-all shadow-sm flex items-center justify-center gap-1 hover:border-(--ag-hairline-2)"
                             title="Opções de Exportação"
                             id="export-dropdown-btn"
                           >
-                            <Download className="w-4 h-4 text-slate-500" />
+                            <Download className="w-4 h-4 text-(--ag-text-2)" />
                           </button>
                           
                           {isExportDropdownOpen && (
-                            <div className="absolute right-0 top-12 w-64 bg-white border border-slate-200 rounded-xl shadow-xl p-2 z-30 animate-in fade-in slide-in-from-top-2 origin-top-right">
-                              <div className="flex justify-between items-center px-2 py-1.5 mb-1 border-b border-slate-100">
-                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Exportar Planilha</h4>
-                                <button onClick={() => setIsExportDropdownOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-3.5 h-3.5"/></button>
+                            <div className="absolute right-0 top-12 w-64 bg-(--ag-surface-solid) border border-(--ag-hairline) rounded-xl shadow-xl p-2 z-30 animate-in fade-in slide-in-from-top-2 origin-top-right">
+                              <div className="flex justify-between items-center px-2 py-1.5 mb-1 border-b border-(--ag-hairline)">
+                                <h4 className="text-xs font-bold text-(--ag-text-3) uppercase tracking-wider">Exportar Planilha</h4>
+                                <button onClick={() => setIsExportDropdownOpen(false)} className="text-(--ag-text-3) hover:text-(--ag-text-2)"><X className="w-3.5 h-3.5"/></button>
                               </div>
                               <div className="flex flex-col gap-1">
                                 <button
@@ -4287,14 +4291,14 @@ Retorne APENAS um JSON válido no seguinte formato:
                                     handleExport('standard');
                                     setIsExportDropdownOpen(false);
                                   }}
-                                  className="w-full text-left px-3 py-2 hover:bg-slate-50 rounded-lg flex items-start gap-2.5 transition-colors group"
+                                  className="w-full text-left px-3 py-2 hover:bg-(--ag-fill) rounded-lg flex items-start gap-2.5 transition-colors group"
                                 >
-                                  <div className="p-1.5 bg-orange-50 text-orange-600 rounded-md group-hover:bg-orange-600 group-hover:text-white transition-colors">
+                                  <div className="p-1.5 bg-(--ag-accent-soft) text-(--ag-accent) rounded-md group-hover:bg-(--ag-accent) group-hover:text-white transition-colors">
                                     <Layout className="w-3.5 h-3.5" />
                                   </div>
                                   <div className="flex flex-col">
-                                    <span className="text-xs font-bold text-slate-700 group-hover:text-slate-900 leading-tight">Modelo Padrão</span>
-                                    <span className="text-[10px] text-slate-400 leading-normal">Formato original com novos atributos</span>
+                                    <span className="text-xs font-bold text-(--ag-text) group-hover:text-(--ag-text) leading-tight">Modelo Padrão</span>
+                                    <span className="text-[10px] text-(--ag-text-3) leading-normal">Formato original com novos atributos</span>
                                   </div>
                                 </button>
                                 
@@ -4303,14 +4307,14 @@ Retorne APENAS um JSON válido no seguinte formato:
                                     handleExport('tinyerp');
                                     setIsExportDropdownOpen(false);
                                   }}
-                                  className="w-full text-left px-3 py-2 hover:bg-slate-50 rounded-lg flex items-start gap-2.5 transition-colors group"
+                                  className="w-full text-left px-3 py-2 hover:bg-(--ag-fill) rounded-lg flex items-start gap-2.5 transition-colors group"
                                 >
-                                  <div className="p-1.5 bg-orange-50 text-orange-600 rounded-md group-hover:bg-orange-600 group-hover:text-white transition-colors">
+                                  <div className="p-1.5 bg-(--ag-accent-soft) text-(--ag-accent) rounded-md group-hover:bg-(--ag-accent) group-hover:text-white transition-colors">
                                     <Download className="w-3.5 h-3.5" />
                                   </div>
                                   <div className="flex flex-col">
-                                    <span className="text-xs font-bold text-slate-700 group-hover:text-slate-900 leading-tight">Modelo Tiny ERP</span>
-                                    <span className="text-[10px] text-slate-400 leading-normal">Formatado para o importador Tiny ERP</span>
+                                    <span className="text-xs font-bold text-(--ag-text) group-hover:text-(--ag-text) leading-tight">Modelo Tiny ERP</span>
+                                    <span className="text-[10px] text-(--ag-text-3) leading-normal">Formatado para o importador Tiny ERP</span>
                                   </div>
                                 </button>
                               </div>
@@ -4319,16 +4323,16 @@ Retorne APENAS um JSON válido no seguinte formato:
                         </div>
 
                         {isColumnConfigOpen && (
-                            <div className="absolute right-0 top-12 w-56 bg-white border border-slate-200 rounded-xl shadow-xl p-3 z-30 animate-in fade-in slide-in-from-top-2 origin-top-right">
-                              <div className="flex justify-between items-center mb-2 pb-2 border-b border-slate-100">
-                                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Colunas</h4>
-                                <button onClick={() => setIsColumnConfigOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-3.5 h-3.5"/></button>
+                            <div className="absolute right-0 top-12 w-56 bg-(--ag-surface-solid) border border-(--ag-hairline) rounded-xl shadow-xl p-3 z-30 animate-in fade-in slide-in-from-top-2 origin-top-right">
+                              <div className="flex justify-between items-center mb-2 pb-2 border-b border-(--ag-hairline)">
+                                <h4 className="text-xs font-bold text-(--ag-text) uppercase tracking-wider">Colunas</h4>
+                                <button onClick={() => setIsColumnConfigOpen(false)} className="text-(--ag-text-3) hover:text-(--ag-text-2)"><X className="w-3.5 h-3.5"/></button>
                               </div>
                               <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
                                 {Object.keys(visibleColumns).map(col => (
-                                  <label key={col} className="flex items-center gap-2 cursor-pointer py-1.5 px-2 hover:bg-slate-50 rounded-md transition-colors group">
-                                    <input type="checkbox" checked={visibleColumns[col]} onChange={(e) => setVisibleColumns(prev => ({ ...prev, [col]: e.target.checked }))} className="rounded border-slate-300 text-[#FF5B03] focus:ring-[#FF5B03] opacity-70 group-hover:opacity-100 transition-opacity" />
-                                    <span className="text-sm text-slate-700 group-hover:text-slate-900 font-medium">{col === 'Descrição' ? 'Título' : col}</span>
+                                  <label key={col} className="flex items-center gap-2 cursor-pointer py-1.5 px-2 hover:bg-(--ag-fill) rounded-md transition-colors group">
+                                    <input type="checkbox" checked={visibleColumns[col]} onChange={(e) => setVisibleColumns(prev => ({ ...prev, [col]: e.target.checked }))} className="rounded border-(--ag-hairline-2) text-(--ag-accent) focus:ring-(--ag-accent) opacity-70 group-hover:opacity-100 transition-opacity" />
+                                    <span className="text-sm text-(--ag-text) group-hover:text-(--ag-text) font-medium">{col === 'Descrição' ? 'Título' : col}</span>
                                   </label>
                                 ))}
                               </div>
@@ -4340,62 +4344,62 @@ Retorne APENAS um JSON válido no seguinte formato:
                  {/* Products Table Core — desktop/tablet only, ver lista de cards abaixo para mobile */}
                  <div className="hidden md:block flex-1 overflow-auto relative rounded-b-xl">
                      <table className="min-w-full text-left text-sm whitespace-nowrap">
-                       <thead className="bg-[#f7f9fb] border-b border-slate-200 sticky top-0 z-20 shadow-sm backdrop-blur-sm bg-opacity-95">
+                       <thead className="bg-(--ag-fill-solid) border-b border-(--ag-hairline) sticky top-0 z-20 shadow-sm">
                          <tr>
-                            <th className="px-5 py-3.5 w-12 border-r border-slate-200">
+                            <th className="px-5 py-3.5 w-12 border-r border-(--ag-hairline)">
                               <input
                                 type="checkbox"
                                 onChange={(e) => setSelectedIds(e.target.checked ? new Set(paginatedProducts.map(p => p._id)) : new Set())}
-                                className="rounded border-slate-300 text-[#FF5B03] focus:ring-[#FF5B03]"
+                                className="rounded border-(--ag-hairline-2) text-(--ag-accent) focus:ring-(--ag-accent)"
                               />
                             </th>
-                                      {visibleColumns['Img'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">IMG</th>}
-                            {visibleColumns['SKU'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">SKU</th>}
-                            {visibleColumns['Descrição'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">Título</th>}
-                            {visibleColumns['Categoria'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">Categoria</th>}
-                            {visibleColumns['Marca'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">Marca</th>}
-                            {visibleColumns['Status'] && <th className="px-4 py-3.5 font-bold text-slate-600 text-xs tracking-wider uppercase">Status</th>}
-                            <th className="px-5 py-3.5 text-right font-bold text-slate-600 text-xs tracking-wider uppercase bg-[#f7f9fb] shadow-[inset_1px_0_0_0_#e2e8f0] sticky right-0 z-20 w-[280px]">Ações</th>
+                                      {visibleColumns['Img'] && <th className="px-4 py-3.5 font-bold text-(--ag-text-2) text-xs tracking-wider uppercase">IMG</th>}
+                            {visibleColumns['SKU'] && <th className="px-4 py-3.5 font-bold text-(--ag-text-2) text-xs tracking-wider uppercase">SKU</th>}
+                            {visibleColumns['Descrição'] && <th className="px-4 py-3.5 font-bold text-(--ag-text-2) text-xs tracking-wider uppercase">Título</th>}
+                            {visibleColumns['Categoria'] && <th className="px-4 py-3.5 font-bold text-(--ag-text-2) text-xs tracking-wider uppercase">Categoria</th>}
+                            {visibleColumns['Marca'] && <th className="px-4 py-3.5 font-bold text-(--ag-text-2) text-xs tracking-wider uppercase">Marca</th>}
+                            {visibleColumns['Status'] && <th className="px-4 py-3.5 font-bold text-(--ag-text-2) text-xs tracking-wider uppercase">Status</th>}
+                            <th className="px-5 py-3.5 text-right font-bold text-(--ag-text-2) text-xs tracking-wider uppercase bg-(--ag-fill-solid) shadow-[inset_1px_0_0_0_var(--ag-hairline)] sticky right-0 z-20 w-[280px]">Ações</th>
                          </tr>
                        </thead>
-                       <tbody className="divide-y divide-slate-100">
+                       <tbody className="divide-y divide-(--ag-hairline)">
                           {products.length === 0 ? (
                             <tr>
                               <td colSpan={20}>
                                 <div className="p-16 flex flex-col items-center justify-center text-center w-full">
-                                  <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-center mb-4">
-                                    <LinkIcon className="w-8 h-8 text-slate-400" />
+                                  <div className="w-16 h-16 bg-(--ag-fill) border border-(--ag-hairline) rounded-2xl flex items-center justify-center mb-4">
+                                    <LinkIcon className="w-8 h-8 text-(--ag-text-3)" />
                                   </div>
-                                  <h3 className="font-display text-2xl font-bold text-slate-900 mb-2 text-center">Pronto para começar?</h3>
-                                  <p className="text-sm text-slate-500 mb-8 max-w-sm text-center">
+                                  <h3 className="font-display text-2xl font-bold text-(--ag-text) mb-2 text-center">Pronto para começar?</h3>
+                                  <p className="text-sm text-(--ag-text-2) mb-8 max-w-sm text-center">
                                     Cole o link de um produto e deixe a IA preencher o resto para você.
                                   </p>
                                   <button
                                     onClick={handleOpenProductUrlImport}
-                                    className="px-8 py-3 bg-[#FF5B03] text-white rounded-xl shadow-lg shadow-orange-200 font-bold hover:bg-[#E14E00] transition-all hover:scale-105 active:scale-95 flex items-center gap-2 mb-4"
+                                    className="px-8 py-3 bg-(--ag-accent) text-white rounded-xl shadow-lg shadow-(color:--ag-accent-soft) font-bold hover:brightness-95 transition-all hover:scale-105 active:scale-95 flex items-center gap-2 mb-4"
                                   >
                                     <LinkIcon className="w-5 h-5" /> Colar link do produto
                                   </button>
-                                  <p className="text-xs text-slate-400 mb-2">ou importe uma planilha</p>
+                                  <p className="text-xs text-(--ag-text-3) mb-2">ou importe uma planilha</p>
                                   <div className="flex flex-col sm:flex-row items-center gap-3">
                                     <button
                                       onClick={() => fileInputRef.current?.click()}
-                                      className="px-6 py-3 bg-white text-slate-700 rounded-xl border border-slate-200 font-semibold hover:bg-slate-50 transition-all hover:scale-105 active:scale-95 flex items-center gap-2 text-sm"
+                                      className="px-6 py-3 bg-(--ag-surface-solid) text-(--ag-text) rounded-xl border border-(--ag-hairline) font-semibold hover:bg-(--ag-fill) transition-all hover:scale-105 active:scale-95 flex items-center gap-2 text-sm"
                                     >
                                       <Upload className="w-4 h-4" /> Importar Arquivo
                                     </button>
                                     <button
                                       onClick={downloadBlankTemplate}
-                                      className="px-6 py-3 bg-white text-slate-700 rounded-xl border border-slate-200 font-semibold hover:bg-slate-50 transition-all hover:scale-105 active:scale-95 flex items-center gap-2 text-sm"
+                                      className="px-6 py-3 bg-(--ag-surface-solid) text-(--ag-text) rounded-xl border border-(--ag-hairline) font-semibold hover:bg-(--ag-fill) transition-all hover:scale-105 active:scale-95 flex items-center gap-2 text-sm"
                                     >
-                                      <Download className="w-4 h-4 text-slate-500" /> Baixar Planilha Padrão
+                                      <Download className="w-4 h-4 text-(--ag-text-2)" /> Baixar Planilha Padrão
                                     </button>
                                   </div>
                                 </div>
                               </td>
                             </tr>
                           ) : paginatedProducts.length === 0 ? (
-                            <tr><td colSpan={20} className="text-center p-8 text-slate-500">Nenhum produto corresponde aos filtros.</td></tr>
+                            <tr><td colSpan={20} className="text-center p-8 text-(--ag-text-2)">Nenhum produto corresponde aos filtros.</td></tr>
                           ) : paginatedProducts.map(product => {
                             const isProcessed = product._statusDescricao === 'Gerado por IA';
                             const isOriginal = product._statusDescricao === 'Descrição original';
@@ -4409,13 +4413,13 @@ Retorne APENAS um JSON válido no seguinte formato:
                             return (
                             <React.Fragment key={product._id}>
                             <tr className={cn(
-                              "hover:bg-[#f1f5f9]/60 transition-colors group relative",
+                              "hover:bg-(--ag-fill-solid) transition-colors group relative",
                               product._generationError
-                                ? "bg-red-50/40 hover:bg-red-50/60"
-                                : selectedIds.has(product._id) ? "bg-orange-50/40" : "bg-white"
+                                ? "bg-(--ag-danger-tint)"
+                                : selectedIds.has(product._id) ? "bg-(--ag-accent-tint)" : "bg-(--ag-surface-solid)"
                             )}>
-                              <td className="px-5 py-3 border-r border-slate-100 bg-inherit">
-                                <div className={`absolute left-0 top-0 bottom-0 w-1 transition-colors ${product._generationError ? 'bg-red-500' : isProcessed ? 'bg-orange-500' : isOriginal ? 'bg-emerald-500' : 'bg-transparent'}`}></div>
+                              <td className="px-5 py-3 border-r border-(--ag-hairline) bg-inherit">
+                                <div className={`absolute left-0 top-0 bottom-0 w-1 transition-colors ${product._generationError ? 'bg-(--ag-danger)' : isProcessed ? 'bg-(--ag-accent)' : isOriginal ? 'bg-(--ag-ok)' : 'bg-transparent'}`}></div>
                                 <div className="flex items-center gap-1.5">
                                 {hasChildren && (
                                   <button
@@ -4425,7 +4429,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                                       else next.add(product._id);
                                       return next;
                                     })}
-                                    className="text-slate-400 hover:text-slate-700 transition-colors"
+                                    className="text-(--ag-text-3) hover:text-(--ag-text) transition-colors"
                                     title={isExpanded ? 'Recolher variantes' : `Expandir ${groupChildren.length} variante(s)`}
                                   >
                                     <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
@@ -4440,7 +4444,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                                     else next.delete(product._id);
                                     setSelectedIds(next);
                                   }}
-                                  className="rounded border-slate-300 text-[#FF5B03] focus:ring-[#FF5B03]"
+                                  className="rounded border-(--ag-hairline-2) text-(--ag-accent) focus:ring-(--ag-accent)"
                                 />
                                 </div>
                               </td>
@@ -4448,10 +4452,10 @@ Retorne APENAS um JSON válido no seguinte formato:
                                 <td className="px-4 py-2.5 bg-inherit">
                                    <div className="relative inline-block">
                                      {product._generationError && (
-                                       <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-white shadow-sm z-10 animate-pulse" title="Erro na geração"></div>
+                                       <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-(--ag-danger) rounded-full border border-(--ag-surface-solid) shadow-sm z-10 animate-pulse" title="Erro na geração"></div>
                                      )}
                                      {(product._selectedImage || product['URL imagem 1']) ? (
-                                       <div className="w-10 h-10 rounded-md border border-slate-200 overflow-hidden bg-white p-[1px] shadow-sm hover:border-[#FF5B03] cursor-pointer transition-colors relative" onClick={() => setCurrentImageSearchProduct(product)}>
+                                       <div className="w-10 h-10 rounded-md border border-(--ag-hairline) overflow-hidden bg-(--ag-surface-solid) p-[1px] shadow-sm hover:border-(--ag-accent) cursor-pointer transition-colors relative" onClick={() => setCurrentImageSearchProduct(product)}>
                                          <img
                                            src={(product._selectedImage || product['URL imagem 1']!.toString())}
                                            alt="Product"
@@ -4462,21 +4466,21 @@ Retorne APENAS um JSON válido no seguinte formato:
                                              if (fallback) fallback.removeAttribute('hidden');
                                            }}
                                          />
-                                         <span hidden className="absolute inset-0 flex items-center justify-center text-slate-400">
+                                         <span hidden className="absolute inset-0 flex items-center justify-center text-(--ag-text-3)">
                                            <ImageIcon className="w-4 h-4 opacity-70" />
                                          </span>
                                        </div>
                                      ) : (
-                                       <div className="w-10 h-10 rounded-md border border-slate-200 bg-slate-50 flex items-center justify-center text-slate-400 hover:border-[#FF5B03] hover:text-[#FF5B03] cursor-pointer transition-colors shadow-sm" onClick={() => setCurrentImageSearchProduct(product)}>
+                                       <div className="w-10 h-10 rounded-md border border-(--ag-hairline) bg-(--ag-fill) flex items-center justify-center text-(--ag-text-3) hover:border-(--ag-accent) hover:text-(--ag-accent) cursor-pointer transition-colors shadow-sm" onClick={() => setCurrentImageSearchProduct(product)}>
                                          <ImageIcon className="w-4 h-4 opacity-70" />
                                        </div>
                                      )}
                                    </div>
                                 </td>
                               )}
-                              {visibleColumns['SKU'] && <td className="px-4 py-3 font-mono text-xs text-slate-600 font-medium bg-inherit">{product['Código (SKU)']}</td>}
+                              {visibleColumns['SKU'] && <td className="px-4 py-3 font-mono text-xs text-(--ag-text-2) font-medium bg-inherit">{product['Código (SKU)']}</td>}
                               {visibleColumns['Descrição'] && (
-                                <td className="px-4 py-3 text-slate-900 bg-inherit">
+                                <td className="px-4 py-3 text-(--ag-text) bg-inherit">
                                   <div className="max-w-[400px] 2xl:max-w-[600px] truncate" title={product['Descrição']}>{product['Descrição']}</div>
                                   {getProductIntegrationLinks(product).length > 0 && (
                                     <div className="flex items-center gap-1 mt-1">
@@ -4496,31 +4500,31 @@ Retorne APENAS um JSON válido no seguinte formato:
                                   )}
                                   {hasChildren && (
                                     <div className="mt-0.5">
-                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-50 text-orange-600 border border-orange-200 uppercase tracking-wide cursor-pointer" onClick={() => setExpandedParentIds(prev => { const next = new Set(prev); if (next.has(product._id)) next.delete(product._id); else next.add(product._id); return next; })}>
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-(--ag-accent-soft) text-(--ag-accent) border border-(--ag-accent-line) uppercase tracking-wide cursor-pointer" onClick={() => setExpandedParentIds(prev => { const next = new Set(prev); if (next.has(product._id)) next.delete(product._id); else next.add(product._id); return next; })}>
                                         {groupChildren.length} variante{groupChildren.length > 1 ? 's' : ''} {isExpanded ? '▲' : '▼'}
                                       </span>
                                     </div>
                                   )}
                                 </td>
                               )}
-                              {visibleColumns['Categoria'] && <td className="px-4 py-3 text-slate-500 text-xs bg-inherit"><div className="max-w-[120px] truncate">{product['Categoria'] || '-'}</div></td>}
-                              {visibleColumns['Marca'] && <td className="px-4 py-3 text-slate-500 text-xs bg-inherit"><div className="max-w-[100px] truncate">{product['Marca'] || '-'}</div></td>}
+                              {visibleColumns['Categoria'] && <td className="px-4 py-3 text-(--ag-text-2) text-xs bg-inherit"><div className="max-w-[120px] truncate">{product['Categoria'] || '-'}</div></td>}
+                              {visibleColumns['Marca'] && <td className="px-4 py-3 text-(--ag-text-2) text-xs bg-inherit"><div className="max-w-[100px] truncate">{product['Marca'] || '-'}</div></td>}
                               {visibleColumns['Status'] && (
                                 <td className="px-4 py-3 bg-inherit">
                                    <div className="flex flex-col gap-1.5">
                                      <div className="flex items-center gap-1">
                                        {([
-                                         { on: flags.descricaoGerada, Icon: Sparkles, label: 'Descrição', onClass: 'bg-orange-50 text-orange-700 border-orange-200/60' },
-                                         { on: flags.atributosGerados, Icon: Tag, label: 'Atributos', onClass: 'bg-amber-50 text-amber-700 border-amber-200/60' },
-                                         // { on: flags.enriquecido, Icon: Search, label: 'Enriquecido', onClass: 'bg-purple-50 text-purple-700 border-purple-200/60' }, // desativado temporariamente
-                                         { on: flags.imagensGeradas, Icon: ImageIcon, label: 'Imagens', onClass: 'bg-orange-50 text-orange-700 border-orange-200/60' },
+                                         { on: flags.descricaoGerada, Icon: Sparkles, label: 'Descrição', onClass: 'bg-(--ag-accent-soft) text-(--ag-accent) border-(--ag-accent-line)' },
+                                         { on: flags.atributosGerados, Icon: Tag, label: 'Atributos', onClass: 'bg-(--ag-warn-soft) text-(--ag-warn) border-(--ag-warn-line)' },
+                                         // { on: flags.enriquecido, Icon: Search, label: 'Enriquecido', onClass: 'bg-(--ag-violet-soft) text-(--ag-violet) border-(--ag-violet-line)' }, // desativado temporariamente
+                                         { on: flags.imagensGeradas, Icon: ImageIcon, label: 'Imagens', onClass: 'bg-(--ag-accent-soft) text-(--ag-accent) border-(--ag-accent-line)' },
                                        ] as const).map(({ on, Icon, label, onClass }) => (
                                          <span
                                            key={label}
                                            title={`${label}: ${on ? 'concluído' : 'pendente'}`}
                                            className={cn(
                                              "inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase tracking-wider transition-colors",
-                                             on ? onClass : "bg-slate-50 text-slate-300 border-slate-200/60"
+                                             on ? onClass : "bg-(--ag-fill) text-(--ag-text-3) border-(--ag-hairline)"
                                            )}
                                          >
                                            <Icon className="w-3 h-3" />
@@ -4529,7 +4533,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                                      </div>
                                      {isError && (
                                        <div className="flex items-center gap-2">
-                                         <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-red-600 animate-pulse" title={product._generationError || 'Erro'}>
+                                         <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-(--ag-danger) animate-pulse" title={product._generationError || 'Erro'}>
                                            <AlertCircle className="w-3 h-3" /> Erro
                                          </span>
                                        </div>
@@ -4537,11 +4541,11 @@ Retorne APENAS um JSON válido no seguinte formato:
                                    </div>
                                 </td>
                               )}
-                              <td className="px-5 py-3 text-right bg-inherit transition-colors sticky right-0 shadow-[inset_1px_0_0_0_#f1f5f9] group-hover:shadow-[inset_1px_0_0_0_#e2e8f0] z-10 w-[280px]">
+                              <td className="px-5 py-3 text-right bg-inherit transition-colors sticky right-0 shadow-[inset_1px_0_0_0_var(--ag-hairline)] group-hover:shadow-[inset_1px_0_0_0_var(--ag-hairline-2)] z-10 w-[280px]">
                                 <div className="flex items-center justify-end gap-1.5 bg-inherit h-full">
                                   <button
                                     onClick={() => openPreview(product)}
-                                    className="text-[#FF5B03] hover:bg-orange-600 hover:text-white bg-orange-50 border border-orange-100 p-1.5 rounded-lg transition-all shadow-sm flex items-center justify-center w-8 h-8 group/edit"
+                                    className="text-(--ag-accent) hover:bg-(--ag-accent) hover:text-white bg-(--ag-accent-soft) border border-(--ag-accent-line) p-1.5 rounded-lg transition-all shadow-sm flex items-center justify-center w-8 h-8 group/edit"
                                     title="Visualizar Detalhes"
                                     id="product-edit-btn"
                                   >
@@ -4552,8 +4556,8 @@ Retorne APENAS um JSON válido no seguinte formato:
                                     className={cn(
                                       "rounded-md transition-all shadow-sm flex items-center justify-center w-8 h-8",
                                       flags.atributosGerados
-                                        ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                        : "bg-white text-slate-400 hover:text-amber-700 border border-slate-200 hover:border-amber-300 hover:bg-amber-50"
+                                        ? "bg-(--ag-warn-soft) text-(--ag-warn) border border-(--ag-warn-line)"
+                                        : "bg-(--ag-surface-solid) text-(--ag-text-3) hover:text-(--ag-warn) border border-(--ag-hairline) hover:border-(--ag-warn-line) hover:bg-(--ag-warn-soft)"
                                     )}
                                     title="Gerar Atributos"
                                   >
@@ -4564,23 +4568,23 @@ Retorne APENAS um JSON válido no seguinte formato:
                                     className={cn(
                                       "rounded-md transition-all shadow-sm flex items-center justify-center w-8 h-8",
                                       flags.imagensGeradas
-                                        ? "bg-orange-50 text-orange-700 border border-orange-200"
-                                        : "bg-white text-slate-400 hover:text-orange-700 border border-slate-200 hover:border-orange-300 hover:bg-orange-50"
+                                        ? "bg-(--ag-accent-soft) text-(--ag-accent) border border-(--ag-accent-line)"
+                                        : "bg-(--ag-surface-solid) text-(--ag-text-3) hover:text-(--ag-accent) border border-(--ag-hairline) hover:border-(--ag-accent-line) hover:bg-(--ag-accent-soft)"
                                     )}
                                     title="Gerar Imagens"
                                   >
                                     <ImageIcon className="w-3.5 h-3.5" />
                                   </button>
                                   {/* Botão Enriquecer individual — desativado temporariamente
-                                  <div className="w-px h-5 bg-slate-200 mx-0.5"></div>
+                                  <div className="w-px h-5 bg-(--ag-fill-2) mx-0.5"></div>
                                   <button
                                     onClick={() => handleEnrichSingle(product._id)}
                                     disabled={product._isEnriching}
                                     className={cn(
                                       "rounded-md transition-all shadow-sm disabled:opacity-50 flex items-center justify-center w-8 h-8",
                                       isEnriched
-                                        ? "bg-purple-50 text-purple-700 border border-purple-200"
-                                        : "bg-white text-slate-400 hover:text-purple-700 border border-slate-200 hover:border-purple-300 hover:bg-purple-50"
+                                        ? "bg-(--ag-violet-soft) text-(--ag-violet) border border-(--ag-violet-line)"
+                                        : "bg-(--ag-surface-solid) text-(--ag-text-3) hover:text-(--ag-violet) border border-(--ag-hairline) hover:border-(--ag-violet-line) hover:bg-(--ag-violet-soft)"
                                     )}
                                     title={isEnriched ? "Enriquecer Dados (já enriquecido)" : "Enriquecer Dados"}
                                   >
@@ -4593,19 +4597,19 @@ Retorne APENAS um JSON válido no seguinte formato:
                                     className={cn(
                                       "rounded-md transition-all shadow-sm disabled:opacity-50 flex items-center justify-center w-8 h-8",
                                       isProcessed
-                                        ? "bg-[#FF5B03]/10 text-[#FF5B03] border border-[#FF5B03]/20"
-                                        : "bg-white text-slate-400 hover:text-[#FF5B03] border border-slate-200 hover:border-orange-300 hover:bg-orange-50"
+                                        ? "bg-(--ag-accent-soft) text-(--ag-accent) border border-(--ag-accent-line)"
+                                        : "bg-(--ag-surface-solid) text-(--ag-text-3) hover:text-(--ag-accent) border border-(--ag-hairline) hover:border-(--ag-accent-line) hover:bg-(--ag-accent-soft)"
                                     )}
                                     title={isProcessed ? "Gerar Descrição (já gerada)" : "Gerar Descrição"}
                                   >
-                                    <Sparkles className={`w-3.5 h-3.5 ${product._isGenerating ? 'animate-pulse text-[#FF5B03]' : ''}`} />
+                                    <Sparkles className={`w-3.5 h-3.5 ${product._isGenerating ? 'animate-pulse text-(--ag-accent)' : ''}`} />
                                    </button>
                                  </div>
                               </td>
                             </tr>
                             {hasChildren && isExpanded && groupChildren.map(child => (
-                              <tr key={child._id} className="bg-slate-50/70 border-l-2 border-orange-300">
-                                <td className="pl-10 pr-3 py-2.5 border-r border-slate-100">
+                              <tr key={child._id} className="bg-(--ag-fill-solid) border-l-2 border-(--ag-accent-line)">
+                                <td className="pl-10 pr-3 py-2.5 border-r border-(--ag-hairline)">
                                   <input
                                     type="checkbox"
                                     checked={selectedIds.has(child._id)}
@@ -4615,36 +4619,36 @@ Retorne APENAS um JSON válido no seguinte formato:
                                       else next.delete(child._id);
                                       setSelectedIds(next);
                                     }}
-                                    className="rounded border-slate-300 text-[#FF5B03] focus:ring-[#FF5B03]"
+                                    className="rounded border-(--ag-hairline-2) text-(--ag-accent) focus:ring-(--ag-accent)"
                                   />
                                 </td>
                                 {visibleColumns['Img'] && (
                                   <td className="px-4 py-2.5">
                                     {(child._selectedImage || child['URL imagem 1']) ? (
-                                      <img src={child._selectedImage || child['URL imagem 1']!.toString()} alt="" className="w-8 h-8 object-contain rounded border border-slate-200" />
+                                      <img src={child._selectedImage || child['URL imagem 1']!.toString()} alt="" className="w-8 h-8 object-contain rounded border border-(--ag-hairline)" />
                                     ) : (
-                                      <div className="w-8 h-8 rounded border border-slate-200 bg-slate-100 flex items-center justify-center">
-                                        <ImageIcon className="w-3.5 h-3.5 text-slate-400" />
+                                      <div className="w-8 h-8 rounded border border-(--ag-hairline) bg-(--ag-fill-2) flex items-center justify-center">
+                                        <ImageIcon className="w-3.5 h-3.5 text-(--ag-text-3)" />
                                       </div>
                                     )}
                                   </td>
                                 )}
                                 {visibleColumns['SKU'] && (
-                                  <td className="px-4 py-2.5 font-mono text-xs text-slate-500">
+                                  <td className="px-4 py-2.5 font-mono text-xs text-(--ag-text-2)">
                                     <div className="flex items-center gap-1.5">
-                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-50 text-orange-600 border border-orange-200 uppercase tracking-wide">variante</span>
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-(--ag-accent-soft) text-(--ag-accent) border border-(--ag-accent-line) uppercase tracking-wide">variante</span>
                                       {child['Código (SKU)']}
                                     </div>
                                   </td>
                                 )}
                                 {visibleColumns['Descrição'] && (
-                                  <td className="px-4 py-2.5 text-slate-600 text-sm" colSpan={1}>
+                                  <td className="px-4 py-2.5 text-(--ag-text-2) text-sm" colSpan={1}>
                                     <div className="flex flex-col gap-0.5">
                                       <span className="truncate max-w-[300px]" title={child['Descrição']}>{child['Descrição']}</span>
                                       {child['Variações'] && (
                                         <div className="flex flex-wrap gap-1">
                                           {child['Variações'].split('||').map((v, i) => (
-                                            <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                                            <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-(--ag-fill-2) text-(--ag-text-2) border border-(--ag-hairline)">
                                               {v.trim()}
                                             </span>
                                           ))}
@@ -4653,14 +4657,14 @@ Retorne APENAS um JSON válido no seguinte formato:
                                     </div>
                                   </td>
                                 )}
-                                {visibleColumns['Categoria'] && <td className="px-4 py-2.5 text-slate-400 text-xs">{child['Categoria'] || '-'}</td>}
-                                {visibleColumns['Marca'] && <td className="px-4 py-2.5 text-slate-400 text-xs">{child['Marca'] || '-'}</td>}
-                                {visibleColumns['Status'] && <td className="px-4 py-2.5 text-slate-400 text-xs">—</td>}
-                                <td className="px-5 py-2.5 text-right sticky right-0 bg-slate-50/70 shadow-[inset_1px_0_0_0_#e2e8f0] z-10 w-[280px]">
+                                {visibleColumns['Categoria'] && <td className="px-4 py-2.5 text-(--ag-text-3) text-xs">{child['Categoria'] || '-'}</td>}
+                                {visibleColumns['Marca'] && <td className="px-4 py-2.5 text-(--ag-text-3) text-xs">{child['Marca'] || '-'}</td>}
+                                {visibleColumns['Status'] && <td className="px-4 py-2.5 text-(--ag-text-3) text-xs">—</td>}
+                                <td className="px-5 py-2.5 text-right sticky right-0 bg-(--ag-fill-solid) shadow-[inset_1px_0_0_0_var(--ag-hairline)] z-10 w-[280px]">
                                   <div className="flex items-center justify-end gap-1.5">
                                     <button
                                       onClick={() => openPreview(child)}
-                                      className="text-[#FF5B03] hover:bg-orange-600 hover:text-white bg-orange-50 border border-orange-100 p-1.5 rounded-lg transition-all shadow-sm flex items-center justify-center w-7 h-7"
+                                      className="text-(--ag-accent) hover:bg-(--ag-accent) hover:text-white bg-(--ag-accent-soft) border border-(--ag-accent-line) p-1.5 rounded-lg transition-all shadow-sm flex items-center justify-center w-7 h-7"
                                       title="Visualizar Detalhes desta variante"
                                     >
                                       <Eye className="w-3 h-3" />
@@ -4670,8 +4674,8 @@ Retorne APENAS um JSON válido no seguinte formato:
                                       className={cn(
                                         "rounded-md transition-all shadow-sm flex items-center justify-center w-7 h-7",
                                         getProductStatusFlags(child).atributosGerados
-                                          ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                          : "bg-white text-slate-400 hover:text-amber-700 border border-slate-200 hover:border-amber-300 hover:bg-amber-50"
+                                          ? "bg-(--ag-warn-soft) text-(--ag-warn) border border-(--ag-warn-line)"
+                                          : "bg-(--ag-surface-solid) text-(--ag-text-3) hover:text-(--ag-warn) border border-(--ag-hairline) hover:border-(--ag-warn-line) hover:bg-(--ag-warn-soft)"
                                       )}
                                       title="Gerar Atributos desta variante"
                                     >
@@ -4682,8 +4686,8 @@ Retorne APENAS um JSON válido no seguinte formato:
                                       className={cn(
                                         "rounded-md transition-all shadow-sm flex items-center justify-center w-7 h-7",
                                         getProductStatusFlags(child).imagensGeradas
-                                          ? "bg-orange-50 text-orange-700 border border-orange-200"
-                                          : "bg-white text-slate-400 hover:text-orange-700 border border-slate-200 hover:border-orange-300 hover:bg-orange-50"
+                                          ? "bg-(--ag-accent-soft) text-(--ag-accent) border border-(--ag-accent-line)"
+                                          : "bg-(--ag-surface-solid) text-(--ag-text-3) hover:text-(--ag-accent) border border-(--ag-hairline) hover:border-(--ag-accent-line) hover:bg-(--ag-accent-soft)"
                                       )}
                                       title="Gerar Imagens desta variante"
                                     >
@@ -4695,26 +4699,26 @@ Retorne APENAS um JSON válido no seguinte formato:
                                       className={cn(
                                         "rounded-md transition-all shadow-sm disabled:opacity-50 flex items-center justify-center w-7 h-7",
                                         child._statusDescricao === 'Gerado por IA'
-                                          ? "bg-[#FF5B03]/10 text-[#FF5B03] border border-[#FF5B03]/20"
-                                          : "bg-white text-slate-400 hover:text-[#FF5B03] border border-slate-200 hover:border-orange-300 hover:bg-orange-50"
+                                          ? "bg-(--ag-accent-soft) text-(--ag-accent) border border-(--ag-accent-line)"
+                                          : "bg-(--ag-surface-solid) text-(--ag-text-3) hover:text-(--ag-accent) border border-(--ag-hairline) hover:border-(--ag-accent-line) hover:bg-(--ag-accent-soft)"
                                       )}
                                       title="Gerar Descrição desta variante"
                                     >
-                                      <Sparkles className={`w-3 h-3 ${child._isGenerating ? 'animate-pulse text-[#FF5B03]' : ''}`} />
+                                      <Sparkles className={`w-3 h-3 ${child._isGenerating ? 'animate-pulse text-(--ag-accent)' : ''}`} />
                                     </button>
                                   </div>
                                 </td>
                               </tr>
                             ))}
                             {hasChildren && isExpanded && (
-                              <tr className="bg-slate-50/70 border-l-2 border-orange-300">
+                              <tr className="bg-(--ag-fill-solid) border-l-2 border-(--ag-accent-line)">
                                 <td colSpan={20} className="pl-10 pr-3 py-2.5">
                                   <div className="flex items-center gap-2">
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Ações do grupo ({1 + groupChildren.length} SKUs)</span>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-(--ag-text-3)">Ações do grupo ({1 + groupChildren.length} SKUs)</span>
                                     <button
                                       onClick={() => handleGenerateGroupShared(product._id)}
                                       disabled={isGroupGenerating(product._id)}
-                                      className="flex items-center gap-1.5 px-2.5 py-1 bg-white text-[#FF5B03] border border-orange-200 rounded-lg text-xs font-semibold hover:bg-orange-50 transition-colors disabled:opacity-50"
+                                      className="flex items-center gap-1.5 px-2.5 py-1 bg-(--ag-surface-solid) text-(--ag-accent) border border-(--ag-accent-line) rounded-lg text-xs font-semibold hover:bg-(--ag-accent-soft) transition-colors disabled:opacity-50"
                                       title="Gera 1 descrição e aplica ao pai e a todas as variantes (1 crédito)"
                                     >
                                       {isGroupGenerating(product._id) ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
@@ -4723,7 +4727,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                                     <button
                                       onClick={() => handleGenerateGroupIndividually(product._id)}
                                       disabled={isGroupGenerating(product._id)}
-                                      className="flex items-center gap-1.5 px-2.5 py-1 bg-white text-slate-600 border border-slate-200 rounded-lg text-xs font-semibold hover:bg-slate-50 transition-colors disabled:opacity-50"
+                                      className="flex items-center gap-1.5 px-2.5 py-1 bg-(--ag-surface-solid) text-(--ag-text-2) border border-(--ag-hairline) rounded-lg text-xs font-semibold hover:bg-(--ag-fill) transition-colors disabled:opacity-50"
                                       title={`Gera uma descrição por variante, contextualizada (${1 + groupChildren.length} créditos)`}
                                     >
                                       {isGroupGenerating(product._id) ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
@@ -4747,7 +4751,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                   <div className="md:hidden p-3 space-y-3">
                     {paginatedProducts.length === 0 ? (
                       products.length > 0 && (
-                        <p className="text-center text-sm text-slate-500 py-12">Nenhum produto corresponde aos filtros.</p>
+                        <p className="text-center text-sm text-(--ag-text-2) py-12">Nenhum produto corresponde aos filtros.</p>
                       )
                     ) : paginatedProducts.map(product => {
                       const flags = getProductStatusFlags(product);
@@ -4759,7 +4763,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                           title={`${label}: ${on ? 'concluído' : 'pendente'}`}
                           className={cn(
                             "inline-flex items-center justify-center w-6 h-6 rounded-md border",
-                            on ? "bg-orange-50 text-orange-700 border-orange-200/60" : "bg-slate-50 text-slate-300 border-slate-200/60"
+                            on ? "bg-(--ag-accent-soft) text-(--ag-accent) border-(--ag-accent-line)" : "bg-(--ag-fill) text-(--ag-text-3) border-(--ag-hairline)"
                           )}
                         >
                           <Icon className="w-3.5 h-3.5" />
@@ -4771,7 +4775,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                           disabled={disabled}
                           className={cn(
                             "flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl border text-[10px] font-bold uppercase tracking-wide transition-colors min-h-[44px] disabled:opacity-50",
-                            active ? "bg-orange-50 text-orange-700 border-orange-200" : "bg-white text-slate-400 border-slate-200"
+                            active ? "bg-(--ag-accent-soft) text-(--ag-accent) border-(--ag-accent-line)" : "bg-(--ag-surface-solid) text-(--ag-text-3) border-(--ag-hairline)"
                           )}
                         >
                           <Icon className={cn("w-4 h-4", disabled && "animate-pulse")} />
@@ -4780,8 +4784,8 @@ Retorne APENAS um JSON válido no seguinte formato:
                       );
                       return (
                         <div key={product._id} className={cn(
-                          "bg-white border rounded-2xl shadow-sm p-3.5 flex flex-col gap-2.5",
-                          product._generationError ? "border-red-200 bg-red-50/30" : "border-slate-200"
+                          "bg-(--ag-surface-solid) border rounded-2xl shadow-sm p-3.5 flex flex-col gap-2.5",
+                          product._generationError ? "border-(--ag-danger-line) bg-(--ag-danger-soft)" : "border-(--ag-hairline)"
                         )}>
                           <div className="flex items-start gap-3">
                             <input
@@ -4793,28 +4797,28 @@ Retorne APENAS um JSON válido no seguinte formato:
                                 else next.delete(product._id);
                                 setSelectedIds(next);
                               }}
-                              className="mt-2 shrink-0 rounded border-slate-300 text-[#FF5B03] focus:ring-[#FF5B03]"
+                              className="mt-2 shrink-0 rounded border-(--ag-hairline-2) text-(--ag-accent) focus:ring-(--ag-accent)"
                             />
                             {(product._selectedImage || product['URL imagem 1']) ? (
                               <img
                                 src={(product._selectedImage || product['URL imagem 1']!.toString())}
                                 alt=""
-                                className="w-14 h-14 rounded-xl object-contain border border-slate-200 bg-white p-1 shrink-0"
+                                className="w-14 h-14 rounded-xl object-contain border border-(--ag-hairline) bg-(--ag-surface-solid) p-1 shrink-0"
                                 onError={e => { e.currentTarget.style.display = 'none'; }}
                               />
                             ) : (
-                              <div className="w-14 h-14 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-center text-slate-400 shrink-0">
+                              <div className="w-14 h-14 rounded-xl border border-(--ag-hairline) bg-(--ag-fill) flex items-center justify-center text-(--ag-text-3) shrink-0">
                                 <ImageIcon className="w-5 h-5 opacity-70" />
                               </div>
                             )}
                             <div className="min-w-0 flex-1">
-                              <p className="font-display font-bold text-sm text-slate-900 leading-snug line-clamp-2">{product['Descrição']}</p>
+                              <p className="font-display font-bold text-sm text-(--ag-text) leading-snug line-clamp-2">{product['Descrição']}</p>
                               <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                                <span className="font-mono text-[11px] text-slate-500">{product['Código (SKU)']}</span>
+                                <span className="font-mono text-[11px] text-(--ag-text-2)">{product['Código (SKU)']}</span>
                                 {product['Categoria'] && (
                                   <>
-                                    <span className="w-0.5 h-0.5 rounded-full bg-slate-300 shrink-0" />
-                                    <span className="text-[11px] text-slate-500 truncate">{product['Categoria']}</span>
+                                    <span className="w-0.5 h-0.5 rounded-full bg-(--ag-text-3) shrink-0" />
+                                    <span className="text-[11px] text-(--ag-text-2) truncate">{product['Categoria']}</span>
                                   </>
                                 )}
                                 {getProductIntegrationLinks(product).map((key) => {
@@ -4838,7 +4842,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                             {statusPill(flags.atributosGerados, Tag, 'Atributos')}
                             {statusPill(flags.imagensGeradas, ImageIcon, 'Imagens')}
                             {isError && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-red-600 ml-1">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-(--ag-danger) ml-1">
                                 <AlertCircle className="w-3 h-3" /> Erro
                               </span>
                             )}
@@ -4857,14 +4861,14 @@ Retorne APENAS um JSON válido no seguinte formato:
 
                   {/* Pagination */}
                   {filteredProducts.length > 0 && (
-                    <div className="px-6 py-4 border-t border-slate-200 bg-white flex flex-wrap justify-between items-center gap-4 shrink-0 rounded-b-xl">
+                    <div className="px-6 py-4 border-t border-(--ag-hairline) bg-(--ag-surface-solid) flex flex-wrap justify-between items-center gap-4 shrink-0 rounded-b-xl">
                       <div className="flex items-center gap-4">
                         <div className="flex items-center gap-2">
                           <span>Linhas por página:</span>
                           <select
                             value={itemsPerPage}
                             onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-                            className="text-xs border-slate-200 rounded-md font-medium focus:ring-[#FF5B03] focus:border-[#FF5B03] py-1 px-2.5 hover:bg-slate-50 transition-colors cursor-pointer outline-none shadow-sm"
+                            className="text-xs border-(--ag-hairline) rounded-md font-medium focus:ring-(--ag-accent) focus:border-(--ag-accent) py-1 px-2.5 hover:bg-(--ag-fill) transition-colors cursor-pointer outline-none shadow-sm"
                           >
                             <option value={10}>10</option>
                             <option value={20}>20</option>
@@ -4872,15 +4876,15 @@ Retorne APENAS um JSON válido no seguinte formato:
                             <option value={100}>100</option>
                           </select>
                         </div>
-                        <span className="hidden sm:inline">Mostrando <span className="font-medium text-slate-700">{Math.min(filteredProducts.length, (currentPage - 1) * itemsPerPage + 1)}</span> a <span className="font-medium text-slate-700">{Math.min(filteredProducts.length, currentPage * itemsPerPage)}</span> de <span className="font-medium text-slate-700">{filteredProducts.length}</span> resultados</span>
+                        <span className="hidden sm:inline">Mostrando <span className="font-medium text-(--ag-text)">{Math.min(filteredProducts.length, (currentPage - 1) * itemsPerPage + 1)}</span> a <span className="font-medium text-(--ag-text)">{Math.min(filteredProducts.length, currentPage * itemsPerPage)}</span> de <span className="font-medium text-(--ag-text)">{filteredProducts.length}</span> resultados</span>
                       </div>
                       
                       <div className="flex items-center gap-1.5">
-                        <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-3 py-1.5 bg-white border border-slate-200 rounded-md text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors shadow-sm font-medium">Anterior</button>
+                        <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-3 py-1.5 bg-(--ag-surface-solid) border border-(--ag-hairline) rounded-md text-(--ag-text-2) hover:bg-(--ag-fill) disabled:opacity-50 transition-colors shadow-sm font-medium">Anterior</button>
                         <div className="flex items-center gap-1 px-2">
-                           <span className="font-medium text-slate-900">{currentPage}</span> <span className="text-slate-400">/</span> <span>{totalPages || 1}</span>
+                           <span className="font-medium text-(--ag-text)">{currentPage}</span> <span className="text-(--ag-text-3)">/</span> <span>{totalPages || 1}</span>
                         </div>
-                        <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages || totalPages === 0} className="px-3 py-1.5 bg-white border border-slate-200 rounded-md text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors shadow-sm font-medium">Próximo</button>
+                        <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages || totalPages === 0} className="px-3 py-1.5 bg-(--ag-surface-solid) border border-(--ag-hairline) rounded-md text-(--ag-text-2) hover:bg-(--ag-fill) disabled:opacity-50 transition-colors shadow-sm font-medium">Próximo</button>
                     </div>
                   </div>
                 )}

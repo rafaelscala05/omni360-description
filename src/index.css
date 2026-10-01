@@ -156,6 +156,28 @@ body {
   --ag-orig-conteudo: #a78bfa;
   --ag-orig-meli: #facc15;
   --ag-orig-operacoes: #2dd4bf;
+  /* Selects, checkboxes e a barra de rolagem nativos acompanham o escuro. */
+  color-scheme: dark;
+}
+
+/* Derivados das cores de estado, para as telas antigas (Produtos, Categorias,
+   Mercado Livre) trocarem a paleta literal do Tailwind pelos tokens. Ficam no
+   `.alfreds` e são reavaliados em cada escopo, então seguem o tema sozinhos.
+   - `*-line`: borda tingida (o `*-soft` some como traço sobre o vidro).
+   - `*-tint` e `--ag-fill-solid`: fundo opaco, para o que é `sticky` (cabeçalho
+     e coluna de ações da tabela) não deixar ver as linhas que rolam por baixo. */
+.alfreds {
+  --ag-violet: var(--ag-orig-conteudo);
+  --ag-violet-soft: color-mix(in srgb, var(--ag-violet) 14%, transparent);
+  --ag-accent-line: color-mix(in srgb, var(--ag-accent) 32%, transparent);
+  --ag-blue-line: color-mix(in srgb, var(--ag-blue) 30%, transparent);
+  --ag-ok-line: color-mix(in srgb, var(--ag-ok) 30%, transparent);
+  --ag-warn-line: color-mix(in srgb, var(--ag-warn) 32%, transparent);
+  --ag-danger-line: color-mix(in srgb, var(--ag-danger) 30%, transparent);
+  --ag-violet-line: color-mix(in srgb, var(--ag-violet) 30%, transparent);
+  --ag-fill-solid: color-mix(in srgb, var(--ag-text) 4%, var(--ag-surface-solid));
+  --ag-accent-tint: color-mix(in srgb, var(--ag-accent) 9%, var(--ag-surface-solid));
+  --ag-danger-tint: color-mix(in srgb, var(--ag-danger) 8%, var(--ag-surface-solid));
 }
 
 /* Material translúcido padrão — o "vidro" de todo card/barra/sheet. */

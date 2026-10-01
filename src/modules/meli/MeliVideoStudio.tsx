@@ -78,17 +78,17 @@ export default function MeliVideoStudio({ listing, description, realPhotos, ambi
   const reference = media?.productReference || null;
 
   return <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/50 p-4" onMouseDown={onClose}>
-    <div className="w-full max-w-3xl max-h-[92vh] overflow-y-auto bg-white rounded-2xl shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
-      <div className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b px-5 py-3 flex items-center gap-3">
-        <Video className="w-5 h-5 text-violet-600" />
-        <div className="min-w-0 flex-1"><h2 className="font-bold text-slate-900">Vídeo do anúncio</h2><p className="text-xs text-slate-500 truncate">{listing.title}</p></div>
-        <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full" aria-label="Fechar"><X className="w-4 h-4" /></button>
+    <div className="w-full max-w-3xl max-h-[92vh] overflow-y-auto bg-(--ag-surface-solid) rounded-2xl shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="sticky top-0 z-10 bg-(--ag-surface-solid) backdrop-blur border-b px-5 py-3 flex items-center gap-3">
+        <Video className="w-5 h-5 text-(--ag-violet)" />
+        <div className="min-w-0 flex-1"><h2 className="font-bold text-(--ag-text)">Vídeo do anúncio</h2><p className="text-xs text-(--ag-text-2) truncate">{listing.title}</p></div>
+        <button onClick={onClose} className="p-2 hover:bg-(--ag-fill-2) rounded-full" aria-label="Fechar"><X className="w-4 h-4" /></button>
       </div>
       <div className="p-5 space-y-4">
-        {error && <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3">{error}</p>}
-        {loading ? <div className="py-12 flex justify-center text-sm text-slate-500"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Carregando…</div>
+        {error && <p className="text-sm text-(--ag-danger) bg-(--ag-danger-soft) border border-(--ag-danger-line) rounded-xl px-4 py-3">{error}</p>}
+        {loading ? <div className="py-12 flex justify-center text-sm text-(--ag-text-2)"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Carregando…</div>
           : !reference || editingReference ? <>
-            <p className="text-sm text-slate-600">Primeiro a IA monta uma <strong>referência do produto</strong> a partir das fotos reais — é ela que garante que o produto no vídeo seja idêntico ao seu.</p>
+            <p className="text-sm text-(--ag-text-2)">Primeiro a IA monta uma <strong>referência do produto</strong> a partir das fotos reais — é ela que garante que o produto no vídeo seja idêntico ao seu.</p>
             <ProductReferenceStep
               product={product}
               uid={uid}
@@ -121,17 +121,17 @@ export default function MeliVideoStudio({ listing, description, realPhotos, ambi
 }
 
 export function PublishClipHelp({ videoUrl, itemId }: { videoUrl: string; itemId: string }) {
-  return <div className="border border-violet-200 bg-violet-50/50 rounded-2xl p-4">
-    <p className="text-sm font-bold text-slate-900">Como publicar no Mercado Livre</p>
-    <p className="text-xs text-slate-600 mt-1">O Mercado Livre não aceita mais vídeo enviado por integração: ele entra como <strong>Clip</strong>, pelo painel do vendedor. O vídeo já sai no formato de Clip (vertical, cerca de 30 segundos).</p>
-    <ol className="text-xs text-slate-700 mt-2 space-y-1 list-decimal list-inside">
+  return <div className="border border-(--ag-violet-line) bg-(--ag-violet-soft) rounded-2xl p-4">
+    <p className="text-sm font-bold text-(--ag-text)">Como publicar no Mercado Livre</p>
+    <p className="text-xs text-(--ag-text-2) mt-1">O Mercado Livre não aceita mais vídeo enviado por integração: ele entra como <strong>Clip</strong>, pelo painel do vendedor. O vídeo já sai no formato de Clip (vertical, cerca de 30 segundos).</p>
+    <ol className="text-xs text-(--ag-text) mt-2 space-y-1 list-decimal list-inside">
       <li>Baixe o vídeo.</li>
       <li>No Mercado Livre, abra <strong>Anúncios → Clips</strong> (ou o anúncio {itemId} → Clips) e envie o arquivo.</li>
       <li>Vincule o Clip ao anúncio {itemId}. Depois da moderação ele aparece no anúncio.</li>
     </ol>
     <div className="flex flex-wrap gap-2 mt-3">
-      <a href={videoUrl} download={`clip_${itemId}.mp4`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold px-4 py-2 rounded-xl"><Download className="w-4 h-4" /> Baixar vídeo</a>
-      <a href={MELI_CLIPS_HELP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 border border-slate-300 bg-white text-slate-800 text-sm font-semibold px-4 py-2 rounded-xl"><ExternalLink className="w-4 h-4" /> Ajuda do Mercado Livre sobre Clips</a>
+      <a href={videoUrl} download={`clip_${itemId}.mp4`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 bg-(--ag-violet) hover:brightness-95 text-white text-sm font-bold px-4 py-2 rounded-xl"><Download className="w-4 h-4" /> Baixar vídeo</a>
+      <a href={MELI_CLIPS_HELP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 border border-(--ag-hairline-2) bg-(--ag-surface-solid) text-(--ag-text) text-sm font-semibold px-4 py-2 rounded-xl"><ExternalLink className="w-4 h-4" /> Ajuda do Mercado Livre sobre Clips</a>
     </div>
   </div>;
 }

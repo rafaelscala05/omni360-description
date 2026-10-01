@@ -40,9 +40,9 @@ function message(reason: unknown, fallback: string): string {
 }
 
 function ChecklistRow({ item }: { item: MeliChecklistItem }) {
-  const icon = item.status === 'ok' ? <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-    : item.status === 'warning' ? <CircleAlert className="w-4 h-4 text-amber-500" /> : <CircleDashed className="w-4 h-4 text-red-500" />;
-  return <div className="flex items-start gap-2.5 py-2"><span className="mt-0.5 shrink-0">{icon}</span><div className="min-w-0"><p className="text-sm font-semibold text-slate-800">{item.label}</p><p className="text-xs text-slate-500">{item.detail}</p></div></div>;
+  const icon = item.status === 'ok' ? <CheckCircle2 className="w-4 h-4 text-(--ag-ok)" />
+    : item.status === 'warning' ? <CircleAlert className="w-4 h-4 text-(--ag-warn)" /> : <CircleDashed className="w-4 h-4 text-(--ag-danger)" />;
+  return <div className="flex items-start gap-2.5 py-2"><span className="mt-0.5 shrink-0">{icon}</span><div className="min-w-0"><p className="text-sm font-semibold text-(--ag-text)">{item.label}</p><p className="text-xs text-(--ag-text-2)">{item.detail}</p></div></div>;
 }
 
 function AnalysisProgress() {
@@ -51,10 +51,10 @@ function AnalysisProgress() {
     const timer = window.setInterval(() => setStep((current) => Math.min(ANALYSIS_STEPS.length - 1, current + 1)), 7000);
     return () => window.clearInterval(timer);
   }, []);
-  return <div className="border border-blue-200 bg-blue-50/60 rounded-2xl p-5">
-    <p className="text-sm font-bold text-blue-900 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Otimizando o anúncio…</p>
-    <ol className="mt-3 space-y-1.5">{ANALYSIS_STEPS.map((label, index) => <li key={label} className={`text-xs flex items-center gap-2 ${index < step ? 'text-emerald-700' : index === step ? 'text-blue-800 font-semibold' : 'text-slate-400'}`}>{index < step ? <CheckCircle2 className="w-3.5 h-3.5" /> : index === step ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CircleDashed className="w-3.5 h-3.5" />}{label}</li>)}</ol>
-    <p className="text-[11px] text-slate-500 mt-3">Leva cerca de um minuto. Pode fechar esta janela: a análise continua e o resultado fica salvo.</p>
+  return <div className="border border-(--ag-blue-line) bg-(--ag-blue-soft) rounded-2xl p-5">
+    <p className="text-sm font-bold text-(--ag-blue) flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Otimizando o anúncio…</p>
+    <ol className="mt-3 space-y-1.5">{ANALYSIS_STEPS.map((label, index) => <li key={label} className={`text-xs flex items-center gap-2 ${index < step ? 'text-(--ag-ok)' : index === step ? 'text-(--ag-blue) font-semibold' : 'text-(--ag-text-3)'}`}>{index < step ? <CheckCircle2 className="w-3.5 h-3.5" /> : index === step ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CircleDashed className="w-3.5 h-3.5" />}{label}</li>)}</ol>
+    <p className="text-[11px] text-(--ag-text-2) mt-3">Leva cerca de um minuto. Pode fechar esta janela: a análise continua e o resultado fica salvo.</p>
   </div>;
 }
 
@@ -63,7 +63,7 @@ function QuestionField({ question, value, onChange }: {
   value: { value: string; valueId?: string | null };
   onChange: (next: { value: string; valueId?: string | null }) => void;
 }) {
-  const base = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-blue-400';
+  const base = 'w-full border border-(--ag-hairline) rounded-lg px-3 py-2 text-sm bg-(--ag-surface-solid) focus:outline-none focus:border-(--ag-blue)';
   if (question.options?.length) {
     return <select className={base} value={value.valueId || ''} onChange={(event) => {
       const option = question.options!.find((entry) => entry.id === event.target.value);
@@ -103,17 +103,17 @@ function QuestionsForm({ analysis, facts, busy, onSubmit }: {
   const answeredAfterAnalysis = Boolean(facts?.updatedAt && facts.updatedAt > analysis.createdAt);
   const dirty = questions.some((question) => (answers[question.fieldPath]?.value || '') !== (facts?.answers[question.fieldPath]?.value || ''));
   const filled = questions.filter((question) => answers[question.fieldPath]?.value.trim()).length;
-  return <section className="border border-violet-200 bg-violet-50/40 rounded-2xl p-4">
-    <div className="flex items-start gap-2"><MessageCircleQuestion className="w-5 h-5 text-violet-600 shrink-0" /><div><h3 className="text-sm font-black text-slate-900">Complete o que só você sabe</h3><p className="text-xs text-slate-600 mt-0.5">A IA não inventa dados do produto. Com as suas respostas ela completa a ficha técnica e escreve título e descrição mais completos.</p></div></div>
+  return <section className="border border-(--ag-violet-line) bg-(--ag-violet-soft) rounded-2xl p-4">
+    <div className="flex items-start gap-2"><MessageCircleQuestion className="w-5 h-5 text-(--ag-violet) shrink-0" /><div><h3 className="text-sm font-black text-(--ag-text)">Complete o que só você sabe</h3><p className="text-xs text-(--ag-text-2) mt-0.5">A IA não inventa dados do produto. Com as suas respostas ela completa a ficha técnica e escreve título e descrição mais completos.</p></div></div>
     <div className="mt-3 space-y-3">{questions.map((question) => <div key={question.fieldPath}>
-      <label className="text-xs font-semibold text-slate-700">{question.label && !question.fieldPath.startsWith('description') ? question.label : 'Informações para a descrição'}</label>
-      <p className="text-[11px] text-slate-500 mb-1">{question.question}</p>
+      <label className="text-xs font-semibold text-(--ag-text)">{question.label && !question.fieldPath.startsWith('description') ? question.label : 'Informações para a descrição'}</label>
+      <p className="text-[11px] text-(--ag-text-2) mb-1">{question.question}</p>
       <QuestionField question={question} value={answers[question.fieldPath] || { value: '' }} onChange={(next) => setAnswers((current) => ({ ...current, [question.fieldPath]: next }))} />
     </div>)}</div>
-    {answeredAfterAnalysis && !dirty && <p className="text-[11px] text-violet-700 mt-3">Você respondeu depois da última otimização. Gere de novo para usar as respostas.</p>}
+    {answeredAfterAnalysis && !dirty && <p className="text-[11px] text-(--ag-violet) mt-3">Você respondeu depois da última otimização. Gere de novo para usar as respostas.</p>}
     <div className="mt-4 flex flex-wrap justify-end gap-2">
-      {dirty && <button disabled={busy} onClick={() => void onSubmit(answers, false)} className="text-xs font-semibold text-slate-600 px-3 py-2 disabled:opacity-50">Só salvar</button>}
-      <button disabled={busy || (!dirty && !answeredAfterAnalysis) || !filled} onClick={() => void onSubmit(answers, true)} className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-40">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} Salvar e gerar melhorias de novo</button>
+      {dirty && <button disabled={busy} onClick={() => void onSubmit(answers, false)} className="text-xs font-semibold text-(--ag-text-2) px-3 py-2 disabled:opacity-50">Só salvar</button>}
+      <button disabled={busy || (!dirty && !answeredAfterAnalysis) || !filled} onClick={() => void onSubmit(answers, true)} className="inline-flex items-center gap-2 bg-(--ag-violet) hover:brightness-95 text-white text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-40">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} Salvar e gerar melhorias de novo</button>
     </div>
   </section>;
 }
@@ -129,28 +129,28 @@ function PicturesSection({ listing, analysis, generating, onGenerate }: {
   const diagnostics = new Map(analysis.imageDiagnostics.map((image) => [image.pictureId, image]));
   const needsLifestyle = !media || media.lifestyleCount === 0;
   const needsCover = !media || media.mainWhiteBackground !== true;
-  const button = (kind: MeliGeneratedPictureKind, label: string, primary: boolean) => <button key={kind} disabled={Boolean(generating) || !listing.pictures?.length} onClick={() => void onGenerate(kind, instructions)} className={`inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-40 ${primary ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'border border-slate-300 bg-white text-slate-800 hover:bg-slate-50'}`}>{generating === kind ? <Loader2 className="w-4 h-4 animate-spin" /> : <WandSparkles className="w-4 h-4" />}{label}</button>;
+  const button = (kind: MeliGeneratedPictureKind, label: string, primary: boolean) => <button key={kind} disabled={Boolean(generating) || !listing.pictures?.length} onClick={() => void onGenerate(kind, instructions)} className={`inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-40 ${primary ? 'bg-(--ag-blue) hover:brightness-95 text-white' : 'border border-(--ag-hairline-2) bg-(--ag-surface-solid) text-(--ag-text) hover:bg-(--ag-fill)'}`}>{generating === kind ? <Loader2 className="w-4 h-4 animate-spin" /> : <WandSparkles className="w-4 h-4" />}{label}</button>;
   return <section className="space-y-3">
-    <div className="flex items-center justify-between"><h3 className="text-sm font-black text-slate-900 flex items-center gap-2"><ImageIcon className="w-4 h-4 text-blue-600" /> Fotos</h3><span className="text-xs text-slate-400">{listing.pictures?.length || 0} no anúncio</span></div>
+    <div className="flex items-center justify-between"><h3 className="text-sm font-black text-(--ag-text) flex items-center gap-2"><ImageIcon className="w-4 h-4 text-(--ag-blue)" /> Fotos</h3><span className="text-xs text-(--ag-text-3)">{listing.pictures?.length || 0} no anúncio</span></div>
     <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">{(listing.pictures || []).map((picture, index) => {
       const diagnostic = diagnostics.get(String(picture.id));
       const lowRes = diagnostic?.width && diagnostic?.height && Math.min(diagnostic.width, diagnostic.height) < 1200;
-      return <div key={String(picture.id || index)} className="border border-slate-200 rounded-xl overflow-hidden bg-white" title={[...(diagnostic?.issues || []), ...(diagnostic?.strengths || [])].join('\n')}>
-        <div className="aspect-square bg-slate-50 relative"><img src={picture.secure_url || picture.url} alt="" className="w-full h-full object-contain" />{index === 0 && <span className="absolute top-1 left-1 text-[9px] font-bold bg-slate-900 text-white rounded px-1.5 py-0.5">CAPA</span>}</div>
+      return <div key={String(picture.id || index)} className="border border-(--ag-hairline) rounded-xl overflow-hidden bg-(--ag-surface-solid)" title={[...(diagnostic?.issues || []), ...(diagnostic?.strengths || [])].join('\n')}>
+        <div className="aspect-square bg-(--ag-fill) relative"><img src={picture.secure_url || picture.url} alt="" className="w-full h-full object-contain" />{index === 0 && <span className="absolute top-1 left-1 text-[9px] font-bold bg-(--ag-text) text-(--ag-surface-solid) rounded px-1.5 py-0.5">CAPA</span>}</div>
         <div className="px-2 py-1.5 space-y-0.5">
-          <p className="text-[10px] font-semibold text-slate-700 truncate">{diagnostic?.role ? ROLE_LABEL[diagnostic.role] : '—'}</p>
-          {lowRes ? <p className="text-[10px] text-amber-600">Sem zoom (&lt;1200 px)</p> : null}
-          {diagnostic?.hasTextOrWatermark ? <p className="text-[10px] text-amber-600">Tem texto/marca</p> : null}
-          {Boolean(diagnostic?.issues.length) && <p className="text-[10px] text-red-600 truncate">{diagnostic!.issues[0]}</p>}
+          <p className="text-[10px] font-semibold text-(--ag-text) truncate">{diagnostic?.role ? ROLE_LABEL[diagnostic.role] : '—'}</p>
+          {lowRes ? <p className="text-[10px] text-(--ag-warn)">Sem zoom (&lt;1200 px)</p> : null}
+          {diagnostic?.hasTextOrWatermark ? <p className="text-[10px] text-(--ag-warn)">Tem texto/marca</p> : null}
+          {Boolean(diagnostic?.issues.length) && <p className="text-[10px] text-(--ag-danger) truncate">{diagnostic!.issues[0]}</p>}
         </div>
       </div>;
     })}</div>
-    <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/60">
-      <p className="text-sm font-bold text-slate-900">Gerar fotos com IA</p>
-      <p className="text-xs text-slate-500 mt-0.5">Usa a foto de capa como base, mantém o produto idêntico e entra nas melhorias para você aprovar. Cada foto consome créditos de Geração de Ambientação.</p>
-      <input value={instructions} onChange={(event) => setInstructions(event.target.value)} maxLength={400} placeholder="Opcional: descreva o ambiente (ex.: cozinha clara, mesa de madeira)" className="mt-3 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white" />
+    <div className="border border-(--ag-hairline) rounded-2xl p-4 bg-(--ag-fill)">
+      <p className="text-sm font-bold text-(--ag-text)">Gerar fotos com IA</p>
+      <p className="text-xs text-(--ag-text-2) mt-0.5">Usa a foto de capa como base, mantém o produto idêntico e entra nas melhorias para você aprovar. Cada foto consome créditos de Geração de Ambientação.</p>
+      <input value={instructions} onChange={(event) => setInstructions(event.target.value)} maxLength={400} placeholder="Opcional: descreva o ambiente (ex.: cozinha clara, mesa de madeira)" className="mt-3 w-full border border-(--ag-hairline) rounded-lg px-3 py-2 text-sm bg-(--ag-surface-solid)" />
       <div className="mt-3 flex flex-wrap gap-2">{button('lifestyle', needsLifestyle ? 'Gerar foto ambientada' : 'Gerar outra ambientada', needsLifestyle)}{button('white_background', 'Gerar capa em fundo branco', needsCover && !needsLifestyle)}</div>
-      {generating && <p className="text-[11px] text-slate-500 mt-2">Gerando a foto… isso leva uns 20 segundos.</p>}
+      {generating && <p className="text-[11px] text-(--ag-text-2) mt-2">Gerando a foto… isso leva uns 20 segundos.</p>}
     </div>
   </section>;
 }
@@ -163,17 +163,17 @@ function VideoSection({ listing, analysis, media, onOpenStudio }: {
 }) {
   const videoId = analysis?.media?.videoId ?? listing.videoId ?? null;
   return <section className="space-y-3">
-    <h3 className="text-sm font-black text-slate-900 flex items-center gap-2"><Video className="w-4 h-4 text-violet-600" /> Vídeo</h3>
-    <div className={`border rounded-2xl p-4 ${videoId ? 'border-emerald-200 bg-emerald-50/40' : 'border-slate-200 bg-white'}`}>
-      <p className="text-sm font-bold text-slate-900">{videoId ? 'O anúncio tem vídeo cadastrado' : 'O anúncio não tem vídeo cadastrado'}</p>
-      <p className="text-xs text-slate-500 mt-0.5">{videoId
-        ? <>Vídeo <a className="text-blue-600 font-semibold" href={`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`} target="_blank" rel="noreferrer">{videoId}</a> vinculado ao anúncio.</>
+    <h3 className="text-sm font-black text-(--ag-text) flex items-center gap-2"><Video className="w-4 h-4 text-(--ag-violet)" /> Vídeo</h3>
+    <div className={`border rounded-2xl p-4 ${videoId ? 'border-(--ag-ok-line) bg-(--ag-ok-soft)' : 'border-(--ag-hairline) bg-(--ag-surface-solid)'}`}>
+      <p className="text-sm font-bold text-(--ag-text)">{videoId ? 'O anúncio tem vídeo cadastrado' : 'O anúncio não tem vídeo cadastrado'}</p>
+      <p className="text-xs text-(--ag-text-2) mt-0.5">{videoId
+        ? <>Vídeo <a className="text-(--ag-blue) font-semibold" href={`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`} target="_blank" rel="noreferrer">{videoId}</a> vinculado ao anúncio.</>
         : 'Anúncios com vídeo passam mais confiança para quem compra. Clips enviados pelo painel do Mercado Livre podem não aparecer aqui.'}</p>
-      {!media?.videoUrl && <button onClick={onOpenStudio} disabled={!listing.pictures?.length} className="mt-3 inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-40"><WandSparkles className="w-4 h-4" /> {media?.videoJobId || media?.productReference ? 'Continuar vídeo com IA' : 'Gerar vídeo com IA'}</button>}
+      {!media?.videoUrl && <button onClick={onOpenStudio} disabled={!listing.pictures?.length} className="mt-3 inline-flex items-center gap-2 bg-(--ag-violet) hover:brightness-95 text-white text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-40"><WandSparkles className="w-4 h-4" /> {media?.videoJobId || media?.productReference ? 'Continuar vídeo com IA' : 'Gerar vídeo com IA'}</button>}
     </div>
     {media?.videoUrl && <div className="grid sm:grid-cols-[180px_1fr] gap-3 items-start">
       <video src={media.videoUrl} controls playsInline className="w-full rounded-xl bg-black aspect-[9/16]" />
-      <div className="space-y-2"><PublishClipHelp videoUrl={media.videoUrl} itemId={listing.itemId} /><button onClick={onOpenStudio} className="text-xs font-semibold text-violet-700">Gerar outro vídeo</button></div>
+      <div className="space-y-2"><PublishClipHelp videoUrl={media.videoUrl} itemId={listing.itemId} /><button onClick={onOpenStudio} className="text-xs font-semibold text-(--ag-violet)">Gerar outro vídeo</button></div>
     </div>}
   </section>;
 }
@@ -181,13 +181,13 @@ function VideoSection({ listing, analysis, media, onOpenStudio }: {
 function TechnicalDetails({ analysis }: { analysis: MeliAnalysis }) {
   const order = { blocked: 5, high: 4, medium: 3, low: 2, info: 1 } as const;
   const findings = [...analysis.findings].sort((a, b) => order[b.severity] - order[a.severity]);
-  return <details className="group border border-slate-200 rounded-2xl bg-white">
-    <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between text-sm font-semibold text-slate-700">Detalhes técnicos da análise ({findings.length}) <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" /></summary>
+  return <details className="group border border-(--ag-hairline) rounded-2xl bg-(--ag-surface-solid)">
+    <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between text-sm font-semibold text-(--ag-text)">Detalhes técnicos da análise ({findings.length}) <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" /></summary>
     <div className="px-4 pb-4 space-y-3">
-      {analysis.scoreComponents && <div className="grid grid-cols-5 gap-2 text-center">{([['Técnica', analysis.scoreComponents.technicalCompleteness], ['Consist.', analysis.scoreComponents.consistency], ['Título', analysis.scoreComponents.title], ['Descrição', analysis.scoreComponents.description], ['Imagens', analysis.scoreComponents.images]] as const).map(([label, value]) => <div key={label} className="border rounded-lg py-2"><p className="text-sm font-black">{Math.round(value)}</p><p className="text-[10px] text-slate-400">{label}</p></div>)}</div>}
-      {analysis.aiStatus === 'failed' && <p className="text-xs text-amber-700">A IA não respondeu nesta análise; os achados abaixo são só das regras. {analysis.aiError}</p>}
-      {findings.map((finding, index) => <div key={`${finding.code}-${finding.fieldPath}-${index}`} className="border-l-2 border-slate-200 pl-3"><p className="text-[10px] font-bold uppercase text-slate-400">{SEVERITY_LABEL[finding.severity]} · {finding.fieldPath}</p><p className="text-xs text-slate-700">{finding.message}</p></div>)}
-      {Boolean(analysis.buyerQuestions?.length) && <div><p className="text-xs font-bold text-slate-700 mt-2">Perguntas recentes de compradores</p>{analysis.buyerQuestions!.slice(0, 8).map((question, index) => <p key={index} className="text-xs text-slate-600 mt-1">• {question.text}{question.answer ? '' : ' (sem resposta)'}</p>)}</div>}
+      {analysis.scoreComponents && <div className="grid grid-cols-5 gap-2 text-center">{([['Técnica', analysis.scoreComponents.technicalCompleteness], ['Consist.', analysis.scoreComponents.consistency], ['Título', analysis.scoreComponents.title], ['Descrição', analysis.scoreComponents.description], ['Imagens', analysis.scoreComponents.images]] as const).map(([label, value]) => <div key={label} className="border rounded-lg py-2"><p className="text-sm font-black">{Math.round(value)}</p><p className="text-[10px] text-(--ag-text-3)">{label}</p></div>)}</div>}
+      {analysis.aiStatus === 'failed' && <p className="text-xs text-(--ag-warn)">A IA não respondeu nesta análise; os achados abaixo são só das regras. {analysis.aiError}</p>}
+      {findings.map((finding, index) => <div key={`${finding.code}-${finding.fieldPath}-${index}`} className="border-l-2 border-(--ag-hairline) pl-3"><p className="text-[10px] font-bold uppercase text-(--ag-text-3)">{SEVERITY_LABEL[finding.severity]} · {finding.fieldPath}</p><p className="text-xs text-(--ag-text)">{finding.message}</p></div>)}
+      {Boolean(analysis.buyerQuestions?.length) && <div><p className="text-xs font-bold text-(--ag-text) mt-2">Perguntas recentes de compradores</p>{analysis.buyerQuestions!.slice(0, 8).map((question, index) => <p key={index} className="text-xs text-(--ag-text-2) mt-1">• {question.text}{question.answer ? '' : ' (sem resposta)'}</p>)}</div>}
     </div>
   </details>;
 }
@@ -323,12 +323,12 @@ export default function ListingPanel({ listing, connection, credits, onClose, on
   const proposedDescription = proposalResult?.changes.find((change) => change.fieldPath === 'description.plain_text' && typeof change.newValue === 'string')?.newValue as string | undefined;
 
   return <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/35" onMouseDown={onClose}>
-    <aside className="w-full max-w-3xl h-full bg-white shadow-2xl overflow-y-auto" onMouseDown={(event) => event.stopPropagation()}>
-      <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-slate-200 px-5 py-3 flex items-center gap-3 z-10">
-        <div className="w-11 h-11 rounded-lg bg-slate-100 overflow-hidden shrink-0">{listing.thumbnail && <img src={listing.thumbnail} alt="" className="w-full h-full object-contain" />}</div>
-        <div className="min-w-0 flex-1"><p className="text-[10px] font-bold text-slate-400">{listing.itemId}</p><h2 className="font-bold text-slate-900 line-clamp-1">{listing.title}</h2></div>
-        {listing.permalink && <a href={listing.permalink} target="_blank" rel="noreferrer" className="p-2 text-slate-500 hover:text-blue-600" title="Abrir no Mercado Livre"><ExternalLink className="w-4 h-4" /></a>}
-        <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full" aria-label="Fechar"><X className="w-4 h-4" /></button>
+    <aside className="w-full max-w-3xl h-full bg-(--ag-surface-solid) shadow-2xl overflow-y-auto" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="sticky top-0 bg-(--ag-surface-solid) backdrop-blur border-b border-(--ag-hairline) px-5 py-3 flex items-center gap-3 z-10">
+        <div className="w-11 h-11 rounded-lg bg-(--ag-fill-2) overflow-hidden shrink-0">{listing.thumbnail && <img src={listing.thumbnail} alt="" className="w-full h-full object-contain" />}</div>
+        <div className="min-w-0 flex-1"><p className="text-[10px] font-bold text-(--ag-text-3)">{listing.itemId}</p><h2 className="font-bold text-(--ag-text) line-clamp-1">{listing.title}</h2></div>
+        {listing.permalink && <a href={listing.permalink} target="_blank" rel="noreferrer" className="p-2 text-(--ag-text-2) hover:text-(--ag-blue)" title="Abrir no Mercado Livre"><ExternalLink className="w-4 h-4" /></a>}
+        <button onClick={onClose} className="p-2 hover:bg-(--ag-fill-2) rounded-full" aria-label="Fechar"><X className="w-4 h-4" /></button>
       </div>
       <div className="p-5 space-y-5">
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
@@ -338,33 +338,33 @@ export default function ListingPanel({ listing, connection, credits, onClose, on
             ['Visitas (30 dias)', listing.visits30d ?? '—'],
             ['Fotos', listing.pictures?.length || 0],
             ['Vídeo', (completed?.media?.hasVideo ?? Boolean(listing.videoId)) ? 'Sim' : 'Não'],
-          ] as const).map(([label, value]) => <div key={label} className="border rounded-xl p-2.5"><p className="text-[10px] text-slate-400">{label}</p><p className="text-lg font-black text-slate-900">{value}</p></div>)}
+          ] as const).map(([label, value]) => <div key={label} className="border rounded-xl p-2.5"><p className="text-[10px] text-(--ag-text-3)">{label}</p><p className="text-lg font-black text-(--ag-text)">{value}</p></div>)}
         </div>
-        {(listing.userProductId || listing.catalogProductId) && <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-xs flex gap-2"><TriangleAlert className="w-4 h-4 shrink-0" /><span>Este anúncio está ligado a {listing.userProductId ? 'um User Product' : 'um produto de catálogo'}: algumas mudanças podem afetar outros anúncios ou ser controladas pelo Mercado Livre.</span></div>}
-        {error && <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3"><AlertCircle className="w-4 h-4 mt-0.5 shrink-0" /><span>{error}</span></div>}
+        {(listing.userProductId || listing.catalogProductId) && <div className="bg-(--ag-warn-soft) border border-(--ag-warn-line) text-(--ag-warn) rounded-xl p-3 text-xs flex gap-2"><TriangleAlert className="w-4 h-4 shrink-0" /><span>Este anúncio está ligado a {listing.userProductId ? 'um User Product' : 'um produto de catálogo'}: algumas mudanças podem afetar outros anúncios ou ser controladas pelo Mercado Livre.</span></div>}
+        {error && <div className="flex items-start gap-2 text-sm text-(--ag-danger) bg-(--ag-danger-soft) border border-(--ag-danger-line) rounded-xl px-4 py-3"><AlertCircle className="w-4 h-4 mt-0.5 shrink-0" /><span>{error}</span></div>}
 
-        {loading ? <div className="py-10 flex justify-center text-sm text-slate-500"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Carregando…</div>
+        {loading ? <div className="py-10 flex justify-center text-sm text-(--ag-text-2)"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Carregando…</div>
           : analysisRunning ? <AnalysisProgress />
-            : !completed ? <section className="border border-slate-200 rounded-2xl p-6 text-center">
+            : !completed ? <section className="border border-(--ag-hairline) rounded-2xl p-6 text-center">
               <div className="w-12 h-12 mx-auto rounded-2xl bg-[#FFE600] flex items-center justify-center"><Sparkles className="w-6 h-6 text-slate-900" /></div>
-              <h3 className="text-lg font-black text-slate-900 mt-3">{analysis?.status === 'stale' ? 'O anúncio mudou' : analysis?.status === 'failed' ? 'A última otimização falhou' : 'Otimize este anúncio com IA'}</h3>
-              <p className="text-sm text-slate-600 mt-1 max-w-md mx-auto">O agente confere ficha técnica, título, descrição, fotos e vídeo, escreve as melhorias e deixa tudo pronto para você só aprovar.</p>
-              {analysis?.status === 'failed' && analysis.aiError && <p className="text-xs text-red-600 mt-2">{analysis.aiError}</p>}
-              <button onClick={() => void optimize()} disabled={starting} className="mt-5 inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold px-5 py-3 rounded-xl disabled:opacity-50">{starting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} {analysis ? 'Otimizar de novo' : 'Otimizar anúncio'}</button>
+              <h3 className="text-lg font-black text-(--ag-text) mt-3">{analysis?.status === 'stale' ? 'O anúncio mudou' : analysis?.status === 'failed' ? 'A última otimização falhou' : 'Otimize este anúncio com IA'}</h3>
+              <p className="text-sm text-(--ag-text-2) mt-1 max-w-md mx-auto">O agente confere ficha técnica, título, descrição, fotos e vídeo, escreve as melhorias e deixa tudo pronto para você só aprovar.</p>
+              {analysis?.status === 'failed' && analysis.aiError && <p className="text-xs text-(--ag-danger) mt-2">{analysis.aiError}</p>}
+              <button onClick={() => void optimize()} disabled={starting} className="mt-5 inline-flex items-center gap-2 bg-(--ag-text) hover:opacity-90 text-(--ag-surface-solid) text-sm font-bold px-5 py-3 rounded-xl disabled:opacity-50">{starting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} {analysis ? 'Otimizar de novo' : 'Otimizar anúncio'}</button>
             </section>
               : <>
-                <section className="border border-slate-200 rounded-2xl p-4">
+                <section className="border border-(--ag-hairline) rounded-2xl p-4">
                   <div className="flex items-start justify-between gap-3">
-                    <div><h3 className="text-sm font-black text-slate-900">{pending ? `${pending} ponto(s) para o anúncio ganhar relevância` : 'O anúncio cumpre todos os pontos de relevância'}</h3><p className="text-xs text-slate-500 mt-0.5">{completed.summary}</p></div>
-                    <button onClick={() => void optimize()} disabled={starting} className="shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50">{starting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />} Otimizar de novo</button>
+                    <div><h3 className="text-sm font-black text-(--ag-text)">{pending ? `${pending} ponto(s) para o anúncio ganhar relevância` : 'O anúncio cumpre todos os pontos de relevância'}</h3><p className="text-xs text-(--ag-text-2) mt-0.5">{completed.summary}</p></div>
+                    <button onClick={() => void optimize()} disabled={starting} className="shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold text-(--ag-text-2) border border-(--ag-hairline) rounded-lg px-3 py-1.5 hover:bg-(--ag-fill) disabled:opacity-50">{starting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />} Otimizar de novo</button>
                   </div>
                   {checklist.length > 0 && <div className="mt-2 grid sm:grid-cols-2 gap-x-6" style={{ borderTop: '1px solid rgb(241 245 249)' }}>{checklist.map((item) => <ChecklistRow key={item.id} item={item} />)}</div>}
                 </section>
                 <QuestionsForm analysis={completed} facts={facts} busy={busy || starting} onSubmit={submitAnswers} />
                 {showProposal ? <ProposalReview result={proposalResult!} pictures={listing.pictures || []} busy={busy} writeEnabled={connection?.mode === 'assisted_write'} mutationRun={mutationRun} onEdit={editChange} onPublish={publish} onRollback={rollback} />
-                  : <section className="border border-amber-200 bg-amber-50/60 rounded-2xl p-4 flex items-center justify-between gap-3">
-                    <div><p className="text-sm font-bold text-slate-900">Nenhuma melhoria automática para publicar</p><p className="text-xs text-slate-600 mt-0.5">{completed.questions.length ? 'Responda às perguntas acima para a IA conseguir completar ficha e textos.' : 'O texto e a ficha já estão em ordem. Você ainda pode gerar fotos abaixo.'}</p></div>
-                    <button onClick={writeManually} disabled={busy} className="shrink-0 inline-flex items-center gap-2 border border-slate-300 bg-white text-slate-800 text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-50"><Pencil className="w-4 h-4" /> Escrever manualmente</button>
+                  : <section className="border border-(--ag-warn-line) bg-(--ag-warn-soft) rounded-2xl p-4 flex items-center justify-between gap-3">
+                    <div><p className="text-sm font-bold text-(--ag-text)">Nenhuma melhoria automática para publicar</p><p className="text-xs text-(--ag-text-2) mt-0.5">{completed.questions.length ? 'Responda às perguntas acima para a IA conseguir completar ficha e textos.' : 'O texto e a ficha já estão em ordem. Você ainda pode gerar fotos abaixo.'}</p></div>
+                    <button onClick={writeManually} disabled={busy} className="shrink-0 inline-flex items-center gap-2 border border-(--ag-hairline-2) bg-(--ag-surface-solid) text-(--ag-text) text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-50"><Pencil className="w-4 h-4" /> Escrever manualmente</button>
                   </section>}
                 <PicturesSection listing={listing} analysis={completed} generating={generating} onGenerate={generatePicture} />
                 <VideoSection listing={listing} analysis={completed} media={media} onOpenStudio={() => setStudioOpen(true)} />
