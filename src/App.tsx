@@ -4,6 +4,8 @@ import * as XLSX from 'xlsx';
 import logoAlfreds from './assets/brand/logo-alfreds-produtos.png';
 import AgentHomeScreen from './modules/agent/AgentHomeScreen';
 import AtividadeScreen from './modules/agent/AtividadeScreen';
+import { AbrirNaFerramentaProvider } from './modules/agent/AbrirNaFerramentaContext';
+import type { DestinoItem } from './modules/agent/abrirNaFerramenta';
 import ConectoresScreen from './modules/agent/ConectoresScreen';
 import FerramentasScreen from './modules/agent/FerramentasScreen';
 import ProximoPassoBar from './modules/agent/ProximoPassoBar';
@@ -311,6 +313,24 @@ export default function App() {
     // Com agente, uma conexão com alerta abre Fontes e conectores (A4), que tem o Verificar.
     else if (destino === 'integracoes') setMainView(hasContentAgent || hasOperationsAgent ? 'conectores' : 'integrations');
     else setMainView('atividade');
+  };
+  // "Abrir na ferramenta" de um card do Alfred: a tela exata do item.
+  const [meliAbrirItem, setMeliAbrirItem] = useState<string | null>(null);
+  const abrirNaFerramenta = (d: DestinoItem) => {
+    if (d.tipo === 'meli') {
+      setMeliAbrirItem(d.itemId);
+      setMainView('meli');
+      return;
+    }
+    const porSku = new Map(productsRef.current.map((p) => [String(p['Código (SKU)'] ?? '').trim().toLowerCase(), p]));
+    if (d.tipo === 'produto') {
+      const p = porSku.get(d.sku.toLowerCase());
+      if (p) { openPreview(p, d.aba); return; }
+    }
+    const skus = d.tipo === 'produto' ? [d.sku] : d.skus;
+    const ids = skus.map((s) => porSku.get(s.toLowerCase())?._id).filter((x): x is string => !!x);
+    setSelectedIds(new Set(ids));
+    setMainView('agenteProdutos');
   };
   const [missao, setMissao] = useState<MissionState | null>(null);
   const [missoesCarregadas, setMissoesCarregadas] = useState(false);
@@ -3736,6 +3756,7 @@ Retorne APENAS um JSON válido no seguinte formato:
         )}
 
         {/* Dynamic View Content */}
+        <AbrirNaFerramentaProvider abrir={abrirNaFerramenta}>
         <main className={cn(
           "flex-1 overflow-y-auto w-full bg-[#f7f9fb]",
           // O chat do agente não tem barra inferior no telefone (o menu foi
@@ -3837,7 +3858,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             renderHistoryView()
           ) : mainView === 'meli' && hasMeliListingOptimizer ? (
             <Suspense fallback={<div className="h-full flex items-center justify-center text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
-              <MeliOptimizer credits={{ ensureCredits, consumeCredit }} />
+              <MeliOptimizer credits={{ ensureCredits, consumeCredit }} abrirItemId={meliAbrirItem} onItemAberto={() => setMeliAbrirItem(null)} />
             </Suspense>
           ) : mainView === 'integrations' ? (
             <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} onTinyImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getTinyPushPayload={buildTinyPushPayload} tinyPushCandidateCount={tinySelectedProducts(products).length} onBlingImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getBlingPushPayload={buildBlingPushPayload} getBlingPushCandidates={getBlingPushCandidates} onBlingPushed={handleBlingPushed} onIdworksImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getIdworksPushPayload={buildIdworksPushPayload} getIdworksPushCandidates={getIdworksPushCandidates} onIdworksPushed={handleIdworksPushed} />
@@ -4826,6 +4847,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               </div>
             )}
         </main>
+        </AbrirNaFerramentaProvider>
       </div>
 
       {/* Preview Modal */}

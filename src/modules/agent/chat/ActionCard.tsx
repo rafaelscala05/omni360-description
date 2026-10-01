@@ -8,6 +8,8 @@ import { CredentialForm } from './CredentialForm';
 import { Amostra, formatar } from './Amostra';
 import LoteCard from './LoteCard';
 import Recibo from './Recibo';
+import { destinoDaAcao, rotuloDestino } from '../abrirNaFerramenta';
+import { useAbrirNaFerramenta } from '../AbrirNaFerramentaContext';
 
 
 /** Depois de aprovado, o vídeo começa pelo app (useVideosDoAlfred): aqui o andamento e o "tentar de novo". */
@@ -94,6 +96,8 @@ const ActionCard: React.FC<Props> = ({ uid, action, onExecutar, onRejeitar, onAj
   const [podeAuto, setPodeAuto] = useState(false);
   const [autoMarcado, setAutoMarcado] = useState(false);
   const pendente = action.status === 'pending';
+  const abrir = useAbrirNaFerramenta();
+  const destino = destinoDaAcao(action);
   const itens = action.preview.itens ?? [];
   const custo = action.preview.custo ?? 0;
 
@@ -258,6 +262,17 @@ const ActionCard: React.FC<Props> = ({ uid, action, onExecutar, onRejeitar, onAj
       {action.status === 'executed' && action.tool === 'produtos.video.gerar' && <EstadoVideo action={action} />}
 
       {action.status === 'executed' && action.resolvedAt && <Recibo action={action} />}
+
+      {abrir && destino && action.status !== 'rejected' && (
+        <div className="px-4 py-2" style={{ borderTop: '1px solid var(--ag-hairline)' }}>
+          <button
+            onClick={() => abrir(destino)}
+            className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-[var(--ag-text-2)] hover:text-[var(--ag-text)]"
+          >
+            {rotuloDestino(destino)} <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {action.status === 'rejected' && action.ajuste && (
         <div className="px-4 py-2 text-[12px] text-[var(--ag-text-2)] flex items-start gap-1.5" style={{ borderTop: '1px solid var(--ag-hairline)' }}>

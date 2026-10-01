@@ -3,6 +3,7 @@
 import { videosParaIniciar, VALIDADE_PEDIDO_MS } from '../src/modules/agent/videoAlfred.ts';
 import { montarPlano, rotuloFerramenta, temPlano } from '../src/modules/agent/plano.ts';
 import { linhasDoRecibo, resumoRecibo } from '../src/modules/agent/chat/reciboTexto.ts';
+import { destinoDaAcao } from '../src/modules/agent/abrirNaFerramenta.ts';
 
 let failures = 0;
 function check(label, actual, expected) {
@@ -68,6 +69,13 @@ check('lote concluído fecha tudo', montarPlano({ leituras: [], acao: lote('exec
   ]);
   check('resultado sem contagem não tem resumo', [resumoRecibo({ ok: true }), resumoRecibo(undefined)], [null, null]);
 }
+
+// --- abrir na ferramenta ------------------------------------------------------
+check('vídeo abre o produto na aba Vídeo', destinoDaAcao({ tool: 'produtos.video.gerar', args: { sku: 'A1' } }), { tipo: 'produto', sku: 'A1', aba: 'video' });
+check('um SKU enviado ao ERP abre o produto', destinoDaAcao({ tool: 'bling.catalogo.enviar', args: { skus: ['A1', 'A1'] } }), { tipo: 'produto', sku: 'A1', aba: 'geral' });
+check('vários SKUs abrem a lista selecionada', destinoDaAcao({ tool: 'tiny.catalogo.enviar', args: { skus: ['A', 'B'] } }), { tipo: 'produtos', skus: ['A', 'B'] });
+check('proposta do MELI abre o anúncio', destinoDaAcao({ tool: 'meli.proposta.publicar', args: { itemId: 'mlb123' } }), { tipo: 'meli', itemId: 'MLB123' });
+check('ferramenta sem item não tem destino', [destinoDaAcao({ tool: 'wake.banner.criar', args: {} }), destinoDaAcao({ tool: 'content.artigo.publicar', args: { sku: 'x' } })], [null, null]);
 
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');
 process.exit(failures ? 1 : 0);

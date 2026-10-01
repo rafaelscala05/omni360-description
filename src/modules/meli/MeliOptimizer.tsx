@@ -38,7 +38,12 @@ function Score({ value, label }: { value?: number | null; label: string }) {
   </div>;
 }
 
-export default function MeliOptimizer({ credits }: { credits: MeliCreditHelpers }) {
+export default function MeliOptimizer({ credits, abrirItemId, onItemAberto }: {
+  credits: MeliCreditHelpers;
+  /** "Abrir o anúncio" vindo do Alfred: busca pelo código e abre o painel dele. */
+  abrirItemId?: string | null;
+  onItemAberto?: () => void;
+}) {
   const [connection, setConnection] = useState<MeliConnection | null>(null);
   const [listings, setListings] = useState<MeliListing[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,6 +56,7 @@ export default function MeliOptimizer({ credits }: { credits: MeliCreditHelpers 
   const [page, setPage] = useState(1);
   const [pageInfo, setPageInfo] = useState<{ total: number; totalPages: number; counts: Record<string, number> }>({ total: 0, totalPages: 1, counts: {} });
   const [selected, setSelected] = useState<MeliListing | null>(null);
+  const abrirRef = useRef<string | null>(null);
   const [metrics, setMetrics] = useState<MeliOperationalMetrics | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Seleção para otimização em massa; sobrevive à troca de página e de filtro.
@@ -82,6 +88,11 @@ export default function MeliOptimizer({ credits }: { credits: MeliCreditHelpers 
     if (result.page !== query.page) setPage(result.page);
     // O painel aberto mostra a versão mais nova do anúncio (visitas, vídeo, fotos).
     setSelected((current) => current ? result.listings.find((listing) => listing.itemId === current.itemId) || current : current);
+    // Pedido do Alfred: a busca pelo código já trouxe o anúncio — abre o painel dele.
+    if (abrirRef.current) {
+      const alvo = result.listings.find((listing) => listing.itemId === abrirRef.current);
+      if (alvo) { setSelected(alvo); abrirRef.current = null; onItemAberto?.(); }
+    }
   };
 
   const load = async () => {
@@ -113,6 +124,14 @@ export default function MeliOptimizer({ credits }: { credits: MeliCreditHelpers 
     return () => window.clearTimeout(timer);
   }, [search]);
   useEffect(() => { setPage(1); }, [filter, sort, debouncedSearch]);
+
+  // A busca por MLB acha o anúncio em qualquer página e com qualquer filtro.
+  useEffect(() => {
+    if (!abrirItemId) return;
+    abrirRef.current = abrirItemId;
+    setFilter('');
+    setSearch(abrirItemId);
+  }, [abrirItemId]);
   const firstQuery = useRef(true);
   useEffect(() => {
     if (firstQuery.current) { firstQuery.current = false; return; }
