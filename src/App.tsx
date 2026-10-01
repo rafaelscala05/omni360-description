@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import logoAlfreds from './assets/brand/logo-alfreds-produtos.png';
 import AgentHomeScreen from './modules/agent/AgentHomeScreen';
 import AtividadeScreen from './modules/agent/AtividadeScreen';
+import ConectoresScreen from './modules/agent/ConectoresScreen';
 import FerramentasScreen from './modules/agent/FerramentasScreen';
 import ProximoPassoBar from './modules/agent/ProximoPassoBar';
 import { usePendentesAlfred, useVideosDoAlfred } from './modules/agent/useSemana';
@@ -226,7 +227,7 @@ export default function App() {
   useEffect(() => { productsRef.current = products; }, [products]);
   const [originalHeaders, setOriginalHeaders] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [mainView, setMainView] = useState<'home' | 'atividade' | 'ferramentas' | 'agenteProdutos' | 'products' | 'meli' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company' | 'missoes'>('products');
+  const [mainView, setMainView] = useState<'home' | 'atividade' | 'conectores' | 'ferramentas' | 'agenteProdutos' | 'products' | 'meli' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company' | 'missoes'>('products');
   // Pedido que outra tela (Ferramentas) manda ao Alfred — a tela do agente
   // envia ao montar e limpa, para voltar ao chat não repetir o pedido.
   const [promptAlfred, setPromptAlfred] = useState<PedidoAlfred | null>(null);
@@ -307,7 +308,8 @@ export default function App() {
     if (destino === 'produtos') setMainView(hasContentAgent || hasOperationsAgent ? 'agenteProdutos' : 'products');
     else if (destino === 'conteudo') setWorkspace('content');
     else if (destino === 'meli') setMainView(hasMeliListingOptimizer ? 'meli' : 'products');
-    else if (destino === 'integracoes') setMainView('integrations');
+    // Com agente, uma conexão com alerta abre Fontes e conectores (A4), que tem o Verificar.
+    else if (destino === 'integracoes') setMainView(hasContentAgent || hasOperationsAgent ? 'conectores' : 'integrations');
     else setMainView('atividade');
   };
   const [missao, setMissao] = useState<MissionState | null>(null);
@@ -3739,7 +3741,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           // O chat do agente não tem barra inferior no telefone (o menu foi
           // para o cabeçalho dele), então dispensa a reserva de 5rem embaixo
           // e usa um respiro menor nas laterais — a tela toda é a conversa.
-          mainView === 'atividade' || mainView === 'ferramentas' ? "p-3 sm:p-6" :
+          mainView === 'atividade' || mainView === 'ferramentas' || mainView === 'conectores' ? "p-3 sm:p-6" :
           // A barra Próximo passo é o pé da própria tela, então ela termina acima da tab bar.
           mainView === 'agenteProdutos' ? "p-3 pb-24 sm:p-6 md:pb-6" :
           mainView === 'home' ? (alfredFocado ? "p-3 sm:p-6" : "p-3 pb-24 sm:p-6 md:pb-6") : "p-6 pb-20 md:pb-6",
@@ -3764,12 +3766,21 @@ Retorne APENAS um JSON válido no seguinte formato:
               hasContentAgent={hasContentAgent}
               hasOperationsAgent={hasOperationsAgent}
               hasMeli={hasMeliListingOptimizer}
-              onOpenIntegrations={() => setMainView('integrations')}
+              onAbrirConectores={() => setMainView('conectores')}
+              onAbrirAtividade={() => setMainView('atividade')}
               onAbrirDestino={abrirDestino}
               onAbrirMenu={() => setIsSidebarOpen(true)}
               onFocoChange={setAlfredFocado}
               promptInicial={promptAlfred}
               onPromptConsumido={() => setPromptAlfred(null)}
+            />
+          ) : mainView === 'conectores' ? (
+            <ConectoresScreen
+              hasContentAgent={hasContentAgent}
+              hasMeli={hasMeliListingOptimizer}
+              onVoltar={() => setMainView('home')}
+              onAbrirIntegracoes={() => setMainView('integrations')}
+              onAbrirMenu={() => setIsSidebarOpen(true)}
             />
           ) : mainView === 'atividade' ? (
             <AtividadeScreen
@@ -5485,7 +5496,7 @@ Retorne APENAS um JSON válido no seguinte formato:
 
       {!(mainView === 'home' && alfredFocado) && (
         <AppTabBar
-          atual={mainView === 'agenteProdutos' ? 'ferramentas' : mainView}
+          atual={mainView === 'agenteProdutos' ? 'ferramentas' : mainView === 'conectores' ? 'home' : mainView}
           mostrarAgente={hasContentAgent || hasOperationsAgent}
           pendentes={pendentesAlfred}
           onNavegar={setMainView}

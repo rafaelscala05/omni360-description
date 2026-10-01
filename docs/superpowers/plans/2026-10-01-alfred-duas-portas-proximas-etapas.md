@@ -38,13 +38,13 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 - [ ] **Avatar da Conta no topo (mobile)**: no desenho a Conta sai do Menu e vira o avatar no cabeçalho de Ferramentas.
 
 ### Alfred (A1–A3, D1)
-- [ ] **Desktop em 3 colunas (D1)**: Semana | Chat | coluna "Precisa de você · Rodando · Feito hoje" ao lado, em vez de alternar Semana/Conversa.
+- [x] **Desktop em 3 colunas (D1)**: Semana | Chat | coluna "Precisa de você · Rodando · Feito hoje" ao lado (`ColunaAtividade.tsx`), a partir de 1100 px de contêiner. A coluna resume e leva à Atividade; a aprovação inline ("Aprovar 5 prontas" no próprio cartão) ainda não existe ali.
 - [ ] **Cabeçalho da tarefa no chat (A2)**: "‹ Semana · Descrições · 12 produtos · Trabalhando" quando a conversa nasceu de uma tarefa da semana.
 - [x] **Progresso dentro do passo (A2)** — lote em job (`lote.ts`, `loteWorker.ts`, `LoteCard.tsx`); o texto original era: "7 de 12 · agora: Luminária Pendente Aço". Hoje a geração do lote acontece inteira dentro do `preview()`; precisa emitir progresso por item (evento SSE novo ou doc de job) e mostrar no PlanoCard.
 - [x] **Revisar parcial (A2/A3)** — aprovação por item no `LoteCard`, com descarte por item: "As 5 primeiras estão prontas — revisar enquanto termino o resto" e "Aprovar 5 prontas". Depende do item acima (lote em job, não num único preview).
 - [x] **Pausar (A2)**: faixa acima do composer (`LoteEmAndamento.tsx`) e no card, com Continuar e "Parar aqui".
 - [ ] **"Ajustar no chat" na aprovação (A3)**: abrir o composer já com o contexto da ação pendente.
-- [ ] **Régua de fontes no rodapé da semana (D1)**: "4 fontes · +2 para conectar ›".
+- [x] **Régua de fontes no rodapé da semana (D1)**: "4 fontes · +2 para conectar ›" → A4.
 
 ### Ferramentas (F1, F2, D2)
 - [ ] **F1 em lista**: no celular, um agente por linha com chip de pendência ("12", "em dia") em vez dos cartões grandes; bloco Conta com Créditos e Integrações ("4 ativas · 1 alerta").
@@ -56,7 +56,7 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 - [ ] **"Abrir na ferramenta" do chat com o item selecionado**: link que cai na tela exata (ex.: produto aberto no modal, anúncio do MELI aberto).
 
 ### Atividade e conectores (A4, A5)
-- [ ] **A4 · Fontes e conectores**: tela com "Precisa de atenção" (checagem falhou → Verificar), "Conectados" (com quantas ferramentas cada um libera) e "Disponíveis" ("Libera: banners, preço, SEO da loja" → Conectar). Hoje é a régua no topo do Alfred + a tela de Integrações antiga.
+- [x] **A4 · Fontes e conectores** (`ConectoresScreen.tsx`; "Verificar" checa o status de novo, "Conectar"/"Reconectar" abrem Integrações): tela com "Precisa de atenção" (checagem falhou → Verificar), "Conectados" (com quantas ferramentas cada um libera) e "Disponíveis" ("Libera: banners, preço, SEO da loja" → Conectar). Hoje é a régua no topo do Alfred + a tela de Integrações antiga.
 - [ ] **Publicar artigo direto da Atividade (A5)**: trava fixa de conteúdo com "Ver prévia" / "Publicar" no próprio card.
 - [ ] **Recibo abrindo o log**: "Recibo" → o que foi gravado + as chamadas HTTP (`agent_logs`) daquela ação.
 - [ ] **Notificação só quando precisa de você**: push para aprovação pendente ou tarefa bloqueada; progresso e conclusão sem barulho. Não existe infraestrutura de push hoje.
@@ -69,10 +69,10 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 
 ### Ferramentas do agente que faltam (Inventário: "falta tool")
 - [x] Atributos por categoria (texto e foto) em lote — `produtos.atributos.gerar`.
-- [x] Imagens ambientadas — `produtos.ambientadas.gerar`, lote de até 10 com amostra em miniatura. Falta: sugerir na semana; as cenas por categoria (flag local `enableCategoryImagePrompts`) não valem para o Alfred; imagens de item descartado ficam no Storage.
+- [x] Imagens ambientadas — `produtos.ambientadas.gerar`, lote de até 10 com amostra em miniatura. Sugerido na semana e com as cenas por categoria (`settings/imagens`). Falta: imagens de item descartado ficam no Storage.
 - [x] Categorias e hierarquia — `produtos.categorias.organizar`.
-- [x] Vídeo de produto — `produtos.video.gerar`; roda pelo app aberto (ver CLAUDE.md). Falta UGC com avatar.
-- [x] Envio ao ERP pelo chat — `tiny.catalogo.enviar` (só Tiny v2). Falta Wake, Bling e IdWorks.
+- [x] Vídeo de produto — `produtos.video.gerar`; roda pelo app aberto (ver CLAUDE.md). UGC com avatar: `tipo: 'ugc'`.
+- [x] Envio ao ERP pelo chat — `tiny.catalogo.enviar` (Tiny v2), `wake.catalogo.enviar`, `bling.catalogo.enviar`, `idworks.catalogo.enviar`.
 - [ ] Importar/exportar planilha (avisar o que chegou incompleto e criar tarefas).
 - [ ] MELI: vídeo studio e geração de foto (`/pictures/generate`) pelo chat.
 - [ ] Bling e IdWorks no chat (hoje só importação e envio).
@@ -84,6 +84,6 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 2. ~~**F2 + barra de seleção + "Pedir ao Alfred" com contexto**~~ — feito para Produtos; falta validar com login (abrir Ferramentas › Produtos, selecionar, "Gerar N descrições" → confirmação com custo → progresso na barra; e "Pedir ao Alfred" → o grafo deve chamar `produtos.buscar` com os SKUs selecionados). Exige republicar o serviço do grafo.
 3. ~~**Lote em job com progresso**~~ — feito para descrições (`produtos.descricoes.gerar`, teto subiu de 10 para 50). Para outra ferramenta virar lote: `lote: true` no registro, o `preview()` chama `criarLote`, e um gerador em `GERADORES` (`loteWorker.ts`). Falta validar com login: pedir 12 descrições, aprovar as prontas no meio, pausar/continuar, e ver o servidor principal retomar um lote se o serviço do grafo cair. Exige deploy das regras e índices do Firestore (`agent_jobs`) e do serviço do grafo.
 4. ~~**Novas ferramentas**~~ — feitas (atributos, Tiny, vídeo, categorias, ambientadas). Validar com login: um lote de atributos (precisa de categoria com atributos), um envio ao Tiny com a prévia batendo com o que chega, um vídeo pelo chat com o app aberto, organizar categorias numa conta com coluna Categoria solta, um lote pequeno de ambientadas conferindo o débito só dos aprovados.
-5. **A4 Conectores** e **D1 em 3 colunas**.
+5. ~~**A4 Conectores** e **D1 em 3 colunas**~~ — feitos (2026-10-01). Validar com login: abrir o Alfred numa janela larga (3 colunas) e estreita; tocar o rodapé "N fontes" → A4; derrubar uma credencial e ver "Precisa de atenção" + Verificar.
 6. **Liquid Glass no app todo + trilho desktop** (maior raio de impacto visual; fazer por último e por tela).
 7. Notificações push.

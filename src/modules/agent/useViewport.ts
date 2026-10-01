@@ -1,5 +1,6 @@
-// Dois fatos sobre a viewport que o CSS sozinho não entrega.
+// Fatos sobre a viewport (e o espaço da tela) que o CSS sozinho não entrega.
 
+import type React from 'react';
 import { useEffect, useState } from 'react';
 
 /** Telefone (abaixo do breakpoint `sm` do Tailwind). */
@@ -55,4 +56,21 @@ export function useAlturaTeclado(): number {
   }, []);
 
   return altura;
+}
+
+/**
+ * Largura, em px, de um elemento — para layouts que dependem do espaço que a
+ * tela de fato tem, não da janela: o app tem a barra lateral à esquerda, então
+ * uma janela de 1440 px deixa bem menos que isso para o Alfred.
+ */
+export function useLarguraDe(ref: React.RefObject<HTMLElement | null>): number {
+  const [largura, setLargura] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([entrada]) => setLargura(Math.round(entrada.contentRect.width)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return largura;
 }
