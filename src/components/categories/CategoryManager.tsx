@@ -179,14 +179,14 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
   ];
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full">
       <header className="px-4 md:px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-200 gap-3 shrink-0">
         <div className="flex items-center gap-3">
           <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors shrink-0">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="min-w-0">
-            <h1 className="text-lg md:text-xl font-bold text-slate-900 tracking-tight truncate">Categoria & Atributos</h1>
+            <h1 className="font-display text-[22px] md:text-[26px] font-semibold tracking-tight text-[var(--ag-text)] truncate">Categorias e atributos</h1>
             <p className="text-xs md:text-sm text-slate-500 mt-0.5 truncate">Organize sua hierarquia de categorias e atributos padrão</p>
           </div>
         </div>

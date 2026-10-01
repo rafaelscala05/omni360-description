@@ -3877,7 +3877,11 @@ Retorne APENAS um JSON válido no seguinte formato:
               hasAgente={hasContentAgent || hasOperationsAgent}
             />
           ) : mainView === 'categories' ? (
-            <div className="animate-in fade-in h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div
+              className="alfreds animate-in fade-in h-full rounded-[24px] overflow-hidden"
+              data-tema="claro"
+              style={{ background: 'var(--ag-surface-solid)', border: '1px solid var(--ag-hairline)', boxShadow: 'var(--ag-shadow)' }}
+            >
               <Suspense fallback={<div className="h-full flex items-center justify-center text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
                 <CategoryManager onClose={async () => {
                   setMainView('products');
@@ -3892,7 +3896,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             renderHistoryView()
           ) : mainView === 'meli' && hasMeliListingOptimizer ? (
             <Suspense fallback={<div className="h-full flex items-center justify-center text-slate-400"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
-              <MeliOptimizer credits={{ ensureCredits, consumeCredit }} />
+              <div className="alfreds" data-tema="claro"><MeliOptimizer credits={{ ensureCredits, consumeCredit }} /></div>
             </Suspense>
           ) : mainView === 'integrations' ? (
             <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} onTinyImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getTinyPushPayload={buildTinyPushPayload} tinyPushCandidateCount={tinySelectedProducts(products).length} onBlingImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getBlingPushPayload={buildBlingPushPayload} getBlingPushCandidates={getBlingPushCandidates} onBlingPushed={handleBlingPushed} onIdworksImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getIdworksPushPayload={buildIdworksPushPayload} getIdworksPushCandidates={getIdworksPushCandidates} onIdworksPushed={handleIdworksPushed} />
@@ -3907,7 +3911,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               <CompanyProfile company={companyData} onSaved={setCompanyData} />
             </Suspense>
           ) : (
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 h-full flex flex-col max-w-[1600px] mx-auto">
+            <div className="alfreds animate-in fade-in slide-in-from-bottom-4 duration-500 h-full flex flex-col max-w-[1600px] mx-auto" data-tema="claro">
                {!onboardingCompleted && !onboardingBannerDismissed && (
                  <div className="relative mb-4 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-[#141311] to-[#1e3a8a] shadow-lg shadow-slate-900/10">
                    <div className="pointer-events-none absolute -right-6 -top-10 h-32 w-32 rounded-full bg-orange-500/30 blur-3xl" />
@@ -4035,10 +4039,13 @@ Retorne APENAS um JSON válido no seguinte formato:
                  </div>
                 </div>
 
-                <div className="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col md:flex-1 md:min-h-0 relative">
+                <div
+                   className="rounded-[24px] flex flex-col md:flex-1 md:min-h-0 relative"
+                   style={{ background: 'var(--ag-surface-solid)', border: '1px solid var(--ag-hairline)', boxShadow: 'var(--ag-shadow)' }}
+                 >
 
                   {/* Toolbar */}
-                  <div className="px-3 md:px-5 py-3 md:py-3.5 flex flex-wrap items-center justify-between border-b border-slate-200 bg-white gap-2 md:gap-3 rounded-t-xl shrink-0 relative z-30">
+                  <div className="px-3 md:px-5 py-3 md:py-3.5 flex flex-wrap items-center justify-between border-b border-slate-200 bg-white gap-2 md:gap-3 rounded-t-[24px] shrink-0 relative z-30">
                       <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
                         <select
                           className="w-[calc(50%-4px)] md:w-auto px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-700 font-medium focus:ring-[#FF5B03] outline-none focus:border-[#FF5B03] bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
