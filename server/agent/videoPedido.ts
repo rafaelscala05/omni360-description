@@ -24,6 +24,8 @@ export interface PedidoVideoClassico {
   tipo?: 'classico';
   roteiro: PedidoRoteiro;
   inicio: Omit<InicioVideo, 'script'>;
+  /** Vídeo de um anúncio do Mercado Livre (meli.video.gerar): no fim, o link vai para a mídia dele. */
+  destinoMeli?: string;
 }
 
 /** UGC: um avatar salvo fala para a câmera e usa o produto (server/ugcVideoAgent.ts). */
@@ -154,4 +156,35 @@ export function montarPedidoVideoUgc(p: ProdutoDoc, avatar: AvatarSalvo): Pedido
       productReferenceUrl: referencia,
     },
   };
+}
+
+/**
+ * Vídeo de um anúncio do Mercado Livre — o mesmo produto sintético que o
+ * MeliVideoStudio monta (id "meli-<MLB>", fotos do anúncio como "URL imagem
+ * externa N", referência salva na mídia do anúncio). O produto não existe no
+ * catálogo; o link do vídeo vai para users/{uid}/meli_listing_media.
+ */
+export function produtoDoAnuncio(anuncio: {
+  itemId: string;
+  title?: string;
+  descricao?: string;
+  marca?: string;
+  fotos: string[];
+  referencia?: { imageUrl?: string; sourceImages?: string[] } | null;
+}): ProdutoDoc {
+  const p: Record<string, unknown> = {
+    _docId: `meli-${anuncio.itemId}`,
+    'Código (SKU)': anuncio.itemId,
+    'Descrição': anuncio.title ?? anuncio.itemId,
+    'Título SEO': anuncio.title ?? '',
+    'Descrição complementar': anuncio.descricao ?? '',
+    'Marca': anuncio.marca ?? '',
+    _productReference: anuncio.referencia ?? undefined,
+  };
+  anuncio.fotos.slice(0, 10).forEach((url, i) => { p[`URL imagem externa ${i + 1}`] = url; });
+  return p as ProdutoDoc;
+}
+
+export function montarPedidoVideoMeli(anuncio: Parameters<typeof produtoDoAnuncio>[0]): PedidoVideoClassico {
+  return { ...montarPedidoVideo(produtoDoAnuncio(anuncio)), destinoMeli: anuncio.itemId };
 }

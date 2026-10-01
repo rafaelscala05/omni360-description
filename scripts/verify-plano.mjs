@@ -78,5 +78,8 @@ check('proposta do MELI abre o anúncio', destinoDaAcao({ tool: 'meli.proposta.p
 check('ferramenta sem item não tem destino', [destinoDaAcao({ tool: 'wake.banner.criar', args: {} }), destinoDaAcao({ tool: 'content.artigo.publicar', args: { sku: 'x' } })], [null, null]);
 check('publicar artigo abre o artigo', destinoDaAcao({ tool: 'content.artigo.publicar', args: { projectId: 'p', articleId: 'a' } }), { tipo: 'artigo', projectId: 'p', articleId: 'a' });
 
+check('o app também inicia o vídeo aprovado de um anúncio do MELI',
+  videosParaIniciar([{ id: 'm1', tool: 'meli.video.gerar', status: 'executed', resolvedAt: new Date().toISOString(), createdAt: new Date().toISOString(), result: { pedidoVideo: {} } }]), ['m1']);
+
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');
 process.exit(failures ? 1 : 0);

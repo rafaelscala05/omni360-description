@@ -10,12 +10,16 @@ import type express from 'express';
 import { adminDb } from '../firebaseAdmin';
 import { gerarRoteiro, iniciarVideo } from '../videoAgent';
 import { gerarRoteiroUgc, iniciarVideoUgc } from '../ugcVideoAgent';
+import { saveListingMedia } from '../meli/videoAssets';
 import { requireAnyModule } from './connections';
 import type { PedidoVideo } from './videoPedido';
 
 interface Deps {
   verifyFirebaseToken: (req: express.Request) => Promise<{ uid: string; name?: string; email?: string }>;
 }
+
+/** Ferramentas que aprovam um pedido de vídeo (produto do catálogo ou anúncio do MELI). */
+const TOOLS_VIDEO = new Set(['produtos.video.gerar', 'meli.video.gerar']);
 
 /** Um pedido aprovado há mais que isso não começa sozinho: o usuário já não está esperando por ele. */
 export const VALIDADE_PEDIDO_MS = 30 * 60_000;
@@ -33,7 +37,7 @@ export function registerVideoAlfredRoutes(app: express.Express, { verifyFirebase
       const pedido = await adminDb.runTransaction(async (tx) => {
         const snap = await tx.get(ref!);
         const a = snap.data();
-        if (!a || a.tool !== 'produtos.video.gerar' || a.status !== 'executed' || !a.result?.pedidoVideo) {
+        if (!a || !TOOLS_VIDEO.has(a.tool) || a.status !== 'executed' || !a.result?.pedidoVideo) {
           throw Object.assign(new Error('Não há vídeo aprovado para iniciar nesta ação.'), { status: 404, daReivindicacao: true });
         }
         if (a.result.videoJobId) throw Object.assign(new Error('Este vídeo já foi iniciado.'), { status: 409, daReivindicacao: true });
@@ -48,7 +52,9 @@ export function registerVideoAlfredRoutes(app: express.Express, { verifyFirebase
         return a.result.pedidoVideo as PedidoVideo;
       });
 
+      let jobCriado: string | null = null;
       const aoCriarJob = async (jobId: string) => {
+        jobCriado = jobId;
         await ref!.update({ 'result.videoJobId': jobId, 'result.status': 'gerando o vídeo' });
         res.setHeader('Content-Type', 'application/json');
         res.write(JSON.stringify({ jobId }));
@@ -63,6 +69,14 @@ export function registerVideoAlfredRoutes(app: express.Express, { verifyFirebase
       } else {
         const script = await gerarRoteiro(pedido.roteiro);
         await iniciarVideo(decoded, { ...pedido.inicio, script }, aoCriarJob);
+        // Anúncio do MELI: o produto é sintético, então o link vai para a mídia
+        // do anúncio, onde o estúdio de vídeo do MELI também o guarda.
+        if (pedido.destinoMeli && jobCriado) {
+          const job = (await adminDb.collection('users').doc(decoded.uid).collection('videoJobs').doc(jobCriado).get()).data();
+          if (job?.status === 'done' && typeof job.videoUrl === 'string') {
+            await saveListingMedia(decoded.uid, pedido.destinoMeli, { videoUrl: job.videoUrl, videoJobId: jobCriado }).catch(() => {});
+          }
+        }
       }
       res.end();
     } catch (e: any) {

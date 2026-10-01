@@ -25,6 +25,7 @@ const ALWAYS_ASK_TOOLS: readonly string[] = [
   'meli.proposta.publicar',
   // Vídeo: o débito mais caro do app, num job de minutos que não se desfaz.
   'produtos.video.gerar',
+  'meli.video.gerar',
   // Escreve no ERP do cliente, fora do OMNI360.
   'tiny.catalogo.enviar',
   'wake.catalogo.enviar',

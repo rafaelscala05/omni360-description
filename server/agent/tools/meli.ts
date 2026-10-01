@@ -19,6 +19,13 @@ import { decideSelection, getLatestProposal } from '../../meli/proposals';
 import { createMutationRun, scheduleMutation } from '../../meli/mutations';
 import type { MeliListingChange } from '../../meli/types';
 import type { PreviewField } from '../types';
+import { custoDaAcao } from '../execution';
+import { CREDIT_ACTIONS } from '../../../src/credits';
+import { addPictureChange } from '../../meli/proposals';
+import { generateListingPicture, TARGET_ORDER, type MeliGeneratedPictureKind } from '../../meli/pictureGenerator';
+import { getListingMedia } from '../../meli/videoAssets';
+import { assertNoActiveVideoJob } from '../../videoShared';
+import { faltaParaVideo, montarPedidoVideoMeli, produtoDoAnuncio, type PedidoVideo } from '../videoPedido';
 
 const LISTINGS = (uid: string) => adminDb.collection('users').doc(uid).collection('meli_listings');
 const PRONTAS = new Set(['awaiting_review', 'partially_approved']);
@@ -161,5 +168,129 @@ registerTool<ArgsPublicar>({
     const run = await createMutationRun(ctx.uid, propostaId, `agente:${chave}`);
     scheduleMutation(ctx.uid, run.id);
     return { execucao: run.id, status: run.status, mudancas: changeIds.length };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Mídia do anúncio pelo chat: foto gerada (vai para a proposta) e vídeo
+// ---------------------------------------------------------------------------
+
+const fotosDoAnuncio = (pictures: unknown): string[] =>
+  (Array.isArray(pictures) ? pictures : [])
+    .map((p) => String((p as { secure_url?: string; url?: string })?.secure_url || (p as { url?: string })?.url || ''))
+    .filter((u) => /^https:\/\//i.test(u));
+
+interface ArgsFoto { itemId: string; tipo: 'lifestyle' | 'white_background'; instrucoes?: string }
+
+registerTool<ArgsFoto>({
+  name: 'meli.foto.gerar',
+  provider: 'meli',
+  mode: 'write',
+  description: 'Gera uma foto nova para um anúncio do Mercado Livre a partir da foto atual — tipo "white_background" (capa em fundo branco, a da busca) ou "lifestyle" (produto em uso) — e a coloca na proposta do anúncio como mudança pendente. Não publica: para ir ao anúncio, depois o usuário aprova e publica a proposta (meli.proposta.publicar). Debita uma ambientação.',
+  schema: {
+    type: 'object',
+    properties: {
+      itemId: { type: 'string', description: 'Código do anúncio (MLB…).' },
+      tipo: { type: 'string', enum: ['lifestyle', 'white_background'] },
+      instrucoes: { type: 'string', description: 'Pedido do usuário sobre a cena (opcional, sem links).' },
+    },
+    required: ['itemId', 'tipo'],
+  },
+  preview: async (ctx, a) => {
+    const itemId = requireStr(a as never, 'itemId').toUpperCase();
+    const snap = await LISTINGS(ctx.uid).doc(itemId).get();
+    if (!snap.exists) throw Object.assign(new Error(`Anúncio ${itemId} não encontrado — sincronize o Mercado Livre.`), { status: 404 });
+    const listing = snap.data() as { title?: string; pictures?: unknown };
+    const fotos = fotosDoAnuncio(listing.pictures);
+    if (!fotos.length) throw Object.assign(new Error('O anúncio não tem foto para servir de base.'), { status: 422 });
+    const capa = a.tipo === 'white_background';
+    return {
+      ...makePreview({
+        resumo: `Gerar ${capa ? 'uma capa em fundo branco' : 'uma foto ambientada'} para "${listing.title ?? itemId}"`,
+        alvo: `Mercado Livre · ${itemId}`,
+        campos: [
+          { campo: 'Foto base', antes: null, depois: 'a primeira foto do anúncio', mudou: true },
+          { campo: 'Destino', antes: `${fotos.length} fotos no anúncio`, depois: capa ? 'nova capa (posição 1) na proposta' : 'foto nova na proposta', mudou: true },
+          ...(a.instrucoes ? [{ campo: 'Pedido', antes: null, depois: curto(a.instrucoes, 200), mudou: true }] : []),
+        ],
+        avisos: ['A foto entra na proposta do anúncio como mudança pendente — nada vai ao Mercado Livre até você publicar a proposta.'],
+        criacao: true,
+        payload: { itemId, tipo: a.tipo, instrucoes: a.instrucoes ?? null },
+      }),
+      // O débito acontece dentro de generateListingPicture.
+      custo: await custoDaAcao(CREDIT_ACTIONS.ambientImage),
+    };
+  },
+  execute: async (ctx, _a, preview) => {
+    const { itemId, tipo, instrucoes } = preview.payload as { itemId: string; tipo: MeliGeneratedPictureKind; instrucoes: string | null };
+    if (ctx.dryRun) return { dryRun: true, itemId, tipo };
+    const foto = await generateListingPicture(ctx.uid, itemId, { kind: tipo, instructions: instrucoes });
+    await addPictureChange(ctx.uid, itemId, {
+      source: foto.url, targetOrder: TARGET_ORDER[tipo], generatedPictureId: foto.id,
+      reason: tipo === 'white_background'
+        ? 'Nova capa em fundo branco: é a foto que aparece na busca e a que mais pesa no clique.'
+        : 'Foto ambientada mostra o produto em uso e ajuda o comprador a se imaginar com ele.',
+    });
+    return { itemId, foto: foto.url, status: 'na proposta, aguardando publicação' };
+  },
+});
+
+registerTool<{ itemId: string }>({
+  name: 'meli.video.gerar',
+  provider: 'meli',
+  mode: 'write',
+  description: 'Produz o vídeo vertical de um anúncio do Mercado Livre — o mesmo do estúdio de vídeo do anúncio: roteiro a partir das fotos do anúncio e da referência do produto. Leva alguns minutos, começa com o app aberto e aparece em Atividade › Rodando. O Mercado Livre não aceita envio de vídeo por integração: o vídeo fica pronto na mídia do anúncio para o usuário subir como Clip. Exige a referência do produto criada no estúdio do anúncio.',
+  schema: {
+    type: 'object',
+    properties: { itemId: { type: 'string', description: 'Código do anúncio (MLB…).' } },
+    required: ['itemId'],
+  },
+  preview: async (ctx, a) => {
+    const userSnap = await adminDb.collection('users').doc(ctx.uid).get();
+    if (userSnap.data()?.modules?.video !== true) {
+      throw Object.assign(new Error('O módulo de vídeo não está ativo nesta conta.'), { status: 403 });
+    }
+    const itemId = requireStr(a as never, 'itemId').toUpperCase();
+    const snap = await LISTINGS(ctx.uid).doc(itemId).get();
+    if (!snap.exists) throw Object.assign(new Error(`Anúncio ${itemId} não encontrado — sincronize o Mercado Livre.`), { status: 404 });
+    const listing = snap.data() as { title?: string; pictures?: unknown; descriptionPlainText?: string; attributes?: { id?: string; value_name?: string }[] };
+    const media = await getListingMedia(ctx.uid, itemId);
+    const anuncio = {
+      itemId,
+      title: listing.title,
+      descricao: listing.descriptionPlainText,
+      marca: listing.attributes?.find((x) => x.id === 'BRAND')?.value_name,
+      fotos: fotosDoAnuncio(listing.pictures),
+      referencia: media.productReference,
+    };
+    const falta = faltaParaVideo(produtoDoAnuncio(anuncio)).filter((f) => f !== 'título SEO');
+    if (falta.length) {
+      throw Object.assign(new Error(`Antes do vídeo, o anúncio precisa de: ${falta.join(', ').replace('aba Vídeo do produto', 'estúdio de vídeo do anúncio')}.`), { status: 409 });
+    }
+    await assertNoActiveVideoJob(ctx.uid);
+    const pedido = montarPedidoVideoMeli(anuncio);
+    return {
+      ...makePreview({
+        resumo: `Produzir o vídeo do anúncio "${listing.title ?? itemId}"`,
+        alvo: `Mercado Livre · ${itemId}`,
+        campos: [
+          { campo: 'Formato', antes: null, depois: 'Vertical 9:16, ~32s, narração em off e música', mudou: true },
+          { campo: 'Fotos de referência', antes: null, depois: `${pedido.inicio.productPhotoUrls?.length ?? 0} fotos do anúncio + a referência do produto`, mudou: true },
+          { campo: 'Vídeo atual', antes: media.videoUrl ? 'já tem um vídeo gerado' : 'sem vídeo', depois: 'vídeo novo na mídia do anúncio', mudou: true },
+        ],
+        avisos: [
+          'O Mercado Livre não aceita vídeo por integração: depois de pronto, suba o vídeo como Clip na Central de Vendedores.',
+          'Leva alguns minutos e começa logo depois da aprovação, com o app aberto. Se falhar, os créditos voltam.',
+        ],
+        payload: { pedido },
+      }),
+      custo: await custoDaAcao(CREDIT_ACTIONS.videoGeneration),
+    };
+  },
+  execute: async (ctx, _a, preview) => {
+    const { pedido } = preview.payload as { pedido: PedidoVideo };
+    if (ctx.dryRun) return { dryRun: true, anuncio: pedido.inicio.productName };
+    // Só registra o pedido aprovado; quem roda é /api/agent/video/:actionId/iniciar.
+    return { pedidoVideo: pedido, status: 'aguardando início' };
   },
 });

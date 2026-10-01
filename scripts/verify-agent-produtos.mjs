@@ -9,7 +9,7 @@ import {
 import { linhasDoContexto, sanitizarContexto, MAX_SKUS_CONTEXTO } from '../server/agent/workspaceContext.ts';
 import { camposDoEnvio, imagensParaTiny, paraTinyPush } from '../server/agent/tinyCatalogo.ts';
 import { atualBling, atualWake, diffCatalogo, paraBlingPush, paraIdworksPush, paraWakePush, SUPORTE } from '../server/agent/erpCatalogo.ts';
-import { escolherAvatar, faltaParaVideo, imagensDasCenas, montarPedidoVideo, montarPedidoVideoUgc } from '../server/agent/videoPedido.ts';
+import { escolherAvatar, faltaParaVideo, imagensDasCenas, montarPedidoVideo, montarPedidoVideoMeli, montarPedidoVideoUgc, produtoDoAnuncio } from '../server/agent/videoPedido.ts';
 import { achatarArvore, arvoreEmTexto, categoriasSemVinculo, normalizarArvore, vinculosDeProdutos, MAX_NIVEIS } from '../server/agent/categoriasRules.ts';
 import { chavePrevia } from '../server/agent/previewCache.ts';
 import { resolveApprovalMode } from '../server/agent/agentSettings.ts';
@@ -323,6 +323,18 @@ check('banners ativos', contarBannersAtivos([{ ativo: true }, { ativo: false }, 
   check('conta o que chegou, incompletos só entre os pais', [r.chegaram, r.principais, r.incompletos], [3, 2, 1]);
   check('o que falta, por campo', r.porCampo, { descricao: 1, foto: 1, seo: 1, sku: 0, preco: 0, categoria: 1 });
   check('exemplo diz o que falta', r.exemplos[0], { sku: 'N2', nome: 'Produto N2', falta: ['descrição', 'foto', 'SEO', 'categoria'] });
+}
+
+// --- vídeo e foto do anúncio do MELI pelo chat -------------------------------
+{
+  const anuncio = { itemId: 'MLB123', title: 'Tênis X', descricao: 'Leve e confortável', marca: 'Marca', fotos: ['https://ml/1.jpg', 'https://ml/2.jpg'], referencia: { imageUrl: 'https://ref/x.png' } };
+  const prod = produtoDoAnuncio(anuncio);
+  check('anúncio vira o produto sintético do estúdio', [prod._docId, prod['URL imagem externa 2'], prod['Descrição complementar']], ['meli-MLB123', 'https://ml/2.jpg', 'Leve e confortável']);
+  const ped = montarPedidoVideoMeli(anuncio);
+  check('pedido do anúncio leva o destino e a referência', [ped.destinoMeli, ped.inicio.productId, ped.inicio.productReferenceUrl], ['MLB123', 'meli-MLB123', 'https://ref/x.png']);
+  check('sem referência, falta a referência', faltaParaVideo(produtoDoAnuncio({ ...anuncio, referencia: null })).some((f) => f.startsWith('referência')), true);
+  check('vídeo do anúncio é trava fixa', resolveApprovalMode({ approvalMode: 'auto' }, 'meli.video.gerar'), 'ask');
+  check('foto e vídeo do MELI debitam dentro do serviço (nada aqui)', [creditActionsFor({ name: 'meli.foto.gerar', provider: 'meli' }).length, creditActionsFor({ name: 'meli.video.gerar', provider: 'meli' }).length], [0, 0]);
 }
 
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');

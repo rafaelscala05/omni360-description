@@ -21,7 +21,7 @@ export const estadoVideo = (a: Pick<AgentAction, 'result'>) => (a.result ?? {}) 
 export function videosParaIniciar(acoes: AgentAction[], agora = Date.now()): string[] {
   return acoes
     .filter((a) => {
-      if (a.tool !== 'produtos.video.gerar' || a.status !== 'executed') return false;
+      if ((a.tool !== 'produtos.video.gerar' && a.tool !== 'meli.video.gerar') || a.status !== 'executed') return false;
       const r = estadoVideo(a);
       if (!r.pedidoVideo || r.videoJobId || r.videoIniciadoEm || r.videoErro) return false;
       const quando = Date.parse(a.resolvedAt ?? a.createdAt);

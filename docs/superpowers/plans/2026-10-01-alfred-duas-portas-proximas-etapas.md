@@ -74,9 +74,19 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 - [x] Vídeo de produto — `produtos.video.gerar`; roda pelo app aberto (ver CLAUDE.md). UGC com avatar: `tipo: 'ugc'`.
 - [x] Envio ao ERP pelo chat — `tiny.catalogo.enviar` (Tiny v2), `wake.catalogo.enviar`, `bling.catalogo.enviar`, `idworks.catalogo.enviar`.
 - [x] Importar/exportar planilha — `produtos.planilha.exportar` (mesmo arquivo do botão, via `src/services/exportPlanilha.ts`, link do Storage) e `produtos.importacao.resumo` (o que chegou incompleto; as pendências já viram tarefas na semana). O upload da planilha continua pela tela (o chat não recebe arquivo).
-- [ ] MELI: vídeo studio e geração de foto (`/pictures/generate`) pelo chat.
-- [ ] Bling e IdWorks no chat (hoje só importação e envio).
+- [x] MELI: vídeo e geração de foto pelo chat — `meli.foto.gerar` (capa em fundo branco ou ambientada, entra na proposta como mudança pendente) e `meli.video.gerar` (trava fixa; mesmo produto sintético do `MeliVideoStudio`, roda pela rota de vídeo do Alfred e grava o link na mídia do anúncio).
+- [ ] Bling e IdWorks no chat além do envio do catálogo (hoje: `bling.catalogo.enviar`/`idworks.catalogo.enviar`; faltam leituras — produtos, estoque, pedidos — como as do Tiny).
 - [x] Mostrar o custo antes de gastar em **todas** as ferramentas que debitam (produzir artigo, regenerar capa e publicar em WordPress/Sanity levam `preview.custo`) (hoje só as mapeadas em `creditActionsFor`; as de conteúdo debitam mais fundo e não aparecem no `custo`).
+
+## Estado em 2026-10-01 (fim da sessão) — para quem assumir
+
+Branch `claude/fase-2-visual-implementation-v6j6f0`. Tudo de ce8a8f5 em diante é **local, não enviado ao GitHub** (`git log origin/claude/fase-2-visual-implementation-v6j6f0..HEAD`). Nada foi validado com login (o Google Sign-In não roda no ambiente do agente); foram rodados `tsc` (só os 5 erros antigos: `server/meli/mutations.ts`, `App.tsx` `createdAt`/`text_ai`, `ProductEditModal`), `npm run build` e os scripts `scripts/verify-*.mjs` do agente.
+
+Feito nesta sessão: envio do catálogo a Wake/Bling/IdWorks; vídeo UGC; ambientadas com cenas por categoria; semana com atributos, ambientadas, SEO, Tiny, Wake, fora do ERP, vídeo sugerido, missões, custo/tempo e histórico; A4 Conectores; D1 em 3 colunas; recibo com log; Ajustar no chat; cabeçalho da tarefa; Abrir na ferramenta; publicar artigo pela Atividade; F1/D2 com números (`/api/agent/numeros`); barra de seleção em MELI e Conteúdo; custo em todas as ferramentas; planilha pelo chat; foto e vídeo do MELI pelo chat.
+
+Antes de validar: republicar o serviço do grafo (`Dockerfile.contentAgent`) e o servidor principal; deploy de `firestore.rules` (regra nova `users/{uid}/semanas`) e `firestore.indexes.json`.
+
+**Falta** (os `[ ]` acima): trilho desktop de vidro, Liquid Glass no resto do app, notificações push, leituras de Bling/IdWorks no chat, "anúncios do MELI sem vídeo" como tarefa da semana (o número já existe em `/api/agent/numeros`; falta levar à semana), aprovação inline na coluna do D1, imagens de item descartado de ambientadas que ficam no Storage.
 
 ## Ordem sugerida
 

@@ -259,7 +259,7 @@ const ActionCard: React.FC<Props> = ({ uid, action, onExecutar, onRejeitar, onAj
         </label>
       )}
 
-      {action.status === 'executed' && action.tool === 'produtos.video.gerar' && <EstadoVideo action={action} />}
+      {action.status === 'executed' && (action.tool === 'produtos.video.gerar' || action.tool === 'meli.video.gerar') && <EstadoVideo action={action} />}
 
       {action.status === 'executed' && action.resolvedAt && <Recibo action={action} />}
 
