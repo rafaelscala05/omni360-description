@@ -18,9 +18,10 @@ import { makePreview } from '../preview';
 import { estimateCredits } from '../execution';
 import { criarLote } from '../loteStore';
 import { scheduleLote } from '../loteWorker';
-import { lerCatalogo, produtosCol } from '../produtosGeracao';
+import { lerCatalogo, lerCategorias, produtosCol } from '../produtosGeracao';
 import {
-  buscarProdutos, ehPai, faltando, nomeDe, selecionarParaDescricao, semDescricao, semImagem, skuDe,
+  buscarProdutos, ehPai, faltando, mesclarAtributos, nomeDe, selecionarParaAtributos, selecionarParaDescricao,
+  semDescricao, semImagem, skuDe,
   textoPuro, LOTE_PADRAO, MAX_DESCRICOES_POR_LOTE, MAX_SKUS_BUSCA,
   type DescricaoGerada, type ProdutoDoc,
 } from '../produtosRules';
@@ -207,5 +208,87 @@ registerTool<ArgsDescricoes>({
       gravadosIds.push(it.itemId);
     }
     return { gravados: gravados.length, produtos: gravados, pulados, gravadosIds, puladosIds };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Atributos da categoria — lote em job, como as descrições
+// ---------------------------------------------------------------------------
+
+const TOOL_ATRIBUTOS = 'produtos.atributos.gerar';
+
+interface ItemAtributos {
+  itemId: string;
+  docId: string;
+  nome: string;
+  atributos: { key: string; label: string; antes: string | string[] | null; valor: string | string[] }[];
+}
+
+registerTool<ArgsDescricoes>({
+  name: TOOL_ATRIBUTOS,
+  provider: 'produtos',
+  mode: 'write',
+  lote: true,
+  description: `Preenche com IA os atributos da categoria (cor, material, voltagem… — os definidos em Categorias) de produtos do catálogo do OMNI360, lendo os dados e a foto de cada um. Roda em segundo plano como lote: os atributos aparecem no card conforme ficam prontos e o usuário aprova lá. Só preenche atributos que a categoria define; produto sem categoria fica de fora. Sem "skus", pega os primeiros produtos principais com atributo vazio. No máximo ${MAX_DESCRICOES_POR_LOTE} por lote. Não gasta créditos.`,
+  schema: {
+    type: 'object',
+    properties: {
+      skus: { type: 'array', items: { type: 'string' }, description: 'SKUs específicos. Omitir para pegar os que têm atributo vazio.' },
+      limite: { type: 'integer', description: `Quantos produtos neste lote (1–${MAX_DESCRICOES_POR_LOTE}).` },
+    },
+  },
+  preview: async (ctx, a) => {
+    const args = { skus: a.skus ?? [], limite: a.limite ?? null };
+    const [catalogo, categorias] = await Promise.all([lerCatalogo(ctx.uid), lerCategorias(ctx.uid)]);
+    const { escolhidos, naoEncontrados, semCategoria, totalComVazios } = selecionarParaAtributos(catalogo, categorias, a);
+    if (!escolhidos.length) {
+      throw Object.assign(new Error(
+        semCategoria.length ? `Esses produtos não têm categoria com atributos definidos: ${semCategoria.join(', ')}. Defina a categoria (e os atributos dela) em Categorias primeiro.`
+          : naoEncontrados.length ? `Nenhum dos SKUs foi encontrado no catálogo: ${naoEncontrados.join(', ')}.`
+            : categorias.some((c) => c.attributes?.length) ? 'Nenhum produto principal com categoria tem atributo vazio.'
+              : 'Nenhuma categoria tem atributos definidos ainda — crie os atributos em Categorias primeiro.',
+      ), { status: 404 });
+    }
+    const avisos = [
+      'Grava só os atributos da categoria no catálogo do OMNI360. Atributo que você já confirmou não é trocado, e nada vai ao ERP.',
+      ...(semCategoria.length ? [`Sem categoria com atributos, ficaram de fora: ${semCategoria.join(', ')}.`] : []),
+      ...(naoEncontrados.length ? [`SKUs não encontrados: ${naoEncontrados.join(', ')}.`] : []),
+    ];
+    const restantes = totalComVazios - escolhidos.length;
+    if (!a.skus?.length && restantes > 0) avisos.push(`Depois deste lote ainda ficam ${restantes} produtos com atributo vazio.`);
+    const n = escolhidos.length;
+    const preview = {
+      resumo: `Preencher os atributos de ${n === 1 ? '1 produto' : `${n} produtos`}`,
+      alvo: n === 1 ? nomeDe(escolhidos[0]) : `${n} produtos do catálogo`,
+      campos: [{ campo: 'Produtos', antes: null, depois: escolhidos.map(nomeDe).join(', '), mudou: true }] as PreviewField[],
+      avisos,
+      custo: 0,
+    };
+    const { job, reaproveitado } = await criarLote({
+      uid: ctx.uid, tool: TOOL_ATRIBUTOS, provider: 'produtos', args,
+      itens: escolhidos.map((p) => ({ docId: p._docId, sku: skuDe(p), nome: nomeDe(p) })),
+      preview, auto: ctx.aprovacao === 'auto',
+    });
+    scheduleLote(ctx.uid, job.id);
+    return makePreview({ ...preview, payload: { lote: { id: job.id, actionId: job.actionId, reaproveitado } } });
+  },
+  execute: async (ctx, _a, preview) => {
+    const itens = ((preview.payload?.itens ?? []) as ItemAtributos[]);
+    if (ctx.dryRun) return { dryRun: true, gravadosIds: itens.map((i) => i.itemId), puladosIds: [], gravados: itens.length };
+    const gravadosIds: string[] = [];
+    const puladosIds: { id: string; motivo: string }[] = [];
+    const produtos: string[] = [];
+    for (const it of itens) {
+      const ref = produtosCol(ctx.uid).doc(it.docId);
+      const snap = await ref.get();
+      if (!snap.exists) { puladosIds.push({ id: it.itemId, motivo: 'removido do catálogo' }); continue; }
+      const atuais = (snap.data()?.attributes ?? {}) as Record<string, { value?: string | string[]; confirmed?: boolean }>;
+      const { atributos, aplicados } = mesclarAtributos(atuais, it.atributos);
+      if (!aplicados.length) { puladosIds.push({ id: it.itemId, motivo: 'os atributos mudaram desde que o lote começou' }); continue; }
+      await ref.update({ attributes: atributos, updatedAt: new Date().toISOString() });
+      gravadosIds.push(it.itemId);
+      produtos.push(it.nome);
+    }
+    return { gravados: gravadosIds.length, produtos, gravadosIds, puladosIds };
   },
 });

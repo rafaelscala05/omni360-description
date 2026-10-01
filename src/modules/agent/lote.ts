@@ -25,15 +25,27 @@ export interface ResultadoDescricao {
   palavrasChave: string;
 }
 
+/** Atributos da categoria preenchidos por IA: só os que mudam, com o valor de antes (a trava de concorrência). */
+export interface ResultadoAtributos {
+  atributos: { key: string; label: string; antes: string | string[] | null; valor: string | string[] }[];
+}
+
+/** Imagens ambientadas já geradas e salvas no Storage — aprovar só as acrescenta ao produto. */
+export interface ResultadoAmbientada {
+  imagens: string[];
+}
+
+export type ResultadoLote = ResultadoDescricao | ResultadoAtributos | ResultadoAmbientada;
+
 export interface ItemLote {
   id: string;
   docId: string;
   sku: string;
   nome: string;
   estado: EstadoItem;
-  /** Descrição no catálogo quando o lote nasceu — o "antes" e a trava de concorrência. */
-  descricaoAntes: string;
-  resultado?: ResultadoDescricao;
+  /** Descrição no catálogo quando o lote nasceu — o "antes" e a trava de concorrência (lote de descrições). */
+  descricaoAntes?: string;
+  resultado?: ResultadoLote;
   erro?: string;
 }
 
@@ -154,7 +166,7 @@ export function pegarProximo(job: LoteJob, leaseId: string, agora: number): { jo
 
 /** Registra o resultado da geração de um item. Ignora se o item já não está "gerando" (descartado no meio). */
 export function concluirGeracao(
-  job: LoteJob, itemId: string, saida: { resultado: ResultadoDescricao } | { erro: string }, agora: number,
+  job: LoteJob, itemId: string, saida: { resultado: ResultadoLote } | { erro: string }, agora: number,
 ): LoteJob {
   const itens = job.itens.map((i) => {
     if (i.id !== itemId || i.estado !== 'gerando') return i;
@@ -248,13 +260,41 @@ const textoPuro = (html: string) =>
   html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 const trecho = (s: string, n: number) => (s.length > n ? `${s.slice(0, n).trimEnd()}…` : s);
 
+export interface CampoAmostra {
+  campo: string;
+  antes: unknown;
+  depois: unknown;
+  mudou: boolean;
+  /** Imagens para mostrar como miniaturas em vez de texto (ambientadas). */
+  imagens?: string[];
+}
+
+const valorLegivel = (v: string | string[] | null) => (Array.isArray(v) ? v.join(', ') : v) || null;
+
 /** Antes/depois de um item pronto, no formato da amostra da aprovação. */
-export function camposDoItem(item: ItemLote): { campo: string; antes: unknown; depois: unknown; mudou: boolean }[] {
+export function camposDoItem(item: Pick<ItemLote, 'resultado' | 'descricaoAntes'>): CampoAmostra[] {
   const r = item.resultado;
   if (!r) return [];
+  if ('atributos' in r) {
+    return r.atributos.map((a) => ({ campo: a.label || a.key, antes: valorLegivel(a.antes), depois: valorLegivel(a.valor), mudou: true }));
+  }
+  if ('imagens' in r) {
+    return [{ campo: r.imagens.length === 1 ? 'Imagem ambientada' : `${r.imagens.length} imagens ambientadas`, antes: null, depois: null, mudou: true, imagens: r.imagens }];
+  }
   return [
-    { campo: 'Descrição', antes: trecho(textoPuro(item.descricaoAntes), 280) || null, depois: trecho(textoPuro(r.descricao), 600), mudou: true },
+    { campo: 'Descrição', antes: trecho(textoPuro(item.descricaoAntes ?? ''), 280) || null, depois: trecho(textoPuro(r.descricao), 600), mudou: true },
     { campo: 'Título SEO', antes: null, depois: r.tituloSeo, mudou: !!r.tituloSeo },
     { campo: 'Descrição SEO', antes: null, depois: r.descricaoSeo, mudou: !!r.descricaoSeo },
   ];
+}
+
+/** O que o lote faz, para títulos de card, Atividade e a faixa do composer. */
+export function nomeDoLote(tool: string, total: number): string {
+  const n = total === 1 ? '1 produto' : `${total} produtos`;
+  switch (tool) {
+    case 'produtos.descricoes.gerar': return `Descrições · ${n}`;
+    case 'produtos.atributos.gerar': return `Atributos · ${n}`;
+    case 'produtos.ambientadas.gerar': return `Imagens ambientadas · ${n}`;
+    default: return `Lote · ${n}`;
+  }
 }

@@ -29,7 +29,7 @@ export const Bloco: React.FC<{ rotulo: string; valor: unknown; destaque?: boolea
  * linhas ninguém lê no celular.
  */
 export const Amostra: React.FC<{
-  itens: { alvo: string; campos: PreviewField[] }[];
+  itens: { alvo: string; campos: (PreviewField & { imagens?: string[] })[] }[];
   /** Ação por item (ex.: "Descartar este" no lote), abaixo do antes/depois. */
   rodape?: (indice: number) => React.ReactNode;
 }> = ({ itens, rodape }) => {
@@ -66,7 +66,20 @@ export const Amostra: React.FC<{
         )}
       </div>
       {item.campos.map((c, k) => (
-        c.antes === null || c.antes === undefined || !c.mudou
+        c.imagens?.length
+          ? (
+            <div key={k} className="flex flex-col gap-1.5">
+              <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em]" style={{ color: 'var(--ag-ok)' }}>{c.campo}</div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {c.imagens.map((url) => (
+                  <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-[12px] overflow-hidden aspect-square" style={{ background: 'var(--ag-fill)' }}>
+                    <img src={url} alt="" loading="lazy" className="w-full h-full object-cover" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )
+          : c.antes === null || c.antes === undefined || !c.mudou
           ? <Bloco key={k} rotulo={c.campo} valor={c.depois} destaque={c.mudou} />
           : (
             <div key={k} className="grid gap-2">

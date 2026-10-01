@@ -10,16 +10,16 @@
 // estavam "gerando" voltam para a fila (reivindicar, em lote.ts).
 
 import { adminDb } from '../firebaseAdmin';
-import { concluirGeracao, pegarProximo, reivindicar, type ItemLote, type ResultadoDescricao } from '../../src/modules/agent/lote';
+import { concluirGeracao, pegarProximo, reivindicar, type ItemLote, type ResultadoLote } from '../../src/modules/agent/lote';
 import { mutarLote, novoLeaseId } from './loteStore';
 import { aprovarLote } from './loteAprovacao';
-import { clienteVertex, gerarDescricao, lerCatalogo } from './produtosGeracao';
-import type { ProdutoDoc } from './produtosRules';
+import { clienteVertex, gerarAtributos, gerarDescricao, lerCatalogo, lerCategorias } from './produtosGeracao';
+import { atributosEfetivos, type ProdutoDoc } from './produtosRules';
 
 /** Quantos itens um worker escreve ao mesmo tempo — o Vertex limita requisições por minuto. */
 const CONCORRENCIA = 2;
 
-interface Sessao { gerar(item: ItemLote): Promise<ResultadoDescricao> }
+interface Sessao { gerar(item: ItemLote): Promise<ResultadoLote> }
 
 /**
  * Como cada ferramenta de lote escreve um item. `preparar` roda uma vez por
@@ -35,6 +35,20 @@ const GERADORES: Record<string, (uid: string) => Promise<Sessao>> = {
         const p = porDoc.get(item.docId);
         if (!p) throw new Error('o produto foi removido do catálogo');
         return gerarDescricao(ai, p, catalogo);
+      },
+    };
+  },
+  'produtos.atributos.gerar': async (uid) => {
+    const [catalogo, categorias] = await Promise.all([lerCatalogo(uid), lerCategorias(uid)]);
+    const porDoc = new Map<string, ProdutoDoc>(catalogo.map((p) => [p._docId, p]));
+    const ai = clienteVertex();
+    return {
+      async gerar(item) {
+        const p = porDoc.get(item.docId);
+        if (!p) throw new Error('o produto foi removido do catálogo');
+        const defs = atributosEfetivos(typeof p.categoryId === 'string' ? p.categoryId : undefined, categorias);
+        if (!defs.length) throw new Error('a categoria do produto não tem atributos');
+        return gerarAtributos(ai, p, defs);
       },
     };
   },
@@ -78,7 +92,7 @@ async function rodar(uid: string, id: string): Promise<void> {
       });
       if (!pego.item) return;
       const atual = pego.item;
-      let saida: { resultado: ResultadoDescricao } | { erro: string };
+      let saida: { resultado: ResultadoLote } | { erro: string };
       try {
         saida = { resultado: await sessao.gerar(atual) };
       } catch (e) {

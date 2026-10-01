@@ -3,7 +3,7 @@
 // Rodar com: npx tsx scripts/verify-lote.mjs
 import {
   reivindicar, pegarProximo, concluirGeracao, pausar, retomar, parar, descartar, reservarParaGravar,
-  concluirGravacao, resumoLote, statusDerivado, statusDaAcao, linhaProgresso, camposDoItem, LEASE_MS,
+  concluirGravacao, resumoLote, statusDerivado, statusDaAcao, linhaProgresso, camposDoItem, nomeDoLote, LEASE_MS,
 } from '../src/modules/agent/lote.ts';
 
 let failures = 0;
@@ -83,6 +83,11 @@ check('resumo', resumoLote(k), { total: 3, fila: 0, gerando: 0, prontos: 0, grav
 check('status derivado de lote vazio de trabalho', statusDerivado({ status: 'rodando', itens: [] }), 'concluido');
 check('campos da amostra', camposDoItem({ descricaoAntes: '<b>Velha</b>', resultado: R }).map((c) => [c.campo, c.antes, c.depois]),
   [['Descrição', 'Velha', 'Nova'], ['Título SEO', null, 'T'], ['Descrição SEO', null, 'D']]);
+
+check('campos de atributos', camposDoItem({ resultado: { atributos: [{ key: 'cor', label: 'Cor', antes: null, valor: 'Preto' }, { key: 'u', label: '', antes: ['Sala'], valor: ['Sala', 'Quarto'] }] } }).map((c) => [c.campo, c.antes, c.depois]),
+  [['Cor', null, 'Preto'], ['u', 'Sala', 'Sala, Quarto']]);
+check('campos de ambientadas viram miniaturas', camposDoItem({ resultado: { imagens: ['a', 'b'] } }).map((c) => [c.campo, c.imagens]), [['2 imagens ambientadas', ['a', 'b']]]);
+check('nome do lote por ferramenta', [nomeDoLote('produtos.atributos.gerar', 1), nomeDoLote('x', 3)], ['Atributos · 1 produto', 'Lote · 3 produtos']);
 
 if (failures) { console.error(`\n${failures} falha(s).`); process.exit(1); }
 console.log('\nTudo certo.');

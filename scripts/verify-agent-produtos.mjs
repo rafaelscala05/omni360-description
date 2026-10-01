@@ -2,6 +2,7 @@
 // (server/agent/produtosRules.ts). Não chama o Vertex nem o Firestore.
 // Rodar com: npx tsx scripts/verify-agent-produtos.mjs
 import {
+  atributosEfetivos, atributosVazios, mesclarAtributos, normalizarAtributos, selecionarParaAtributos,
   buscarProdutos, cortarHtml, faltando, normalizarGeracao, selecionarParaDescricao, textoPuro, variacoesDoPai,
   LOTE_PADRAO, MAX_DESCRICOES_POR_LOTE, MAX_HTML, MAX_SKUS_BUSCA,
 } from '../server/agent/produtosRules.ts';
@@ -99,6 +100,39 @@ check('publicar no MELI não debita', creditActionsFor({ name: 'meli.proposta.pu
   const linhas = linhasDoContexto({ tela: 'produtos', skus: ['A', 'B'], totalSelecionados: 12 });
   check('prompt cita o corte e os SKUs', [linhas.length, linhas[0].includes('os primeiros 2 de 12'), linhas[0].includes('SKUs: A, B.')], [1, true, true]);
   check('projeto de conteúdo segue no prompt', linhasDoContexto({ projetoId: 'p1', projetoNome: 'Blog' })[0], 'Contexto do workspace: o projeto aberto agora é "Blog" (projectId: p1).');
+}
+
+// --- atributos da categoria -----------------------------------------------
+{
+  const cats = [
+    { id: 'raiz', attributes: [{ key: 'cor', label: 'Cor', type: 'select', options: ['Preto', 'Branco'] }, { key: 'material', label: 'Material', type: 'text' }] },
+    { id: 'filha', pathIds: ['raiz'], attributes: [{ key: 'cor', label: 'Cor da peça', type: 'select', options: ['Preto', 'Cinza'] }, { key: 'usos', label: 'Usos', type: 'multiselect', options: ['Sala', 'Quarto'] }] },
+    { id: 'semattr', attributes: [] },
+  ];
+  const defs = atributosEfetivos('filha', cats);
+  check('efetivos: herda do pai e o filho sobrescreve a chave', defs.map((d) => `${d.key}:${d.label}`), ['cor:Cor da peça', 'material:Material', 'usos:Usos']);
+  check('efetivos de categoria inexistente', atributosEfetivos('x', cats), []);
+  const prod = p('M1', { categoryId: 'filha', attributes: { material: { value: 'Aço', confirmed: true } } });
+  check('vazios ignoram os preenchidos', atributosVazios(prod, defs).map((d) => d.key), ['cor', 'usos']);
+
+  const cat2 = [prod, p('M2', { categoryId: 'semattr' }), p('M3'), p('M4', { categoryId: 'filha', attributes: { cor: { value: 'Preto' }, material: { value: 'x' }, usos: { value: ['Sala'] } } })];
+  const sel = selecionarParaAtributos(cat2, cats, {});
+  check('seleção padrão: só quem tem categoria com atributo vazio', [sel.escolhidos.map((x) => x['Código (SKU)']), sel.totalComVazios], [['M1'], 1]);
+  const sel2 = selecionarParaAtributos(cat2, cats, { skus: ['M2', 'M4', 'ZZ'] });
+  check('com SKUs: sem categoria vai para semCategoria, e o pedido explícito vale mesmo completo', [sel2.escolhidos.map((x) => x['Código (SKU)']), sel2.semCategoria, sel2.naoEncontrados], [['M4'], ['Produto M2'], ['ZZ']]);
+
+  const atuais = { material: { value: 'Aço', confirmed: true }, cor: { value: 'Cinza' } };
+  const norm = normalizarAtributos({ attributes: {
+    cor: { value: 'preto' }, material: { value: 'Ferro' }, usos: { value: ['sala', 'Cozinha', 'Sala'] }, inventado: { value: 'x' },
+  } }, defs, atuais);
+  check('normaliza: opção na grafia certa, confirmado intocado, multiselect só com opções válidas, chave fora da categoria some',
+    norm, [{ key: 'cor', label: 'Cor da peça', antes: 'Cinza', valor: 'Preto' }, { key: 'usos', label: 'Usos', antes: null, valor: ['Sala'] }]);
+  check('normaliza: opção fora da lista e valor igual ao atual são descartados',
+    normalizarAtributos({ attributes: { cor: { value: 'Roxo' }, usos: { value: [] } } }, defs, {}).length + normalizarAtributos({ attributes: { cor: { value: 'Cinza' } } }, defs, atuais).length, 0);
+
+  const m = mesclarAtributos({ cor: { value: 'Branco' }, usos: { value: [] } }, norm);
+  check('mescla: chave editada no meio é pulada, vazia é preenchida', [m.aplicados, m.pulados, m.atributos.usos.value, m.atributos.cor.value], [['usos'], ['cor'], ['Sala'], 'Branco']);
+  check('mescla marca como sugestão de IA não confirmada', [m.atributos.usos.source, m.atributos.usos.confirmed], ['ai', false]);
 }
 
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');

@@ -7,7 +7,7 @@
 // nomes dos produtos, devolve as linhas. Verificar com
 // `npx tsx scripts/verify-rodando.mjs`.
 
-import { resumoLote, type LoteJob } from './lote';
+import { nomeDoLote, resumoLote, type LoteJob } from './lote';
 
 export interface JobVideo {
   jobId: string;
@@ -81,7 +81,7 @@ export function itensRodando(
     linhas.push({
       id: `Lote-${l.id}`,
       tipo: 'lote',
-      titulo: l.tool === 'produtos.descricoes.gerar' ? `Descrições · ${total === 1 ? '1 produto' : `${total} produtos`}` : `Lote · ${total} itens`,
+      titulo: nomeDoLote(l.tool, total),
       etapa: l.status === 'pausado'
         ? 'pausado'
         : r.agora ? `agora: ${r.agora}` : 'na fila',

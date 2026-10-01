@@ -16,6 +16,8 @@ export function carregarAutonomia() {
 /** Nome da ação para o "Próximas … : aprovar sozinho". */
 export function rotuloAutonomia(tool: string): string {
   if (tool === 'produtos.descricoes.gerar') return 'Próximas descrições';
+  if (tool === 'produtos.atributos.gerar') return 'Próximos atributos';
+  if (tool === 'produtos.ambientadas.gerar') return 'Próximas imagens ambientadas';
   if (tool.startsWith('wake.') || tool.startsWith('tiny.')) return 'Próximas alterações deste tipo';
   return 'Próximas vezes';
 }

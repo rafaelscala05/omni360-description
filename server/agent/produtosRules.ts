@@ -142,3 +142,139 @@ export function cortarHtml(html: string, max: number): string {
   const fim = corte.indexOf('>', ultimo);
   return fim === -1 ? corte.slice(0, ultimo) : corte.slice(0, fim + 1);
 }
+
+// ---------------------------------------------------------------------------
+// Atributos por categoria (produtos.atributos.gerar)
+// ---------------------------------------------------------------------------
+
+export interface DefAtributo {
+  key: string;
+  label: string;
+  type: string;
+  options?: string[];
+  order?: number;
+}
+export interface CategoriaDoc {
+  id: string;
+  name?: string;
+  pathIds?: string[];
+  attributes?: DefAtributo[];
+}
+type ValorAtributo = { value?: string | string[]; confirmed?: boolean; source?: string };
+
+/**
+ * Mesma regra de getEffectiveAttributes (src/services/categoryService.ts): os
+ * atributos da categoria e dos ancestrais, o filho sobrescrevendo o pai na
+ * mesma chave. Copiada aqui porque o serviço do cliente importa o Firebase.
+ */
+export function atributosEfetivos(categoryId: string | undefined, categorias: CategoriaDoc[]): DefAtributo[] {
+  const cat = categorias.find((c) => c.id === categoryId);
+  if (!cat) return [];
+  const ids = [...new Set([...(Array.isArray(cat.pathIds) ? cat.pathIds : []), cat.id])];
+  const mapa = new Map<string, DefAtributo>();
+  for (const id of ids) {
+    for (const a of categorias.find((c) => c.id === id)?.attributes ?? []) {
+      if (a?.key) mapa.set(a.key, a);
+    }
+  }
+  return [...mapa.values()];
+}
+
+const vazio = (v: unknown) => (Array.isArray(v) ? v.length === 0 : !str(v));
+
+/** Atributos da categoria ainda sem valor no produto. */
+export function atributosVazios(p: Record<string, unknown>, defs: DefAtributo[]): DefAtributo[] {
+  const atuais = (p.attributes ?? {}) as Record<string, ValorAtributo>;
+  return defs.filter((d) => vazio(atuais[d.key]?.value));
+}
+
+/**
+ * Quem entra no lote de atributos. Sem SKUs, os primeiros pais com categoria e
+ * pelo menos um atributo vazio — sem categoria não há o que preencher (a lista
+ * de atributos vem dela). Com SKUs, os pedidos que têm categoria; os outros
+ * voltam em `semCategoria` para o card avisar.
+ */
+export function selecionarParaAtributos(
+  produtos: ProdutoDoc[],
+  categorias: CategoriaDoc[],
+  opts: { skus?: string[]; limite?: number },
+): { escolhidos: ProdutoDoc[]; naoEncontrados: string[]; semCategoria: string[]; totalComVazios: number } {
+  const limite = Math.min(MAX_DESCRICOES_POR_LOTE, Math.max(1, Math.floor(opts.limite ?? (opts.skus?.length || LOTE_PADRAO))));
+  const defsDe = (p: ProdutoDoc) => atributosEfetivos(str(p.categoryId) || undefined, categorias);
+  const comVazios = produtos.filter((p) => ehPai(p) && atributosVazios(p, defsDe(p)).length > 0);
+
+  if (opts.skus?.length) {
+    const porSku = new Map(produtos.map((p) => [skuDe(p).toLowerCase(), p]));
+    const escolhidos: ProdutoDoc[] = [];
+    const naoEncontrados: string[] = [];
+    const semCategoria: string[] = [];
+    for (const sku of opts.skus) {
+      const p = porSku.get(String(sku).trim().toLowerCase());
+      if (!p) { naoEncontrados.push(String(sku)); continue; }
+      if (!defsDe(p).length) { semCategoria.push(nomeDe(p)); continue; }
+      if (!escolhidos.includes(p)) escolhidos.push(p);
+    }
+    return { escolhidos: escolhidos.slice(0, limite), naoEncontrados, semCategoria, totalComVazios: comVazios.length };
+  }
+  return { escolhidos: comVazios.slice(0, limite), naoEncontrados: [], semCategoria: [], totalComVazios: comVazios.length };
+}
+
+const igual = (a: unknown, b: unknown) => JSON.stringify(Array.isArray(a) ? [...a].sort() : str(a)) === JSON.stringify(Array.isArray(b) ? [...b].sort() : str(b));
+
+/**
+ * Limpa a resposta do modelo: só chaves da categoria; em select/multiselect,
+ * só opções permitidas (casando sem diferença de maiúsculas e devolvendo a
+ * grafia da opção); nada que o usuário confirmou; nada igual ao que já está.
+ */
+export function normalizarAtributos(
+  raw: unknown,
+  defs: DefAtributo[],
+  atuais: Record<string, ValorAtributo> = {},
+): { key: string; label: string; antes: string | string[] | null; valor: string | string[] }[] {
+  const r = ((raw ?? {}) as { attributes?: Record<string, { value?: unknown }> }).attributes ?? {};
+  const out: { key: string; label: string; antes: string | string[] | null; valor: string | string[] }[] = [];
+  for (const d of defs) {
+    const bruto = r[d.key]?.value;
+    if (bruto === undefined || bruto === null) continue;
+    const atual = atuais[d.key];
+    if (atual?.confirmed && !vazio(atual.value)) continue;
+    const opcoes = d.options ?? [];
+    const casar = (v: unknown) => {
+      const s = str(v);
+      if (!s) return null;
+      if (!opcoes.length || (d.type !== 'select' && d.type !== 'multiselect')) return s;
+      return opcoes.find((o) => o.toLowerCase() === s.toLowerCase()) ?? null;
+    };
+    let valor: string | string[] | null;
+    if (d.type === 'multiselect') {
+      const lista = (Array.isArray(bruto) ? bruto : String(bruto).split(',')).map(casar).filter((v): v is string => !!v);
+      valor = lista.length ? [...new Set(lista)] : null;
+    } else {
+      valor = casar(Array.isArray(bruto) ? bruto[0] : bruto);
+    }
+    if (valor === null || igual(valor, atual?.value)) continue;
+    out.push({ key: d.key, label: d.label || d.key, antes: vazio(atual?.value) ? null : (atual!.value as string | string[]), valor });
+  }
+  return out;
+}
+
+/**
+ * Aplica as sugestões aprovadas sobre os atributos de agora. Uma chave cujo
+ * valor mudou desde que o lote começou (o usuário editou no meio) é pulada:
+ * vale o que ele escreveu.
+ */
+export function mesclarAtributos(
+  atuais: Record<string, ValorAtributo>,
+  sugeridos: { key: string; antes: string | string[] | null; valor: string | string[] }[],
+): { atributos: Record<string, unknown>; aplicados: string[]; pulados: string[] } {
+  const atributos: Record<string, unknown> = { ...atuais };
+  const aplicados: string[] = [];
+  const pulados: string[] = [];
+  for (const s of sugeridos) {
+    const agora = atuais[s.key]?.value;
+    if (!igual(vazio(agora) ? null : agora, s.antes)) { pulados.push(s.key); continue; }
+    atributos[s.key] = { value: s.valor, aiSuggested: true, confirmed: false, source: 'ai' };
+    aplicados.push(s.key);
+  }
+  return { atributos, aplicados, pulados };
+}

@@ -8,7 +8,12 @@ import { GoogleGenAI } from '@google/genai';
 import firebaseAppletConfig from '../../firebase-applet-config.json';
 import { adminDb } from '../firebaseAdmin';
 import { defaultTemplate, fillTemplate } from '../../src/services/descriptionTemplate';
-import { normalizarGeracao, skuDe, variacoesDoPai, type DescricaoGerada, type ProdutoDoc } from './produtosRules';
+import {
+  normalizarAtributos, normalizarGeracao, skuDe, textoPuro, variacoesDoPai,
+  type CategoriaDoc, type DefAtributo, type DescricaoGerada, type ProdutoDoc,
+} from './produtosRules';
+import { fetchImageAsBase64 } from '../safeUrl';
+import type { ResultadoAtributos } from '../../src/modules/agent/lote';
 
 const TEXT_MODEL = 'gemini-2.5-flash';
 const VERTEX_PROJECT = process.env.VERTEX_PROJECT_ID || firebaseAppletConfig.projectId;
@@ -72,4 +77,81 @@ export function clienteVertex(): GoogleGenAI {
   if (!VERTEX_PROJECT) throw Object.assign(new Error('VERTEX_PROJECT_ID não configurado no servidor.'), { status: 500 });
   cliente ??= new GoogleGenAI({ vertexai: true, project: VERTEX_PROJECT, location: VERTEX_LOCATION });
   return cliente;
+}
+
+// ---------------------------------------------------------------------------
+// Atributos da categoria — o mesmo pedido de suggestProductAttributes
+// (src/services/productService.ts), mas texto e foto numa chamada só.
+// ---------------------------------------------------------------------------
+
+export async function lerCategorias(uid: string): Promise<CategoriaDoc[]> {
+  const snap = await adminDb.collection('users').doc(uid).collection('categories').get();
+  return snap.docs.map((d) => ({ ...(d.data() as Omit<CategoriaDoc, 'id'>), id: d.id }));
+}
+
+/** Primeira foto pública do produto, para a IA olhar cor, material, formato. Sem foto (ou foto inacessível), segue só com o texto. */
+async function fotoDoProduto(p: ProdutoDoc): Promise<{ mimeType: string; data: string } | null> {
+  const url = [p._selectedImage, ...Object.keys(p).filter((k) => /^URL imagem/i.test(k)).sort().map((k) => p[k])]
+    .map((v) => (typeof v === 'string' ? v.trim() : ''))
+    .find((v) => /^https:\/\//i.test(v));
+  if (!url) return null;
+  try {
+    const img = await fetchImageAsBase64(url, 6 * 1024 * 1024);
+    return { mimeType: img.contentType, data: img.base64 };
+  } catch {
+    return null;
+  }
+}
+
+export async function gerarAtributos(ai: GoogleGenAI, produto: ProdutoDoc, defs: DefAtributo[]): Promise<ResultadoAtributos> {
+  const atuais = (produto.attributes ?? {}) as Record<string, { value?: string | string[]; confirmed?: boolean }>;
+  const lista = defs.map((d) => {
+    const v = atuais[d.key]?.value;
+    const estado = v && (!Array.isArray(v) || v.length) ? ` (Valor atual: ${JSON.stringify(v)})` : ' (Vazio)';
+    return `- ${d.key} (${d.label}): Tipo: ${d.type}, Opções permitidas: ${d.options?.length ? d.options.join(', ') : 'Qualquer'}${estado}`;
+  }).join('\n');
+  const texto = `
+Você é um assistente especialista em catálogo de e-commerce.
+Analise o produto (dados e, se houver, a foto anexada) e preencha os atributos esperados da categoria.
+
+Produto:
+Nome: ${produto['Descrição'] ?? ''}
+Marca: ${produto['Marca'] ?? ''}
+Categoria: ${Array.isArray(produto.categoryPath) ? (produto.categoryPath as string[]).join(' > ') : produto['Categoria'] ?? ''}
+Descrição: ${textoPuro(String(produto['Descrição complementar'] ?? '')).slice(0, 3000)}
+
+Atributos esperados:
+${lista}
+
+Instruções:
+1. Preencha os atributos "(Vazio)" com o que os dados ou a foto mostram. Em PORTUGUÊS DO BRASIL.
+2. Só sugira mudar um "(Valor atual)" se ele estiver claramente errado.
+3. Em 'select' e 'multiselect', escolha EXATAMENTE entre as opções permitidas; sem certeza, não sugira.
+4. Não invente medidas, materiais ou especificações que não estejam nos dados ou visíveis na foto.
+
+Retorne APENAS este JSON:
+{ "attributes": { "ChaveDoAtributo": { "value": "Valor", "confidence": 0.9 } } }`;
+  const foto = await fotoDoProduto(produto);
+  const parts = foto ? [{ inlineData: foto }, { text: texto }] : [{ text: texto }];
+  let ultimoErro: unknown;
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    try {
+      const resp = await ai.models.generateContent({
+        model: TEXT_MODEL,
+        contents: [{ role: 'user', parts }],
+        config: { temperature: 0.2, maxOutputTokens: 4096, responseMimeType: 'application/json' },
+      });
+      const bruto = (resp.text ?? '').trim().replace(/^```json\s*/i, '').replace(/```$/, '');
+      const atributos = normalizarAtributos(JSON.parse(bruto || '{}'), defs, atuais);
+      if (!atributos.length) throw Object.assign(new Error('a IA não encontrou atributos para preencher'), { definitivo: true });
+      return { atributos };
+    } catch (e) {
+      ultimoErro = e;
+      if ((e as { definitivo?: boolean }).definitivo) break;
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/503|UNAVAILABLE|high demand|temporarily|JSON/i.test(msg) || tentativa === 3) break;
+      await new Promise((r) => setTimeout(r, tentativa * 1000));
+    }
+  }
+  throw ultimoErro;
 }

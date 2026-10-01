@@ -38,7 +38,7 @@ export async function aprovarLote(uid: string, id: string, ids: string[] | null)
     avisos: [],
     payload: {
       itens: reservados.map((i) => ({
-        itemId: i.id, docId: i.docId, sku: i.sku, nome: i.nome, descricaoAntes: i.descricaoAntes, ...i.resultado,
+        itemId: i.id, docId: i.docId, sku: i.sku, nome: i.nome, descricaoAntes: i.descricaoAntes ?? '', ...i.resultado,
       })),
     },
   };

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Pause, Play } from 'lucide-react';
 import { agirNoLote, listenLotesAtivos } from '../../../services/agentChatService';
-import { linhaProgresso, type LoteJob } from '../lote';
+import { linhaProgresso, nomeDoLote, type LoteJob } from '../lote';
 
 /**
  * Faixa acima do campo de digitar enquanto um lote do Alfred trabalha (A2:
@@ -31,7 +31,7 @@ const LoteEmAndamento: React.FC<{ uid: string }> = ({ uid }) => {
         aria-hidden
       />
       <span className="flex-1 min-w-0 text-[12.5px] text-[var(--ag-text-2)] truncate tabular-nums" aria-live="polite">
-        <span className="font-semibold text-[var(--ag-text)]">{pausado ? 'Lote pausado' : 'Escrevendo'}</span> · {linhaProgresso(lote)}
+        <span className="font-semibold text-[var(--ag-text)]">{nomeDoLote(lote.tool, lote.itens.length)}</span> · {linhaProgresso(lote)}
       </span>
       <button
         onClick={() => void alternar()}
