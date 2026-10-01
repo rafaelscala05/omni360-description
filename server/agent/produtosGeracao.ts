@@ -4,16 +4,19 @@
 // Usada pelo worker do lote (loteWorker.ts). Extraída de tools/produtos.ts
 // quando a geração saiu do preview() e passou a rodar item a item em job.
 
+import crypto from 'node:crypto';
+import sharp from 'sharp';
 import { GoogleGenAI } from '@google/genai';
 import firebaseAppletConfig from '../../firebase-applet-config.json';
-import { adminDb } from '../firebaseAdmin';
+import { adminDb, adminStorage } from '../firebaseAdmin';
+import { buildAmbientPromptRequest } from '../../src/services/ambientPrompt';
 import { defaultTemplate, fillTemplate } from '../../src/services/descriptionTemplate';
 import {
   normalizarAtributos, normalizarGeracao, skuDe, textoPuro, variacoesDoPai,
   type CategoriaDoc, type DefAtributo, type DescricaoGerada, type ProdutoDoc,
 } from './produtosRules';
 import { fetchImageAsBase64 } from '../safeUrl';
-import type { ResultadoAtributos } from '../../src/modules/agent/lote';
+import type { ResultadoAmbientada, ResultadoAtributos } from '../../src/modules/agent/lote';
 
 const TEXT_MODEL = 'gemini-2.5-flash';
 const VERTEX_PROJECT = process.env.VERTEX_PROJECT_ID || firebaseAppletConfig.projectId;
@@ -186,4 +189,93 @@ Retorne SOMENTE este JSON:
   });
   const texto = (resp.text ?? '').trim().replace(/^```json\s*/i, '').replace(/```$/, '');
   return JSON.parse(texto || '{}');
+}
+
+// ---------------------------------------------------------------------------
+// Imagens ambientadas — o mesmo fluxo do ImageSearchModal: a IA olha a foto e
+// escreve 3 cenas (buildAmbientPromptRequest), o modelo de imagem gera cada
+// uma a partir da foto real, e as 3 vão para o Storage.
+// ---------------------------------------------------------------------------
+
+const IMAGE_MODEL = process.env.AMBIENT_IMAGE_MODEL || 'gemini-2.5-flash-image';
+const STORAGE_BUCKET = firebaseAppletConfig.storageBucket;
+/** Lado das ambientadas salvas (quadradas, como o padrão 1:1 do modal). */
+const LADO_AMBIENTADA = 1200;
+
+let clienteImagem: GoogleGenAI | null = null;
+/** O modelo de imagem só responde na região global do Vertex (ver server/meli/pictureGenerator.ts). */
+function vertexImagem(): GoogleGenAI {
+  if (!VERTEX_PROJECT) throw Object.assign(new Error('VERTEX_PROJECT_ID não configurado no servidor.'), { status: 500 });
+  clienteImagem ??= new GoogleGenAI({ vertexai: true, project: VERTEX_PROJECT, location: 'global' });
+  return clienteImagem;
+}
+
+export function fotoPrincipal(p: Record<string, unknown>): string | null {
+  const url = [p._selectedImage, p['URL imagem 1']].map((v) => (typeof v === 'string' ? v.trim() : '')).find((v) => /^https:\/\//i.test(v));
+  return url ?? null;
+}
+
+async function comRetentativa<T>(fn: () => Promise<T>, tentativas = 3): Promise<T> {
+  let ultimo: unknown;
+  for (let i = 1; i <= tentativas; i++) {
+    try { return await fn(); } catch (e) {
+      ultimo = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/429|503|RESOURCE_EXHAUSTED|UNAVAILABLE|quota|temporarily/i.test(msg) || i === tentativas) break;
+      await new Promise((r) => setTimeout(r, i * 2000));
+    }
+  }
+  throw ultimo;
+}
+
+export async function gerarAmbientadas(uid: string, ai: GoogleGenAI, produto: ProdutoDoc): Promise<ResultadoAmbientada> {
+  const url = fotoPrincipal(produto);
+  if (!url) throw new Error('o produto não tem foto pública (https) para servir de base');
+  const original = await fetchImageAsBase64(url, 8 * 1024 * 1024);
+  const base = await sharp(Buffer.from(original.base64, 'base64')).rotate()
+    .resize({ width: 1024, height: 1024, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 90 }).toBuffer();
+  const foto = { mimeType: 'image/jpeg', data: base.toString('base64') };
+
+  const pedido = buildAmbientPromptRequest({
+    productName: String(produto['Descrição'] ?? ''),
+    brand: String(produto['Marca'] ?? ''),
+    category: String(produto['Categoria'] ?? ''),
+    description: textoPuro(String(produto['Descrição complementar'] ?? '')).slice(0, 2000),
+  }, true);
+  const roteiro = await comRetentativa(async () => {
+    const resp = await ai.models.generateContent({
+      model: TEXT_MODEL,
+      contents: [{ role: 'user', parts: [{ inlineData: foto }, { text: pedido }] }],
+      config: { temperature: 0.7, responseMimeType: 'application/json' },
+    });
+    const r = JSON.parse((resp.text ?? '').trim().replace(/^```json\s*/i, '').replace(/```$/, '') || '{}') as { prompts?: unknown };
+    if (!Array.isArray(r.prompts) || r.prompts.length !== 3) throw new Error('JSON: a IA não devolveu as 3 cenas');
+    return r.prompts.map(String);
+  });
+
+  const imagens: string[] = [];
+  for (const [i, cena] of roteiro.entries()) {
+    try {
+      const resp = await comRetentativa(() => vertexImagem().models.generateContent({
+        model: IMAGE_MODEL,
+        contents: [{ role: 'user', parts: [{ inlineData: foto }, { text: cena }] }],
+        config: { responseModalities: ['TEXT', 'IMAGE'] },
+      }));
+      const dados = resp.candidates?.[0]?.content?.parts?.find((part) => part.inlineData?.data)?.inlineData?.data;
+      if (!dados) continue;
+      const saida = await sharp(Buffer.from(dados, 'base64')).rotate()
+        .resize(LADO_AMBIENTADA, LADO_AMBIENTADA, { fit: 'cover', position: 'attention' }).jpeg({ quality: 88 }).toBuffer();
+      const caminho = `users/${uid}/product-images/alfred_${produto._docId}_${Date.now()}_${i}.jpg`;
+      const token = crypto.randomUUID();
+      await adminStorage.bucket(STORAGE_BUCKET).file(caminho).save(saida, {
+        contentType: 'image/jpeg', resumable: false, metadata: { metadata: { firebaseStorageDownloadTokens: token } },
+      });
+      imagens.push(`https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/${encodeURIComponent(caminho)}?alt=media&token=${token}`);
+    } catch (e) {
+      // Uma cena que falha não derruba as outras; nenhuma imagem é falha do item.
+      if (i === roteiro.length - 1 && !imagens.length) throw e;
+    }
+  }
+  if (!imagens.length) throw new Error('o modelo de imagem não devolveu nenhuma ambientação');
+  return { imagens };
 }

@@ -13,7 +13,7 @@ import { adminDb } from '../firebaseAdmin';
 import { concluirGeracao, pegarProximo, reivindicar, type ItemLote, type ResultadoLote } from '../../src/modules/agent/lote';
 import { mutarLote, novoLeaseId } from './loteStore';
 import { aprovarLote } from './loteAprovacao';
-import { clienteVertex, gerarAtributos, gerarDescricao, lerCatalogo, lerCategorias } from './produtosGeracao';
+import { clienteVertex, gerarAmbientadas, gerarAtributos, gerarDescricao, lerCatalogo, lerCategorias } from './produtosGeracao';
 import { atributosEfetivos, type ProdutoDoc } from './produtosRules';
 
 /** Quantos itens um worker escreve ao mesmo tempo — o Vertex limita requisições por minuto. */
@@ -35,6 +35,18 @@ const GERADORES: Record<string, (uid: string) => Promise<Sessao>> = {
         const p = porDoc.get(item.docId);
         if (!p) throw new Error('o produto foi removido do catálogo');
         return gerarDescricao(ai, p, catalogo);
+      },
+    };
+  },
+  'produtos.ambientadas.gerar': async (uid) => {
+    const catalogo = await lerCatalogo(uid);
+    const porDoc = new Map<string, ProdutoDoc>(catalogo.map((p) => [p._docId, p]));
+    const ai = clienteVertex();
+    return {
+      async gerar(item) {
+        const p = porDoc.get(item.docId);
+        if (!p) throw new Error('o produto foi removido do catálogo');
+        return gerarAmbientadas(uid, ai, p);
       },
     };
   },

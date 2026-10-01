@@ -21,7 +21,7 @@ import { assertNoActiveVideoJob } from '../../videoShared';
 import { faltaParaVideo, montarPedidoVideo, type PedidoVideo } from '../videoPedido';
 import { criarLote } from '../loteStore';
 import { scheduleLote } from '../loteWorker';
-import { clienteVertex, gerarArvore, lerCatalogo, lerCategorias, produtosCol } from '../produtosGeracao';
+import { clienteVertex, fotoPrincipal, gerarArvore, lerCatalogo, lerCategorias, produtosCol } from '../produtosGeracao';
 import { comCache, esquecerPrevia } from '../previewCache';
 import {
   achatarArvore, arvoreEmTexto, categoriasSemVinculo, normalizarArvore, vinculosDeProdutos,
@@ -423,5 +423,98 @@ registerTool<{ segmento?: string }>({
     await commit();
     await esquecerPrevia(ctx.uid, TOOL_CATEGORIAS, { segmento: a.segmento ?? '' });
     return { categorias: novas.length, gravados: vinculos.length, produtos: novas.map((c) => c.path.join(' › ')) };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Imagens ambientadas — lote em job; o débito é por produto aprovado
+// ---------------------------------------------------------------------------
+
+const TOOL_AMBIENTADAS = 'produtos.ambientadas.gerar';
+/** Cada item são 4 chamadas de IA (cenas + 3 imagens): lote menor que o de texto. */
+export const MAX_AMBIENTADAS_POR_LOTE = 10;
+
+registerTool<ArgsDescricoes>({
+  name: TOOL_AMBIENTADAS,
+  provider: 'produtos',
+  mode: 'write',
+  lote: true,
+  description: `Gera 3 imagens ambientadas por produto (cena real de uso, pessoa usando, escala) a partir da foto real, como o botão "Ambientar" do app. Roda em segundo plano como lote: as imagens aparecem no card e o usuário aprova produto a produto; cada produto aprovado debita uma ambientação. Sem "skus", pega produtos principais com foto e ainda sem ambientada. No máximo ${MAX_AMBIENTADAS_POR_LOTE} por lote.`,
+  schema: {
+    type: 'object',
+    properties: {
+      skus: { type: 'array', items: { type: 'string' }, description: 'SKUs específicos. Omitir para pegar os que têm foto e nenhuma ambientada.' },
+      limite: { type: 'integer', description: `Quantos produtos neste lote (1–${MAX_AMBIENTADAS_POR_LOTE}).` },
+    },
+  },
+  preview: async (ctx, a) => {
+    const args = { skus: a.skus ?? [], limite: a.limite ?? null };
+    const catalogo = await lerCatalogo(ctx.uid);
+    const limite = Math.min(MAX_AMBIENTADAS_POR_LOTE, Math.max(1, Math.floor(a.limite ?? (a.skus?.length || LOTE_PADRAO))));
+    const semFoto: string[] = [];
+    let escolhidos: ProdutoDoc[];
+    let naoEncontrados: string[] = [];
+    if (a.skus?.length) {
+      const r = buscarProdutos(catalogo, { skus: a.skus });
+      naoEncontrados = r.naoEncontrados;
+      escolhidos = r.achados.filter((p) => (fotoPrincipal(p) ? true : (semFoto.push(nomeDe(p)), false)));
+    } else {
+      escolhidos = catalogo.filter((p) => ehPai(p) && fotoPrincipal(p) && !((p._ambientImages as string[] | undefined) ?? []).length);
+    }
+    const total = escolhidos.length;
+    escolhidos = escolhidos.slice(0, limite);
+    if (!escolhidos.length) {
+      throw Object.assign(new Error(
+        semFoto.length ? `Sem foto pública para servir de base: ${semFoto.join(', ')}.`
+          : naoEncontrados.length ? `Nenhum dos SKUs foi encontrado no catálogo: ${naoEncontrados.join(', ')}.`
+            : 'Todo produto principal com foto já tem imagem ambientada.',
+      ), { status: 404 });
+    }
+    const def = { name: TOOL_AMBIENTADAS, provider: 'produtos' as const };
+    const custo = await estimateCredits(def, { payload: { itens: escolhidos } });
+    // Gerar já custa caro para a plataforma, mesmo antes da aprovação: sem saldo
+    // para o lote inteiro, nem começa.
+    const saldo = Number((await adminDb.collection('users').doc(ctx.uid).get()).data()?.credits ?? 0);
+    if (saldo < custo) {
+      throw Object.assign(new Error(`Este lote custa até ${custo} créditos e o saldo é ${saldo}. Peça menos produtos ou recarregue.`), { status: 402 });
+    }
+    const avisos = [
+      'As imagens são acrescentadas ao produto (as ambientadas que ele já tem continuam). A foto principal não muda, e nada vai ao ERP.',
+      ...(semFoto.length ? [`Sem foto pública, ficaram de fora: ${semFoto.join(', ')}.`] : []),
+      ...(naoEncontrados.length ? [`SKUs não encontrados: ${naoEncontrados.join(', ')}.`] : []),
+      ...(!a.skus?.length && total > escolhidos.length ? [`Depois deste lote ainda ficam ${total - escolhidos.length} produtos sem ambientada.`] : []),
+    ];
+    const n = escolhidos.length;
+    const preview = {
+      resumo: `Criar imagens ambientadas de ${n === 1 ? '1 produto' : `${n} produtos`}`,
+      alvo: n === 1 ? nomeDe(escolhidos[0]) : `${n} produtos do catálogo`,
+      campos: [{ campo: 'Produtos', antes: null, depois: escolhidos.map(nomeDe).join(', '), mudou: true }] as PreviewField[],
+      avisos,
+      custo,
+    };
+    const { job, reaproveitado } = await criarLote({
+      uid: ctx.uid, tool: TOOL_AMBIENTADAS, provider: 'produtos', args,
+      itens: escolhidos.map((p) => ({ docId: p._docId, sku: skuDe(p), nome: nomeDe(p) })),
+      preview, auto: ctx.aprovacao === 'auto',
+    });
+    scheduleLote(ctx.uid, job.id);
+    return makePreview({ ...preview, payload: { lote: { id: job.id, actionId: job.actionId, reaproveitado } } });
+  },
+  execute: async (ctx, _a, preview) => {
+    const itens = ((preview.payload?.itens ?? []) as { itemId: string; docId: string; nome: string; imagens: string[] }[]);
+    if (ctx.dryRun) return { dryRun: true, gravadosIds: itens.map((i) => i.itemId), puladosIds: [], gravados: itens.length };
+    const gravadosIds: string[] = [];
+    const puladosIds: { id: string; motivo: string }[] = [];
+    const produtos: string[] = [];
+    for (const it of itens) {
+      const ref = produtosCol(ctx.uid).doc(it.docId);
+      const snap = await ref.get();
+      if (!snap.exists) { puladosIds.push({ id: it.itemId, motivo: 'removido do catálogo' }); continue; }
+      const atuais = (snap.data()?._ambientImages as string[] | undefined) ?? [];
+      await ref.update({ _ambientImages: [...new Set([...atuais, ...it.imagens])], updatedAt: new Date().toISOString() });
+      gravadosIds.push(it.itemId);
+      produtos.push(it.nome);
+    }
+    return { gravados: gravadosIds.length, produtos, gravadosIds, puladosIds };
   },
 });

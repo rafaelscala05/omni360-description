@@ -68,11 +68,11 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 - [ ] **Recalcular toda segunda** e guardar a semana (hoje é recalculada a cada render a partir do estado atual; não há histórico de semanas).
 
 ### Ferramentas do agente que faltam (Inventário: "falta tool")
-- [ ] Atributos por categoria (texto e foto) em lote.
-- [ ] Imagens ambientadas (sugerir quando só há foto em fundo branco) — custo alto, precisa de amostra.
-- [ ] Categorias e hierarquia ("propõe a árvore; uma aprovação para tudo").
-- [ ] Vídeo de produto (iniciar job; progresso já aparece em Rodando).
-- [ ] Envio ao ERP pelo chat (parcial hoje: só pela tela de Integrações) — reaproveitar `pushLog` como recibo.
+- [x] Atributos por categoria (texto e foto) em lote — `produtos.atributos.gerar`.
+- [x] Imagens ambientadas — `produtos.ambientadas.gerar`, lote de até 10 com amostra em miniatura. Falta: sugerir na semana; as cenas por categoria (flag local `enableCategoryImagePrompts`) não valem para o Alfred; imagens de item descartado ficam no Storage.
+- [x] Categorias e hierarquia — `produtos.categorias.organizar`.
+- [x] Vídeo de produto — `produtos.video.gerar`; roda pelo app aberto (ver CLAUDE.md). Falta UGC com avatar.
+- [x] Envio ao ERP pelo chat — `tiny.catalogo.enviar` (só Tiny v2). Falta Wake, Bling e IdWorks.
 - [ ] Importar/exportar planilha (avisar o que chegou incompleto e criar tarefas).
 - [ ] MELI: vídeo studio e geração de foto (`/pictures/generate`) pelo chat.
 - [ ] Bling e IdWorks no chat (hoje só importação e envio).
@@ -83,7 +83,7 @@ Nada da Fase 1 nem da Fase 2 foi testado com login (o Google Sign-In não roda n
 1. **Validação com login** (lista acima) e correções que aparecerem.
 2. ~~**F2 + barra de seleção + "Pedir ao Alfred" com contexto**~~ — feito para Produtos; falta validar com login (abrir Ferramentas › Produtos, selecionar, "Gerar N descrições" → confirmação com custo → progresso na barra; e "Pedir ao Alfred" → o grafo deve chamar `produtos.buscar` com os SKUs selecionados). Exige republicar o serviço do grafo.
 3. ~~**Lote em job com progresso**~~ — feito para descrições (`produtos.descricoes.gerar`, teto subiu de 10 para 50). Para outra ferramenta virar lote: `lote: true` no registro, o `preview()` chama `criarLote`, e um gerador em `GERADORES` (`loteWorker.ts`). Falta validar com login: pedir 12 descrições, aprovar as prontas no meio, pausar/continuar, e ver o servidor principal retomar um lote se o serviço do grafo cair. Exige deploy das regras e índices do Firestore (`agent_jobs`) e do serviço do grafo.
-4. **Novas ferramentas** na ordem do valor: atributos → envio ao ERP pelo chat → vídeo → categorias → ambientadas.
+4. ~~**Novas ferramentas**~~ — feitas (atributos, Tiny, vídeo, categorias, ambientadas). Validar com login: um lote de atributos (precisa de categoria com atributos), um envio ao Tiny com a prévia batendo com o que chega, um vídeo pelo chat com o app aberto, organizar categorias numa conta com coluna Categoria solta, um lote pequeno de ambientadas conferindo o débito só dos aprovados.
 5. **A4 Conectores** e **D1 em 3 colunas**.
 6. **Liquid Glass no app todo + trilho desktop** (maior raio de impacto visual; fazer por último e por tela).
 7. Notificações push.

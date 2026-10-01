@@ -31,6 +31,11 @@ export function creditActionsFor(def: Pick<ToolDef<any>, 'name' | 'provider'>, p
       const n = Array.isArray(preview?.payload?.itens) ? (preview!.payload!.itens as unknown[]).length : 0;
       return Array.from({ length: n }, () => CREDIT_ACTIONS.generateSeoMass);
     }
+    // Uma ambientação (3 imagens) por produto aprovado, como o botão "Ambientar".
+    case 'produtos.ambientadas.gerar': {
+      const n = Array.isArray(preview?.payload?.itens) ? (preview!.payload!.itens as unknown[]).length : 0;
+      return Array.from({ length: n }, () => CREDIT_ACTIONS.ambientImage);
+    }
     // Mesmo débito da hierarquia por IA na importação de planilha.
     case 'produtos.categorias.organizar':
       return [CREDIT_ACTIONS.generateHierarchy];

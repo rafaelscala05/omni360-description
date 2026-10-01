@@ -206,5 +206,13 @@ check('publicar no MELI não debita', creditActionsFor({ name: 'meli.proposta.pu
   check('texto da árvore marca o que já existe', arvoreEmTexto(arv, existentes).split('\n')[0], 'Móveis (já existe)');
 }
 
+// --- débitos das ferramentas novas ---------------------------------------
+check('ambientadas debitam uma ambientação por produto aprovado',
+  creditActionsFor({ name: 'produtos.ambientadas.gerar', provider: 'produtos' }, { payload: { itens: [{}, {}] } }).map((x) => x.key), ['ambient_image', 'ambient_image']);
+check('categorias debitam a hierarquia uma vez', creditActionsFor({ name: 'produtos.categorias.organizar', provider: 'produtos' }).map((x) => x.key), ['generate_hierarchy']);
+check('atributos e vídeo não debitam aqui (atributos é grátis; o vídeo debita na rota que o roda)',
+  [creditActionsFor({ name: 'produtos.atributos.gerar', provider: 'produtos' }).length, creditActionsFor({ name: 'produtos.video.gerar', provider: 'produtos' }).length], [0, 0]);
+check('envio ao Tiny debita uma ação do agente', creditActionsFor({ name: 'tiny.catalogo.enviar', provider: 'tiny' }).map((x) => x.key), ['agent_action']);
+
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');
 process.exit(failures ? 1 : 0);
