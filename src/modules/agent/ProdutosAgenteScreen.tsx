@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, Menu, Search, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, RefreshCw, Search, Sparkles, X } from 'lucide-react';
 import type { Product, ProductModalTab } from '../../types/models';
 import type { PedidoAlfred } from '../../types/agent';
 import BarraProximoPasso from './BarraProximoPasso';
@@ -9,6 +9,7 @@ import {
   pilulasDe, principais, semDescricao, skuDe,
   type EstadoPilula, type FiltroProdutos, type SegmentoProdutos,
 } from './produtosAgente';
+import { BotaoConta } from '../../components/ContaMenu';
 
 export type ViewProdutos = 'categories' | 'integrations' | 'products';
 
@@ -27,7 +28,6 @@ interface Props {
   onAbrirView: (view: ViewProdutos) => void;
   onPedirAlfred: (pedido: PedidoAlfred) => void;
   onVoltar: () => void;
-  onAbrirMenu: () => void;
   /** Alfred só aparece com módulo de agente. */
   hasAgente: boolean;
 }
@@ -99,7 +99,7 @@ const Caixa: React.FC<{ marcada: boolean; rotulo: string; onClick: () => void }>
  */
 const ProdutosAgenteScreen: React.FC<Props> = ({
   products, selecionados, onSelecionar, custoPorDescricao, gerando, progresso,
-  onGerarDescricoes, onAbrirProduto, onAbrirView, onPedirAlfred, onVoltar, onAbrirMenu, hasAgente,
+  onGerarDescricoes, onAbrirProduto, onAbrirView, onPedirAlfred, onVoltar, hasAgente,
 }) => {
   const { tema } = useAgentTheme();
   const [segmento, setSegmento] = useState<SegmentoProdutos>('catalogo');
@@ -188,9 +188,7 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
           >
             {buscando ? <X className="w-5 h-5" /> : <Search className="w-5 h-5" />}
           </button>
-          <button onClick={onAbrirMenu} aria-label="Menu" className="md:hidden w-11 h-11 grid place-items-center text-[var(--ag-text-2)]">
-            <Menu className="w-5 h-5" />
-          </button>
+          <BotaoConta />
         </div>
 
         <div className="ag-scroll flex-1 overflow-y-auto px-4 sm:px-6 pb-6">

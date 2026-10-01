@@ -1,135 +1,169 @@
-// A4 · Fontes e conectores — o que o Alfred enxerga e o que cada conexão
-// libera. As seções saem de montarConectores (conectores.ts); aqui só a busca
-// do estado (status das quatro integrações + ferramentas por provider) e o
-// desenho. Conectar de fato continua na tela de Integrações: cada conector
-// tem um formulário próprio (token, OAuth, conta + credenciais).
-
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, Loader2, Menu, RefreshCw } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, ChevronLeft, RefreshCw } from 'lucide-react';
+import type { AgentAction } from '../../types/agent';
+import { fetchTools, listenActions } from '../../services/agentChatService';
 import { fetchIntegrationsOverview, type IntegrationSummary } from '../../services/integrationsStatusService';
-import { fetchTools } from '../../services/agentChatService';
+import { listenProjects } from '../../services/contentService';
 import { useAgentTheme } from './theme';
-import { MARCA, montarConectores, type Conector, type SecaoConector } from './conectores';
+import { useEstadoMeli } from './useFontes';
+import { MARCA } from './ConnectionsBar';
+import { entradasDoApp, montarFontes, type ChaveFonte, type Fonte } from './conectores';
+import { BotaoConta } from '../../components/ContaMenu';
 
 interface Props {
-  hasContentAgent: boolean;
+  uid: string;
   hasMeli: boolean;
+  hasContentAgent: boolean;
   onVoltar: () => void;
-  onAbrirIntegracoes: () => void;
-  onAbrirMenu: () => void;
+  /** Conectar, revalidar ou gerenciar: leva à tela onde aquela conexão se faz. */
+  onConectar: (chave: ChaveFonte) => void;
 }
 
-const TITULO: Record<SecaoConector, string> = {
-  atencao: 'Precisa de atenção',
-  conectado: 'Conectados',
-  disponivel: 'Disponíveis',
+const ROTULO_ACAO: Record<NonNullable<Fonte['acao']>, string> = {
+  verificar: 'Verificar',
+  revalidar: 'Revalidar',
+  reconectar: 'Reconectar',
 };
 
-const Logo: React.FC<{ id: string; apagado?: boolean }> = ({ id, apagado }) => {
-  const m = MARCA[id] ?? { glifo: id.slice(0, 2), cor: 'var(--ag-fill-2)' };
-  return (
-    <span
-      className="w-10 h-10 rounded-[12px] grid place-items-center text-[13px] font-bold text-white shrink-0"
-      style={{ background: m.cor, filter: apagado ? 'grayscale(1)' : undefined, opacity: apagado ? 0.7 : 1 }}
+const Logo: React.FC<{ chave: ChaveFonte; sigla: string; apagado?: boolean }> = ({ chave, sigla, apagado }) => (
+  <span
+    className="w-10 h-10 rounded-[12px] grid place-items-center text-[13px] font-bold shrink-0"
+    style={apagado
+      ? { background: 'var(--ag-fill-2)', color: 'var(--ag-text)' }
+      : { background: MARCA[chave]?.cor ?? 'var(--ag-fill-2)', color: '#fff' }}
+  >
+    {sigla}
+  </span>
+);
+
+const Secao: React.FC<{ titulo: string; alerta?: boolean; children: React.ReactNode }> = ({ titulo, alerta, children }) => (
+  <section className="flex flex-col gap-2">
+    <h2
+      className="px-1 text-[11px] font-semibold uppercase tracking-[0.06em]"
+      style={{ color: alerta ? 'var(--ag-warn)' : 'var(--ag-text-2)' }}
     >
-      {m.glifo}
-    </span>
-  );
-};
+      {titulo}
+    </h2>
+    <div
+      className={alerta ? 'rounded-[20px] overflow-hidden' : 'ag-glass rounded-[20px] overflow-hidden'}
+      style={alerta
+        ? { background: 'var(--ag-warn-soft)', border: '1px solid color-mix(in srgb, var(--ag-warn) 35%, transparent)' }
+        : undefined}
+    >
+      {children}
+    </div>
+  </section>
+);
 
-const Linha: React.FC<{
-  c: Conector;
-  primeira: boolean;
-  verificando: boolean;
-  onVerificar: () => void;
-  onConectar: () => void;
-}> = ({ c, primeira, verificando, onVerificar, onConectar }) => (
-  <div className="flex items-center gap-3 px-3.5 py-3" style={primeira ? undefined : { borderTop: '1px solid var(--ag-hairline)' }}>
-    <Logo id={c.id} apagado={c.secao === 'disponivel'} />
+const Linha: React.FC<{ f: Fonte; primeira: boolean; verificando: boolean; onAcao: () => void }> = ({ f, primeira, verificando, onAcao }) => (
+  <div
+    className="flex items-center gap-3 px-3.5 py-3"
+    style={primeira ? undefined : { borderTop: '1px solid var(--ag-hairline)' }}
+  >
+    <Logo chave={f.chave} sigla={f.sigla} apagado={f.grupo === 'disponivel'} />
     <div className="min-w-0 flex-1">
-      <div className="text-[15px] font-semibold text-[var(--ag-text)] truncate">{c.nome}</div>
-      <div className="text-[13px] leading-snug" style={{ color: c.alerta ? 'var(--ag-warn)' : 'var(--ag-text-2)' }}>
-        {c.alerta ?? c.linha}
+      <div className="text-[15px] font-semibold text-[var(--ag-text)] truncate">{f.nome}</div>
+      <div
+        className="text-[13px] leading-snug"
+        style={{ color: f.grupo === 'atencao' ? 'var(--ag-warn)' : 'var(--ag-text-2)' }}
+      >
+        {f.grupo === 'atencao' && <AlertTriangle className="inline w-3.5 h-3.5 -mt-0.5 mr-1" />}
+        {f.linha}
       </div>
     </div>
-    {c.secao === 'conectado' && (
-      <span className="shrink-0 px-2.5 py-1 rounded-full text-[12px] font-medium" style={{ background: 'var(--ag-ok-soft)', color: 'var(--ag-ok)' }}>
-        ativo
-      </span>
-    )}
-    {c.secao === 'atencao' && (
-      <div className="flex gap-1.5 shrink-0">
+
+    {f.grupo === 'conectado' ? (
+      <div className="flex items-center gap-1.5 shrink-0">
+        {f.pendentes > 0 && (
+          <span
+            className="px-2 py-0.5 rounded-full text-[11.5px] font-semibold tabular-nums"
+            style={{ background: 'var(--ag-accent-soft)', color: 'var(--ag-accent)' }}
+            title={`${f.pendentes} ${f.pendentes === 1 ? 'aprovação pendente' : 'aprovações pendentes'}`}
+          >
+            {f.pendentes}
+          </span>
+        )}
         <button
-          onClick={onVerificar}
-          disabled={verificando}
-          className="min-h-[40px] px-3.5 rounded-full text-[13.5px] font-semibold text-[var(--ag-text)] flex items-center gap-1.5 disabled:opacity-60"
-          style={{ background: 'var(--ag-fill-2)' }}
+          onClick={onAcao}
+          className="min-h-[36px] px-2.5 rounded-full text-[12px] font-semibold"
+          style={{ background: 'var(--ag-ok-soft)', color: 'var(--ag-ok)' }}
+          title="Gerenciar a conexão"
         >
-          {verificando ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-          Verificar
-        </button>
-        <button
-          onClick={onConectar}
-          className="hidden sm:inline-flex min-h-[40px] px-3.5 rounded-full text-[13.5px] font-semibold items-center"
-          style={{ background: 'var(--ag-text)', color: 'var(--ag-bg-2)' }}
-        >
-          Reconectar
+          ativo
         </button>
       </div>
-    )}
-    {c.secao === 'disponivel' && (
+    ) : (
       <button
-        onClick={onConectar}
-        className="shrink-0 min-h-[40px] px-4 rounded-full text-[13.5px] font-semibold"
-        style={{ background: 'var(--ag-text)', color: 'var(--ag-bg-2)' }}
+        onClick={onAcao}
+        disabled={f.acao === 'verificar' && verificando}
+        className="min-h-[44px] px-4 rounded-full text-[14px] font-semibold shrink-0 flex items-center gap-1.5 disabled:opacity-60"
+        style={f.grupo === 'disponivel'
+          ? { background: 'var(--ag-text)', color: 'var(--ag-bg-2)' }
+          : { background: 'var(--ag-fill-2)', color: 'var(--ag-text)' }}
       >
-        Conectar
+        {f.acao === 'verificar' && verificando && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+        {f.acao ? ROTULO_ACAO[f.acao] : 'Conectar'}
       </button>
     )}
   </div>
 );
 
-const ConectoresScreen: React.FC<Props> = ({ hasContentAgent, hasMeli, onVoltar, onAbrirIntegracoes, onAbrirMenu }) => {
+/**
+ * "Fontes e conectores" (A4): o que o Alfred enxerga para montar a semana,
+ * separado em o que precisa de um toque, o que está ligado (e quantas
+ * ferramentas libera) e o que ainda dá para conectar.
+ */
+const ConectoresScreen: React.FC<Props> = ({ uid, hasMeli, hasContentAgent, onVoltar, onConectar }) => {
   const { tema } = useAgentTheme();
+  // Recarga manual ("Verificar"): refaz as checagens de status sem sair da tela.
+  const [recarga, setRecarga] = useState(0);
   const [integracoes, setIntegracoes] = useState<IntegrationSummary[]>([]);
-  const [ferramentas, setFerramentas] = useState<Record<string, number>>({});
   const [carregando, setCarregando] = useState(true);
-  const [verificando, setVerificando] = useState(false);
-
-  const carregarStatus = useCallback(async () => {
-    const lista = await fetchIntegrationsOverview().catch(() => null);
-    if (lista) setIntegracoes(lista);
-  }, []);
+  const [ferramentas, setFerramentas] = useState<Record<string, number>>({});
+  const [acoes, setAcoes] = useState<AgentAction[]>([]);
+  const [projetos, setProjetos] = useState<number | null>(null);
+  const meli = useEstadoMeli(hasMeli, recarga);
 
   useEffect(() => {
     let vivo = true;
-    Promise.all([
-      carregarStatus(),
-      fetchTools().then(({ tools }) => {
+    setCarregando(true);
+    fetchIntegrationsOverview()
+      .then((l) => { if (vivo) setIntegracoes(l); })
+      .catch(() => {})
+      .finally(() => { if (vivo) setCarregando(false); });
+    fetchTools()
+      .then(({ tools }) => {
         if (!vivo) return;
         const contagem: Record<string, number> = {};
         for (const t of tools) contagem[t.provider] = (contagem[t.provider] ?? 0) + 1;
         setFerramentas(contagem);
-      }).catch(() => {}),
-    ]).finally(() => { if (vivo) setCarregando(false); });
+      })
+      .catch(() => {});
     return () => { vivo = false; };
-  }, [carregarStatus]);
+  }, [uid, recarga]);
 
-  // Verificar = checar de novo os quatro status. Se a falha era passageira
-  // (rede, instância fria), a linha sobe para Conectados; se não, continua
-  // aqui e o caminho é reconectar em Integrações.
-  const verificar = async () => {
-    setVerificando(true);
-    try { await carregarStatus(); } finally { setVerificando(false); }
+  useEffect(() => listenActions(setAcoes), [uid]);
+  useEffect(() => (hasContentAgent ? listenProjects(uid, (l) => setProjetos(l.length)) : undefined), [uid, hasContentAgent]);
+
+  const pendentes = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const a of acoes) if (a.status === 'pending') c[a.provider] = (c[a.provider] ?? 0) + 1;
+    return c;
+  }, [acoes]);
+
+  const fontes = useMemo(
+    () => montarFontes(entradasDoApp({ integracoes, meli, hasMeli, hasContentAgent, projetos }), ferramentas, pendentes),
+    [integracoes, meli, hasMeli, hasContentAgent, projetos, ferramentas, pendentes],
+  );
+
+  const acionar = (f: Fonte) => {
+    if (f.acao === 'verificar') setRecarga((n) => n + 1);
+    else onConectar(f.chave);
   };
 
-  const conectores = useMemo(
-    () => montarConectores({ integracoes, ferramentas, hasContentAgent, hasMeli }),
-    [integracoes, ferramentas, hasContentAgent, hasMeli],
-  );
-  const secoes = (['atencao', 'conectado', 'disponivel'] as SecaoConector[])
-    .map((s) => ({ s, itens: conectores.filter((c) => c.secao === s) }))
-    .filter((x) => x.itens.length);
+  const grupo = (lista: Fonte[]) => lista.map((f, i) => (
+    <Linha key={f.chave} f={f} primeira={i === 0} verificando={carregando} onAcao={() => acionar(f)} />
+  ));
 
   return (
     <div className="alfreds h-full flex flex-col" data-tema={tema}>
@@ -137,60 +171,45 @@ const ConectoresScreen: React.FC<Props> = ({ hasContentAgent, hasMeli, onVoltar,
         className="ag-aurora flex-1 min-h-0 rounded-[24px] sm:rounded-[28px] flex flex-col overflow-hidden"
         style={{ border: '1px solid var(--ag-hairline)', boxShadow: 'var(--ag-shadow)' }}
       >
-        <header className="shrink-0 px-2 sm:px-4 py-2 flex items-center gap-1" style={{ borderBottom: '1px solid var(--ag-hairline)' }}>
-          <button
-            onClick={onAbrirMenu}
-            title="Menu"
-            className="md:hidden w-9 h-9 rounded-full grid place-items-center shrink-0 text-[var(--ag-text-2)]"
-            style={{ background: 'var(--ag-fill)' }}
-          >
-            <Menu className="w-[18px] h-[18px]" />
-          </button>
-          <button onClick={onVoltar} className="min-h-[44px] px-2 flex items-center gap-0.5 text-[15px] font-medium text-[var(--ag-text)]">
-            <ChevronLeft className="w-5 h-5" /> Alfred
-          </button>
-        </header>
+        <div className="ag-scroll flex-1 overflow-y-auto px-4 sm:px-6 pt-4 pb-28 md:pb-6">
+          <div className="max-w-2xl mx-auto flex flex-col gap-5">
+            <div className="flex items-center gap-2">
+              <BotaoConta />
+              <button
+                onClick={onVoltar}
+                className="min-h-[44px] -ml-1 pr-2 flex items-center text-[15px] font-medium text-[var(--ag-text)]"
+              >
+                <ChevronLeft className="w-5 h-5" /> Alfred
+              </button>
+              <button
+                onClick={() => setRecarga((n) => n + 1)}
+                disabled={carregando}
+                title="Checar de novo"
+                className="ml-auto w-9 h-9 rounded-full grid place-items-center text-[var(--ag-text-2)] disabled:opacity-60"
+                style={{ background: 'var(--ag-fill)' }}
+              >
+                <RefreshCw className={`w-4 h-4 ${carregando ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
 
-        <div className="ag-scroll flex-1 overflow-y-auto px-4 sm:px-6 py-4 pb-28 md:pb-6">
-          <div className="max-w-2xl flex flex-col gap-3">
             <div>
               <h1 className="font-display text-[26px] sm:text-[30px] font-semibold tracking-tight text-[var(--ag-text)]">Fontes e conectores</h1>
-              <p className="mt-1 text-[14px] leading-relaxed text-[var(--ag-text-2)]">
+              <p className="mt-1.5 text-[14px] leading-relaxed text-[var(--ag-text-2)]">
                 O que o Alfred enxerga para montar a sua semana. Cada conector libera tarefas novas.
               </p>
             </div>
 
-            {carregando ? (
-              <div className="ag-glass rounded-[18px] px-4 py-6 flex items-center justify-center gap-2 text-[14px] text-[var(--ag-text-2)]">
-                <Loader2 className="w-4 h-4 animate-spin" /> Checando as conexões…
+            {carregando && !integracoes.length ? (
+              <div className="flex flex-col gap-2">
+                {[0, 1, 2].map((i) => <div key={i} className="ag-shimmer h-16 rounded-[20px]" />)}
               </div>
-            ) : secoes.map(({ s, itens }) => (
-              <section key={s} className="flex flex-col gap-2">
-                <h2
-                  className="px-1 pt-1 text-[11px] font-medium uppercase tracking-[0.06em]"
-                  style={{ color: s === 'atencao' ? 'var(--ag-warn)' : 'var(--ag-text-2)' }}
-                >
-                  {TITULO[s]}
-                </h2>
-                <div
-                  className={s === 'atencao' ? 'rounded-[16px]' : 'ag-glass rounded-[16px]'}
-                  style={s === 'atencao'
-                    ? { background: 'var(--ag-warn-soft)', border: '1px solid color-mix(in srgb, var(--ag-warn) 35%, transparent)' }
-                    : undefined}
-                >
-                  {itens.map((c, i) => (
-                    <Linha
-                      key={c.id}
-                      c={c}
-                      primeira={i === 0}
-                      verificando={verificando}
-                      onVerificar={verificar}
-                      onConectar={onAbrirIntegracoes}
-                    />
-                  ))}
-                </div>
-              </section>
-            ))}
+            ) : (
+              <>
+                {fontes.atencao.length > 0 && <Secao titulo="Precisa de atenção" alerta>{grupo(fontes.atencao)}</Secao>}
+                {fontes.conectados.length > 0 && <Secao titulo="Conectados">{grupo(fontes.conectados)}</Secao>}
+                {fontes.disponiveis.length > 0 && <Secao titulo="Disponíveis">{grupo(fontes.disponiveis)}</Secao>}
+              </>
+            )}
           </div>
         </div>
       </div>

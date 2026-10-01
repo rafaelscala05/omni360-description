@@ -1,117 +1,196 @@
-// A4 · Fontes e conectores — o que o Alfred enxerga para montar a semana e o
-// que cada conexão libera. Puro: recebe o status das integrações
-// (fetchIntegrationsOverview), quantas ferramentas cada provider tem
-// (GET /api/agent/tools) e os módulos da conta. Verificar com
-// `npx tsx scripts/verify-conectores.mjs`.
+// Tela "Fontes e conectores" (A4): o que o Alfred enxerga para montar a semana
+// e o que cada conector novo liberaria.
 //
-// Três seções, nesta ordem de importância:
-// - Precisa de atenção: a checagem falhou (rede, sessão expirada) ou a
-//   credencial existe mas não foi validada. "Não consegui checar" não é "não
-//   conectado" — por isso vem antes e nunca cai em Disponíveis.
-// - Conectados: inclui o que não é integração externa (Catálogo, Conteúdo,
-//   Mercado Livre), porque para o usuário também é "uma fonte ligada".
-// - Disponíveis: só as integrações que dá para ligar na tela de Integrações,
-//   cada uma dizendo o que libera — o motivo para conectar.
+// Puro e sem I/O — verificar com `npx tsx scripts/verify-conectores.mjs`. A
+// tela e o rodapé da semana leem o mesmo `montarFontes`, para "4 fontes · +2
+// para conectar" nunca discordar da lista que abre ao tocar nele.
+//
+// Três grupos, nessa ordem de prioridade:
+// - atenção: a checagem falhou (não sabemos o estado — é diferente de
+//   desconectado), a credencial não foi validada ou a autorização expirou;
+// - conectados: com quantas ferramentas cada um libera ao Alfred;
+// - disponíveis: o que conectar liberaria, em uma linha.
 
-import type { IntegrationSummary } from '../../services/integrationsStatusService';
+export type ChaveFonte = 'produtos' | 'tiny' | 'bling' | 'idworks' | 'wake' | 'meli' | 'content';
 
-export type SecaoConector = 'atencao' | 'conectado' | 'disponivel';
+/** Como a fonte chega do app: o resumo dos endpoints de status ou um módulo ligado. */
+export interface EntradaFonte {
+  chave: ChaveFonte;
+  conectado: boolean;
+  /** `false` = conectado com credencial não validada. Ausente = não se aplica. */
+  validado?: boolean;
+  /** Autorização vencida do lado da plataforma (OAuth do Mercado Livre). */
+  reautorizar?: boolean;
+  /** A checagem em si falhou (rede, 500, sessão). */
+  erro?: string;
+  /** Conta/CNPJ/projetos — identifica qual conta está do outro lado. */
+  detalhe?: string | null;
+}
 
-export interface Conector {
-  id: string;
+export type GrupoFonte = 'atencao' | 'conectado' | 'disponivel';
+
+export interface Fonte {
+  chave: ChaveFonte;
   nome: string;
-  /** "Produtos, pedidos, estoque · 9 ferramentas" ou "Libera: banners, preço…". */
+  sigla: string;
+  grupo: GrupoFonte;
+  /** Linha de baixo: o que a fonte entrega (conectada) ou libera (disponível). */
   linha: string;
-  secao: SecaoConector;
-  /** Motivo da atenção, na voz do usuário. */
-  alerta?: string;
+  /** Só no grupo atenção: o que pedir ao usuário. */
+  acao?: 'verificar' | 'revalidar' | 'reconectar';
   ferramentas: number;
-  /** Abre Integrações para conectar/reconectar; Conteúdo e Catálogo não têm o que conectar. */
-  conectavel: boolean;
+  pendentes: number;
 }
 
-/** O que cada fonte deixa o Alfred fazer — a frase de "Libera:" e de Conectados. */
-export const LIBERA: Record<string, string> = {
-  tiny: 'produtos, preço, estoque, pedidos e envio do catálogo',
-  wake: 'banners, hotsites, preço, estoque e SEO da loja',
-  bling: 'envio de descrição e imagens do catálogo',
-  idworks: 'envio de descrição, SEO e imagens dos SKUs',
-  meli: 'anúncios e propostas do otimizador',
-  content: 'clusters, calendário e artigos do blog',
-  produtos: 'produtos, categorias, descrições e imagens',
-};
-
-const NOMES: Record<string, string> = {
-  tiny: 'Tiny ERP',
-  wake: 'Wake Commerce',
-  bling: 'Bling',
-  idworks: 'IdWorks',
-  meli: 'Mercado Livre',
-  content: 'Conteúdo e blog',
-  produtos: 'Catálogo OMNI360',
-};
-
-/** Identidade visual de cada fonte — na régua do Alfred e na tela de conectores. */
-export const MARCA: Record<string, { glifo: string; cor: string }> = {
-  wake: { glifo: 'W', cor: 'linear-gradient(135deg,#ff5b03,#ff9a52)' },
-  tiny: { glifo: 'T', cor: 'linear-gradient(135deg,#3053ff,#7e94ff)' },
-  bling: { glifo: 'B', cor: 'linear-gradient(135deg,#0f9d58,#4ade80)' },
-  idworks: { glifo: 'ID', cor: 'linear-gradient(135deg,#828ed1,#b8c0ea)' },
-  content: { glifo: 'C', cor: 'linear-gradient(135deg,#7c3aed,#c4b5fd)' },
-  meli: { glifo: 'ML', cor: 'linear-gradient(135deg,#d4b800,#ffe36e)' },
-  produtos: { glifo: 'P', cor: 'linear-gradient(135deg,#b24400,#ff8a3d)' },
-};
-
-const capitaliza = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-
-function linhaConectado(id: string, n: number): string {
-  const base = capitaliza(LIBERA[id] ?? '');
-  return n > 0 ? `${base} · ${n} ${n === 1 ? 'ferramenta' : 'ferramentas'}` : base;
+export interface Fontes {
+  atencao: Fonte[];
+  conectados: Fonte[];
+  disponiveis: Fonte[];
 }
 
-export function montarConectores(input: {
-  integracoes: IntegrationSummary[];
-  ferramentas: Record<string, number>;
-  hasContentAgent: boolean;
-  hasMeli: boolean;
-}): Conector[] {
-  const { integracoes, ferramentas } = input;
-  const out: Conector[] = [];
+interface Catalogo {
+  nome: string;
+  sigla: string;
+  /** O que a fonte dá ao Alfred, conectada. */
+  entrega: string;
+  /** O que conectar liberaria — começa sem "Libera:", a tela põe o prefixo. */
+  libera: string;
+}
 
-  for (const i of integracoes) {
-    const n = ferramentas[i.chave] ?? 0;
-    const nome = NOMES[i.chave] ?? i.nome;
-    if (i.erro) {
-      out.push({ id: i.chave, nome, secao: 'atencao', alerta: 'Não conseguimos checar a conexão', linha: linhaConectado(i.chave, n), ferramentas: n, conectavel: true });
-    } else if (i.conectado && !i.validado) {
-      out.push({ id: i.chave, nome, secao: 'atencao', alerta: 'A credencial não foi confirmada — reconecte', linha: linhaConectado(i.chave, n), ferramentas: n, conectavel: true });
-    } else if (i.conectado) {
-      out.push({ id: i.chave, nome, secao: 'conectado', linha: linhaConectado(i.chave, n), ferramentas: n, conectavel: true });
-    } else {
-      out.push({ id: i.chave, nome, secao: 'disponivel', linha: `Libera: ${LIBERA[i.chave] ?? 'mais ferramentas'}`, ferramentas: 0, conectavel: true });
+export const CATALOGO: Record<ChaveFonte, Catalogo> = {
+  produtos: { nome: 'Catálogo OMNI360', sigla: 'Pr', entrega: 'Produtos, categorias, imagens', libera: 'descrições, atributos e imagens' },
+  tiny: { nome: 'Tiny ERP', sigla: 'Ti', entrega: 'Produtos, pedidos, estoque', libera: 'produtos, preço, estoque e pedidos' },
+  bling: { nome: 'Bling', sigla: 'Bl', entrega: 'Importação e envio do catálogo', libera: 'importação e envio do catálogo' },
+  idworks: { nome: 'IdWorks', sigla: 'Id', entrega: 'SKUs e sincronização', libera: 'envio de SKUs e sincronização' },
+  wake: { nome: 'Wake Commerce', sigla: 'Wk', entrega: 'Banners, preço, estoque, SEO', libera: 'banners, preço, SEO da loja' },
+  meli: { nome: 'Mercado Livre', sigla: 'ML', entrega: 'Anúncios e propostas do otimizador', libera: 'anúncios e propostas do otimizador' },
+  content: { nome: 'Conteúdo e blog', sigla: 'Co', entrega: 'Clusters, calendário, artigos', libera: 'artigos, calendário e SEO' },
+};
+
+/** Ordem de exibição dentro de cada grupo: ERPs e loja antes, o resto depois. */
+const ORDEM: ChaveFonte[] = ['tiny', 'bling', 'idworks', 'wake', 'meli', 'content', 'produtos'];
+
+const MOTIVO: Record<NonNullable<Fonte['acao']>, string> = {
+  verificar: 'Não conseguimos checar a conexão',
+  revalidar: 'Credencial ainda não validada',
+  reconectar: 'Autorização expirada — reconecte a conta',
+};
+
+export function montarFontes(
+  entradas: EntradaFonte[],
+  ferramentas: Partial<Record<string, number>> = {},
+  pendentes: Partial<Record<string, number>> = {},
+): Fontes {
+  const vistas = new Set<ChaveFonte>();
+  const fontes: Fonte[] = [];
+
+  for (const e of entradas) {
+    // A mesma chave duas vezes (ex.: a tela juntou duas fontes de status)
+    // não vira duas linhas: a primeira vale.
+    if (vistas.has(e.chave) || !CATALOGO[e.chave]) continue;
+    vistas.add(e.chave);
+    const c = CATALOGO[e.chave];
+
+    const acao: Fonte['acao'] = e.erro
+      ? 'verificar'
+      // O servidor do ML já responde `connected: false` com a autorização
+      // vencida — por isso `reautorizar` não depende de `conectado`.
+      : e.reautorizar ? 'reconectar'
+        : e.conectado && e.validado === false ? 'revalidar'
+          : undefined;
+
+    const grupo: GrupoFonte = acao ? 'atencao' : e.conectado ? 'conectado' : 'disponivel';
+    const n = ferramentas[e.chave] ?? 0;
+
+    let linha: string;
+    if (grupo === 'atencao') linha = MOTIVO[acao!];
+    else if (grupo === 'disponivel') linha = `Libera: ${c.libera}`;
+    else {
+      const partes = [c.entrega];
+      if (e.detalhe) partes.push(e.detalhe);
+      if (n) partes.push(`${n} ${n === 1 ? 'ferramenta' : 'ferramentas'}`);
+      linha = partes.join(' · ');
     }
+
+    fontes.push({
+      chave: e.chave,
+      nome: c.nome,
+      sigla: c.sigla,
+      grupo,
+      linha,
+      acao,
+      ferramentas: grupo === 'disponivel' ? 0 : n,
+      pendentes: pendentes[e.chave] ?? 0,
+    });
   }
 
-  const interno = (id: string) => {
-    const n = ferramentas[id] ?? 0;
-    out.push({ id, nome: NOMES[id], secao: 'conectado', linha: linhaConectado(id, n), ferramentas: n, conectavel: false });
+  fontes.sort((a, b) => ORDEM.indexOf(a.chave) - ORDEM.indexOf(b.chave));
+  return {
+    atencao: fontes.filter((f) => f.grupo === 'atencao'),
+    conectados: fontes.filter((f) => f.grupo === 'conectado'),
+    disponiveis: fontes.filter((f) => f.grupo === 'disponivel'),
   };
-  if (input.hasMeli) interno('meli');
-  if (input.hasContentAgent) interno('content');
-  interno('produtos');
-
-  const ordem: Record<SecaoConector, number> = { atencao: 0, conectado: 1, disponivel: 2 };
-  return out
-    .map((c, i) => ({ c, i }))
-    .sort((a, b) => ordem[a.c.secao] - ordem[b.c.secao] || a.i - b.i)
-    .map(({ c }) => c);
 }
 
-/** O rodapé da semana: "4 fontes · +2 para conectar". Atenção conta como fonte (está ligada, só não checou). */
-export function resumoFontes(conectores: Conector[]): { fontes: number; paraConectar: number; atencao: number } {
+/**
+ * Rodapé da semana: "4 fontes · +2 para conectar". Uma fonte em atenção ainda
+ * conta como fonte (ela continua ligada, só precisa de um toque), e é o
+ * `alerta` que faz o rodapé mudar de cor.
+ */
+export function resumoFontes(f: Fontes): { ativas: number; paraConectar: number; alerta: number } {
   return {
-    fontes: conectores.filter((c) => c.secao !== 'disponivel').length,
-    paraConectar: conectores.filter((c) => c.secao === 'disponivel').length,
-    atencao: conectores.filter((c) => c.secao === 'atencao').length,
+    ativas: f.conectados.length + f.atencao.length,
+    paraConectar: f.disponiveis.length,
+    alerta: f.atencao.length,
   };
+}
+
+/** Resumo de `fetchIntegrationsOverview`, sem depender do serviço (este módulo é puro). */
+interface ResumoIntegracao {
+  chave: 'wake' | 'tiny' | 'bling' | 'idworks';
+  conectado: boolean;
+  validado: boolean;
+  detalhe: string | null;
+  erro?: string;
+}
+
+/** O que a tela sabe do Mercado Livre: a conexão, ou a falha ao buscá-la. */
+export type EstadoMeli =
+  | { conectado: boolean; status: string; erro?: undefined }
+  | { erro: string };
+
+/**
+ * Junta as fontes que o app conhece. O catálogo vem sempre (toda conta com
+ * agente tem o provider `produtos`); Mercado Livre e Conteúdo só quando o
+ * módulo está ligado — sem módulo não há o que conectar ali.
+ */
+export function entradasDoApp(opts: {
+  integracoes: ResumoIntegracao[];
+  meli?: EstadoMeli | null;
+  hasMeli: boolean;
+  hasContentAgent: boolean;
+  projetos?: number | null;
+}): EntradaFonte[] {
+  const lista: EntradaFonte[] = [{ chave: 'produtos', conectado: true }];
+  for (const i of opts.integracoes) {
+    lista.push({ chave: i.chave, conectado: i.conectado, validado: i.validado, detalhe: i.detalhe, erro: i.erro });
+  }
+  if (opts.hasMeli && opts.meli) {
+    lista.push('erro' in opts.meli && opts.meli.erro
+      ? { chave: 'meli', conectado: false, erro: opts.meli.erro }
+      : {
+        chave: 'meli',
+        conectado: (opts.meli as { conectado: boolean }).conectado,
+        reautorizar: (opts.meli as { status: string }).status === 'reauthorization_required',
+      });
+  }
+  if (opts.hasContentAgent) {
+    const n = opts.projetos;
+    lista.push({
+      chave: 'content',
+      conectado: true,
+      detalhe: n == null ? null : `${n} ${n === 1 ? 'projeto' : 'projetos'}`,
+    });
+  }
+  return lista;
 }

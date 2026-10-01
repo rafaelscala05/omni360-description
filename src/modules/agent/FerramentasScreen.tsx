@@ -10,8 +10,9 @@ import { useAchadosSeo, useProvidersAlfred, useSemana } from './useSemana';
 import { proximoPasso, type DestinoTarefa, type OrigemTarefa, type TarefaSemana } from './semana';
 import { ORIGEM } from './SemanaPanel';
 import { resumoConteudo, resumoProdutos, sugestoesAlfred } from './painelFerramentas';
+import { BotaoConta } from '../../components/ContaMenu';
 
-export type ViewConta = 'categories' | 'history' | 'company' | 'missoes' | 'conectores';
+export type ViewConta = 'categories' | 'history' | 'company' | 'missoes' | 'fontes';
 
 interface Props {
   uid: string;
@@ -19,8 +20,6 @@ interface Props {
   /** O que só o App sabe e a semana usa (categorias, vídeo, missões). */
   extras?: ExtrasSemana;
   credits: number;
-  /** Inicial do nome — o avatar da Conta no topo (F1/D2). */
-  inicial?: string;
   hasAgente: boolean;
   hasContentAgent: boolean;
   hasMeli: boolean;
@@ -30,8 +29,7 @@ interface Props {
   onAbrirView: (view: ViewConta) => void;
   /** Leva ao chat já mandando `prompt` — o Alfred recebe o contexto da tela. */
   onPedirAlfred: (prompt: string) => void;
-  /** O avatar da Conta abre o menu (Missões, Empresa, Créditos, Indique…). */
-  onAbrirMenu: () => void;
+
 }
 
 type Numeros = Awaited<ReturnType<typeof fetchNumerosLoja>>;
@@ -116,7 +114,7 @@ const Bloco: React.FC<{ titulo: string; detalhe: string; onClick: () => void }> 
  * de `md`, cartões com números e a coluna "Alfred sugere" (D2).
  */
 const FerramentasScreen: React.FC<Props> = ({
-  uid, products, extras, credits, inicial, hasAgente, hasContentAgent, hasMeli, mostrarMissoes, onAbrir, onAbrirView, onPedirAlfred, onAbrirMenu,
+  uid, products, extras, credits, hasAgente, hasContentAgent, hasMeli, mostrarMissoes, onAbrir, onAbrirView, onPedirAlfred,
 }) => {
   const { tema } = useAgentTheme();
   const [acoes, setAcoes] = useState<AgentAction[]>([]);
@@ -159,6 +157,7 @@ const FerramentasScreen: React.FC<Props> = ({
         <div className="ag-scroll flex-1 overflow-y-auto px-4 sm:px-6 pt-4 pb-28 md:pb-6">
           <div className="max-w-6xl mx-auto flex flex-col gap-4">
             <div className="flex items-center gap-2">
+              <BotaoConta />
               <h1 className="font-display text-[28px] sm:text-[30px] font-semibold tracking-tight text-[var(--ag-text)] flex-1">
                 <span className="md:hidden">Ferramentas</span>
                 <span className="hidden md:inline">Visão geral da loja</span>
@@ -166,15 +165,6 @@ const FerramentasScreen: React.FC<Props> = ({
               <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12.5px] font-medium text-[var(--ag-text-2)] tabular-nums" style={{ background: 'var(--ag-fill)' }}>
                 <Coins className="w-3.5 h-3.5" /> {credits}
               </span>
-              {/* F1: a Conta sai do Menu e vira o avatar no cabeçalho. */}
-              <button
-                onClick={onAbrirMenu}
-                aria-label="Conta"
-                className="md:hidden w-11 h-11 rounded-full grid place-items-center text-[15px] font-semibold text-[var(--ag-text)] shrink-0"
-                style={{ background: 'var(--ag-surface-solid)', border: '1px solid var(--ag-hairline-2)' }}
-              >
-                {(inicial || 'C').slice(0, 1).toUpperCase()}
-              </button>
             </div>
 
             {passo && (
@@ -241,14 +231,14 @@ const FerramentasScreen: React.FC<Props> = ({
                   nome="Operações"
                   sub={opsSub}
                   pendente={alertas + pendentes}
-                  onClick={() => onAbrirView('conectores')}
+                  onClick={() => onAbrirView('fontes')}
                 />
               </section>
 
               <h2 className="px-1 pt-1 text-[11px] font-medium uppercase tracking-[0.06em] text-[var(--ag-text-2)]">Conta</h2>
               <div className="grid grid-cols-2 gap-2">
                 <Bloco titulo="Créditos" detalhe={`${credits.toLocaleString('pt-BR')} disponíveis`} onClick={() => onAbrirView('history')} />
-                <Bloco titulo="Integrações" detalhe={`${ativas} ${ativas === 1 ? 'ativa' : 'ativas'}${alertas ? ` · ${alertas} ${alertas === 1 ? 'alerta' : 'alertas'}` : ''}`} onClick={() => onAbrirView('conectores')} />
+                <Bloco titulo="Integrações" detalhe={`${ativas} ${ativas === 1 ? 'ativa' : 'ativas'}${alertas ? ` · ${alertas} ${alertas === 1 ? 'alerta' : 'alertas'}` : ''}`} onClick={() => onAbrirView('fontes')} />
                 <Bloco titulo="Categorias" detalhe="Árvore e atributos" onClick={() => onAbrirView('categories')} />
                 {mostrarMissoes && extras?.missoesResumo
                   ? <Bloco titulo="Missões" detalhe={`${extras.missoesResumo.feitas} de ${extras.missoesResumo.total}`} onClick={() => onAbrirView('missoes')} />
@@ -291,7 +281,7 @@ const FerramentasScreen: React.FC<Props> = ({
                   nome="Operações"
                   kpi={tiny ? n(numeros?.pedidosAbertos, numeros?.pedidosAbertosMais) : ativas}
                   kpiRotulo={tiny ? 'pedidos em aberto no Tiny' : `de ${integracoes.length || 4} integrações conectadas`}
-                  onVer={() => onAbrirView('conectores')}
+                  onVer={() => onAbrirView('fontes')}
                 >
                   {integracoes.some((i) => i.chave === 'wake' && i.conectado) && (
                     <Linha primeira rotulo="Banners ativos na Wake" valor={n(numeros?.bannersAtivos)} />
@@ -326,7 +316,7 @@ const FerramentasScreen: React.FC<Props> = ({
                   {([
                     ['history', 'Créditos', credits.toLocaleString('pt-BR')],
                     ...(mostrarMissoes && extras?.missoesResumo ? [['missoes', 'Missões', `${extras.missoesResumo.feitas} de ${extras.missoesResumo.total}`]] : []),
-                    ['conectores', 'Integrações', `${ativas} ativas${alertas ? ` · ${alertas} alerta` : ''}`],
+                    ['fontes', 'Integrações', `${ativas} ativas${alertas ? ` · ${alertas} alerta` : ''}`],
                     ['categories', 'Categorias', ''],
                     ['company', 'Empresa', ''],
                   ] as [ViewConta, string, string][]).map(([view, rotulo, valor], i) => (

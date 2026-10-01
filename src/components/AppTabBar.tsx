@@ -2,9 +2,11 @@
 //
 // Com algum módulo de agente habilitado, a barra são as três portas do produto
 // — Alfred (a semana + o chat), Atividade (o que espera aprovação e o que já
-// foi feito) e Ferramentas (o painel de cada agente) — mais o Menu, que segue
-// dando acesso ao resto. A tela do Alfred esconde a barra enquanto o campo de
-// digitar está focado, para o teclado ficar só com o composer.
+// foi feito) e Ferramentas (o painel de cada agente). Não há mais o Menu: as
+// ferramentas estão em Ferramentas e a Conta (créditos, integrações, empresa,
+// ajuda, sair…) sai do avatar no topo de cada tela (`ContaMenu.tsx`). A tela
+// do Alfred esconde a barra enquanto o campo de digitar está focado, para o
+// teclado ficar só com o composer.
 //
 // Sem módulo de agente não há chat nem atividade: a barra antiga (Catálogo,
 // novo produto, Integrações) continua valendo.
@@ -28,6 +30,7 @@ interface Props {
   pendentes?: number;
   onNavegar: (destino: TabDestino) => void;
   onNovoProduto: () => void;
+  /** Gaveta do menu antigo — só na barra de quem não tem agente. */
   onMenu: () => void;
 }
 
@@ -103,7 +106,6 @@ const AppTabBar: React.FC<Props> = ({ atual, mostrarAgente, pendentes = 0, onNav
           icone={<Columns3 className="w-[19px] h-[19px]" />}
           onClick={() => onNavegar('ferramentas')}
         />
-        <Item ativo={false} rotulo="Menu" icone={<Menu className="w-[19px] h-[19px]" />} onClick={onMenu} />
       </Barra>
     );
   }

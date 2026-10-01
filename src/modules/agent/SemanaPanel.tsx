@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowUpRight, Check, Sparkles } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, Check, ChevronRight, Sparkles } from 'lucide-react';
 import { DIAS_CURTOS, inicioDaSemana, textoEstimativa, type DestinoTarefa, type OrigemTarefa, type TarefaSemana } from './semana';
 
 interface Props {
@@ -9,6 +9,9 @@ interface Props {
   onAbrir: (destino: DestinoTarefa, tarefa?: TarefaSemana) => void;
   /** Do histórico (users/{uid}/semanas): como foi a semana anterior. */
   semanaPassada?: { feitas: number; total: number } | null;
+  /** Rodapé "N fontes · +M para conectar" (ver `resumoFontes`); sem ele, sem rodapé. */
+  fontes?: { ativas: number; paraConectar: number; alerta: number } | null;
+  onAbrirFontes?: () => void;
 }
 
 export const ORIGEM: Record<OrigemTarefa, { rotulo: string; cor: string }> = {
@@ -98,7 +101,7 @@ const Tarefa: React.FC<{ t: TarefaSemana } & Pick<Props, 'onFazer' | 'onAbrir'>>
  * "Sua semana": o que o Alfred montou a partir das fontes conectadas, por dia.
  * É o estado inicial da tela do agente — ela nunca abre num campo vazio.
  */
-const SemanaPanel: React.FC<Props> = ({ tarefas, hoje, onFazer, onAbrir, semanaPassada }) => {
+const SemanaPanel: React.FC<Props> = ({ tarefas, hoje, onFazer, onAbrir, semanaPassada, fontes, onAbrirFontes }) => {
   const [dia, setDia] = useState(hoje);
   const inicio = inicioDaSemana(new Date());
   const feitas = tarefas.filter((t) => t.estado === 'feita').length;
@@ -165,6 +168,26 @@ const SemanaPanel: React.FC<Props> = ({ tarefas, hoje, onFazer, onAbrir, semanaP
           doDia.map((t) => <Tarefa key={t.id} t={t} onFazer={onFazer} onAbrir={onAbrir} />)
         )}
       </div>
+
+      {/* A semana é tão boa quanto o que o Alfred enxerga: o rodapé diz de
+          onde as tarefas vêm e quanto ainda dá para ligar. */}
+      {fontes && onAbrirFontes && (
+        <button
+          onClick={onAbrirFontes}
+          className="min-h-[44px] px-3.5 rounded-[16px] flex items-center justify-between gap-2 text-[12.5px] whitespace-nowrap transition-colors"
+          style={{ background: fontes.alerta ? 'var(--ag-warn-soft)' : 'var(--ag-fill)' }}
+        >
+          <span className="flex items-center gap-2 font-medium" style={{ color: fontes.alerta ? 'var(--ag-warn)' : 'var(--ag-text)' }}>
+            {fontes.alerta > 0 && <AlertTriangle className="w-3.5 h-3.5" />}
+            {fontes.ativas} {fontes.ativas === 1 ? 'fonte' : 'fontes'}
+            {fontes.alerta > 0 && ` · ${fontes.alerta} ${fontes.alerta === 1 ? 'alerta' : 'alertas'}`}
+          </span>
+          <span className="flex items-center text-[var(--ag-text-2)]">
+            {fontes.paraConectar > 0 ? `+${fontes.paraConectar} para conectar` : 'Ver fontes'}
+            <ChevronRight className="w-4 h-4" />
+          </span>
+        </button>
+      )}
     </section>
   );
 };

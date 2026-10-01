@@ -152,14 +152,14 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
     return cats.map(cat => (
       <div key={cat.id} className="flex flex-col">
         <div
-          className={`flex items-center gap-2 p-2 rounded hover:bg-gray-100 cursor-pointer ${selectedCategory?.id === cat.id ? 'bg-orange-50 text-orange-600' : ''}`}
+          className={`flex items-center gap-2 p-2 rounded hover:bg-(--ag-fill-2) cursor-pointer ${selectedCategory?.id === cat.id ? 'bg-(--ag-accent-soft) text-(--ag-accent)' : ''}`}
           style={{ paddingLeft: `${indent * 20 + 8}px` }}
           onClick={() => handleSelect(cat)}
         >
-          <Folder className="w-4 h-4 text-gray-400" />
+          <Folder className="w-4 h-4 text-(--ag-text-3)" />
           <span className="font-medium text-sm">{cat.name}</span>
           {cat.attributes && cat.attributes.length > 0 && (
-            <Tag className="w-3 h-3 text-emerald-500 ml-auto" />
+            <Tag className="w-3 h-3 text-(--ag-ok) ml-auto" />
           )}
         </div>
         {renderTree(categories.filter(c => c.parentId === cat.id), indent + 1)}
@@ -179,23 +179,23 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
   ];
 
   return (
-    <div className="flex flex-col h-full bg-white">
-      <header className="px-4 md:px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-200 gap-3 shrink-0">
+    <div className="flex flex-col h-full">
+      <header className="px-4 md:px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-(--ag-hairline) gap-3 shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors shrink-0">
+          <button onClick={onClose} className="p-1.5 hover:bg-(--ag-fill-2) rounded-lg text-(--ag-text-2) transition-colors shrink-0">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="min-w-0">
-            <h1 className="text-lg md:text-xl font-bold text-slate-900 tracking-tight truncate">Categoria & Atributos</h1>
-            <p className="text-xs md:text-sm text-slate-500 mt-0.5 truncate">Organize sua hierarquia de categorias e atributos padrão</p>
+            <h1 className="font-display text-[22px] md:text-[26px] font-semibold tracking-tight text-[var(--ag-text)] truncate">Categorias e atributos</h1>
+            <p className="text-xs md:text-sm text-(--ag-text-2) mt-0.5 truncate">Organize sua hierarquia de categorias e atributos padrão</p>
           </div>
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
-          <button className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3 py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-xs font-medium hover:bg-purple-100 transition-colors shadow-sm">
+          <button className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3 py-2 bg-(--ag-violet-soft) text-(--ag-violet) border border-(--ag-violet-line) rounded-lg text-xs font-medium hover:bg-(--ag-violet-soft) transition-colors shadow-sm">
             <Sparkles className="w-3.5 h-3.5" />
             <span>Sugestão IA</span>
           </button>
-          <button onClick={handleCreate} className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3 py-2 bg-[#FF5B03] text-white rounded-lg text-xs font-semibold hover:bg-[#E14E00] transition-colors shadow-sm whitespace-nowrap">
+          <button onClick={handleCreate} className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3 py-2 bg-(--ag-accent) text-white rounded-lg text-xs font-semibold hover:brightness-95 transition-colors shadow-sm whitespace-nowrap">
             <Plus className="w-4 h-4" />
             <span>Nova Categoria</span>
           </button>
@@ -204,14 +204,14 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
 
       <div className="flex flex-col lg:flex-row flex-1 overflow-hidden min-h-0">
         {/* Sidebar Tree */}
-        <div className="w-full lg:w-[300px] bg-slate-50 border-b lg:border-b-0 lg:border-r border-slate-200 overflow-y-auto p-4 shrink-0 max-h-[180px] lg:max-h-none">
-          <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">Hierarquia</h2>
+        <div className="w-full lg:w-[300px] bg-(--ag-fill) border-b lg:border-b-0 lg:border-r border-(--ag-hairline) overflow-y-auto p-4 shrink-0 max-h-[180px] lg:max-h-none">
+          <h2 className="text-xs font-bold text-(--ag-text-3) uppercase tracking-wider mb-4">Hierarquia</h2>
           {loading ? (
             <div className="flex items-center justify-center py-10">
-              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+              <Loader2 className="w-6 h-6 animate-spin text-(--ag-text-3)" />
             </div>
           ) : rootCategories.length === 0 ? (
-            <div className="text-center py-10 text-sm text-gray-500">
+            <div className="text-center py-10 text-sm text-(--ag-text-2)">
               Nenhuma categoria criada.
             </div>
           ) : (
@@ -222,14 +222,14 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Main Panel */}
-        <div className="flex-1 p-4 md:p-6 overflow-y-auto bg-gray-50">
+        <div className="flex-1 p-4 md:p-6 overflow-y-auto bg-(--ag-fill)">
           {(isEditing || selectedCategory) ? (
             <div className="flex flex-col xl:flex-row gap-4 items-start">
 
               {/* ── Category card ── */}
-              <div className="w-full xl:flex-1 border border-gray-200 rounded-xl bg-white shadow-sm overflow-hidden">
-                <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                  <h3 className="text-lg font-bold text-gray-900">
+              <div className="w-full xl:flex-1 border border-(--ag-hairline) rounded-xl bg-(--ag-surface-solid) shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-(--ag-hairline) flex justify-between items-center bg-(--ag-fill)">
+                  <h3 className="text-lg font-bold text-(--ag-text)">
                     {isEditing ? (editForm.id ? 'Editar Categoria' : 'Nova Categoria') : selectedCategory?.name}
                   </h3>
                   {!isEditing && (
@@ -238,7 +238,7 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                         setEditForm(selectedCategory || {});
                         setIsEditing(true);
                       }}
-                      className="flex items-center gap-2 px-3 py-1.5 text-orange-600 bg-orange-50 border border-orange-100 rounded-lg hover:bg-orange-100"
+                      className="flex items-center gap-2 px-3 py-1.5 text-(--ag-accent) bg-(--ag-accent-soft) border border-(--ag-accent-line) rounded-lg hover:bg-(--ag-accent-soft)"
                     >
                       <Edit className="w-4 h-4" />
                       <span className="text-sm font-bold">Editar</span>
@@ -250,20 +250,20 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                   {isEditing ? (
                     <div className="space-y-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Categoria</label>
+                        <label className="block text-sm font-medium text-(--ag-text) mb-1">Nome da Categoria</label>
                         <input
                           type="text"
                           value={editForm.name || ''}
                           onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500"
+                          className="w-full px-3 py-2 border border-(--ag-hairline-2) rounded-md shadow-sm focus:ring-(--ag-accent) focus:border-(--ag-accent)"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Categoria Pai</label>
+                        <label className="block text-sm font-medium text-(--ag-text) mb-1">Categoria Pai</label>
                         <select
                           value={editForm.parentId || ''}
                           onChange={(e) => setEditForm(prev => ({ ...prev, parentId: e.target.value || null }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500"
+                          className="w-full px-3 py-2 border border-(--ag-hairline-2) rounded-md shadow-sm focus:ring-(--ag-accent) focus:border-(--ag-accent)"
                         >
                           <option value="">-- Nenhuma (Raiz) --</option>
                           {categories.filter(c => c.id !== editForm.id).map(c => (
@@ -278,16 +278,16 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                           id="inherit"
                           checked={editForm.inheritParentAttributes ?? true}
                           onChange={(e) => setEditForm(prev => ({ ...prev, inheritParentAttributes: e.target.checked }))}
-                          className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                          className="rounded border-(--ag-hairline-2) text-(--ag-accent) focus:ring-(--ag-accent)"
                         />
-                        <label htmlFor="inherit" className="text-sm text-gray-700">
+                        <label htmlFor="inherit" className="text-sm text-(--ag-text)">
                           Herdar atributos da categoria pai
                         </label>
                       </div>
 
-                      <div className="pt-4 border-t border-gray-200 mt-6">
+                      <div className="pt-4 border-t border-(--ag-hairline) mt-6">
                         <div className="flex items-center justify-between mb-4">
-                          <h4 className="text-sm font-bold text-gray-900">Atributos da Categoria</h4>
+                          <h4 className="text-sm font-bold text-(--ag-text)">Atributos da Categoria</h4>
                           <button
                             onClick={() => {
                               const newAttr: AttributeDefinition = {
@@ -303,7 +303,7 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                               };
                               setEditForm(prev => ({ ...prev, attributes: [...(prev.attributes || []), newAttr] }));
                             }}
-                            className="flex items-center gap-1 text-xs font-bold text-orange-600 hover:text-orange-700"
+                            className="flex items-center gap-1 text-xs font-bold text-(--ag-accent) hover:text-(--ag-accent)"
                           >
                             <Plus className="w-3 h-3" />
                             Adicionar Atributo
@@ -312,10 +312,10 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
 
                         <div className="space-y-3">
                           {editForm.attributes?.map((attr, idx) => (
-                            <div key={attr.id} className="p-4 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
+                            <div key={attr.id} className="p-4 bg-(--ag-fill) border border-(--ag-hairline) rounded-lg space-y-3">
                               <div className="flex gap-3">
                                 <div className="flex-1">
-                                  <label className="block text-xs font-medium text-gray-500 mb-1">Nome/Chave</label>
+                                  <label className="block text-xs font-medium text-(--ag-text-2) mb-1">Nome/Chave</label>
                                   <input
                                     type="text"
                                     value={attr.key}
@@ -326,11 +326,11 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                                       newAttrs[idx].label = e.target.value;
                                       setEditForm(prev => ({ ...prev, attributes: newAttrs }));
                                     }}
-                                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded shadow-sm"
+                                    className="w-full px-2 py-1.5 text-sm border border-(--ag-hairline-2) rounded shadow-sm"
                                   />
                                 </div>
                                 <div className="w-32">
-                                  <label className="block text-xs font-medium text-gray-500 mb-1">Tipo</label>
+                                  <label className="block text-xs font-medium text-(--ag-text-2) mb-1">Tipo</label>
                                   <select
                                     value={attr.type}
                                     onChange={(e) => {
@@ -338,7 +338,7 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                                       newAttrs[idx].type = e.target.value as any;
                                       setEditForm(prev => ({ ...prev, attributes: newAttrs }));
                                     }}
-                                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded shadow-sm"
+                                    className="w-full px-2 py-1.5 text-sm border border-(--ag-hairline-2) rounded shadow-sm"
                                   >
                                     <option value="text">Texto</option>
                                     <option value="select">Lista (1)</option>
@@ -354,7 +354,7 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                                       const newAttrs = editForm.attributes?.filter(a => a.id !== attr.id);
                                       setEditForm(prev => ({ ...prev, attributes: newAttrs }));
                                     }}
-                                    className="p-1.5 text-red-500 hover:bg-red-50 rounded"
+                                    className="p-1.5 text-(--ag-danger) hover:bg-(--ag-danger-soft) rounded"
                                     title="Remover atributo"
                                   >
                                     <Trash2 className="w-4 h-4" />
@@ -364,7 +364,7 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
 
                               {(attr.type === 'select' || attr.type === 'multiselect' || attr.type === 'checkbox') && (
                                 <div>
-                                  <label className="block text-xs font-medium text-gray-500 mb-1">Opções (separadas por vírgula)</label>
+                                  <label className="block text-xs font-medium text-(--ag-text-2) mb-1">Opções (separadas por vírgula)</label>
                                   <input
                                     type="text"
                                     value={attr.options.join(', ')}
@@ -374,7 +374,7 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                                       newAttrs[idx].options = e.target.value.split(',').map(o => o.trim()).filter(Boolean);
                                       setEditForm(prev => ({ ...prev, attributes: newAttrs }));
                                     }}
-                                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded shadow-sm"
+                                    className="w-full px-2 py-1.5 text-sm border border-(--ag-hairline-2) rounded shadow-sm"
                                   />
                                 </div>
                               )}
@@ -388,14 +388,14 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                                     newAttrs[idx].required = e.target.checked;
                                     setEditForm(prev => ({ ...prev, attributes: newAttrs }));
                                   }}
-                                  className="rounded border-gray-300"
+                                  className="rounded border-(--ag-hairline-2)"
                                 />
-                                <span className="text-xs text-gray-700 font-medium">Requerido</span>
+                                <span className="text-xs text-(--ag-text) font-medium">Requerido</span>
                               </label>
                             </div>
                           ))}
                           {(!editForm.attributes || editForm.attributes.length === 0) && (
-                            <div className="text-center p-4 border border-dashed rounded-lg text-sm text-gray-500">
+                            <div className="text-center p-4 border border-dashed rounded-lg text-sm text-(--ag-text-2)">
                               Nenhum atributo próprio definido.
                             </div>
                           )}
@@ -408,13 +408,13 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                             setIsEditing(false);
                             if (!selectedCategory) setEditForm({});
                           }}
-                          className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium"
+                          className="px-4 py-2 text-(--ag-text) bg-(--ag-fill-2) hover:bg-(--ag-fill-2) rounded-lg font-medium"
                         >
                           Cancelar
                         </button>
                         <button
                           onClick={handleSave}
-                          className="flex items-center gap-2 px-4 py-2 text-white bg-orange-600 hover:bg-orange-700 rounded-lg font-bold"
+                          className="flex items-center gap-2 px-4 py-2 text-white bg-(--ag-accent) hover:brightness-95 rounded-lg font-bold"
                         >
                           <Save className="w-4 h-4" />
                           Salvar
@@ -425,34 +425,34 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                     <div className="space-y-6">
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <span className="block text-xs font-bold text-gray-500 uppercase">Slug</span>
-                          <span className="text-sm text-gray-900">{selectedCategory?.slug}</span>
+                          <span className="block text-xs font-bold text-(--ag-text-2) uppercase">Slug</span>
+                          <span className="text-sm text-(--ag-text)">{selectedCategory?.slug}</span>
                         </div>
                         <div>
-                          <span className="block text-xs font-bold text-gray-500 uppercase">Caminho</span>
-                          <span className="text-sm text-gray-900">{selectedCategory?.path.join(' > ')}</span>
+                          <span className="block text-xs font-bold text-(--ag-text-2) uppercase">Caminho</span>
+                          <span className="text-sm text-(--ag-text)">{selectedCategory?.path.join(' > ')}</span>
                         </div>
                       </div>
 
-                      <div className="pt-4 border-t border-gray-100">
-                        <h4 className="text-sm font-bold text-gray-900 mb-4 flex items-center justify-between">
+                      <div className="pt-4 border-t border-(--ag-hairline)">
+                        <h4 className="text-sm font-bold text-(--ag-text) mb-4 flex items-center justify-between">
                           Atributos Efetivos
-                          <span className="text-xs font-normal text-gray-500">(Incluindo herdados)</span>
+                          <span className="text-xs font-normal text-(--ag-text-2)">(Incluindo herdados)</span>
                         </h4>
                         {selectedCategory && (
                           <div className="space-y-2">
                             {getEffectiveAttributes(selectedCategory.id, categories).map((attr, idx) => (
-                              <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                              <div key={idx} className="flex items-center justify-between p-3 bg-(--ag-fill) rounded-lg border border-(--ag-hairline)">
                                 <div>
                                   <div className="flex items-center gap-2">
-                                    <span className="font-medium text-sm text-gray-900">{attr.label}</span>
+                                    <span className="font-medium text-sm text-(--ag-text)">{attr.label}</span>
                                     {attr.inherited && (
-                                      <span className="px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-purple-100 text-purple-700">
+                                      <span className="px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-(--ag-violet-soft) text-(--ag-violet)">
                                         Herdado
                                       </span>
                                     )}
                                   </div>
-                                  <span className="text-xs text-gray-500">
+                                  <span className="text-xs text-(--ag-text-2)">
                                     Tipo: {attr.type} {attr.required ? '(Obrigatório)' : ''}
                                     {attr.options && attr.options.length > 0 && ` • Opções: ${attr.options.join(', ')}`}
                                   </span>
@@ -460,7 +460,7 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                               </div>
                             ))}
                             {getEffectiveAttributes(selectedCategory.id, categories).length === 0 && (
-                              <div className="text-sm text-gray-500 p-4 text-center border border-dashed rounded-lg">
+                              <div className="text-sm text-(--ag-text-2) p-4 text-center border border-dashed rounded-lg">
                                 Nenhum atributo definido.
                               </div>
                             )}
@@ -474,16 +474,16 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
 
               {/* ── Image Prompts card (right column, only when feature enabled and category selected) ── */}
               {imagePromptsEnabled && selectedCategory && (
-                <div className="w-full xl:w-80 shrink-0 border border-purple-100 rounded-xl bg-white shadow-sm overflow-hidden">
-                  <div className="px-5 py-4 border-b border-purple-100 bg-purple-50/40 flex items-center justify-between">
+                <div className="w-full xl:w-80 shrink-0 border border-(--ag-violet-line) rounded-xl bg-(--ag-surface-solid) shadow-sm overflow-hidden">
+                  <div className="px-5 py-4 border-b border-(--ag-violet-line) bg-(--ag-violet-soft) flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Image className="w-4 h-4 text-purple-500" />
-                      <h4 className="text-sm font-bold text-gray-900">Prompts de Imagens</h4>
+                      <Image className="w-4 h-4 text-(--ag-violet)" />
+                      <h4 className="text-sm font-bold text-(--ag-text)">Prompts de Imagens</h4>
                     </div>
                     {!isEditingPrompts && (
                       <button
                         onClick={() => setIsEditingPrompts(true)}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-purple-600 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 text-xs font-bold"
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-(--ag-violet) bg-(--ag-violet-soft) border border-(--ag-violet-line) rounded-lg hover:bg-(--ag-violet-soft) text-xs font-bold"
                       >
                         <Edit className="w-3.5 h-3.5" />
                         Editar
@@ -501,9 +501,9 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                           disabled={!isEditingPrompts}
                           checked={isEditingPrompts ? promptForm.inheritImagePrompts : (selectedCategory.inheritImagePrompts ?? true)}
                           onChange={(e) => setPromptForm(prev => ({ ...prev, inheritImagePrompts: e.target.checked }))}
-                          className="rounded border-gray-300 text-purple-600 focus:ring-purple-500 disabled:opacity-60"
+                          className="rounded border-(--ag-hairline-2) text-(--ag-violet) focus:ring-(--ag-violet) disabled:opacity-60"
                         />
-                        <label htmlFor="promptInherit" className="text-xs text-gray-700">
+                        <label htmlFor="promptInherit" className="text-xs text-(--ag-text)">
                           Herdar prompts de{' '}
                           <span className="font-semibold">
                             {categories.find(c => c.id === selectedCategory.parentId)?.name || 'categoria pai'}
@@ -519,7 +519,7 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
 
                       return SCENE_SLOTS.map(({ key, label, placeholder, defaultText }) => (
                         <div key={key}>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+                          <label className="block text-xs font-medium text-(--ag-text-2) mb-1">{label}</label>
                           <textarea
                             rows={2}
                             disabled={!isEditingPrompts || isInheriting}
@@ -531,8 +531,8 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                             placeholder={isInheriting ? `Automático: ${defaultText}` : placeholder}
                             className={`w-full px-2.5 py-2 text-xs border rounded-lg resize-none transition-colors ${
                               isEditingPrompts && !isInheriting
-                                ? 'border-purple-300 focus:ring-purple-500 focus:border-purple-500 bg-white'
-                                : 'border-gray-200 bg-gray-50 text-gray-500'
+                                ? 'border-(--ag-violet-line) focus:ring-(--ag-violet) focus:border-(--ag-violet) bg-(--ag-surface-solid)'
+                                : 'border-(--ag-hairline) bg-(--ag-fill) text-(--ag-text-2)'
                             }`}
                           />
                         </div>
@@ -542,7 +542,7 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                     {isEditingPrompts && (
                       <>
                         {!(hasParent && promptForm.inheritImagePrompts) && (
-                          <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                          <p className="text-xs text-(--ag-warn) bg-(--ag-warn-soft) border border-(--ag-warn-line) rounded-lg p-2.5">
                             ⚠️ Descreva apenas a cena. Iluminação, câmera e qualidade fotográfica são aplicados automaticamente.
                           </p>
                         )}
@@ -552,14 +552,14 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
                               syncPromptForm(selectedCategory);
                             }}
                             disabled={isSavingPrompts}
-                            className="flex-1 px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg disabled:opacity-50"
+                            className="flex-1 px-3 py-2 text-xs font-medium text-(--ag-text) bg-(--ag-fill-2) hover:bg-(--ag-fill-2) rounded-lg disabled:opacity-50"
                           >
                             Cancelar
                           </button>
                           <button
                             onClick={handleSavePrompts}
                             disabled={isSavingPrompts}
-                            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-lg disabled:opacity-50"
+                            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-(--ag-violet) hover:brightness-95 rounded-lg disabled:opacity-50"
                           >
                             {isSavingPrompts ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                             Salvar
@@ -573,9 +573,9 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
 
             </div>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-gray-400">
-              <Folder className="w-16 h-16 mb-4 text-gray-200" />
-              <p className="text-lg font-medium text-gray-500">Selecione uma categoria para visualizar ou editar</p>
+            <div className="h-full flex flex-col items-center justify-center text-(--ag-text-3)">
+              <Folder className="w-16 h-16 mb-4 text-(--ag-text-3)" />
+              <p className="text-lg font-medium text-(--ag-text-2)">Selecione uma categoria para visualizar ou editar</p>
             </div>
           )}
         </div>

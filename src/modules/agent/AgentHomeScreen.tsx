@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Coins, Menu, Moon, ScrollText, Sun } from 'lucide-react';
+import { AlertCircle, Coins, Moon, ScrollText, Sun } from 'lucide-react';
 import type { Product } from '../../types/models';
 import type { ExtrasSemana } from './useSemana';
 import type { AgentAction, PedidoAlfred, ThreadMessage, WorkspaceContext } from '../../types/agent';
@@ -9,19 +9,21 @@ import {
 import { fetchIntegrationsOverview, desde, type IntegrationSummary } from '../../services/integrationsStatusService';
 import { listenProjects } from '../../services/contentService';
 import VoiceOrb from './VoiceOrb';
-import ConnectionsBar, { type ConnectionItem } from './ConnectionsBar';
+import ConnectionsBar, { MARCA, type ConnectionItem } from './ConnectionsBar';
 import { useAgentTheme } from './theme';
-import { useAlturaTeclado, useLarguraDe, useTelaPequena } from './useViewport';
-import ColunaAtividade from './ColunaAtividade';
-import { MARCA, montarConectores, resumoFontes } from './conectores';
+import { useAlturaTeclado, useTelaLarga, useTelaPequena } from './useViewport';
 import ChatThread from './chat/ChatThread';
 import Composer from './chat/Composer';
 import LogsPanel from './chat/LogsPanel';
 import LoteEmAndamento from './chat/LoteEmAndamento';
 import SemanaPanel from './SemanaPanel';
+import ColunaAtividade from './ColunaAtividade';
 import { useHistoricoSemana, useSemana } from './useSemana';
+import { useEstadoMeli } from './useFontes';
+import { entradasDoApp, montarFontes, resumoFontes } from './conectores';
 import type { DestinoTarefa, TarefaSemana } from './semana';
 import CabecalhoTarefa from './chat/CabecalhoTarefa';
+import { BotaoConta } from '../../components/ContaMenu';
 
 interface Props {
   uid: string;
@@ -31,15 +33,15 @@ interface Props {
   extras?: ExtrasSemana;
   hasContentAgent: boolean;
   hasOperationsAgent: boolean;
-  /** A4 · Fontes e conectores — a régua e o rodapé da semana levam até ela. */
-  onAbrirConectores: () => void;
-  /** D1: a coluna "Precisa de você · Rodando · Feito hoje" leva à Atividade. */
+  onOpenIntegrations: () => void;
+  /** Tela "Fontes e conectores" — rodapé da semana e o "+" da régua. */
+  onAbrirFontes: () => void;
+  /** "Ver tudo" da coluna de atividade no desktop. */
   onAbrirAtividade: () => void;
   /** Módulo do otimizador do Mercado Livre — alimenta a semana com propostas. */
   hasMeli: boolean;
   /** "Abrir" de uma tarefa da semana: leva à ferramenta dona dela. */
   onAbrirDestino: (destino: DestinoTarefa, tarefa?: TarefaSemana) => void;
-  onAbrirMenu: () => void;
   /** Campo focado no telefone — o App esconde a tab bar para o teclado. */
   onFocoChange?: (focado: boolean) => void;
   /** Pedido vindo de outra tela ("Pedir ao Alfred"): enviado ao montar, com o contexto dela. */
@@ -53,36 +55,15 @@ const SUGESTOES = [
   'Como estão os artigos desta semana?',
 ];
 
-
-/** D1 · régua de fontes no pé da semana: "4 fontes · +2 para conectar ›", que abre A4. */
-const RodapeFontes: React.FC<{ fontes: { fontes: number; paraConectar: number; atencao: number }; onClick: () => void }> = ({ fontes, onClick }) => (
-  <button
-    onClick={onClick}
-    className="w-full flex items-center justify-between gap-2 px-3.5 min-h-[44px] rounded-[14px] text-[13px] transition-colors"
-    style={{ background: 'var(--ag-fill)', border: '1px solid var(--ag-hairline)' }}
-  >
-    <span className="flex items-center gap-1.5 font-medium text-[var(--ag-text)]">
-      {(['produto', 'conteudo', 'meli', 'operacoes'] as const).map((o) => (
-        <span key={o} className="w-2 h-2 rounded-full" style={{ background: `var(--ag-orig-${o})` }} />
-      ))}
-      <span className="ml-1">{fontes.fontes} {fontes.fontes === 1 ? 'fonte' : 'fontes'}</span>
-      {fontes.atencao > 0 && <span style={{ color: 'var(--ag-warn)' }}>· {fontes.atencao} com alerta</span>}
-    </span>
-    <span className="text-[var(--ag-text-2)]">
-      {fontes.paraConectar > 0 ? `+${fontes.paraConectar} para conectar ›` : 'Ver conectores ›'}
-    </span>
-  </button>
-);
-
-/** Abaixo disso não cabem semana (320) + conversa legível + coluna de atividade (320). */
-const LARGURA_TRES_COLUNAS = 1100;
-
 const AgentHomeScreen: React.FC<Props> = ({
-  uid, credits, products, extras, hasContentAgent, hasMeli, onAbrirConectores, onAbrirAtividade, onAbrirDestino,
-  onAbrirMenu, onFocoChange, promptInicial, onPromptConsumido,
+  uid, credits, products, extras, hasContentAgent, hasMeli, onOpenIntegrations, onAbrirFontes, onAbrirAtividade, onAbrirDestino,
+  onFocoChange, promptInicial, onPromptConsumido,
 }) => {
   const { tema, alternar } = useAgentTheme();
   const telaPequena = useTelaPequena();
+  // Desktop largo (D1): semana | conversa | atividade lado a lado, sem
+  // alternar entre semana e conversa.
+  const larga = useTelaLarga();
   const alturaTeclado = useAlturaTeclado();
   const [composerFocado, setComposerFocado] = useState(false);
   // A tela abre na semana mesmo com conversa antiga; mandar algo leva ao chat
@@ -338,6 +319,14 @@ const AgentHomeScreen: React.FC<Props> = ({
     return base;
   }, [integracoes, ferramentas, pendentesPorProvider, hasContentAgent, projetosCount, acoesPendentesConteudo]);
 
+  // Rodapé da semana: a mesma conta da tela de fontes, para o "+2 para
+  // conectar" bater com a lista que abre. Só depois da primeira checagem —
+  // antes disso toda integração pareceria "para conectar".
+  const meli = useEstadoMeli(hasMeli);
+  const resumoDasFontes = useMemo(() => (statusCarregando || (hasMeli && !meli) ? null : resumoFontes(montarFontes(
+    entradasDoApp({ integracoes, meli, hasMeli, hasContentAgent, projetos: projetosCount }),
+  ))), [statusCarregando, integracoes, meli, hasMeli, hasContentAgent, projetosCount]);
+
   // `mensagens` só reflete o Firestore quando o listener entrega o snapshot,
   // o que chega depois do fim do SSE — sem `interagiu`, essa janela faz a
   // tela voltar para o estado inicial entre o streaming acabar e a mensagem
@@ -345,17 +334,8 @@ const AgentHomeScreen: React.FC<Props> = ({
   const semChat = modo === 'semana' || (mensagens.length === 0 && !streaming && !interagiu);
   const temConversa = mensagens.length > 0 || streaming || interagiu;
 
-  // D1: com espaço, semana | conversa | atividade lado a lado — sem alternar.
-  const raizRef = useRef<HTMLDivElement>(null);
-  const tresColunas = useLarguraDe(raizRef) >= LARGURA_TRES_COLUNAS;
-
-  const fontes = useMemo(
-    () => resumoFontes(montarConectores({ integracoes, ferramentas, hasContentAgent, hasMeli })),
-    [integracoes, ferramentas, hasContentAgent, hasMeli],
-  );
-
   return (
-    <div ref={raizRef} className="alfreds h-full flex flex-col" data-tema={tema}>
+    <div className="alfreds h-full flex flex-col" data-tema={tema}>
       <div
         className="ag-aurora flex-1 min-h-0 rounded-[24px] sm:rounded-[28px] flex flex-col overflow-hidden"
         style={{ border: '1px solid var(--ag-hairline)', boxShadow: 'var(--ag-shadow)' }}
@@ -367,14 +347,7 @@ const AgentHomeScreen: React.FC<Props> = ({
           className="ag-glass shrink-0 px-2.5 sm:pl-5 sm:pr-4 py-2 sm:py-2.5 flex items-center gap-2 sm:gap-3"
           style={{ borderBottom: '1px solid var(--ag-hairline)', borderRadius: 0, borderLeft: 0, borderRight: 0, borderTop: 0 }}
         >
-          <button
-            onClick={onAbrirMenu}
-            title="Menu"
-            className="md:hidden w-9 h-9 rounded-full grid place-items-center shrink-0 text-[var(--ag-text-2)] transition-colors"
-            style={{ background: 'var(--ag-fill)' }}
-          >
-            <Menu className="w-[18px] h-[18px]" />
-          </button>
+          <BotaoConta />
 
           <div className="flex items-center gap-2.5 min-w-0">
             <VoiceOrb size={34} ativo={streaming} />
@@ -403,7 +376,7 @@ const AgentHomeScreen: React.FC<Props> = ({
           </div>
 
           <div className="ml-auto flex items-center gap-1.5">
-            {temConversa && !tresColunas && (
+            {temConversa && !larga && (
               <button
                 onClick={() => setModo(semChat ? 'chat' : 'semana')}
                 className="h-9 px-3.5 rounded-full text-[12.5px] font-semibold text-[var(--ag-text)] transition-colors"
@@ -451,17 +424,19 @@ const AgentHomeScreen: React.FC<Props> = ({
           </div>
         </header>
 
-        {tresColunas ? (
-          <div className="flex-1 min-h-0 flex gap-4 p-4">
-            <aside className="w-[320px] shrink-0 overflow-y-auto ag-scroll flex flex-col gap-3 pr-1">
-              <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={fazerTarefa} onAbrir={onAbrirDestino} semanaPassada={semanaPassada} />
-              <RodapeFontes fontes={fontes} onClick={onAbrirConectores} />
+        {/* Com o teclado aberto no telefone a régua vira ruído: some para o
+            campo ficar com o que sobrou da viewport. */}
+        <div className="ag-recolhe px-3 sm:px-4 pt-3 shrink-0" data-recolhido={emFoco} style={{ maxHeight: 220 }}>
+          <ConnectionsBar itens={itensConexao} carregando={statusCarregando} onConectar={onOpenIntegrations} onAdicionar={onAbrirFontes} />
+        </div>
+
+        {larga ? (
+          <div className="flex-1 min-h-0 flex gap-4 px-4 pt-3 pb-4">
+            <aside className="ag-glass ag-scroll w-[320px] shrink-0 overflow-y-auto rounded-[24px] p-4">
+              <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={fazerTarefa} onAbrir={onAbrirDestino} semanaPassada={semanaPassada} fontes={resumoDasFontes} onAbrirFontes={onAbrirFontes} />
             </aside>
 
-            <section
-              className="flex-1 min-w-0 flex flex-col rounded-[22px] overflow-hidden"
-              style={{ border: '1px solid var(--ag-hairline)', background: 'var(--ag-fill)' }}
-            >
+            <div className="flex-1 min-w-0 flex flex-col">
               {tarefaAtual && temConversa && (
                 <CabecalhoTarefa tarefa={tarefaAtual} streaming={streaming} pendentes={pendentesTotal} />
               )}
@@ -479,21 +454,21 @@ const AgentHomeScreen: React.FC<Props> = ({
                   onAjustar={comecarAjuste}
                 />
               ) : (
-                <div className="ag-scroll flex-1 overflow-y-auto px-6 py-8 flex flex-col items-center justify-center gap-4 text-center">
-                  <VoiceOrb size={56} ativo={false} />
-                  <div>
-                    <div className="font-display text-[22px] font-semibold text-[var(--ag-text)]">O que fazemos agora?</div>
-                    <p className="mt-1 text-[14px] text-[var(--ag-text-2)] max-w-sm">
-                      Escolha uma tarefa da semana ou peça qualquer coisa. Nada é gravado sem a sua aprovação.
-                    </p>
-                  </div>
+                <div className="ag-scroll flex-1 overflow-y-auto flex flex-col items-center justify-center gap-4 px-6 text-center">
                   {erro && (
-                    <div className="flex items-start gap-2 text-[13px] rounded-2xl px-3.5 py-2.5 text-left" style={{ background: 'var(--ag-danger-soft)', border: '1px solid var(--ag-hairline)', color: 'var(--ag-danger)' }}>
+                    <div
+                      className="w-full max-w-xl flex items-start gap-2 text-[13px] rounded-2xl px-3.5 py-2.5 text-left"
+                      style={{ background: 'var(--ag-danger-soft)', border: '1px solid var(--ag-hairline)', color: 'var(--ag-danger)' }}
+                    >
                       <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                       <span>{erro}</span>
                     </div>
                   )}
-                  <div className="flex flex-wrap justify-center gap-2 max-w-lg">
+                  <VoiceOrb size={56} ativo={streaming} />
+                  <p className="text-[15px] text-[var(--ag-text-2)] max-w-sm">
+                    Escolha uma tarefa da semana ou peça qualquer coisa ao Alfred.
+                  </p>
+                  <div className="flex flex-wrap justify-center gap-2 max-w-xl">
                     {SUGESTOES.map((texto) => (
                       <button
                         key={texto}
@@ -518,97 +493,100 @@ const AgentHomeScreen: React.FC<Props> = ({
                 emFoco={false}
                 acima={<LoteEmAndamento uid={uid} />}
               />
-            </section>
+            </div>
 
-            <ColunaAtividade uid={uid} acoes={listaAcoes} products={products} onAbrirAtividade={onAbrirAtividade} />
+            <aside className="ag-scroll w-[320px] shrink-0 overflow-y-auto">
+              <ColunaAtividade
+                uid={uid}
+                acoes={listaAcoes}
+                products={products}
+                onExecutar={executar}
+                onRejeitar={rejeitar}
+                onVerAtividade={onAbrirAtividade}
+                onVerLogs={() => setLogsAberto(true)}
+              />
+            </aside>
           </div>
         ) : (
           <>
-          {/* Com o teclado aberto no telefone a régua vira ruído: some para o
-              campo ficar com o que sobrou da viewport. */}
-          <div className="ag-recolhe px-3 sm:px-4 pt-3 shrink-0" data-recolhido={emFoco} style={{ maxHeight: 220 }}>
-            <ConnectionsBar itens={itensConexao} carregando={statusCarregando} onConectar={onAbrirConectores} />
-          </div>
-
-          {semChat ? (
-            <div className="ag-scroll flex-1 overflow-y-auto px-4 sm:px-6 py-6 sm:py-8">
-              {/* No modo foco os blocos recolhem para altura zero, mas o `gap` do
-                  flex continua valendo e sobra um buraco no topo — por isso ele
-                  também zera. */}
-              <div
-                className={`max-w-2xl mx-auto flex flex-col items-center text-center ${
-                  // No modo foco o que sobra (os atalhos) desce e encosta no
-                  // campo, em vez de ficar boiando embaixo do cabeçalho com o
-                  // teclado ocupando o resto da tela.
-                  emFoco ? 'gap-0 min-h-full justify-end' : 'gap-4'
-                }`}
-              >
-                {erro && (
-                  <div
-                    className="w-full flex items-start gap-2 text-[13px] rounded-2xl px-3.5 py-2.5 text-left"
-                    style={{
-                      background: 'var(--ag-danger-soft)',
-                      border: '1px solid var(--ag-hairline)',
-                      color: 'var(--ag-danger)',
-                    }}
-                  >
-                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span>{erro}</span>
-                  </div>
-                )}
-
-                {/* A semana recolhe no modo foco: com o teclado aberto o que
-                    importa é o campo, e os atalhos descem para encostar nele. */}
-                <div className="ag-recolhe w-full ag-rise" data-recolhido={emFoco} style={{ maxHeight: 2400 }}>
-                  <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={fazerTarefa} onAbrir={onAbrirDestino} semanaPassada={semanaPassada} />
-                  <div className="mt-3"><RodapeFontes fontes={fontes} onClick={onAbrirConectores} /></div>
-                </div>
-
-                <div className="ag-scroll-x flex gap-2 w-full overflow-x-auto -mx-1 px-1 pt-1">
-                  {SUGESTOES.map((texto) => (
-                    <button
-                      key={texto}
-                      onClick={() => enviar(texto, {})}
-                      className="shrink-0 min-h-[36px] px-3.5 rounded-full text-[13px] font-medium text-[var(--ag-text-2)] hover:text-[var(--ag-text)] transition-colors"
-                      style={{ background: 'var(--ag-fill)', border: '1px solid var(--ag-hairline)' }}
+            {semChat ? (
+              <div className="ag-scroll flex-1 overflow-y-auto px-4 sm:px-6 py-6 sm:py-8">
+                {/* No modo foco os blocos recolhem para altura zero, mas o `gap` do
+                    flex continua valendo e sobra um buraco no topo — por isso ele
+                    também zera. */}
+                <div
+                  className={`max-w-2xl mx-auto flex flex-col items-center text-center ${
+                    // No modo foco o que sobra (os atalhos) desce e encosta no
+                    // campo, em vez de ficar boiando embaixo do cabeçalho com o
+                    // teclado ocupando o resto da tela.
+                    emFoco ? 'gap-0 min-h-full justify-end' : 'gap-4'
+                  }`}
+                >
+                  {erro && (
+                    <div
+                      className="w-full flex items-start gap-2 text-[13px] rounded-2xl px-3.5 py-2.5 text-left"
+                      style={{
+                        background: 'var(--ag-danger-soft)',
+                        border: '1px solid var(--ag-hairline)',
+                        color: 'var(--ag-danger)',
+                      }}
                     >
-                      {texto}
-                    </button>
-                  ))}
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{erro}</span>
+                    </div>
+                  )}
+
+                  {/* A semana recolhe no modo foco: com o teclado aberto o que
+                      importa é o campo, e os atalhos descem para encostar nele. */}
+                  <div className="ag-recolhe w-full ag-rise" data-recolhido={emFoco} style={{ maxHeight: 2400 }}>
+                    <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={fazerTarefa} onAbrir={onAbrirDestino} semanaPassada={semanaPassada} fontes={resumoDasFontes} onAbrirFontes={onAbrirFontes} />
+                  </div>
+
+                  <div className="ag-scroll-x flex gap-2 w-full overflow-x-auto -mx-1 px-1 pt-1">
+                    {SUGESTOES.map((texto) => (
+                      <button
+                        key={texto}
+                        onClick={() => enviar(texto, {})}
+                        className="shrink-0 min-h-[36px] px-3.5 rounded-full text-[13px] font-medium text-[var(--ag-text-2)] hover:text-[var(--ag-text)] transition-colors"
+                        style={{ background: 'var(--ag-fill)', border: '1px solid var(--ag-hairline)' }}
+                      >
+                        {texto}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <>
-            {tarefaAtual && (
-              <CabecalhoTarefa tarefa={tarefaAtual} streaming={streaming} pendentes={pendentesTotal} onVoltar={() => setModo('semana')} />
-            )}
-            <ChatThread
-              uid={uid}
-              mensagens={mensagens}
-              acoes={acoes}
-              parcial={parcial}
-              leituras={leituras}
-              streaming={streaming}
-              erro={erro}
-              onExecutar={executar}
-              onRejeitar={rejeitar}
+            ) : (
+              <>
+                {tarefaAtual && (
+                  <CabecalhoTarefa tarefa={tarefaAtual} streaming={streaming} pendentes={pendentesTotal} onVoltar={() => setModo('semana')} />
+                )}
+                <ChatThread
+                  uid={uid}
+                  mensagens={mensagens}
+                  acoes={acoes}
+                  parcial={parcial}
+                  leituras={leituras}
+                  streaming={streaming}
+                  erro={erro}
+                  onExecutar={executar}
+                  onRejeitar={rejeitar}
                   onAjustar={comecarAjuste}
-            />
-            </>
-          )}
+                />
+              </>
+            )}
 
-          <Composer
-            disabled={false}
-            streaming={streaming}
-            onEnviar={(t) => { void enviarDoComposer(t); }}
-                ajustando={etiquetaAjuste}
-            onParar={parar}
-            onFoco={focar}
-            recuoTeclado={alturaTeclado}
-            emFoco={emFoco}
-            acima={modo === 'chat' ? <LoteEmAndamento uid={uid} /> : undefined}
-          />
+            <Composer
+              disabled={false}
+              streaming={streaming}
+              onEnviar={(t) => { void enviarDoComposer(t); }}
+              ajustando={etiquetaAjuste}
+              onParar={parar}
+              onFoco={focar}
+              recuoTeclado={alturaTeclado}
+              emFoco={emFoco}
+              acima={modo === 'chat' ? <LoteEmAndamento uid={uid} /> : undefined}
+            />
           </>
         )}
       </div>

@@ -4,10 +4,10 @@ import type { Product } from './models';
 export type IntegrationKey = 'wake' | 'tiny' | 'bling' | 'idworks';
 
 export const INTEGRATION_META: Record<IntegrationKey, { label: string; Icon: typeof Zap; className: string }> = {
-  wake: { label: 'Wake', Icon: Zap, className: 'bg-blue-50 text-blue-700 border-blue-200/60' },
-  tiny: { label: 'Tiny ERP', Icon: Database, className: 'bg-emerald-50 text-emerald-700 border-emerald-200/60' },
-  bling: { label: 'Bling', Icon: Building2, className: 'bg-violet-50 text-violet-700 border-violet-200/60' },
-  idworks: { label: 'IdWorks', Icon: Plug, className: 'bg-pink-50 text-pink-700 border-pink-200/60' },
+  wake: { label: 'Wake', Icon: Zap, className: 'bg-[var(--ag-blue-soft,#eff6ff)] text-[var(--ag-blue,#1d4ed8)] border-[var(--ag-blue-line,#bfdbfe)]' },
+  tiny: { label: 'Tiny ERP', Icon: Database, className: 'bg-[var(--ag-ok-soft,#ecfdf5)] text-[var(--ag-ok,#047857)] border-[var(--ag-ok-line,#a7f3d0)]' },
+  bling: { label: 'Bling', Icon: Building2, className: 'bg-[var(--ag-violet-soft,#f5f3ff)] text-[var(--ag-violet,#6d28d9)] border-[var(--ag-violet-line,#ddd6fe)]' },
+  idworks: { label: 'IdWorks', Icon: Plug, className: 'bg-[color-mix(in_srgb,#db2777_12%,transparent)] text-[#db2777] border-[color-mix(in_srgb,#db2777_30%,transparent)]' },
 };
 
 export function getProductIntegrationLinks(p: Product): IntegrationKey[] {

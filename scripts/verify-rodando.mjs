@@ -1,6 +1,6 @@
 // Verificação da aba "Rodando" da Atividade (src/modules/agent/rodando.ts).
 // Rodar com: npx tsx scripts/verify-rodando.mjs
-import { itensRodando, PARADO_MS, ESQUECER_MS } from '../src/modules/agent/rodando.ts';
+import { itensRodando, feitasHoje, PARADO_MS, ESQUECER_MS } from '../src/modules/agent/rodando.ts';
 
 let failures = 0;
 function check(label, actual, expected) {
@@ -40,6 +40,18 @@ const lotes = itensRodando({ classico: [], ugc: [], lotes: [
 check('lote rodando: progresso sem o descartado e quem está sendo escrito', [lotes[0].titulo, lotes[0].feito, lotes[0].total, lotes[0].etapa], ['Descrições · 3 produtos', 1, 3, 'agora: Mesa']);
 check('lote pausado não aparece como parado', [lotes[1].etapa, lotes[1].parado], ['pausado', false]);
 check('lote em revisão não está rodando', lotes.length, 2);
+
+const hojeLocal = new Date(2026, 8, 30, 15, 0);
+const em = (h, m = 0) => new Date(2026, 8, 30, h, m).toISOString();
+const feitas = feitasHoje([
+  { id: 'a', status: 'executed', createdAt: em(8), resolvedAt: em(9) },
+  { id: 'b', status: 'executed', createdAt: em(10), resolvedAt: em(14) },
+  { id: 'c', status: 'rejected', createdAt: em(10), resolvedAt: em(11) },
+  { id: 'd', status: 'executed', createdAt: new Date(2026, 8, 29, 23, 0).toISOString(), resolvedAt: new Date(2026, 8, 29, 23, 30).toISOString() },
+  { id: 'e', status: 'executed', createdAt: em(12) },
+  { id: 'f', status: 'pending', createdAt: em(13) },
+], hojeLocal);
+check('feitas hoje: só gravadas desde a meia-noite, mais recente primeiro', feitas.map((a) => a.id), ['b', 'e', 'a']);
 
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');
 process.exit(failures ? 1 : 0);
