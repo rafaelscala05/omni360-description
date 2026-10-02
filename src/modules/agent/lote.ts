@@ -37,6 +37,14 @@ export interface ResultadoAmbientada {
 
 export type ResultadoLote = ResultadoDescricao | ResultadoAtributos | ResultadoAmbientada;
 
+export interface AntesDescricao {
+  tituloSeo: string;
+  descricaoSeo: string;
+  palavrasChave: string;
+  statusDescricao: string | null;
+  statusSEO: string | null;
+}
+
 export interface ItemLote {
   id: string;
   docId: string;
@@ -45,6 +53,8 @@ export interface ItemLote {
   estado: EstadoItem;
   /** Descrição no catálogo quando o lote nasceu — o "antes" e a trava de concorrência (lote de descrições). */
   descricaoAntes?: string;
+  /** SEO e status de antes (lote em massa) — o que o Desfazer devolve junto com `descricaoAntes`. */
+  antes?: AntesDescricao;
   resultado?: ResultadoLote;
   erro?: string;
 }
@@ -59,6 +69,10 @@ export interface LoteJob {
   status: StatusLote;
   /** Aprovação automática ligada: cada item é gravado assim que fica pronto. */
   auto: boolean;
+  /** Nasceu do "Gerar … para todas" da tela de Produtos (POST /api/agent/lotes). */
+  origem?: 'massa';
+  /** O Desfazer já rodou — não roda de novo. */
+  desfeito?: boolean;
   itens: ItemLote[];
   avisos: string[];
   leaseId?: string | null;
@@ -297,4 +311,56 @@ export function nomeDoLote(tool: string, total: number): string {
     case 'produtos.ambientadas.gerar': return `Imagens ambientadas · ${n}`;
     default: return `Lote · ${n}`;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Lote em massa: progresso em texto e Desfazer
+// ---------------------------------------------------------------------------
+
+export interface LinhaAoVivo { texto: string; tom: 'trabalhando' | 'ok' | 'alerta' }
+
+/** "✓ Camiseta · ✍️ escrevendo Tênis… · ⚠ Boné: sem foto pública · +3 na fila". */
+export function linhasAoVivo(job: Pick<LoteJob, 'itens'>): LinhaAoVivo[] {
+  const out: LinhaAoVivo[] = [];
+  let fila = 0;
+  for (const i of job.itens) {
+    if (i.estado === 'fila') { fila++; continue; }
+    if (i.estado === 'gravado') out.push({ texto: `✓ ${i.nome}`, tom: 'ok' });
+    else if (i.estado === 'gerando' || i.estado === 'pronto' || i.estado === 'gravando') out.push({ texto: `✍️ escrevendo ${i.nome}…`, tom: 'trabalhando' });
+    else if (i.estado === 'falhou' || i.estado === 'pulado') out.push({ texto: `⚠ ${i.nome}${i.erro ? `: ${i.erro}` : ''}`, tom: 'alerta' });
+  }
+  if (fila) out.push({ texto: `+${fila} na fila`, tom: 'trabalhando' });
+  return out;
+}
+
+const DESFAZIVEIS = ['produtos.descricoes.gerar', 'produtos.ambientadas.gerar'];
+
+export function podeDesfazer(job: LoteJob): boolean {
+  return DESFAZIVEIS.includes(job.tool) && !job.desfeito && statusDerivado(job) === 'concluido'
+    && job.itens.some((i) => i.estado === 'gravado');
+}
+
+export function marcarDesfeito(job: LoteJob, agoraIso: string): LoteJob | null {
+  if (!podeDesfazer(job)) return null;
+  return { ...job, desfeito: true, updatedAt: agoraIso };
+}
+
+const limpar = (s: string) => s.trim();
+
+/** Só devolve a descrição antiga se ninguém mexeu depois do lote. */
+export const podeRestaurar = (descricaoAtual: string, descricaoGravada: string) =>
+  limpar(descricaoAtual) === limpar(descricaoGravada);
+
+/** Campos que o Desfazer grava de volta num item de descrição; null = nada a desfazer. */
+export function camposDeRestauro(item: ItemLote): Record<string, unknown> | null {
+  if (item.estado !== 'gravado' || !item.resultado || !('descricao' in item.resultado)) return null;
+  const a = item.antes;
+  return {
+    'Descrição complementar': item.descricaoAntes ?? '',
+    'Título SEO': a?.tituloSeo ?? '',
+    'Descrição SEO': a?.descricaoSeo ?? '',
+    'Palavras chave SEO': a?.palavrasChave ?? '',
+    _statusDescricao: a?.statusDescricao ?? null,
+    _statusSEO: a?.statusSEO ?? null,
+  };
 }

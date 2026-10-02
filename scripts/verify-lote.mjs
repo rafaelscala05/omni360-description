@@ -4,6 +4,7 @@
 import {
   reivindicar, pegarProximo, concluirGeracao, pausar, retomar, parar, descartar, reservarParaGravar,
   concluirGravacao, resumoLote, statusDerivado, statusDaAcao, linhaProgresso, camposDoItem, nomeDoLote, LEASE_MS,
+  linhasAoVivo, podeDesfazer, marcarDesfeito, podeRestaurar, camposDeRestauro,
 } from '../src/modules/agent/lote.ts';
 
 let failures = 0;
@@ -88,6 +89,47 @@ check('campos de atributos', camposDoItem({ resultado: { atributos: [{ key: 'cor
   [['Cor', null, 'Preto'], ['u', 'Sala', 'Sala, Quarto']]);
 check('campos de ambientadas viram miniaturas', camposDoItem({ resultado: { imagens: ['a', 'b'] } }).map((c) => [c.campo, c.imagens]), [['2 imagens ambientadas', ['a', 'b']]]);
 check('nome do lote por ferramenta', [nomeDoLote('produtos.atributos.gerar', 1), nomeDoLote('x', 3)], ['Atributos · 1 produto', 'Lote · 3 produtos']);
+
+// --- Lote em massa: linhas ao vivo e desfazer -------------------------------------
+{
+  const item = (id, estado, over = {}) => ({ id, docId: id, sku: id, nome: `P${id}`, estado, ...over });
+  const job = {
+    id: 'j', tool: 'produtos.descricoes.gerar', args: {}, chave: 'k', actionId: 'a', status: 'rodando', auto: true, avisos: [],
+    origem: 'massa', createdAt: 'x', updatedAt: 'x',
+    itens: [
+      item('1', 'gravado', { descricaoAntes: '<p>velha</p>', resultado: { descricao: '<p>nova</p>', tituloSeo: 'T', descricaoSeo: 'D', palavrasChave: 'K' },
+        antes: { tituloSeo: 't0', descricaoSeo: 'd0', palavrasChave: 'k0', statusDescricao: 'Descrição original', statusSEO: null } }),
+      item('2', 'gerando'),
+      item('3', 'falhou', { erro: 'sem foto pública' }),
+      item('4', 'fila'),
+    ],
+  };
+  check('linhas ao vivo', linhasAoVivo(job), [
+    { texto: '✓ P1', tom: 'ok' },
+    { texto: '✍️ escrevendo P2…', tom: 'trabalhando' },
+    { texto: '⚠ P3: sem foto pública', tom: 'alerta' },
+    { texto: '+1 na fila', tom: 'trabalhando' },
+  ]);
+
+  const fim = { ...job, status: 'concluido', itens: job.itens.map((i) => (i.estado === 'gerando' || i.estado === 'fila' ? { ...i, estado: 'gravado' } : i)) };
+  check('só desfaz lote concluído com gravados', [podeDesfazer(job), podeDesfazer(fim)], [false, true]);
+
+  // Review Focus 5: desfazer duas vezes.
+  const desfeito = marcarDesfeito(fim, 'agora');
+  check('marca desfeito', desfeito?.desfeito, true);
+  check('segunda vez não faz nada', marcarDesfeito(desfeito, 'agora'), null);
+  check('lote desfeito não oferece desfazer de novo', podeDesfazer(desfeito), false);
+
+  // Review Focus 2: usuário editou depois do lote.
+  check('restaura se o texto ainda é o gravado', podeRestaurar(' <p>nova</p> ', '<p>nova</p>'), true);
+  check('não restaura edição do usuário', podeRestaurar('<p>editei</p>', '<p>nova</p>'), false);
+
+  check('campos de restauro da descrição', camposDeRestauro(job.itens[0]), {
+    'Descrição complementar': '<p>velha</p>', 'Título SEO': 't0', 'Descrição SEO': 'd0', 'Palavras chave SEO': 'k0',
+    _statusDescricao: 'Descrição original', _statusSEO: null,
+  });
+  check('item sem resultado não restaura', camposDeRestauro(job.itens[1]), null);
+}
 
 if (failures) { console.error(`\n${failures} falha(s).`); process.exit(1); }
 console.log('\nTudo certo.');
