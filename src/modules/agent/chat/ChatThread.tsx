@@ -17,6 +17,8 @@ interface Props {
   onExecutar: (id: string) => Promise<void>;
   onRejeitar: (id: string) => Promise<void>;
   onAjustar?: (action: AgentAction) => void;
+  /** Card local no fim da conversa, que não é mensagem persistida (a confirmação da tela de Produtos). */
+  rodape?: React.ReactNode;
 }
 
 type Leitura = { tool: string; ok: boolean; erro?: string };
@@ -99,7 +101,7 @@ const Pensando = () => (
 );
 
 const ChatThread: React.FC<Props> = ({
-  uid, mensagens, acoes, parcial, leituras, streaming, erro, onExecutar, onRejeitar, onAjustar,
+  uid, mensagens, acoes, parcial, leituras, streaming, erro, onExecutar, onRejeitar, onAjustar, rodape,
 }) => {
   const areaRef = useRef<HTMLDivElement>(null);
   const grudarRef = useRef(true);
@@ -119,7 +121,7 @@ const ChatThread: React.FC<Props> = ({
   useEffect(() => {
     const el = areaRef.current;
     if (el && grudarRef.current) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-  }, [mensagens.length, parcial, leituras.length]);
+  }, [mensagens.length, parcial, leituras.length, !!rodape]);
 
   return (
     <div ref={areaRef} onScroll={aoRolar} className="ag-scroll flex-1 overflow-y-auto">
@@ -179,6 +181,13 @@ const ChatThread: React.FC<Props> = ({
                 : leituras.length > 0 && <Trilha leituras={leituras} aoVivo={streaming} />}
               {parcial ? <Markdown texto={parcial} /> : streaming && <Pensando />}
             </div>
+          </div>
+        )}
+
+        {rodape && (
+          <div className="ag-rise flex gap-3">
+            <Avatar />
+            <div className="min-w-0 flex-1">{rodape}</div>
           </div>
         )}
 
