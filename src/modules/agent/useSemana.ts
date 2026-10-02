@@ -7,6 +7,7 @@
 // listener no mesmo documento.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { chaveDeRecarga } from './lote';
 import type { Category, Product } from '../../types/models';
 import { getEffectiveAttributes } from '../../services/categoryService';
 import type { AgentAction } from '../../types/agent';
@@ -339,9 +340,9 @@ export function usePendentesAlfred(ativo: boolean, onCatalogoAlterado?: () => vo
       setN(lista.filter((a) => a.status === 'pending').length);
       // Um lote grava aos poucos (aprovar as prontas antes do fim): a chave
       // inclui quantos já foram gravados, para reler a cada leva, não só no fim.
-      const executadas = lista
-        .filter((a) => a.provider === 'produtos' && (a.status === 'executed' || ((a.result as { gravados?: number } | undefined)?.gravados ?? 0) > 0))
-        .map((a) => `${a.id}:${(a.result as { gravados?: number } | undefined)?.gravados ?? ''}`);
+      // chaveDeRecarga (lote.ts) também muda quando um lote é desfeito e
+      // quando o chat envia o catálogo a um ERP (o carimbo de sincronização muda).
+      const executadas = lista.map(chaveDeRecarga).filter((k): k is string => k !== null);
       if (vistas && executadas.some((id) => !vistas!.has(id))) cbRef.current?.();
       vistas = new Set(executadas);
     });

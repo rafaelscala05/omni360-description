@@ -335,8 +335,9 @@ export function linhasAoVivo(job: Pick<LoteJob, 'itens'>): LinhaAoVivo[] {
 
 const DESFAZIVEIS = ['produtos.descricoes.gerar', 'produtos.ambientadas.gerar'];
 
+/** Só o lote em massa guarda o SEO e os status de antes (`antes`); o do chat, não. */
 export function podeDesfazer(job: LoteJob): boolean {
-  return DESFAZIVEIS.includes(job.tool) && !job.desfeito && statusDerivado(job) === 'concluido'
+  return job.origem === 'massa' && DESFAZIVEIS.includes(job.tool) && !job.desfeito && statusDerivado(job) === 'concluido'
     && job.itens.some((i) => i.estado === 'gravado');
 }
 
@@ -363,4 +364,20 @@ export function camposDeRestauro(item: ItemLote): Record<string, unknown> | null
     _statusDescricao: a?.statusDescricao ?? null,
     _statusSEO: a?.statusSEO ?? null,
   };
+}
+
+/**
+ * Chave que faz o App reler o catálogo (usePendentesAlfred): muda a cada leva
+ * gravada por um lote de Produtos, quando o lote é desfeito, e quando o chat
+ * envia o catálogo a um ERP (o carimbo de sincronização muda no servidor).
+ * null = esta ação não mexe no catálogo.
+ */
+export function chaveDeRecarga(a: { id: string; provider?: string; tool?: string; status: string; result?: unknown }): string | null {
+  const r = (a.result ?? {}) as { gravados?: number; desfeitoEm?: string };
+  if (a.provider === 'produtos') {
+    if (a.status !== 'executed' && !(r.gravados ?? 0)) return null;
+    return `${a.id}:${r.gravados ?? ''}:${r.desfeitoEm ?? ''}`;
+  }
+  if (a.tool?.endsWith('.catalogo.enviar') && a.status === 'executed') return `${a.id}:enviado`;
+  return null;
 }

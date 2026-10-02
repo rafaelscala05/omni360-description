@@ -202,3 +202,44 @@ export function integracoesDe(p: Record<string, unknown>): { integracao: Integra
     .map((integracao) => ({ integracao, estado: estadoIntegracao(p, integracao) }))
     .filter((i) => i.estado.tipo !== 'sem-vinculo');
 }
+
+// ---------------------------------------------------------------------------
+// Cliente: o carimbo é do servidor
+// ---------------------------------------------------------------------------
+
+/** O conteúdo de um item do payload de envio (Tiny ou Wake), como saiu. */
+export function conteudoDoPayload(integ: 'tiny' | 'wake', x: {
+  nome?: string; descricaoHtml?: string; seoTitle?: string; seoDescription?: string; seoKeywords?: string;
+  imagens?: string[]; urlImagem?: string; imagensUrls?: string[];
+}): ConteudoEnvio {
+  return {
+    // A Wake usa `nome` para o título SEO, e não sincroniza título.
+    titulo: integ === 'tiny' ? x.nome : undefined,
+    descricaoHtml: x.descricaoHtml,
+    seoTitle: x.seoTitle,
+    seoDescription: x.seoDescription,
+    seoKeywords: x.seoKeywords,
+    imagens: integ === 'wake' ? x.imagensUrls : (x.imagens ?? (x.urlImagem ? [x.urlImagem] : undefined)),
+  };
+}
+
+/** O produto em memória com o carimbo que o servidor acabou de gravar (o selo muda sem recarregar). */
+export function aplicarCarimbo<T extends Record<string, unknown>>(p: T, integ: 'tiny' | 'wake', carimbo: Carimbo): T {
+  if (!Object.keys(carimbo).length) return p;
+  const campo = CAMPO_CARIMBO[integ];
+  return { ...p, [campo]: { ...((p[campo] as Carimbo | undefined) ?? {}), ...carimbo } };
+}
+
+/**
+ * O que o "salvar" do cliente grava. `_tinyPushed`/`_wakePushed` são escritos
+ * pelo servidor (envio, importação): o merge profundo do Firestore com uma
+ * cópia velha em memória apagaria o carimbo novo. A exceção é a importação da
+ * Wake, que roda no navegador e marca `_wakePushedNovo` até o primeiro salvar.
+ */
+export function paraSalvar<T extends Record<string, unknown>>(p: T): T {
+  const out: Record<string, unknown> = { ...p };
+  delete out._tinyPushed;
+  if (!out._wakePushedNovo) delete out._wakePushed;
+  delete out._wakePushedNovo;
+  return out as T;
+}

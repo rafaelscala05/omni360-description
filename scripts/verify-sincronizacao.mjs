@@ -67,6 +67,21 @@ check('idworks lê a assinatura legada (SEO, onde o hash novo difere)',
 check('integracoesDe lista só as vinculadas',
   integracoesDe({ ...base, _wakeProductId: 'w1' }).map((i) => i.integracao), ['tiny', 'wake']);
 
+// --- Final review C1: o cliente nunca sobrescreve o carimbo do servidor ---------
+{
+  const { aplicarCarimbo, paraSalvar, conteudoDoPayload } = await import('../src/modules/agent/sincronizacao.ts');
+  const p = { _id: 'A', _tinyPushed: { titulo: 't0', descricao: 'd0' }, _wakePushed: { seo: 's0' } };
+  check('aplicarCarimbo mescla por grupo', aplicarCarimbo(p, 'tiny', { descricao: 'd1' })._tinyPushed, { titulo: 't0', descricao: 'd1' });
+  check('aplicarCarimbo vazio devolve o mesmo objeto', aplicarCarimbo(p, 'tiny', {}) === p, true);
+  const salvo = paraSalvar(p);
+  check('paraSalvar tira os carimbos do servidor', ['_tinyPushed' in salvo, '_wakePushed' in salvo], [false, false]);
+  const importado = paraSalvar({ ...p, _wakePushedNovo: true });
+  check('paraSalvar mantém o carimbo da importação Wake recém-feita', [importado._wakePushed, '_wakePushedNovo' in importado], [{ seo: 's0' }, false]);
+  check('conteudoDoPayload tiny', conteudoDoPayload('tiny', { nome: 'N', descricaoHtml: 'd', urlImagem: 'https://v' }),
+    { titulo: 'N', descricaoHtml: 'd', seoTitle: undefined, seoDescription: undefined, seoKeywords: undefined, imagens: ['https://v'] });
+  check('conteudoDoPayload wake ignora nome e usa imagensUrls', [conteudoDoPayload('wake', { nome: 'SEO', imagensUrls: ['https://a'] }).titulo, conteudoDoPayload('wake', { imagensUrls: ['https://a'] }).imagens], [undefined, ['https://a']]);
+}
+
 // --- Conversores do payload de envio (server/syncStamp.ts) ---------------------
 const { conteudoDoPushTiny, conteudoDoPushWake } = await import('../server/syncConteudo.ts');
 check('payload tiny vira conteúdo',

@@ -4,7 +4,7 @@
 import {
   reivindicar, pegarProximo, concluirGeracao, pausar, retomar, parar, descartar, reservarParaGravar,
   concluirGravacao, resumoLote, statusDerivado, statusDaAcao, linhaProgresso, camposDoItem, nomeDoLote, LEASE_MS,
-  linhasAoVivo, podeDesfazer, marcarDesfeito, podeRestaurar, camposDeRestauro,
+  linhasAoVivo, podeDesfazer, marcarDesfeito, podeRestaurar, camposDeRestauro, chaveDeRecarga,
 } from '../src/modules/agent/lote.ts';
 
 let failures = 0;
@@ -129,6 +129,18 @@ check('nome do lote por ferramenta', [nomeDoLote('produtos.atributos.gerar', 1),
     _statusDescricao: 'Descrição original', _statusSEO: null,
   });
   check('item sem resultado não restaura', camposDeRestauro(job.itens[1]), null);
+}
+
+// --- Final review I1/I2 -------------------------------------------------------------
+{
+  const it = { id: 'i0', docId: 'd', sku: 's', nome: 'P', estado: 'gravado', descricaoAntes: 'x', resultado: { descricao: 'y', tituloSeo: '', descricaoSeo: '', palavrasChave: '' } };
+  const base = { id: 'j', tool: 'produtos.descricoes.gerar', args: {}, chave: 'k', actionId: 'a', status: 'concluido', auto: true, avisos: [], createdAt: 'x', updatedAt: 'x', itens: [it] };
+  check('Desfazer só em lote em massa (o do chat não guarda o SEO de antes)', [podeDesfazer(base), podeDesfazer({ ...base, origem: 'massa' })], [false, true]);
+  const acao = { id: 'a', provider: 'produtos', status: 'executed', result: { gravados: 2 } };
+  check('chave de recarga muda quando o lote é desfeito',
+    chaveDeRecarga(acao) !== chaveDeRecarga({ ...acao, result: { gravados: 2, desfeitoEm: 'agora' } }), true);
+  check('envio ao ERP pelo chat também recarrega', chaveDeRecarga({ id: 'b', provider: 'tiny', tool: 'tiny.catalogo.enviar', status: 'executed' }) !== null, true);
+  check('ação pendente de outro provider não recarrega', chaveDeRecarga({ id: 'c', provider: 'wake', tool: 'wake.banners.criar', status: 'executed' }), null);
 }
 
 if (failures) { console.error(`\n${failures} falha(s).`); process.exit(1); }

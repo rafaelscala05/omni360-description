@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { alvos, custoDe, etapasPensando, type Confirmacao } from '../confirmacaoMassa';
+import { alvos, custoDe, etapasPensando, resumoConfirmacao, type Confirmacao } from '../confirmacaoMassa';
 
 interface Props {
   conf: Confirmacao;
@@ -56,9 +56,7 @@ const CardConfirmacao: React.FC<Props> = ({ conf, saldo, onConfirmar, onCancelar
       {pronto && (
         <>
           <p className="text-[14px] font-semibold text-[var(--ag-text)]">
-            {nNovos
-              ? `${nNovos} ${nNovos === 1 ? 'será gerado' : 'serão gerados'}.`
-              : `Todos já têm ${imagem ? 'imagem ambientada' : 'descrição'}.`}
+            {resumoConfirmacao(conf)}
             {imagem && conf.jaTem.length > 0 && ' Sobrescrever acrescenta 3 imagens novas; as antigas ficam.'}
           </p>
           {erro && <p className="text-[13px]" style={{ color: 'var(--ag-danger)' }}>{erro}</p>}

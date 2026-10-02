@@ -26,7 +26,9 @@ export async function carimbarEnvio(
     const campoVinculo = CAMPO_VINCULO[integ];
     const campoCarimbo = CAMPO_CARIMBO[integ];
     for (const it of itens) {
-      if (!it.ok || !it.erpId) continue;
+      // Por passo, não por item: um grupo que falhou (ex.: atributos na Wake)
+      // não impede carimbar os que foram. Item que falhou inteiro tem erro em todo passo.
+      if (!it.erpId) continue;
       const carimbo = assinaturasDoEnvio(integ, it.conteudo, it.steps);
       if (!Object.keys(carimbo).length) continue;
       const snap = await produtos(uid).where(campoVinculo, '==', String(it.erpId)).get();

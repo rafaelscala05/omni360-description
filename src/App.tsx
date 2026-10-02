@@ -18,7 +18,7 @@ import ProdutosAgenteScreen from './modules/agent/ProdutosAgenteScreen';
 import TrilhoDesktop, { type DestinoTrilho, type ItemConta } from './components/TrilhoDesktop';
 import FolhaConteudo from './components/FolhaConteudo';
 import { ASPECTO, estiloAspecto, type Aspecto } from './modules/agent/aspectos';
-import { assinaturaLegada, assinaturasDeImportacao } from './modules/agent/sincronizacao';
+import { aplicarCarimbo, assinaturaLegada, assinaturasDeImportacao, assinaturasDoEnvio, conteudoDoPayload, paraSalvar } from './modules/agent/sincronizacao';
 import { ContaProvider, ContaSheet, AvatarConta, type DadosConta } from './components/ContaMenu';
 import { useAgentTheme } from './modules/agent/theme';
 import type { ChaveFonte } from './modules/agent/conectores';
@@ -1018,12 +1018,14 @@ export default function App() {
           const docRef = doc(productsRef, docId);
           
           // Prepare data (remove undefined values and internal flags)
-          const dataToSave = { 
+          // paraSalvar: os carimbos de sincronização são do servidor — uma cópia
+          // velha em memória apagaria o carimbo novo no merge (sincronizacao.ts).
+          const dataToSave = paraSalvar({
             ...product, 
             ownerId: user.uid, 
             createdAt: product.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString() 
-          };
+          });
           
           // Remove UI-only and internal flags we don't want to persist dirty
           delete dataToSave._isDirty;
@@ -1733,6 +1735,8 @@ export default function App() {
           seoDescription: w.seoDescription ?? '',
           seoKeywords: w.seoKeywords ?? '',
         }),
+        // Importação da Wake roda aqui no navegador: o primeiro salvar grava o carimbo (paraSalvar).
+        _wakePushedNovo: true,
         attributes: w.atributos.length
           ? w.atributos.reduce((acc, a) => {
               acc[a.nome] = { value: a.valor, aiSuggested: false, confirmed: true, source: 'imported' };
@@ -2211,6 +2215,24 @@ export default function App() {
       }
     }
 
+    // Tiny e Wake: o servidor já gravou o carimbo; aqui só o produto em memória
+    // acompanha, para o selo da tela de Produtos mudar sem recarregar.
+    if ((integration === 'tiny' || integration === 'wake') && allResults.length) {
+      const integ = integration;
+      const enviadoPorId = new Map(payload.map((it: any) => [String(it[idField]), it]));
+      const carimboPorId = new Map<string, ReturnType<typeof assinaturasDoEnvio>>();
+      for (const r of allResults) {
+        const it = enviadoPorId.get(String(r[idField]));
+        if (it && r.steps) carimboPorId.set(String(r[idField]), assinaturasDoEnvio(integ, conteudoDoPayload(integ, it), r.steps));
+      }
+      const campoId = integ === 'tiny' ? '_tinyProductId' : '_wakeProductId';
+      const next = productsRef.current.map((p) => {
+        const c = p[campoId] ? carimboPorId.get(String(p[campoId])) : undefined;
+        return c ? aplicarCarimbo(p as unknown as Record<string, unknown>, integ, c) as unknown as Product : p;
+      });
+      productsRef.current = next;
+      setProducts(next);
+    }
     if (integration === 'bling' && allResults.length) await handleBlingPushed(allResults as BlingPushResult[]);
     if (integration === 'idworks' && allResults.length) await handleIdworksPushed(allResults as IdworksPushResult[]);
 

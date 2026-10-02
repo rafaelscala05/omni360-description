@@ -175,6 +175,7 @@ export interface Product {
   _wakeInformacaoId?: number;   // informacaoId do bloco de descrição na Wake
   _wakeVersionId?: string;      // id da última versão salva em wake_versions
   _wakePushed?: { descricao?: string; seo?: string; imagens?: string }; // carimbo de sincronização (server/syncStamp.ts)
+  _wakePushedNovo?: boolean;    // importação Wake (no navegador) ainda não salva: o salvar grava _wakePushed uma vez
 
   // Tiny ERP integration
   _tinyProductId?: string;      // id do produto no Tiny — chave de merge

@@ -1,6 +1,6 @@
 // Verificação da confirmação "pular ou sobrescrever" (src/modules/agent/confirmacaoMassa.ts).
 // Rodar com: npx tsx scripts/verify-confirmacao-massa.mjs
-import { montarConfirmacao, alvos, custoDe, etapasPensando, emLotes, listaNomes, TAMANHO_LOTE } from '../src/modules/agent/confirmacaoMassa.ts';
+import { montarConfirmacao, alvos, custoDe, etapasPensando, emLotes, listaNomes, TAMANHO_LOTE, resumoConfirmacao } from '../src/modules/agent/confirmacaoMassa.ts';
 
 let failures = 0;
 function check(label, actual, expected) {
@@ -37,6 +37,12 @@ check('etapas de imagem citam quem fica sem foto', etapasPensando(i)[2], 'Sem fo
 check('lotes de 50 e 10', [TAMANHO_LOTE['produtos.descricoes.gerar'], TAMANHO_LOTE['produtos.ambientadas.gerar']], [50, 10]);
 check('emLotes', emLotes([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]]);
 check('lista de nomes corta com "e mais"', listaNomes([{ nome: 'a' }, { nome: 'b' }, { nome: 'c' }, { nome: 'd' }], 2), 'a, b e mais 2');
+
+// Final review M1: nenhum tem foto.
+const semFotoNenhum = montarConfirmacao('produtos.ambientadas.gerar', [c('x', { temFoto: false })], 1);
+check('resumo quando nenhum tem foto', resumoConfirmacao(semFotoNenhum), 'Nenhum dos selecionados tem foto para servir de base.');
+check('resumo quando todos já têm', resumoConfirmacao(todos), 'Todos já têm descrição.');
+check('resumo com novos', resumoConfirmacao(d), '2 serão gerados.');
 
 if (failures) { console.error(`\n${failures} falha(s).`); process.exit(1); }
 console.log('\nTudo certo.');

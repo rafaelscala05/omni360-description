@@ -78,3 +78,11 @@ export function emLotes<T>(itens: T[], tamanho: number): T[][] {
   for (let i = 0; i < itens.length; i += tamanho) out.push(itens.slice(i, i + tamanho));
   return out;
 }
+
+/** A frase do card depois das etapas. */
+export function resumoConfirmacao(c: Confirmacao): string {
+  const n = c.novos.length;
+  if (n) return `${n} ${n === 1 ? 'será gerado' : 'serão gerados'}.`;
+  if (!c.jaTem.length && c.semFoto.length) return 'Nenhum dos selecionados tem foto para servir de base.';
+  return `Todos já têm ${c.ferramenta === 'produtos.ambientadas.gerar' ? 'imagem ambientada' : 'descrição'}.`;
+}

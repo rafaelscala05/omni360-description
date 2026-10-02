@@ -211,7 +211,8 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
           Selecione produtos e escolha uma ação, ou peça qualquer coisa ao Alfred.
         </p>
       )}
-      onFoco={(f) => { setFocado(f); onFocoChange?.(f); }}
+      // No telefone, focar o campo abre a folha inteira: em meia altura o teclado deixaria a conversa com poucos px.
+      onFoco={(f) => { setFocado(f); onFocoChange?.(f); if (f && telaPequena) setFolha('cheia'); }}
       recuoTeclado={telaPequena ? alturaTeclado : 0}
       emFoco={telaPequena && focado}
     />

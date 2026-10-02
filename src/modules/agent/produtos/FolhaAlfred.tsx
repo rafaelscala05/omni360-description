@@ -36,7 +36,9 @@ const FolhaAlfred: React.FC<Props> = ({ altura, onAltura, children }) => {
       {altura === 'fechada' && <span className="text-[12.5px] font-semibold text-[var(--ag-text-2)]">Alfred</span>}
     </button>
   );
-  const h = altura === 'cheia' ? '88dvh' : altura === 'meia' ? '52dvh' : 'auto';
+  // Relativo à coluna da tela (não à viewport): a coluna já desconta a barra do
+  // topo e a margem da tab bar, e 88dvh cortava o composer em telefone pequeno.
+  const h = altura === 'cheia' ? 'calc(100% - 8px)' : altura === 'meia' ? '55%' : 'auto';
   return (
     <div
       className="ag-glass-strong rounded-t-[24px] flex flex-col min-h-0 shrink-0"

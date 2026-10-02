@@ -155,5 +155,10 @@ export async function desfazerLote(uid: string, id: string): Promise<{ restaurad
     await batch.commit();
     restaurados++;
   }
+  // A ação já está resolvida: sem isto o App aberto não relê o catálogo
+  // (usePendentesAlfred/chaveDeRecarga) e um salvar depois regravaria o texto desfeito.
+  await adminDb.collection('users').doc(uid).collection('agent_actions').doc(job.actionId)
+    .set({ result: { desfeitoEm: agora, restaurados } }, { merge: true })
+    .catch((e) => console.warn('[lote] falha ao marcar a ação como desfeita', id, e?.message));
   return { restaurados, mantidos };
 }
