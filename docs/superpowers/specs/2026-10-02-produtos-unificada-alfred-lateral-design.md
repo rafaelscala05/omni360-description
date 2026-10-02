@@ -65,6 +65,16 @@ Popover no desktop, folha que sobe da base no celular. Multi-seleção, contagem
 Semântica: **OU dentro do grupo, E entre grupos.** "Limpar" zera.
 Padrão ao abrir: Conteúdo = {Sem descrição, Sem foto} (equivale ao "Incompletos" de hoje).
 
+### Paginação
+
+- **50 produtos por página** (substitui o "Mostrar mais" de 60 em 60).
+- Rodapé da lista: `1–50 de 412` · `‹ Anterior` `1 2 3 … 9` `Próxima ›`. No celular, só `‹  2 de 9  ›`.
+- Mudar busca ou filtros volta para a página 1; trocar de página rola a lista até o topo.
+- A seleção sobrevive à troca de página (é um `Set` de ids, como hoje).
+- Caixa do cabeçalho marca **os 50 da página**. Com a página toda marcada e mais resultados no filtro, aparece a faixa: "50 desta página selecionados · **Selecionar todos os 412 do filtro**" (e o inverso, "Limpar seleção").
+- Contagem dos filtros e o "N selecionados" da barra sempre consideram o total, não só a página.
+- Página e tamanho ficam em `produtosAgente.ts` (`paginar(lista, pagina, 50)`), cobertos pelo verify.
+
 As pílulas de cada linha mostram sempre os quatro aspectos (descrição, atributos, foto, ambientada) com as cores de `aspectos.tsx`; vídeo aparece quando o filtro "Sem vídeo" está ativo.
 
 ### Código
@@ -197,7 +207,7 @@ Texto digitado no composer vai ao modelo como hoje, com `leitura`/`acao` reais d
 ## Ordem sugerida de implementação
 
 1. `sincronizacao.ts` + verificação; gravação nos três pushes; importação/webhooks.
-2. Lista: linha, selo, filtros (pode ir ao ar sozinha).
+2. Lista: linha, selo, filtros, paginação (pode ir ao ar sozinha).
 3. `useConversaAlfred` + `PainelAlfred` extraídos, `AgentHomeScreen` usando-os sem mudança visível.
 4. Painel na tela de Produtos + barra com duas ações + card de confirmação.
 5. Rota `/api/agent/lotes`, progresso em texto, Desfazer.
