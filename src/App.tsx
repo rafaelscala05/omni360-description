@@ -18,7 +18,7 @@ import ProdutosAgenteScreen from './modules/agent/ProdutosAgenteScreen';
 import TrilhoDesktop, { type DestinoTrilho, type ItemConta } from './components/TrilhoDesktop';
 import FolhaConteudo from './components/FolhaConteudo';
 import { ASPECTO, estiloAspecto, type Aspecto } from './modules/agent/aspectos';
-import { assinaturaLegada } from './modules/agent/sincronizacao';
+import { assinaturaLegada, assinaturasDeImportacao } from './modules/agent/sincronizacao';
 import { ContaProvider, ContaSheet, AvatarConta, type DadosConta } from './components/ContaMenu';
 import { useAgentTheme } from './modules/agent/theme';
 import type { ChaveFonte } from './modules/agent/conectores';
@@ -1726,6 +1726,13 @@ export default function App() {
         'GTIN/EAN': w.ean || undefined,
         _wakeProductId: w.produtoId,
         _wakeInformacaoId: w.informacaoId,
+        // Chegou da Wake: o que ela tem agora é o carimbo (imagens só o envio carimba).
+        _wakePushed: assinaturasDeImportacao('wake', {
+          descricaoHtml: w.descricaoHtml ?? '',
+          seoTitle: w.seoTitle ?? '',
+          seoDescription: w.seoDescription ?? '',
+          seoKeywords: w.seoKeywords ?? '',
+        }),
         attributes: w.atributos.length
           ? w.atributos.reduce((acc, a) => {
               acc[a.nome] = { value: a.valor, aiSuggested: false, confirmed: true, source: 'imported' };
@@ -1737,7 +1744,10 @@ export default function App() {
 
       const idx = next.findIndex((p) => p._wakeProductId === w.produtoId);
       if (idx >= 0) {
+        // O mapa inteiro de _wakePushed é trocado no merge: preserva o carimbo de imagens do último envio.
+        const imagensCarimbadas = next[idx]._wakePushed?.imagens;
         next[idx] = { ...next[idx], ...mapped, _isDirty: true };
+        if (imagensCarimbadas) next[idx]._wakePushed = { ...next[idx]._wakePushed, imagens: imagensCarimbadas };
         backups.push({ id: next[idx]._id, raw: w.raw });
       } else {
         const newId = `wake_${w.produtoId}_${Date.now()}`;

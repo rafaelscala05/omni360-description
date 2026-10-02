@@ -10,6 +10,7 @@ import { adminDb } from './firebaseAdmin';
 import { PACE_MS, sleep, type TinyNormalizedProduct } from './tinyAgent';
 import { tinyListPage, tinyGetProduct, getActiveVersion, type TinyVersion } from './tinyProvider';
 import { recordEvent } from './crmEvents';
+import { assinaturasDeImportacao } from '../src/modules/agent/sincronizacao';
 
 const JOB_COL = 'tiny_import_jobs';
 const JOB_REF = (uid: string) => adminDb.collection(JOB_COL).doc(uid);
@@ -132,6 +133,17 @@ export async function upsertProduct(uid: string, t: TinyNormalizedProduct, sourc
     updatedAt: iso(),
   };
   t.imagens.slice(0, 6).forEach((url, i) => { data[`URL imagem ${i + 1}`] = url; });
+
+  // Chegou do Tiny: o que ele tem agora é o carimbo de sincronização (imagens
+  // só o envio carimba — o Tiny re-hospeda as URLs). Com set merge, o carimbo
+  // de imagens de um envio anterior continua.
+  data._tinyPushed = assinaturasDeImportacao('tiny', {
+    titulo: t.nome ?? '',
+    descricaoHtml: t.descricaoHtml ?? '',
+    seoTitle: t.seoTitle ?? '',
+    seoDescription: t.seoDescription ?? '',
+    seoKeywords: t.seoKeywords ?? '',
+  });
 
   // Enriched fields: only fill when the current value is empty.
   const fillIfEmpty = (key: string, val?: string) => {
