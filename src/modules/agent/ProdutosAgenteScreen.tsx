@@ -1,13 +1,20 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUpRight, ChevronLeft, CloudUpload, FolderTree, Search, SlidersHorizontal, Table2, X } from 'lucide-react';
+import AlfredLogo from '../../components/alfredLogo/AlfredLogo';
 import type { Product, ProductModalTab } from '../../types/models';
 import type { PedidoAlfred } from '../../types/agent';
 import BarraProximoPasso from './BarraProximoPasso';
 import { useAgentTheme } from './theme';
-import { useTelaPequena } from './useViewport';
+import { useAlturaTeclado, useTelaLarga, useTelaPequena } from './useViewport';
+import { useConversaAlfred } from './useConversaAlfred';
+import PainelAlfred from './PainelAlfred';
+import CardConfirmacao from './produtos/CardConfirmacao';
+import FolhaAlfred from './produtos/FolhaAlfred';
+import { alvos, montarConfirmacao, type CandidatoMassa, type Confirmacao, type FerramentaMassa } from './confirmacaoMassa';
+import { criarLotesEmMassa } from '../../services/agentChatService';
 import {
   FILTROS_PADRAO, FILTROS_VAZIOS, ROTULO_OPCAO, aplicarFiltros, contarFiltros, contarOpcoes, estadoSelecao, paginar,
-  pedidoDaSelecao, principais, quantosFiltrosAtivos, semDescricao,
+  MAX_SKUS_CONTEXTO, nomeDe, pedidoDaSelecao, principais, quantosFiltrosAtivos, semDescricao, skuDe, temAmbientada, temFoto,
   type FiltrosProdutos, type OpcaoConteudo, type OpcaoIntegracao, type OpcaoSync,
 } from './produtosAgente';
 import LinhaProduto, { Caixa } from './produtos/LinhaProduto';
@@ -34,6 +41,14 @@ interface Props {
   onVoltar: () => void;
   /** Alfred só aparece com módulo de agente. */
   hasAgente: boolean;
+  uid: string;
+  /** Saldo — o card de confirmação avisa antes de faltar. */
+  credits: number;
+  /** Créditos por produto ambientado (3 imagens). */
+  custoPorImagem: number;
+  /** Composer do painel focado no telefone — o App esconde a tab bar para o teclado. */
+  onFocoChange?: (focado: boolean) => void;
+  onRecarregar: () => void;
 }
 
 /** Um filtro ativo, como pílula removível abaixo do topo. */
@@ -61,9 +76,18 @@ const estiloBotaoTopo: React.CSSProperties = { background: 'var(--ag-surface-sol
 const ProdutosAgenteScreen: React.FC<Props> = ({
   products, selecionados, onSelecionar, custoPorDescricao, gerando, progresso,
   onGerarDescricoes, onAbrirProduto, onAbrirView, onPedirAlfred, onVoltar, hasAgente,
+  uid, credits, custoPorImagem, onFocoChange, onRecarregar,
 }) => {
   const { tema } = useAgentTheme();
   const telaPequena = useTelaPequena();
+  // Painel do Alfred: coluna fixa ≥1280px, sobreposto entre 768 e 1280, folha no telefone.
+  const larga = useTelaLarga();
+  const alturaTeclado = useAlturaTeclado();
+  const [painelAberto, setPainelAberto] = useState(false);
+  const [folha, setFolha] = useState<'fechada' | 'meia' | 'cheia'>('fechada');
+  const [focado, setFocado] = useState(false);
+  const [confirmando, setConfirmando] = useState<Confirmacao | null>(null);
+  const conversa = useConversaAlfred(uid);
   const [busca, setBusca] = useState('');
   const [buscando, setBuscando] = useState(false);
   const [filtros, setFiltros] = useState<FiltrosProdutos>(FILTROS_PADRAO);
@@ -98,6 +122,40 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
   const produtosSelecionados = useMemo(() => lista.filter((p) => selecionados.has(p._id)), [lista, selecionados]);
   const n = produtosSelecionados.length;
 
+  // O painel fala desta tela: a seleção vai no contexto de cada mensagem.
+  useEffect(() => {
+    const skus = produtosSelecionados.map(skuDe).filter(Boolean);
+    conversa.definirContexto({ tela: 'produtos', ...(n ? { skus: skus.slice(0, MAX_SKUS_CONTEXTO), totalSelecionados: n } : {}) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [produtosSelecionados]);
+
+  // Sair da tela com o campo focado não dispara blur — sem isso a tab bar ficaria escondida.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => onFocoChange?.(false), []);
+
+  const mostrarPainel = () => {
+    if (telaPequena) setFolha((f) => (f === 'fechada' ? 'meia' : f));
+    else if (!larga) setPainelAberto(true);
+  };
+  const pedirConfirmacao = (ferramenta: FerramentaMassa) => {
+    const candidatos: CandidatoMassa[] = produtosSelecionados.map((p) => ({
+      id: p._id, nome: nomeDe(p), temDescricao: !semDescricao(p), temAmbientada: temAmbientada(p), temFoto: temFoto(p),
+    }));
+    const custo = ferramenta === 'produtos.ambientadas.gerar' ? custoPorImagem : custoPorDescricao;
+    setConfirmando(montarConfirmacao(ferramenta, candidatos, custo));
+    mostrarPainel();
+  };
+  const confirmar = async (sobrescrever: boolean) => {
+    if (!confirmando) return;
+    await criarLotesEmMassa(confirmando.ferramenta, alvos(confirmando, sobrescrever).map((c) => c.id), sobrescrever);
+    setConfirmando(null); // os cards dos lotes chegam pela conversa
+  };
+  const pedirAoAlfred = () => {
+    const pedido = pedidoDaSelecao(produtosSelecionados);
+    mostrarPainel();
+    void conversa.enviar(pedido.texto, pedido.contexto);
+  };
+
   const alternar = (id: string) => {
     const prox = new Set(selecionados);
     if (prox.has(id)) prox.delete(id); else prox.add(id);
@@ -113,20 +171,62 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
   // O próximo passo sem seleção é selecionar o que está incompleto — a tela
   // nunca fica sem uma ação principal.
   const semDescricaoNaLista = visiveis.filter(semDescricao);
-  const acao: { rotulo: string; detalhe?: string; onClick: () => void; desabilitada?: boolean } | null = gerando
-    ? { rotulo: `Gerando ${progresso.current} de ${progresso.total}`, onClick: () => {}, desabilitada: true }
-    : n > 0
-      ? {
-        rotulo: n === 1 ? 'Gerar descrição' : `Gerar ${n} descrições`,
-        detalhe: `${n * custoPorDescricao} créditos`,
-        onClick: () => onGerarDescricoes(new Set(produtosSelecionados.map((p) => p._id))),
-      }
-      : semDescricaoNaLista.length
+  type Acao = { rotulo: string; detalhe?: string; onClick: () => void; desabilitada?: boolean };
+  const selecionarSemDescricao: Acao | null = semDescricaoNaLista.length
+    ? { rotulo: `Selecionar os ${semDescricaoNaLista.length} sem descrição`, onClick: () => onSelecionar(new Set(semDescricaoNaLista.map((p) => p._id))) }
+    : null;
+  // Com agente e seleção: as duas ações em massa, confirmadas no painel do Alfred.
+  // Sem agente: a geração do botão da tabela, como antes.
+  const acao: Acao | null = hasAgente
+    ? (n > 0 ? { rotulo: 'Gerar descrição para todas', onClick: () => pedirConfirmacao('produtos.descricoes.gerar') } : selecionarSemDescricao)
+    : gerando
+      ? { rotulo: `Gerando ${progresso.current} de ${progresso.total}`, onClick: () => {}, desabilitada: true }
+      : n > 0
         ? {
-          rotulo: `Selecionar os ${semDescricaoNaLista.length} sem descrição`,
-          onClick: () => onSelecionar(new Set(semDescricaoNaLista.map((p) => p._id))),
+          rotulo: n === 1 ? 'Gerar descrição' : `Gerar ${n} descrições`,
+          detalhe: `${n * custoPorDescricao} créditos`,
+          onClick: () => onGerarDescricoes(new Set(produtosSelecionados.map((p) => p._id))),
         }
-        : null;
+        : selecionarSemDescricao;
+  const acaoSecundaria: Acao | null = hasAgente && n > 0
+    ? { rotulo: 'Gerar imagem para todas', onClick: () => pedirConfirmacao('produtos.ambientadas.gerar') }
+    : null;
+
+  const painel = hasAgente && (
+    <PainelAlfred
+      uid={uid}
+      conversa={conversa}
+      rodape={confirmando && (
+        <CardConfirmacao
+          key={`${confirmando.ferramenta}:${confirmando.total}:${confirmando.novos.length}`}
+          conf={confirmando}
+          saldo={credits}
+          onConfirmar={confirmar}
+          onCancelar={() => setConfirmando(null)}
+          onRecarregar={onRecarregar}
+        />
+      )}
+      vazio={(
+        <p className="flex-1 grid place-items-center px-6 text-center text-[13.5px] text-[var(--ag-text-2)]">
+          Selecione produtos e escolha uma ação, ou peça qualquer coisa ao Alfred.
+        </p>
+      )}
+      onFoco={(f) => { setFocado(f); onFocoChange?.(f); }}
+      recuoTeclado={telaPequena ? alturaTeclado : 0}
+      emFoco={telaPequena && focado}
+    />
+  );
+  const cabecalhoPainel = (fechar?: () => void) => (
+    <div className="h-12 shrink-0 px-4 flex items-center gap-2" style={{ borderBottom: '1px solid var(--ag-hairline)' }}>
+      <AlfredLogo size={22} ativo={conversa.streaming} interativo={false} />
+      <span className="flex-1 text-[14px] font-semibold text-[var(--ag-text)]">Alfred</span>
+      {fechar && (
+        <button onClick={fechar} aria-label="Fechar o Alfred" className="w-9 h-9 grid place-items-center rounded-full text-[var(--ag-text-2)]">
+          <X className="w-4 h-4" />
+        </button>
+      )}
+    </div>
+  );
 
   const campoBusca = (
     <label className="relative flex items-center">
@@ -168,7 +268,8 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
 
   return (
     <div className="alfreds h-full flex flex-col" data-tema={tema}>
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      <div className="flex-1 min-h-0 flex relative">
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Barra do topo: volta para Ferramentas; no telefone, a lupa abre a busca. */}
         <div className="ag-tela-x flex items-center gap-1 pt-2 shrink-0">
           <button
@@ -185,6 +286,16 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
           >
             {buscando ? <X className="w-5 h-5" /> : <Search className="w-5 h-5" />}
           </button>
+          {hasAgente && !larga && !telaPequena && (
+            <button
+              onClick={() => setPainelAberto((v) => !v)}
+              aria-expanded={painelAberto}
+              className="h-10 pl-2 pr-3.5 mr-1 rounded-full flex items-center gap-2 text-[13px] font-semibold text-[var(--ag-text)]"
+              style={{ background: 'var(--ag-fill-2)' }}
+            >
+              <AlfredLogo size={20} ativo={conversa.streaming} interativo={false} /> Alfred
+            </button>
+          )}
           <BotaoConta />
         </div>
 
@@ -293,13 +404,32 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
           </div>
         </div>
 
-        {(acao || hasAgente) && (
+        {(acao || hasAgente) && !(telaPequena && folha !== 'fechada') && (
           <BarraProximoPasso
             n={n}
-            acao={acao ? { ...acao, ocupada: gerando } : null}
-            onPedirAlfred={hasAgente ? () => onPedirAlfred(pedidoDaSelecao(produtosSelecionados)) : undefined}
+            acao={acao ? { ...acao, ocupada: !hasAgente && gerando } : null}
+            acaoSecundaria={acaoSecundaria}
+            onPedirAlfred={hasAgente ? pedirAoAlfred : () => onPedirAlfred(pedidoDaSelecao(produtosSelecionados))}
           />
         )}
+        {hasAgente && telaPequena && <FolhaAlfred altura={folha} onAltura={setFolha}>{painel}</FolhaAlfred>}
+      </div>
+
+      {hasAgente && larga && (
+        <aside className="w-[380px] shrink-0 flex flex-col min-h-0" style={{ borderLeft: '1px solid var(--ag-hairline)' }}>
+          {cabecalhoPainel()}
+          <div className="flex-1 min-h-0">{painel}</div>
+        </aside>
+      )}
+      {hasAgente && !larga && !telaPequena && painelAberto && (
+        <aside
+          className="absolute right-0 top-0 bottom-0 z-30 w-[380px] max-w-full flex flex-col min-h-0 ag-glass-strong"
+          style={{ boxShadow: 'var(--ag-shadow)', borderLeft: '1px solid var(--ag-hairline)' }}
+        >
+          {cabecalhoPainel(() => setPainelAberto(false))}
+          <div className="flex-1 min-h-0">{painel}</div>
+        </aside>
+      )}
       </div>
     </div>
   );

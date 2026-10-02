@@ -3816,7 +3816,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           // e usa um respiro menor nas laterais — a tela toda é a conversa.
           mainView === 'atividade' || mainView === 'ferramentas' || mainView === 'fontes' ? "p-3 sm:p-6" :
           // A barra Próximo passo é o pé da própria tela, então ela termina acima da tab bar.
-          mainView === 'agenteProdutos' ? "p-3 pb-24 sm:p-6 md:pb-6" :
+          mainView === 'agenteProdutos' ? (alfredFocado ? "p-3 sm:p-6" : "p-3 pb-24 sm:p-6 md:pb-6") :
           mainView === 'home' ? (alfredFocado ? "p-3 sm:p-6" : "p-3 pb-24 sm:p-6 md:pb-6") :
           // Tabela completa com agente: a mesma margem das telas do agente (com `ag-tela-x` dentro).
           mainView === 'products' && temAgente ? "p-3 pb-24 sm:p-6 md:pb-6" : "p-6 pb-20 md:pb-6",
@@ -3890,6 +3890,11 @@ Retorne APENAS um JSON válido no seguinte formato:
               onPedirAlfred={(pedido) => { setPromptAlfred(pedido); setMainView('home'); }}
               onVoltar={() => setMainView('ferramentas')}
               hasAgente={hasContentAgent || hasOperationsAgent}
+              uid={user?.uid ?? ''}
+              credits={credits}
+              custoPorImagem={getCreditCost(CREDIT_ACTIONS.ambientImage.key)}
+              onFocoChange={setAlfredFocado}
+              onRecarregar={() => setIsCreditPurchaseOpen(true)}
             />
           ) : mainView === 'categories' ? (
             <div
@@ -5583,7 +5588,7 @@ Retorne APENAS um JSON válido no seguinte formato:
         </div>
       )}
 
-      {!(mainView === 'home' && alfredFocado) && (
+      {!((mainView === 'home' || mainView === 'agenteProdutos') && alfredFocado) && (
         <AppTabBar
           atual={mainView === 'agenteProdutos' ? 'ferramentas' : mainView === 'fontes' ? 'home' : mainView}
           mostrarAgente={hasContentAgent || hasOperationsAgent}

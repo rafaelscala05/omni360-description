@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Check, Loader2, Pause, Play, ShieldCheck, Square, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Check, Loader2, Pause, Play, ShieldCheck, Square, Trash2, Undo2, X } from 'lucide-react';
 import type { AgentAction } from '../../../types/agent';
 import { agirNoLote, definirAutonomia, listenLote, type AcaoLote } from '../../../services/agentChatService';
-import { camposDoItem, linhaProgresso, resumoLote, type LoteJob } from '../lote';
+import { camposDoItem, linhaProgresso, linhasAoVivo, podeDesfazer, resumoLote, type LoteJob } from '../lote';
 import { Amostra } from './Amostra';
 import { carregarAutonomia, esquecerAutonomia, rotuloAutonomia } from './autonomia';
 
@@ -149,6 +149,16 @@ const LoteCard: React.FC<{ action: AgentAction }> = ({ action }) => {
         </div>
       )}
 
+      {/* Lote que grava sozinho (o "Gerar … para todas" da tela de Produtos):
+          o que está acontecendo, item a item, em texto corrido. */}
+      {job?.auto && job.itens.some((i) => i.estado !== 'fila') && (
+        <ul className="px-4 py-2 flex flex-col gap-0.5 text-[13px]" style={{ borderBottom: '1px solid var(--ag-hairline)' }} aria-live="polite">
+          {linhasAoVivo(job).map((l, i) => (
+            <li key={i} className="truncate" style={{ color: l.tom === 'ok' ? 'var(--ag-ok)' : l.tom === 'alerta' ? 'var(--ag-warn)' : 'var(--ag-text-2)' }}>{l.texto}</li>
+          ))}
+        </ul>
+      )}
+
       {!job && pendente && (
         <div className="px-4 py-3 text-[13px] text-[var(--ag-text-2)] flex items-center gap-2" style={{ borderBottom: '1px solid var(--ag-hairline)' }}>
           <Loader2 className="w-4 h-4 animate-spin" /> Preparando o lote…
@@ -202,7 +212,13 @@ const LoteCard: React.FC<{ action: AgentAction }> = ({ action }) => {
           Recibo: {recibo.gravados ?? 0} {recibo.gravados === 1 ? 'produto gravado' : 'produtos gravados'} no catálogo
           {action.resolvedAt && <> em {new Date(action.resolvedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</>}
           {!!recibo.pulados?.length && <span className="text-[var(--ag-text-3)]">· de fora: {recibo.pulados.join('; ')}</span>}
-          {action.auto && <span className="text-[var(--ag-text-3)]">· aprovado sozinho, pela autonomia ligada</span>}
+          {action.auto && <span className="text-[var(--ag-text-3)]">· {job?.origem === 'massa' ? `${Math.round(custoPorItem * (recibo.gravados ?? 0))} créditos` : 'aprovado sozinho, pela autonomia ligada'}</span>}
+          {job && podeDesfazer(job) && (
+            <span className="ml-auto">
+              <Botao onClick={() => void agir('desfazer')} disabled={!!ocupado} ocupado={ocupado === 'desfazer'} icone={<Undo2 className="w-4 h-4" />}>Desfazer</Botao>
+            </span>
+          )}
+          {job?.desfeito && <span className="ml-auto text-[var(--ag-text-3)]">Desfeito</span>}
         </div>
       )}
 
@@ -242,10 +258,12 @@ const LoteCard: React.FC<{ action: AgentAction }> = ({ action }) => {
           {!trabalhando && (
             <Botao onClick={() => void agir('descartar')} disabled={!!ocupado} ocupado={ocupado === 'descartar'} icone={<X className="w-4 h-4" />}>Recusar o resto</Botao>
           )}
-          <div className="ml-auto flex items-center gap-1.5 text-[11px] text-[var(--ag-text-3)]">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            Só grava o que você aprovar
-          </div>
+          {!action.auto && (
+            <div className="ml-auto flex items-center gap-1.5 text-[11px] text-[var(--ag-text-3)]">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              Só grava o que você aprovar
+            </div>
+          )}
         </div>
       )}
     </div>
