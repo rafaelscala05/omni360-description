@@ -8,6 +8,7 @@ import {
   type TinyNormalizedProduct, type TinyPushProduct, type TinyPushResult, type TinyPushSteps,
 } from './tinyAgent';
 import type { PushLogEntry } from './pushLog';
+import { carimbarEnvio, conteudoDoPushTiny } from './syncStamp';
 import { listV2Page, getV2Product, updateV2Product, validateV2Token, pushV2Lote, tinyV2Call, type V2Caller } from './tinyV2';
 
 export type TinyVersion = 'v2' | 'v3';
@@ -121,6 +122,9 @@ export function registerTinyProviderRoutes(app: express.Express, { verifyFirebas
           sobrescreverTitulo,
           developerId: process.env.TINY_DEVELOPER_ID || undefined,
         });
+        await carimbarEnvio(uid, 'tiny', resultados.map((r, i) => ({
+          erpId: r.tinyId, ok: r.ok, steps: r.steps as unknown as Record<string, string>, conteudo: conteudoDoPushTiny(produtos[i]),
+        })));
         return res.json({ resultados });
       }
 
@@ -143,6 +147,9 @@ export function registerTinyProviderRoutes(app: express.Express, { verifyFirebas
           } });
         }
       }
+      await carimbarEnvio(uid, 'tiny', resultados.map((r, i) => ({
+        erpId: r.tinyId, ok: r.ok, steps: r.steps as unknown as Record<string, string>, conteudo: conteudoDoPushTiny(produtos[i]),
+      })));
       return res.json({ resultados });
     } catch (e: any) {
       return res.status(e?.status === 401 ? 401 : 500).json({ message: e?.message ?? 'Falha no envio.' });

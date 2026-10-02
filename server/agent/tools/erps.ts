@@ -8,9 +8,10 @@
 // Só descrição, SEO e imagens — o porquê está em server/agent/erpCatalogo.ts.
 
 import { adminDb } from '../../firebaseAdmin';
-import { fbitsFetch, pushWakeProduto, type WakeCaller } from '../../wakeAgent';
+import { fbitsFetch, pushWakeProduto, type WakeCaller, type WakePushResult } from '../../wakeAgent';
 import { blingFetch, pushBlingProduto, type BlingCaller } from '../../blingAgent';
 import { idworksFetch, normalizeProduct as normalizarIdworks, pushIdworksProduto, type IdworksCaller } from '../../idworksAgent';
+import { carimbarEnvio, conteudoDoPushWake } from '../../syncStamp';
 import type { PushLogEntry } from '../../pushLog';
 import { registerTool } from '../registry';
 import { makePreview } from '../preview';
@@ -157,8 +158,11 @@ registrarEnvio({
   enviar: async (ctx, produtos) => {
     const token = await ctx.wakeToken();
     const call: WakeCaller = (method, path, body) => log(ctx, 'wake', method, path, body, () => fbitsFetch(token, method, path, body));
-    const out: ResultadoPush[] = [];
+    const out: WakePushResult[] = [];
     for (const prod of produtos) out.push(await pushWakeProduto(call, prod));
+    await carimbarEnvio(ctx.uid, 'wake', out.map((r, i) => ({
+      erpId: r.produtoId, ok: r.ok, steps: r.steps, conteudo: conteudoDoPushWake(produtos[i]),
+    })));
     return out;
   },
   avisos: [

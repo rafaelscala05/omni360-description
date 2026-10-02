@@ -1814,6 +1814,7 @@ export default function App() {
         seoKeywords: p['Palavras chave SEO'],
         atributos: campos.atributos ? atributos : undefined,
         imagensBase64,
+        imagensUrls: imagensBase64?.length ? [...(p._ambientImages ?? [])] : undefined,
         campos,
       });
     }

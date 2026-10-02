@@ -5,6 +5,7 @@ import type express from 'express';
 import { adminDb } from './firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logTexto, push as pushLog, type PushLogEntry } from './pushLog';
+import { carimbarEnvio, conteudoDoPushWake } from './syncStamp';
 
 const WAKE_BASE = 'https://api.fbits.net';
 const SECRET_REF = (uid: string) =>
@@ -143,6 +144,8 @@ export interface WakePushProduct {
   seoKeywords?: string;
   atributos?: { nome: string; valor: string }[];
   imagensBase64?: { base64: string; formato: 'JPG' | 'PNG' }[];
+  /** As URLs que viraram `imagensBase64` — só para o carimbo de sincronização (server/syncStamp.ts). */
+  imagensUrls?: string[];
   campos: { descricao: boolean; seo: boolean; atributos: boolean; imagens: boolean };
 }
 
@@ -429,6 +432,9 @@ export function registerWakeRoutes(app: express.Express, { verifyFirebaseToken }
 
       const call: WakeCaller = (method, path, body) => fbitsFetch(token, method, path, body);
       for (const prod of produtos) resultados.push(await pushWakeProduto(call, prod));
+      await carimbarEnvio(uid, 'wake', resultados.map((r, i) => ({
+        erpId: r.produtoId, ok: r.ok, steps: r.steps, conteudo: conteudoDoPushWake(produtos[i]),
+      })));
 
       return res.json({ resultados });
     } catch (e: any) {

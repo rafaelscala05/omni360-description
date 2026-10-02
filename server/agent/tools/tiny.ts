@@ -20,6 +20,7 @@
 
 import { buildV2AlterarPayload, normalizeV2Product, num, pushV2Lote, tinyV2CallRaw, type V2Caller } from '../../tinyV2';
 import type { TinyPushProduct } from '../../tinyAgent';
+import { carimbarEnvio, conteudoDoPushTiny } from '../../syncStamp';
 import { adminDb } from '../../firebaseAdmin';
 import { registerTool } from '../registry';
 import { buildFieldDiff, makePreview, requireStr } from '../preview';
@@ -546,6 +547,9 @@ registerTool<EnvioArgs>({
       sobrescreverTitulo,
       developerId: process.env.TINY_DEVELOPER_ID || undefined,
     });
+    await carimbarEnvio(ctx.uid, 'tiny', resultados.map((r, i) => ({
+      erpId: r.tinyId, ok: r.ok, steps: r.steps as unknown as Record<string, string>, conteudo: conteudoDoPushTiny(produtos[i]),
+    })));
     const ok = resultados.filter((r) => r.ok);
     return {
       enviados: ok.length,

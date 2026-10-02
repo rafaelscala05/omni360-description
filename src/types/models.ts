@@ -174,10 +174,12 @@ export interface Product {
   _wakeProductId?: string;      // produtoId na Wake — chave de merge
   _wakeInformacaoId?: number;   // informacaoId do bloco de descrição na Wake
   _wakeVersionId?: string;      // id da última versão salva em wake_versions
+  _wakePushed?: { descricao?: string; seo?: string; imagens?: string }; // carimbo de sincronização (server/syncStamp.ts)
 
   // Tiny ERP integration
   _tinyProductId?: string;      // id do produto no Tiny — chave de merge
   _tinyVersionId?: string;      // id da última versão salva em tiny_versions
+  _tinyPushed?: { titulo?: string; descricao?: string; seo?: string; imagens?: string }; // carimbo de sincronização (server/syncStamp.ts)
 
   // Bling ERP integration
   _blingProductId?: string;      // id do produto no Bling — chave de merge
@@ -186,7 +188,7 @@ export interface Product {
 
   // IdWorks integration
   _idworksProductId?: string;    // id do SKU na IdWorks — chave de merge
-  _idworksPushed?: { descricao?: string; seo?: string; fiscal?: string; imagens?: string };
+  _idworksPushed?: { descricao?: string; seo?: string; fiscal?: string; imagens?: string }; // assinatura legada gravada pelo navegador após o envio (App.tsx), lida pelo selo
   _idworksDeleted?: boolean;      // marcado true em evento de exclusão (doc preservado)
 
   // Modulo 1 / 3

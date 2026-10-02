@@ -15,6 +15,9 @@
 // - Sem carimbo (produto anterior a isto), conta como pendente só o que foi
 //   gerado no app (a mesma regra que o envio do Bling já usava), para o
 //   catálogo não amanhecer inteiro em âmbar.
+// - Bling e IdWorks não usam este carimbo: o navegador já grava neles a
+//   assinatura legada (`_blingPushed`/`_idworksPushed`, App.tsx) depois do
+//   envio, e o selo só lê o que está lá (`assinaturaLegada`).
 
 export type IntegracaoSync = 'tiny' | 'wake' | 'idworks' | 'bling';
 export type GrupoSync = 'titulo' | 'descricao' | 'seo' | 'imagens' | 'fiscal';
@@ -44,7 +47,7 @@ export const CAMPO_CARIMBO = {
 export const GRUPOS_DA_INTEGRACAO: Record<IntegracaoSync, GrupoSync[]> = {
   tiny: ['titulo', 'descricao', 'seo', 'imagens'],
   wake: ['descricao', 'seo', 'imagens'],
-  idworks: ['descricao', 'seo', 'imagens'],
+  idworks: ['descricao', 'seo', 'fiscal', 'imagens'],
   bling: ['descricao', 'seo', 'fiscal', 'imagens'],
 };
 
@@ -169,8 +172,9 @@ export function assinaturaLegada(p: Record<string, unknown>, g: 'descricao' | 's
   }
 }
 
-function estadoBling(p: Record<string, unknown>): EstadoSync {
-  const carimbo = (p._blingPushed ?? {}) as Carimbo;
+/** Bling e IdWorks: assinatura legada gravada pelo navegador. */
+function estadoLegado(p: Record<string, unknown>, integ: 'bling' | 'idworks'): EstadoSync {
+  const carimbo = (p[CAMPO_CARIMBO[integ]] ?? {}) as Carimbo;
   const grupos = (['descricao', 'seo', 'fiscal', 'imagens'] as const).filter((g) => {
     const { has, sig } = assinaturaLegada(p, g);
     return has && geradoNoApp(p, g) && carimbo[g] !== sig;
@@ -180,7 +184,7 @@ function estadoBling(p: Record<string, unknown>): EstadoSync {
 
 export function estadoIntegracao(p: Record<string, unknown>, integ: IntegracaoSync): EstadoSync {
   if (!str(p[CAMPO_VINCULO[integ]])) return { tipo: 'sem-vinculo' };
-  if (integ === 'bling') return estadoBling(p);
+  if (integ === 'bling' || integ === 'idworks') return estadoLegado(p, integ);
   const carimbo = (p[CAMPO_CARIMBO[integ]] ?? {}) as Carimbo;
   const c = conteudoDoProduto(p, integ);
   const grupos = GRUPOS_DA_INTEGRACAO[integ].filter((g) => {

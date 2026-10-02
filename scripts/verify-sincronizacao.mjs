@@ -57,8 +57,26 @@ check('bling sem _blingPushed e descrição gerada = pendente', estadoIntegracao
 check('bling com _blingPushed igual = em dia',
   estadoIntegracao({ ...bling, _blingPushed: { descricao: assinaturaLegada(bling, 'descricao').sig } }, 'bling'), { tipo: 'em-dia' });
 
+// IdWorks: o navegador já grava _idworksPushed com a assinatura legada (App.tsx), como o Bling.
+const idw = { ...base, _tinyProductId: undefined, _idworksProductId: '9', _statusDescricao: 'Gerado por IA' };
+const idwSeo = { ...idw, _statusSEO: 'Gerado por IA' };
+check('idworks lê a assinatura legada (SEO, onde o hash novo difere)',
+  estadoIntegracao({ ...idwSeo, _idworksPushed: { descricao: assinaturaLegada(idwSeo, 'descricao').sig, seo: assinaturaLegada(idwSeo, 'seo').sig } }, 'idworks'),
+  { tipo: 'em-dia' });
+
 check('integracoesDe lista só as vinculadas',
   integracoesDe({ ...base, _wakeProductId: 'w1' }).map((i) => i.integracao), ['tiny', 'wake']);
+
+// --- Conversores do payload de envio (server/syncStamp.ts) ---------------------
+const { conteudoDoPushTiny, conteudoDoPushWake } = await import('../server/syncConteudo.ts');
+check('payload tiny vira conteúdo',
+  conteudoDoPushTiny({ tinyId: '1', nome: 'Camiseta', descricaoHtml: '<p>x</p>', seoTitle: 't', imagens: ['https://a'] }),
+  { titulo: 'Camiseta', descricaoHtml: '<p>x</p>', seoTitle: 't', seoDescription: undefined, seoKeywords: undefined, imagens: ['https://a'] });
+check('payload tiny de variação usa urlImagem',
+  conteudoDoPushTiny({ tinyId: '2', urlImagem: 'https://v' }).imagens, ['https://v']);
+check('payload wake usa imagensUrls, não o base64',
+  conteudoDoPushWake({ produtoId: 'w', descricaoHtml: 'd', imagensUrls: ['https://amb'], imagensBase64: [{ base64: 'x', formato: 'JPG' }], campos: {} }).imagens,
+  ['https://amb']);
 
 if (failures) { console.error(`\n${failures} falha(s).`); process.exit(1); }
 console.log('\nTudo certo.');

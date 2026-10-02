@@ -40,6 +40,8 @@ export interface WakePushProduct {
   seoKeywords?: string;
   atributos?: { nome: string; valor: string }[];
   imagensBase64?: { base64: string; formato: 'JPG' | 'PNG' }[];
+  /** URLs das imagens enviadas — só para o carimbo de sincronização no servidor. */
+  imagensUrls?: string[];
   campos: { descricao: boolean; seo: boolean; atributos: boolean; imagens: boolean };
 }
 
