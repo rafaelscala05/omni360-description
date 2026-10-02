@@ -18,6 +18,7 @@ import ProdutosAgenteScreen from './modules/agent/ProdutosAgenteScreen';
 import TrilhoDesktop, { type DestinoTrilho, type ItemConta } from './components/TrilhoDesktop';
 import FolhaConteudo from './components/FolhaConteudo';
 import { ASPECTO, estiloAspecto, type Aspecto } from './modules/agent/aspectos';
+import { assinaturaLegada } from './modules/agent/sincronizacao';
 import { ContaProvider, ContaSheet, AvatarConta, type DadosConta } from './components/ContaMenu';
 import { useAgentTheme } from './modules/agent/theme';
 import type { ChaveFonte } from './modules/agent/conectores';
@@ -1907,23 +1908,13 @@ export default function App() {
   // diffs against Tiny's live data). Kept only because the Bling push flow below
   // (unchanged, out of scope here) still relies on this stale-flag-based
   // "what changed" prediction for its own field-selection UI.
-  const djb2 = (s: string): string => {
-    let h = 5381;
-    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-    return (h >>> 0).toString(36);
-  };
-  // Per-group signature + whether the group actually has content to send.
+  // A assinatura por grupo que o envio do Bling grava em _blingPushed mora em
+  // sincronizacao.ts (assinaturaLegada), a mesma que o selo da tela de Produtos lê.
   const tinyGroup = {
-    descricao: (p: Product) => ({ has: !!p['Descrição complementar'], sig: djb2(String(p['Descrição complementar'] ?? '')) }),
-    seo: (p: Product) => {
-      const parts = [p['Título SEO'], p['Descrição SEO'], p['Palavras chave SEO']];
-      return { has: parts.some((x) => !!x), sig: djb2(parts.map((x) => String(x ?? '')).join('')) };
-    },
-    fiscal: (p: Product) => {
-      const parts = [p['NCM (Classificação fiscal)'], p['GTIN/EAN'], p['Peso líquido (Kg)'], p['Peso bruto (Kg)'], p['Largura embalagem'], p['Altura Embalagem'], p['Comprimento embalagem']];
-      return { has: parts.some((x) => x !== undefined && x !== null && x !== ''), sig: djb2(parts.map((x) => String(x ?? '')).join('')) };
-    },
-    imagens: (p: Product) => { const imgs = collectTinyImages(p); return { has: imgs.length > 0, sig: djb2(imgs.join('')) }; },
+    descricao: (p: Product) => assinaturaLegada(p as unknown as Record<string, unknown>, 'descricao'),
+    seo: (p: Product) => assinaturaLegada(p as unknown as Record<string, unknown>, 'seo'),
+    fiscal: (p: Product) => assinaturaLegada(p as unknown as Record<string, unknown>, 'fiscal'),
+    imagens: (p: Product) => assinaturaLegada(p as unknown as Record<string, unknown>, 'imagens'),
   } as const;
   type TinyGroupKey = keyof typeof tinyGroup;
   // Whether each group was generated/modified in the app — the SAME signal the
