@@ -9,6 +9,7 @@
 // lista de conversas.
 
 import { collection, doc, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import type { FerramentaMassa } from '../modules/agent/confirmacaoMassa';
 import { auth, db } from '../firebase';
 import type {
   AgentAction, AgentConnections, AgentLog, AgentSettings, AgentToolInfo, ThreadMessage, WorkspaceContext,
@@ -127,11 +128,17 @@ export function listenLotesAtivos(cb: (jobs: LoteJob[]) => void): () => void {
   return onSnapshot(q, (snap) => cb(snap.docs.map((d) => d.data() as LoteJob)), () => cb([]));
 }
 
-export type AcaoLote = 'aprovar' | 'descartar' | 'pausar' | 'retomar' | 'parar';
+export type AcaoLote = 'aprovar' | 'descartar' | 'pausar' | 'retomar' | 'parar' | 'desfazer';
 
 /** `itens` ausente = todos os elegíveis (aprovar: todos os prontos; descartar: tudo o que falta). */
 export const agirNoLote = (id: string, acao: AcaoLote, itens?: string[]) =>
   call<{ status: string | null }>(`/api/agent/lotes/${encodeURIComponent(id)}/${acao}`, 'POST', itens ? { itens } : {});
+
+export interface RespostaMassa { actionIds: string[]; lotes: number; gerados: number; jaTem: number; semFoto: number; custo: number }
+
+/** "Gerar … para todas" da tela de Produtos: cria os lotes em modo automático e grava a troca na conversa. */
+export const criarLotesEmMassa = (ferramenta: FerramentaMassa, docIds: string[], sobrescrever: boolean) =>
+  call<RespostaMassa>('/api/agent/lotes', 'POST', { ferramenta, docIds, sobrescrever });
 
 // --- Vídeo aprovado no chat ---------------------------------------------------
 

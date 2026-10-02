@@ -9,6 +9,7 @@ import { requireAnyModule } from './connections';
 import { mutarLote } from './loteStore';
 import { aprovarLote } from './loteAprovacao';
 import { scheduleLote } from './loteWorker';
+import { criarLotesEmMassa, desfazerLote } from './loteMassa';
 
 interface Deps {
   verifyFirebaseToken: (req: express.Request) => Promise<{ uid: string }>;
@@ -23,6 +24,18 @@ const idsDoCorpo = (body: unknown): string[] | null => {
 };
 
 export function registerLoteRoutes(app: express.Express, { verifyFirebaseToken }: Deps): void {
+  // "Gerar … para todas" da tela de Produtos (loteMassa.ts). Antes da rota
+  // com :id/:acao, que não casaria com este caminho de qualquer jeito.
+  app.post('/api/agent/lotes', async (req, res) => {
+    try {
+      const { uid } = await verifyFirebaseToken(req);
+      await requireAnyModule(uid);
+      return res.json(await criarLotesEmMassa(uid, req.body ?? {}));
+    } catch (e: any) {
+      return res.status(httpStatus(e)).json({ message: e?.message });
+    }
+  });
+
   app.post('/api/agent/lotes/:id/:acao', async (req, res) => {
     try {
       const { uid } = await verifyFirebaseToken(req);
@@ -47,6 +60,8 @@ export function registerLoteRoutes(app: express.Express, { verifyFirebaseToken }
         case 'parar':
           job = await mutarLote(uid, id, (j) => parar(j, agora()));
           break;
+        case 'desfazer':
+          return res.json(await desfazerLote(uid, id));
         default:
           return res.status(404).json({ message: 'Ação de lote desconhecida.' });
       }

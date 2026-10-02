@@ -434,6 +434,19 @@ async function ensureUserThread(uid: string): Promise<void> {
   await ref.set({ id: AGENT_THREAD_ID, createdAt: now, updatedAt: now });
 }
 
+/**
+ * Grava uma troca na conversa sem passar pelo modelo — o "Gerar … para todas"
+ * da tela de Produtos: o pedido do usuário e a resposta com os cards dos lotes.
+ * O grafo não vê estas mensagens (não entram no checkpointer); a tela vê,
+ * porque lê a mesma coleção.
+ */
+export async function registrarTrocaNaConversa(uid: string, textoUsuario: string, textoAlfred: string, actionIds: string[]): Promise<void> {
+  await ensureUserThread(uid);
+  const agora = Date.now();
+  await saveMessage(uid, AGENT_THREAD_ID, { role: 'user', texto: textoUsuario, createdAt: new Date(agora).toISOString() });
+  await saveMessage(uid, AGENT_THREAD_ID, { role: 'model', texto: textoAlfred, actionIds, createdAt: new Date(agora + 1).toISOString() });
+}
+
 export function registerContentAgentChatRoutes(app: express.Express, { verifyFirebaseToken }: Deps): void {
   app.post('/api/agent/messages', async (req, res) => {
     let emit: Emit | null = null;
