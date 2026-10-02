@@ -16,6 +16,7 @@
 import type { WorkspaceContext } from '../../types/agent';
 import { getProductStatusFlags, type Product, type ProductModalTab } from '../../types/models';
 import { semImagem } from './semana';
+import { integracoesDe, type IntegracaoSync } from './sincronizacao';
 
 export type SegmentoProdutos = 'catalogo' | 'imagens' | 'videos';
 export type FiltroProdutos = 'incompletos' | 'todos' | 'foraDoErp' | 'semFoto' | 'semAmbientada' | 'semVideo';
@@ -133,4 +134,135 @@ export function pedidoDaSelecao(selecionados: Product[]): { texto: string; conte
       ...(n ? { skus: skus.slice(0, MAX_SKUS_CONTEXTO), totalSelecionados: n } : {}),
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Painel de filtros (lista unificada): OU dentro do grupo, E entre grupos.
+// ---------------------------------------------------------------------------
+
+export type OpcaoIntegracao = IntegracaoSync | 'nenhuma';
+export type OpcaoSync = 'emDia' | 'pendente';
+export type OpcaoConteudo = 'semDescricao' | 'semFoto' | 'semAmbientada' | 'semAtributos' | 'semVideo';
+
+export interface FiltrosProdutos {
+  integracao: OpcaoIntegracao[];
+  sync: OpcaoSync[];
+  conteudo: OpcaoConteudo[];
+  categoria: string[];
+}
+
+export const FILTROS_VAZIOS: FiltrosProdutos = { integracao: [], sync: [], conteudo: [], categoria: [] };
+/** Abre em "Incompletos", como antes: sem descrição OU sem foto. */
+export const FILTROS_PADRAO: FiltrosProdutos = { ...FILTROS_VAZIOS, conteudo: ['semDescricao', 'semFoto'] };
+
+export const OPCOES_INTEGRACAO: OpcaoIntegracao[] = ['tiny', 'wake', 'bling', 'idworks', 'nenhuma'];
+export const OPCOES_SYNC: OpcaoSync[] = ['emDia', 'pendente'];
+export const OPCOES_CONTEUDO: OpcaoConteudo[] = ['semDescricao', 'semFoto', 'semAmbientada', 'semAtributos', 'semVideo'];
+
+export const ROTULO_OPCAO: Record<OpcaoIntegracao | OpcaoSync | OpcaoConteudo, string> = {
+  tiny: 'Tiny', wake: 'Wake', bling: 'Bling', idworks: 'IdWorks', nenhuma: 'Só no OMNI360',
+  emDia: 'Em dia', pendente: 'Com alterações não enviadas',
+  semDescricao: 'Sem descrição', semFoto: 'Sem foto', semAmbientada: 'Sem ambientada', semAtributos: 'Sem atributos', semVideo: 'Sem vídeo',
+};
+
+export const categoriaDe = (p: Product) => str(p['Categoria']) || 'Sem categoria';
+
+const rec = (p: Product) => p as unknown as Record<string, unknown>;
+
+const PRED_INTEGRACAO: Record<OpcaoIntegracao, (p: Product) => boolean> = {
+  tiny: (p) => !!str(p._tinyProductId),
+  wake: (p) => !!str(p._wakeProductId),
+  bling: (p) => !!str(p._blingProductId),
+  idworks: (p) => !!str(p._idworksProductId),
+  nenhuma: (p) => !noErp(p),
+};
+const PRED_SYNC: Record<OpcaoSync, (p: Product) => boolean> = {
+  emDia: (p) => { const i = integracoesDe(rec(p)); return i.length > 0 && i.every((x) => x.estado.tipo === 'em-dia'); },
+  pendente: (p) => integracoesDe(rec(p)).some((x) => x.estado.tipo === 'pendente'),
+};
+const PRED_CONTEUDO: Record<OpcaoConteudo, (p: Product) => boolean> = {
+  semDescricao: semDescricao,
+  semFoto: (p) => !temFoto(p),
+  semAmbientada: (p) => temFoto(p) && !temAmbientada(p),
+  semAtributos: (p) => !getProductStatusFlags(p).atributosGerados,
+  semVideo: (p) => temFoto(p) && !temVideo(p) && !videoRodando(p),
+};
+
+type Grupo = keyof FiltrosProdutos;
+
+function passaGrupo(p: Product, f: FiltrosProdutos, g: Grupo): boolean {
+  switch (g) {
+    case 'integracao': return !f.integracao.length || f.integracao.some((o) => PRED_INTEGRACAO[o](p));
+    case 'sync': return !f.sync.length || f.sync.some((o) => PRED_SYNC[o](p));
+    case 'conteudo': return !f.conteudo.length || f.conteudo.some((o) => PRED_CONTEUDO[o](p));
+    case 'categoria': return !f.categoria.length || f.categoria.includes(categoriaDe(p));
+  }
+}
+
+const GRUPOS: Grupo[] = ['integracao', 'sync', 'conteudo', 'categoria'];
+
+const casaBusca = (p: Product, q: string) => !q || nomeDe(p).toLowerCase().includes(q) || skuDe(p).toLowerCase().includes(q);
+
+export function aplicarFiltros(lista: Product[], f: FiltrosProdutos, busca = ''): Product[] {
+  const q = busca.trim().toLowerCase();
+  return lista.filter((p) => casaBusca(p, q) && GRUPOS.every((g) => passaGrupo(p, f, g)));
+}
+
+export interface ContagemOpcoes {
+  integracao: Record<OpcaoIntegracao, number>;
+  sync: Record<OpcaoSync, number>;
+  conteudo: Record<OpcaoConteudo, number>;
+  categoria: Record<string, number>;
+}
+
+/** Quantos cada opção mostraria: aplica busca e os OUTROS grupos, nunca o próprio. */
+export function contarOpcoes(lista: Product[], f: FiltrosProdutos, busca = ''): ContagemOpcoes {
+  const q = busca.trim().toLowerCase();
+  const base = (g: Grupo) => lista.filter((p) => casaBusca(p, q) && GRUPOS.every((o) => o === g || passaGrupo(p, f, o)));
+  const contar = <K extends string>(itens: Product[], opcoes: K[], pred: Record<K, (p: Product) => boolean>) =>
+    Object.fromEntries(opcoes.map((o) => [o, itens.filter(pred[o]).length])) as Record<K, number>;
+  const categoria: Record<string, number> = {};
+  for (const p of base('categoria')) categoria[categoriaDe(p)] = (categoria[categoriaDe(p)] ?? 0) + 1;
+  return {
+    integracao: contar(base('integracao'), OPCOES_INTEGRACAO, PRED_INTEGRACAO),
+    sync: contar(base('sync'), OPCOES_SYNC, PRED_SYNC),
+    conteudo: contar(base('conteudo'), OPCOES_CONTEUDO, PRED_CONTEUDO),
+    categoria,
+  };
+}
+
+export const quantosFiltrosAtivos = (f: FiltrosProdutos) =>
+  f.integracao.length + f.sync.length + f.conteudo.length + f.categoria.length;
+
+// ---------------------------------------------------------------------------
+// Paginação e seleção
+// ---------------------------------------------------------------------------
+
+export const POR_PAGINA = 50;
+
+export function paginar<T>(lista: T[], pagina: number, porPagina = POR_PAGINA) {
+  const totalPaginas = Math.max(1, Math.ceil(lista.length / porPagina));
+  const atual = Math.min(Math.max(1, Math.floor(pagina) || 1), totalPaginas);
+  const ini = (atual - 1) * porPagina;
+  const itens = lista.slice(ini, ini + porPagina);
+  return { itens, pagina: atual, totalPaginas, inicio: itens.length ? ini + 1 : 0, fim: ini + itens.length };
+}
+
+/** "1 … 4 5 6 … 9": primeira, última e a vizinhança da atual. */
+export function paginasVisiveis(pagina: number, total: number): (number | '…')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const out: (number | '…')[] = [1];
+  const ini = Math.max(2, pagina - 1);
+  const fim = Math.min(total - 1, pagina + 1);
+  if (ini > 2) out.push('…');
+  for (let i = ini; i <= fim; i++) out.push(i);
+  if (fim < total - 1) out.push('…');
+  out.push(total);
+  return out;
+}
+
+/** A faixa "Selecionar todos os N do filtro" só aparece com a página inteira marcada e mais resultados fora dela. */
+export function estadoSelecao(idsDaPagina: string[], selecionados: Set<string>, totalFiltrado: number) {
+  const paginaToda = idsDaPagina.length > 0 && idsDaPagina.every((id) => selecionados.has(id));
+  return { paginaToda, oferecerTodos: paginaToda && totalFiltrado > idsDaPagina.length && selecionados.size < totalFiltrado };
 }
