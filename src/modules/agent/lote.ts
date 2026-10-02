@@ -45,6 +45,12 @@ export interface AntesDescricao {
   statusSEO: string | null;
 }
 
+export interface AntesVariacao {
+  /** Ausente = era igual à descrição do pai. */
+  descricao?: string;
+  status: string | null;
+}
+
 export interface ItemLote {
   id: string;
   docId: string;
@@ -55,6 +61,12 @@ export interface ItemLote {
   descricaoAntes?: string;
   /** SEO e status de antes (lote em massa) — o que o Desfazer devolve junto com `descricaoAntes`. */
   antes?: AntesDescricao;
+  /**
+   * Variações quando o lote nasceu (lote em massa), por docId: o status de cada
+   * uma e a descrição, só quando difere da do pai (`descricaoAntes`) — a
+   * gravação copia o texto do pai para elas, e o Desfazer devolve o de cada uma.
+   */
+  variacoesAntes?: Record<string, AntesVariacao>;
   resultado?: ResultadoLote;
   erro?: string;
 }
@@ -352,17 +364,61 @@ const limpar = (s: string) => s.trim();
 export const podeRestaurar = (descricaoAtual: string, descricaoGravada: string) =>
   limpar(descricaoAtual) === limpar(descricaoGravada);
 
-/** Campos que o Desfazer grava de volta num item de descrição; null = nada a desfazer. */
-export function camposDeRestauro(item: ItemLote): Record<string, unknown> | null {
+export interface Restauro {
+  campos: Record<string, unknown>;
+  /** Grupos devolvidos — o outro foi editado depois do lote e fica como está. */
+  descricao: boolean;
+  seo: boolean;
+}
+
+/**
+ * O que o Desfazer grava de volta num item de descrição, por grupo: a
+ * descrição só se o texto atual ainda é o que o lote gravou, o SEO só se os
+ * três campos ainda são os do lote. Cada grupo leva o próprio status.
+ * null = nada a desfazer (nenhum grupo intacto, ou o item não gravou texto).
+ */
+export function camposDeRestauro(item: ItemLote, atual: Record<string, unknown>): Restauro | null {
   if (item.estado !== 'gravado' || !item.resultado || !('descricao' in item.resultado)) return null;
+  const r = item.resultado;
   const a = item.antes;
+  const txt = (k: string) => String(atual[k] ?? '');
+  const descricao = podeRestaurar(txt('Descrição complementar'), r.descricao);
+  const seo = podeRestaurar(txt('Título SEO'), r.tituloSeo)
+    && podeRestaurar(txt('Descrição SEO'), r.descricaoSeo)
+    && podeRestaurar(txt('Palavras chave SEO'), r.palavrasChave);
+  if (!descricao && !seo) return null;
   return {
-    'Descrição complementar': item.descricaoAntes ?? '',
-    'Título SEO': a?.tituloSeo ?? '',
-    'Descrição SEO': a?.descricaoSeo ?? '',
-    'Palavras chave SEO': a?.palavrasChave ?? '',
-    _statusDescricao: a?.statusDescricao ?? null,
-    _statusSEO: a?.statusSEO ?? null,
+    descricao,
+    seo,
+    campos: {
+      ...(descricao ? {
+        'Descrição complementar': item.descricaoAntes ?? '',
+        _statusDescricao: a?.statusDescricao ?? null,
+      } : {}),
+      ...(seo ? {
+        'Título SEO': a?.tituloSeo ?? '',
+        'Descrição SEO': a?.descricaoSeo ?? '',
+        'Palavras chave SEO': a?.palavrasChave ?? '',
+        _statusSEO: a?.statusSEO ?? null,
+      } : {}),
+    },
+  };
+}
+
+/**
+ * O que o Desfazer grava de volta numa variação do item: a descrição e o
+ * status dela de antes, só se o texto atual ainda é o que o lote copiou do pai.
+ * Variação que não existia quando o lote nasceu fica como está. Lotes antigos
+ * (sem `variacoesAntes`) caem na descrição e no status de antes do pai.
+ */
+export function restauroDaVariacao(item: ItemLote, docId: string, descricaoAtual: string): Record<string, unknown> | null {
+  if (item.estado !== 'gravado' || !item.resultado || !('descricao' in item.resultado)) return null;
+  if (!podeRestaurar(descricaoAtual, item.resultado.descricao)) return null;
+  const antes = item.variacoesAntes ? item.variacoesAntes[docId] : undefined;
+  if (item.variacoesAntes && !antes) return null;
+  return {
+    'Descrição complementar': antes?.descricao ?? item.descricaoAntes ?? '',
+    _statusDescricao: antes ? antes.status : (item.antes?.statusDescricao ?? null),
   };
 }
 

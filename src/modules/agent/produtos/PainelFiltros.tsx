@@ -103,7 +103,7 @@ const PainelFiltros: React.FC<Props> = ({ filtros, contagem, onMudar, onFechar, 
   if (folha) {
     return (
       <div className="fixed inset-0 z-50 flex flex-col justify-end" role="dialog" aria-label="Filtros">
-        <button aria-label="Fechar filtros" className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.35)' }} onClick={onFechar} />
+        <button aria-label="Fechar filtros" className="absolute inset-0" style={{ background: 'var(--ag-scrim)' }} onClick={onFechar} />
         <div className="relative ag-glass-strong rounded-t-[24px] max-h-[85dvh] overflow-y-auto ag-scroll pb-[max(16px,env(safe-area-inset-bottom))]">
           <div className="mx-auto mt-2 w-10 h-1 rounded-full" style={{ background: 'var(--ag-hairline-2)' }} />
           {corpo}

@@ -21,6 +21,8 @@ export interface CandidatoMassa {
   temDescricao: boolean;
   temAmbientada: boolean;
   temFoto: boolean;
+  /** false = só existe em memória (novo ou com edição não salva): o servidor gera do catálogo salvo. */
+  salvo?: boolean;
 }
 
 export interface Confirmacao {
@@ -32,13 +34,17 @@ export interface Confirmacao {
   jaTem: CandidatoMassa[];
   /** Imagem sem foto de base: fica de fora nos dois modos. */
   semFoto: CandidatoMassa[];
+  /** Não salvos: ficam de fora nos dois modos, com aviso — antes sumiam em silêncio. */
+  naoSalvos: CandidatoMassa[];
   custoUnitario: number;
 }
 
 export function montarConfirmacao(ferramenta: FerramentaMassa, candidatos: CandidatoMassa[], custoUnitario: number): Confirmacao {
   const imagem = ferramenta === 'produtos.ambientadas.gerar';
-  const semFoto = imagem ? candidatos.filter((c) => !c.temFoto) : [];
-  const elegiveis = imagem ? candidatos.filter((c) => c.temFoto) : candidatos;
+  const naoSalvos = candidatos.filter((c) => c.salvo === false);
+  const salvos = candidatos.filter((c) => c.salvo !== false);
+  const semFoto = imagem ? salvos.filter((c) => !c.temFoto) : [];
+  const elegiveis = imagem ? salvos.filter((c) => c.temFoto) : salvos;
   const ja = (c: CandidatoMassa) => (imagem ? c.temAmbientada : c.temDescricao);
   return {
     ferramenta,
@@ -46,6 +52,7 @@ export function montarConfirmacao(ferramenta: FerramentaMassa, candidatos: Candi
     novos: elegiveis.filter((c) => !ja(c)),
     jaTem: elegiveis.filter(ja),
     semFoto,
+    naoSalvos,
     custoUnitario,
   };
 }
@@ -67,6 +74,7 @@ export function etapasPensando(c: Confirmacao): string[] {
   linhas.push(c.jaTem.length
     ? `Conferindo ${oque} — ${c.jaTem.length} já ${c.jaTem.length === 1 ? 'tem' : 'têm'}: ${listaNomes(c.jaTem)}`
     : `Conferindo ${oque} — nenhum tem ainda`);
+  if (c.naoSalvos.length) linhas.push(`Ainda não salvos — ${c.naoSalvos.length} fica${c.naoSalvos.length === 1 ? '' : 'm'} de fora (salve para incluir): ${listaNomes(c.naoSalvos)}`);
   if (c.semFoto.length) linhas.push(`Sem foto para servir de base — ${c.semFoto.length} fica${c.semFoto.length === 1 ? '' : 'm'} de fora: ${listaNomes(c.semFoto)}`);
   const k = c.novos.length;
   linhas.push(`Calculando custo — ${k} × ${c.custoUnitario} = ${k * c.custoUnitario} créditos`);
@@ -83,6 +91,7 @@ export function emLotes<T>(itens: T[], tamanho: number): T[][] {
 export function resumoConfirmacao(c: Confirmacao): string {
   const n = c.novos.length;
   if (n) return `${n} ${n === 1 ? 'será gerado' : 'serão gerados'}.`;
+  if (!c.jaTem.length && c.naoSalvos.length === c.total) return 'Nenhum dos selecionados está salvo — salve antes de gerar.';
   if (!c.jaTem.length && c.semFoto.length) return 'Nenhum dos selecionados tem foto para servir de base.';
   return `Todos já têm ${c.ferramenta === 'produtos.ambientadas.gerar' ? 'imagem ambientada' : 'descrição'}.`;
 }

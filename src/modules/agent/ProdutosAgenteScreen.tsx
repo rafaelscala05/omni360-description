@@ -1,17 +1,17 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpRight, ChevronLeft, CloudUpload, FolderTree, Search, SlidersHorizontal, Table2, X } from 'lucide-react';
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowUpRight, ChevronLeft, CloudUpload, FolderTree, Loader2, Search, SlidersHorizontal, Table2, X } from 'lucide-react';
 import AlfredLogo from '../../components/alfredLogo/AlfredLogo';
 import type { Product, ProductModalTab } from '../../types/models';
 import type { PedidoAlfred } from '../../types/agent';
 import BarraProximoPasso from './BarraProximoPasso';
 import { useAgentTheme } from './theme';
-import { useAlturaTeclado, useTelaLarga, useTelaPequena } from './useViewport';
+import { useAbaixoDeMd, useAlturaTeclado, useTelaLarga, useTelaPequena } from './useViewport';
 import { useConversaAlfred } from './useConversaAlfred';
 import PainelAlfred from './PainelAlfred';
 import CardConfirmacao from './produtos/CardConfirmacao';
 import FolhaAlfred from './produtos/FolhaAlfred';
 import { alvos, montarConfirmacao, type CandidatoMassa, type Confirmacao, type FerramentaMassa } from './confirmacaoMassa';
-import { criarLotesEmMassa } from '../../services/agentChatService';
+import { criarLotesEmMassa, previaMassa } from '../../services/agentChatService';
 import {
   FILTROS_PADRAO, FILTROS_VAZIOS, ROTULO_OPCAO, aplicarFiltros, contarFiltros, contarOpcoes, estadoSelecao, paginar,
   MAX_SKUS_CONTEXTO, nomeDe, pedidoDaSelecao, principais, quantosFiltrosAtivos, semDescricao, skuDe, temAmbientada, temFoto,
@@ -20,6 +20,7 @@ import {
 import LinhaProduto, { Caixa } from './produtos/LinhaProduto';
 import PainelFiltros from './produtos/PainelFiltros';
 import Paginacao from './produtos/Paginacao';
+import EnviarErp, { type ErpEnvio } from './produtos/EnviarErp';
 import { BotaoConta } from '../../components/ContaMenu';
 
 export type ViewProdutos = 'categories' | 'integrations' | 'products';
@@ -44,11 +45,13 @@ interface Props {
   uid: string;
   /** Saldo — o card de confirmação avisa antes de faltar. */
   credits: number;
-  /** Créditos por produto ambientado (3 imagens). */
-  custoPorImagem: number;
   /** Composer do painel focado no telefone — o App esconde a tab bar para o teclado. */
   onFocoChange?: (focado: boolean) => void;
   onRecarregar: () => void;
+  /** Tiny e Wake conectados — "Enviar" leva a seleção a eles. */
+  erpsConectados: Record<ErpEnvio, boolean>;
+  /** O mesmo envio do "Enviar para" da tabela, sobre a seleção. */
+  onEnviarErp: (erp: ErpEnvio) => void;
 }
 
 /** Um filtro ativo, como pílula removível abaixo do topo. */
@@ -76,17 +79,21 @@ const estiloBotaoTopo: React.CSSProperties = { background: 'var(--ag-surface-sol
 const ProdutosAgenteScreen: React.FC<Props> = ({
   products, selecionados, onSelecionar, custoPorDescricao, gerando, progresso,
   onGerarDescricoes, onAbrirProduto, onAbrirView, onPedirAlfred, onVoltar, hasAgente,
-  uid, credits, custoPorImagem, onFocoChange, onRecarregar,
+  uid, credits, onFocoChange, onRecarregar, erpsConectados, onEnviarErp,
 }) => {
   const { tema } = useAgentTheme();
   const telaPequena = useTelaPequena();
-  // Painel do Alfred: coluna fixa ≥1280px, sobreposto entre 768 e 1280, folha no telefone.
+  // Painel do Alfred: coluna fixa ≥1280px, sobreposto entre 768 e 1280, folha abaixo de 768.
   const larga = useTelaLarga();
+  const emFolha = useAbaixoDeMd();
   const alturaTeclado = useAlturaTeclado();
   const [painelAberto, setPainelAberto] = useState(false);
   const [folha, setFolha] = useState<'fechada' | 'meia' | 'cheia'>('fechada');
   const [focado, setFocado] = useState(false);
   const [confirmando, setConfirmando] = useState<Confirmacao | null>(null);
+  // Enquanto o servidor devolve o custo (e quem não está salvo); erro = a prévia falhou.
+  const [preparando, setPreparando] = useState<{ erro: string | null } | null>(null);
+  const pedidoPrevia = useRef(0);
   const conversa = useConversaAlfred(uid);
   const [busca, setBusca] = useState('');
   const [buscando, setBuscando] = useState(false);
@@ -97,8 +104,11 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
 
   const lista = useMemo(() => principais(products), [products]);
   const idsPrincipais = useMemo(() => new Set(lista.map((p) => p._id)), [lista]);
-  const visiveis = useMemo(() => aplicarFiltros(lista, filtros, busca), [lista, filtros, busca]);
-  const contagem = useMemo(() => contarOpcoes(lista, filtros, busca), [lista, filtros, busca]);
+  // A lista filtra com a busca adiada: o campo responde a cada tecla e a
+  // filtragem (que inclui o estado de sincronização) roda quando sobra tempo.
+  const buscaAdiada = useDeferredValue(busca);
+  const visiveis = useMemo(() => aplicarFiltros(lista, filtros, buscaAdiada), [lista, filtros, buscaAdiada]);
+  const contagem = useMemo(() => contarOpcoes(lista, filtros, buscaAdiada), [lista, filtros, buscaAdiada]);
   const pag = useMemo(() => paginar(visiveis, pagina), [visiveis, pagina]);
   const idsDaPagina = useMemo(() => pag.itens.map((p) => p._id), [pag.itens]);
   const selecao = estadoSelecao(idsDaPagina, selecionados, visiveis.length);
@@ -114,7 +124,7 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
     }
   }, [selecionados, idsPrincipais, onSelecionar]);
 
-  useEffect(() => { setPagina(1); }, [filtros, busca]);
+  useEffect(() => { setPagina(1); }, [filtros, buscaAdiada]);
   // scrollTop, nunca scrollIntoView: este rola todos os ancestrais roláveis.
   const irPara = (n: number) => { setPagina(n); if (listaRef.current) listaRef.current.scrollTop = 0; };
 
@@ -134,17 +144,34 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
   useEffect(() => () => onFocoChange?.(false), []);
 
   const mostrarPainel = () => {
-    if (telaPequena) setFolha((f) => (f === 'fechada' ? 'meia' : f));
+    if (emFolha) setFolha((f) => (f === 'fechada' ? 'meia' : f));
     else if (!larga) setPainelAberto(true);
   };
-  const pedirConfirmacao = (ferramenta: FerramentaMassa) => {
-    const candidatos: CandidatoMassa[] = produtosSelecionados.map((p) => ({
-      id: p._id, nome: nomeDe(p), temDescricao: !semDescricao(p), temAmbientada: temAmbientada(p), temFoto: temFoto(p),
-    }));
-    const custo = ferramenta === 'produtos.ambientadas.gerar' ? custoPorImagem : custoPorDescricao;
-    setConfirmando(montarConfirmacao(ferramenta, candidatos, custo));
+  // O custo vem do servidor (o mesmo `estimateCredits` do débito), nunca da
+  // tabela de preços do navegador; e quem não está salvo — novo ou com edição
+  // pendente, que o servidor geraria da cópia velha — sai com aviso no card.
+  const pedirConfirmacao = async (ferramenta: FerramentaMassa) => {
+    const pedido = ++pedidoPrevia.current;
+    setConfirmando(null);
+    setPreparando({ erro: null });
     mostrarPainel();
+    try {
+      const ids = produtosSelecionados.map((p) => p._id);
+      const previa = await previaMassa(ferramenta, ids);
+      if (pedido !== pedidoPrevia.current) return;
+      const fora = new Set(previa.naoEncontrados);
+      const candidatos: CandidatoMassa[] = produtosSelecionados.map((p) => ({
+        id: p._id, nome: nomeDe(p), temDescricao: !semDescricao(p), temAmbientada: temAmbientada(p), temFoto: temFoto(p),
+        salvo: !p._isDirty && !fora.has(p._id),
+      }));
+      setConfirmando(montarConfirmacao(ferramenta, candidatos, previa.custoUnitario));
+      setPreparando(null);
+    } catch (e) {
+      if (pedido !== pedidoPrevia.current) return;
+      setPreparando({ erro: e instanceof Error ? e.message : 'Não foi possível conferir o custo.' });
+    }
   };
+  const cancelarConfirmacao = () => { pedidoPrevia.current++; setConfirmando(null); setPreparando(null); };
   const confirmar = async (sobrescrever: boolean) => {
     if (!confirmando) return;
     await criarLotesEmMassa(confirmando.ferramenta, alvos(confirmando, sobrescrever).map((c) => c.id), sobrescrever);
@@ -178,7 +205,7 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
   // Com agente e seleção: as duas ações em massa, confirmadas no painel do Alfred.
   // Sem agente: a geração do botão da tabela, como antes.
   const acao: Acao | null = hasAgente
-    ? (n > 0 ? { rotulo: 'Gerar descrição para todas', onClick: () => pedirConfirmacao('produtos.descricoes.gerar') } : selecionarSemDescricao)
+    ? (n > 0 ? { rotulo: 'Gerar descrição para todas', onClick: () => void pedirConfirmacao('produtos.descricoes.gerar') } : selecionarSemDescricao)
     : gerando
       ? { rotulo: `Gerando ${progresso.current} de ${progresso.total}`, onClick: () => {}, desabilitada: true }
       : n > 0
@@ -189,22 +216,29 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
         }
         : selecionarSemDescricao;
   const acaoSecundaria: Acao | null = hasAgente && n > 0
-    ? { rotulo: 'Gerar imagem para todas', onClick: () => pedirConfirmacao('produtos.ambientadas.gerar') }
+    ? { rotulo: 'Gerar imagem para todas', onClick: () => void pedirConfirmacao('produtos.ambientadas.gerar') }
     : null;
 
   const painel = hasAgente && (
     <PainelAlfred
       uid={uid}
       conversa={conversa}
-      rodape={confirmando && (
+      rodape={confirmando ? (
         <CardConfirmacao
           key={`${confirmando.ferramenta}:${confirmando.total}:${confirmando.novos.length}`}
           conf={confirmando}
           saldo={credits}
           onConfirmar={confirmar}
-          onCancelar={() => setConfirmando(null)}
+          onCancelar={cancelarConfirmacao}
           onRecarregar={onRecarregar}
         />
+      ) : preparando && (
+        <div className="ag-glass rounded-[20px] px-4 py-3 flex items-center gap-2 text-[13px]" style={{ boxShadow: 'var(--ag-shadow-sm)' }} aria-live="polite">
+          {preparando.erro
+            ? <span className="flex-1" style={{ color: 'var(--ag-danger)' }}>{preparando.erro}</span>
+            : <><Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--ag-text-3)]" /><span className="flex-1 text-[var(--ag-text-2)]">Conferindo custo e catálogo…</span></>}
+          <button onClick={cancelarConfirmacao} className="min-h-[36px] px-3 rounded-full font-semibold text-[var(--ag-text-2)]">Cancelar</button>
+        </div>
       )}
       vazio={(
         <p className="flex-1 grid place-items-center px-6 text-center text-[13.5px] text-[var(--ag-text-2)]">
@@ -212,9 +246,9 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
         </p>
       )}
       // No telefone, focar o campo abre a folha inteira: em meia altura o teclado deixaria a conversa com poucos px.
-      onFoco={(f) => { setFocado(f); onFocoChange?.(f); if (f && telaPequena) setFolha('cheia'); }}
-      recuoTeclado={telaPequena ? alturaTeclado : 0}
-      emFoco={telaPequena && focado}
+      onFoco={(f) => { setFocado(f); onFocoChange?.(f); if (f && emFolha) setFolha('cheia'); }}
+      recuoTeclado={emFolha ? alturaTeclado : 0}
+      emFoco={emFolha && focado}
     />
   );
   const cabecalhoPainel = (fechar?: () => void) => (
@@ -287,7 +321,7 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
           >
             {buscando ? <X className="w-5 h-5" /> : <Search className="w-5 h-5" />}
           </button>
-          {hasAgente && !larga && !telaPequena && (
+          {hasAgente && !larga && !emFolha && (
             <button
               onClick={() => setPainelAberto((v) => !v)}
               aria-expanded={painelAberto}
@@ -405,15 +439,23 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
           </div>
         </div>
 
-        {(acao || hasAgente) && !(telaPequena && folha !== 'fechada') && (
+        {(acao || hasAgente) && !(emFolha && folha !== 'fechada') && (
           <BarraProximoPasso
             n={n}
             acao={acao ? { ...acao, ocupada: !hasAgente && gerando } : null}
             acaoSecundaria={acaoSecundaria}
+            extra={n > 0 && (
+              <EnviarErp
+                selecionados={produtosSelecionados}
+                conectadas={erpsConectados}
+                onEnviar={onEnviarErp}
+                onConectar={() => onAbrirView('integrations')}
+              />
+            )}
             onPedirAlfred={hasAgente ? pedirAoAlfred : () => onPedirAlfred(pedidoDaSelecao(produtosSelecionados))}
           />
         )}
-        {hasAgente && telaPequena && <FolhaAlfred altura={folha} onAltura={setFolha}>{painel}</FolhaAlfred>}
+        {hasAgente && emFolha && <FolhaAlfred altura={folha} onAltura={setFolha}>{painel}</FolhaAlfred>}
       </div>
 
       {hasAgente && larga && (
@@ -422,7 +464,7 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
           <div className="flex-1 min-h-0">{painel}</div>
         </aside>
       )}
-      {hasAgente && !larga && !telaPequena && painelAberto && (
+      {hasAgente && !larga && !emFolha && painelAberto && (
         <aside
           className="absolute right-0 top-0 bottom-0 z-30 w-[380px] max-w-full flex flex-col min-h-0 ag-glass-strong"
           style={{ boxShadow: 'var(--ag-shadow)', borderLeft: '1px solid var(--ag-hairline)' }}

@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { Check, Loader2 } from 'lucide-react';
 import type { Product } from '../../../types/models';
 import { ASPECTO, ASPECTO_DO_ROTULO, type Aspecto } from '../aspectos';
-import { integracoesDe } from '../sincronizacao';
-import { nomeDe, pilulasDe, skuDe, type EstadoPilula } from '../produtosAgente';
+import { integracoesDoProduto, nomeDe, pilulasDe, skuDe, type EstadoPilula } from '../produtosAgente';
 import SeloIntegracao from './SeloIntegracao';
 
 /**
@@ -80,7 +79,7 @@ interface Props {
 
 /** Caixa no começo; o resto da linha abre o produto. Selos e pílulas descem no telefone. */
 const LinhaProduto: React.FC<Props> = ({ p, marcado, onMarcar, onAbrir, mostrarVideo }) => {
-  const integracoes = integracoesDe(p as unknown as Record<string, unknown>);
+  const integracoes = integracoesDoProduto(p);
   const pilulas = [...pilulasDe(p, 'catalogo'), ...(mostrarVideo ? pilulasDe(p, 'videos').slice(1) : [])];
   return (
     <div

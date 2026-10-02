@@ -4,7 +4,7 @@
 import {
   reivindicar, pegarProximo, concluirGeracao, pausar, retomar, parar, descartar, reservarParaGravar,
   concluirGravacao, resumoLote, statusDerivado, statusDaAcao, linhaProgresso, camposDoItem, nomeDoLote, LEASE_MS,
-  linhasAoVivo, podeDesfazer, marcarDesfeito, podeRestaurar, camposDeRestauro, chaveDeRecarga,
+  linhasAoVivo, podeDesfazer, marcarDesfeito, podeRestaurar, camposDeRestauro, restauroDaVariacao, chaveDeRecarga,
 } from '../src/modules/agent/lote.ts';
 
 let failures = 0;
@@ -124,11 +124,35 @@ check('nome do lote por ferramenta', [nomeDoLote('produtos.atributos.gerar', 1),
   check('restaura se o texto ainda é o gravado', podeRestaurar(' <p>nova</p> ', '<p>nova</p>'), true);
   check('não restaura edição do usuário', podeRestaurar('<p>editei</p>', '<p>nova</p>'), false);
 
-  check('campos de restauro da descrição', camposDeRestauro(job.itens[0]), {
-    'Descrição complementar': '<p>velha</p>', 'Título SEO': 't0', 'Descrição SEO': 'd0', 'Palavras chave SEO': 'k0',
-    _statusDescricao: 'Descrição original', _statusSEO: null,
+  const intacto = { 'Descrição complementar': '<p>nova</p>', 'Título SEO': 'T', 'Descrição SEO': 'D', 'Palavras chave SEO': 'K' };
+  check('campos de restauro da descrição', camposDeRestauro(job.itens[0], intacto), {
+    descricao: true, seo: true,
+    campos: {
+      'Descrição complementar': '<p>velha</p>', _statusDescricao: 'Descrição original',
+      'Título SEO': 't0', 'Descrição SEO': 'd0', 'Palavras chave SEO': 'k0', _statusSEO: null,
+    },
   });
-  check('item sem resultado não restaura', camposDeRestauro(job.itens[1]), null);
+  check('item sem resultado não restaura', camposDeRestauro(job.itens[1], intacto), null);
+
+  // Ajuste: o SEO editado depois do lote fica; a descrição intacta volta.
+  check('SEO editado depois do lote não é desfeito', camposDeRestauro(job.itens[0], { ...intacto, 'Título SEO': 'meu título' }), {
+    descricao: true, seo: false,
+    campos: { 'Descrição complementar': '<p>velha</p>', _statusDescricao: 'Descrição original' },
+  });
+  check('descrição editada, SEO intacto: só o SEO volta', camposDeRestauro(job.itens[0], { ...intacto, 'Descrição complementar': '<p>editei</p>' })?.campos,
+    { 'Título SEO': 't0', 'Descrição SEO': 'd0', 'Palavras chave SEO': 'k0', _statusSEO: null });
+  check('tudo editado: nada a desfazer', camposDeRestauro(job.itens[0], { ...intacto, 'Descrição complementar': 'x', 'Palavras chave SEO': 'y' }), null);
+
+  // Ajuste: cada variação volta ao próprio texto e status, não ao do pai com "Gerado por IA".
+  const comVar = { ...job.itens[0], variacoesAntes: { v1: { status: null }, v2: { descricao: '<p>só da v2</p>', status: 'Original' } } };
+  check('variação que herdava o texto volta ao do pai e ao status dela', restauroDaVariacao(comVar, 'v1', '<p>nova</p>'),
+    { 'Descrição complementar': '<p>velha</p>', _statusDescricao: null });
+  check('variação com texto próprio volta ao dela', restauroDaVariacao(comVar, 'v2', '<p>nova</p>'),
+    { 'Descrição complementar': '<p>só da v2</p>', _statusDescricao: 'Original' });
+  check('variação editada depois do lote fica', restauroDaVariacao(comVar, 'v1', '<p>editei</p>'), null);
+  check('variação criada depois do lote fica', restauroDaVariacao(comVar, 'v9', '<p>nova</p>'), null);
+  check('lote antigo (sem variacoesAntes) usa o status de antes do pai', restauroDaVariacao(job.itens[0], 'v1', '<p>nova</p>'),
+    { 'Descrição complementar': '<p>velha</p>', _statusDescricao: 'Descrição original' });
 }
 
 // --- Final review I1/I2 -------------------------------------------------------------

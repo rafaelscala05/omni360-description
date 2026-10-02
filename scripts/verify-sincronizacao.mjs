@@ -79,7 +79,12 @@ check('integracoesDe lista só as vinculadas',
   check('paraSalvar mantém o carimbo da importação Wake recém-feita', [importado._wakePushed, '_wakePushedNovo' in importado], [{ seo: 's0' }, false]);
   check('conteudoDoPayload tiny', conteudoDoPayload('tiny', { nome: 'N', descricaoHtml: 'd', urlImagem: 'https://v' }),
     { titulo: 'N', descricaoHtml: 'd', seoTitle: undefined, seoDescription: undefined, seoKeywords: undefined, imagens: ['https://v'] });
-  check('conteudoDoPayload wake ignora nome e usa imagensUrls', [conteudoDoPayload('wake', { nome: 'SEO', imagensUrls: ['https://a'] }).titulo, conteudoDoPayload('wake', { imagensUrls: ['https://a'] }).imagens], [undefined, ['https://a']]);
+  const b64 = { base64: 'x', formato: 'JPG' };
+  check('conteudoDoPayload wake ignora nome e usa imagensUrls', [conteudoDoPayload('wake', { nome: 'SEO', imagensUrls: ['https://a'], imagensBase64: [b64] }).titulo, conteudoDoPayload('wake', { imagensUrls: ['https://a'], imagensBase64: [b64] }).imagens], [undefined, ['https://a']]);
+  // Conversão que falhou no navegador: a URL não foi enviada e não pode carimbar.
+  check('wake: URLs que não casam com o base64 enviado não carimbam imagens',
+    [conteudoDoPayload('wake', { imagensUrls: ['https://a', 'https://b'], imagensBase64: [b64] }).imagens,
+      conteudoDoPayload('wake', { imagensUrls: ['https://a'] }).imagens], [undefined, undefined]);
 }
 
 // --- Conversores do payload de envio (server/syncStamp.ts) ---------------------

@@ -210,8 +210,11 @@ export function integracoesDe(p: Record<string, unknown>): { integracao: Integra
 /** O conteúdo de um item do payload de envio (Tiny ou Wake), como saiu. */
 export function conteudoDoPayload(integ: 'tiny' | 'wake', x: {
   nome?: string; descricaoHtml?: string; seoTitle?: string; seoDescription?: string; seoKeywords?: string;
-  imagens?: string[]; urlImagem?: string; imagensUrls?: string[];
+  imagens?: string[]; urlImagem?: string; imagensUrls?: string[]; imagensBase64?: unknown[];
 }): ConteudoEnvio {
+  // Wake: as URLs só contam se cada uma virou uma imagem do envio. O corpo vem
+  // do navegador; uma lista que não casa com o que foi enviado não carimba nada.
+  const urlsWake = x.imagensUrls?.length && x.imagensUrls.length === x.imagensBase64?.length ? x.imagensUrls : undefined;
   return {
     // A Wake usa `nome` para o título SEO, e não sincroniza título.
     titulo: integ === 'tiny' ? x.nome : undefined,
@@ -219,7 +222,7 @@ export function conteudoDoPayload(integ: 'tiny' | 'wake', x: {
     seoTitle: x.seoTitle,
     seoDescription: x.seoDescription,
     seoKeywords: x.seoKeywords,
-    imagens: integ === 'wake' ? x.imagensUrls : (x.imagens ?? (x.urlImagem ? [x.urlImagem] : undefined)),
+    imagens: integ === 'wake' ? urlsWake : (x.imagens ?? (x.urlImagem ? [x.urlImagem] : undefined)),
   };
 }
 

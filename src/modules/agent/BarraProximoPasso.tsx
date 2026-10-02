@@ -24,13 +24,15 @@ interface Props {
   /** Segunda ação ao lado da principal (Produtos: "Gerar imagem para todas"). */
   acaoSecundaria?: AcaoBarra | null;
   onPedirAlfred?: () => void;
+  /** Botão extra antes do "Pedir ao Alfred" (Produtos: "Enviar ao ERP"). */
+  extra?: React.ReactNode;
   /** Tela fora do escopo .alfreds: a barra abre o próprio, com o tema do agente. */
   escopo?: boolean;
   /** Classe do contêiner externo (ex.: sticky bottom-0 numa tela que rola). */
   className?: string;
 }
 
-const Conteudo: React.FC<Omit<Props, 'escopo' | 'className'>> = ({ n, acao, acaoSecundaria, onPedirAlfred }) => (
+const Conteudo: React.FC<Omit<Props, 'escopo' | 'className'>> = ({ n, acao, acaoSecundaria, onPedirAlfred, extra }) => (
   <div className="ag-glass-strong px-4 sm:px-6 pt-3 pb-3" style={{ borderTop: '1px solid var(--ag-hairline)' }}>
     <div className="max-w-3xl mx-auto flex flex-col gap-2">
       <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--ag-text-2)] tabular-nums">
@@ -65,6 +67,7 @@ const Conteudo: React.FC<Omit<Props, 'escopo' | 'className'>> = ({ n, acao, acao
           )}
         </div>
         )}
+        {extra}
         {onPedirAlfred && (
           <button
             onClick={onPedirAlfred}

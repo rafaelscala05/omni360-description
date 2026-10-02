@@ -95,3 +95,24 @@ export function useTelaLarga(): boolean {
 
   return larga;
 }
+
+/**
+ * Abaixo do `md` do Tailwind (768px): onde o Alfred da tela de Produtos vira
+ * folha em vez de painel sobreposto. Não é `useTelaPequena` (640px), que
+ * decide o modo foco do composer.
+ */
+export function useAbaixoDeMd(): boolean {
+  const [abaixo, setAbaixo] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth < 768,
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const aplicar = () => setAbaixo(mq.matches);
+    aplicar();
+    mq.addEventListener('change', aplicar);
+    return () => mq.removeEventListener('change', aplicar);
+  }, []);
+
+  return abaixo;
+}

@@ -1794,6 +1794,9 @@ export default function App() {
 
     for (const p of selected) {
       let imagensBase64: WakePushProduct['imagensBase64'];
+      // Só as URLs que de fato viraram base64: uma imagem cuja conversão falhou
+      // não foi enviada e não pode entrar no carimbo de sincronização.
+      const imagensUrls: string[] = [];
       if (campos.imagens && p._ambientImages?.length) {
         imagensBase64 = [];
         for (const url of p._ambientImages) {
@@ -1801,6 +1804,7 @@ export default function App() {
             const { base64Data, mimeType } = await fetchAndProcessImage(url);
             const b64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
             imagensBase64.push({ base64: b64, formato: mimeType.toLowerCase().includes('png') ? 'PNG' : 'JPG' });
+            imagensUrls.push(url);
           } catch (e) {
             console.warn('Falha ao converter imagem para envio Wake:', e);
           }
@@ -1828,7 +1832,7 @@ export default function App() {
         seoKeywords: p['Palavras chave SEO'],
         atributos: campos.atributos ? atributos : undefined,
         imagensBase64,
-        imagensUrls: imagensBase64?.length ? [...(p._ambientImages ?? [])] : undefined,
+        imagensUrls: imagensUrls.length ? imagensUrls : undefined,
         campos,
       });
     }
@@ -3914,9 +3918,10 @@ Retorne APENAS um JSON válido no seguinte formato:
               hasAgente={hasContentAgent || hasOperationsAgent}
               uid={user?.uid ?? ''}
               credits={credits}
-              custoPorImagem={getCreditCost(CREDIT_ACTIONS.ambientImage.key)}
               onFocoChange={setAlfredFocado}
               onRecarregar={() => setIsCreditPurchaseOpen(true)}
+              erpsConectados={{ tiny: integrationConnections.tiny, wake: integrationConnections.wake }}
+              onEnviarErp={(erp) => { void handleSendToIntegration(erp); }}
             />
           ) : mainView === 'categories' ? (
             <div

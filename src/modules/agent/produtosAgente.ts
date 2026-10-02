@@ -176,9 +176,21 @@ const PRED_INTEGRACAO: Record<OpcaoIntegracao, (p: Product) => boolean> = {
   idworks: (p) => !!str(p._idworksProductId),
   nenhuma: (p) => !noErp(p),
 };
+// O estado de sincronização hasheia descrição, SEO e imagens de cada produto —
+// caro demais para refazer a cada tecla da busca em catálogos grandes. O produto
+// em memória é imutável (toda edição troca o objeto), então o cache é pelo objeto.
+const cacheSync = new WeakMap<Product, ReturnType<typeof integracoesDe>>();
+
+/** `integracoesDe` com cache por objeto — usado pelos filtros e pelo selo de cada linha. */
+export function integracoesDoProduto(p: Product): ReturnType<typeof integracoesDe> {
+  let v = cacheSync.get(p);
+  if (!v) { v = integracoesDe(rec(p)); cacheSync.set(p, v); }
+  return v;
+}
+
 const PRED_SYNC: Record<OpcaoSync, (p: Product) => boolean> = {
-  emDia: (p) => { const i = integracoesDe(rec(p)); return i.length > 0 && i.every((x) => x.estado.tipo === 'em-dia'); },
-  pendente: (p) => integracoesDe(rec(p)).some((x) => x.estado.tipo === 'pendente'),
+  emDia: (p) => { const i = integracoesDoProduto(p); return i.length > 0 && i.every((x) => x.estado.tipo === 'em-dia'); },
+  pendente: (p) => integracoesDoProduto(p).some((x) => x.estado.tipo === 'pendente'),
 };
 const PRED_CONTEUDO: Record<OpcaoConteudo, (p: Product) => boolean> = {
   semDescricao: semDescricao,

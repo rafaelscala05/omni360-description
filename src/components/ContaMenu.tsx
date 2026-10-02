@@ -135,7 +135,7 @@ export const ContaSheet: React.FC<{
 
   return (
     <div className="alfreds fixed inset-0 z-50 flex items-end md:items-center justify-center" data-tema={tema} role="dialog" aria-modal="true" aria-label="Conta">
-      <div className="absolute inset-0" style={{ background: 'rgba(5, 7, 12, 0.45)' }} onClick={onFechar} />
+      <div className="absolute inset-0" style={{ background: 'var(--ag-scrim)' }} onClick={onFechar} />
       <div
         className="ag-rise relative w-full md:w-[360px] max-h-[88vh] overflow-y-auto rounded-t-[28px] md:rounded-[24px] px-3 pt-2 flex flex-col"
         // Sólido, não vidro: abre por cima do conteúdo e, translúcido, o texto

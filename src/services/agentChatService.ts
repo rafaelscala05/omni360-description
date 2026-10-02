@@ -134,7 +134,11 @@ export type AcaoLote = 'aprovar' | 'descartar' | 'pausar' | 'retomar' | 'parar' 
 export const agirNoLote = (id: string, acao: AcaoLote, itens?: string[]) =>
   call<{ status: string | null }>(`/api/agent/lotes/${encodeURIComponent(id)}/${acao}`, 'POST', itens ? { itens } : {});
 
-export interface RespostaMassa { actionIds: string[]; lotes: number; gerados: number; jaTem: number; semFoto: number; custo: number }
+export interface RespostaMassa { actionIds: string[]; lotes: number; gerados: number; jaTem: number; semFoto: number; custo: number; naoEncontrados: string[] }
+
+/** Custo por item (o mesmo do débito) e ids que não estão no catálogo salvo — antes do card mostrar números. */
+export const previaMassa = (ferramenta: FerramentaMassa, docIds: string[]) =>
+  call<{ custoUnitario: number; naoEncontrados: string[] }>('/api/agent/lotes/previa', 'POST', { ferramenta, docIds });
 
 /** "Gerar … para todas" da tela de Produtos: cria os lotes em modo automático e grava a troca na conversa. */
 export const criarLotesEmMassa = (ferramenta: FerramentaMassa, docIds: string[], sobrescrever: boolean) =>

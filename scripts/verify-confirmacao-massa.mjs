@@ -44,5 +44,12 @@ check('resumo quando nenhum tem foto', resumoConfirmacao(semFotoNenhum), 'Nenhum
 check('resumo quando todos já têm', resumoConfirmacao(todos), 'Todos já têm descrição.');
 check('resumo com novos', resumoConfirmacao(d), '2 serão gerados.');
 
+// Ajuste: produto não salvo fica de fora com aviso, nos dois modos.
+const comNaoSalvo = montarConfirmacao('produtos.descricoes.gerar', [c('1'), c('2', { salvo: false }), c('3', { temDescricao: true, salvo: false })], 2);
+check('não salvos ficam fora de novos e já têm', [comNaoSalvo.novos.map((x) => x.id), comNaoSalvo.jaTem.length, comNaoSalvo.naoSalvos.map((x) => x.id)], [['1'], 0, ['2', '3']]);
+check('sobrescrever também não inclui não salvos', alvos(comNaoSalvo, true).map((x) => x.id), ['1']);
+check('etapa avisa os não salvos', etapasPensando(comNaoSalvo).some((l) => l.startsWith('Ainda não salvos — 2 ficam de fora')), true);
+check('resumo quando nenhum está salvo', resumoConfirmacao(montarConfirmacao('produtos.descricoes.gerar', [c('1', { salvo: false })], 2)), 'Nenhum dos selecionados está salvo — salve antes de gerar.');
+
 if (failures) { console.error(`\n${failures} falha(s).`); process.exit(1); }
 console.log('\nTudo certo.');

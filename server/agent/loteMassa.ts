@@ -9,7 +9,7 @@ import {
   alvos, emLotes, FERRAMENTAS_MASSA, listaNomes, montarConfirmacao, TAMANHO_LOTE,
   type CandidatoMassa, type FerramentaMassa,
 } from '../../src/modules/agent/confirmacaoMassa';
-import { camposDeRestauro, marcarDesfeito, podeRestaurar, type AntesDescricao } from '../../src/modules/agent/lote';
+import { camposDeRestauro, marcarDesfeito, restauroDaVariacao, type AntesDescricao, type AntesVariacao } from '../../src/modules/agent/lote';
 import { adminDb } from '../firebaseAdmin';
 import { criarLote, lerLote, mutarLote } from './loteStore';
 import { scheduleLote } from './loteWorker';
@@ -18,7 +18,15 @@ import { estimateCredits } from './execution';
 import { registrarTrocaNaConversa } from './contentAgentChat';
 import type { ProdutoDoc } from './produtosRules';
 
-export interface RespostaMassa { actionIds: string[]; lotes: number; gerados: number; jaTem: number; semFoto: number; custo: number }
+export interface RespostaMassa { actionIds: string[]; lotes: number; gerados: number; jaTem: number; semFoto: number; custo: number; naoEncontrados: string[] }
+
+/** O que o card de confirmação precisa do servidor antes de mostrar números. */
+export interface PreviaMassa {
+  /** O mesmo valor que o débito usa (`estimateCredits`) — o card nunca mostra um custo do navegador. */
+  custoUnitario: number;
+  /** Ids que não existem no catálogo salvo (produto ainda não salvo) — ficam de fora. */
+  naoEncontrados: string[];
+}
 
 const MAX_IDS = 1000;
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : v == null ? '' : String(v).trim());
@@ -40,24 +48,64 @@ const antesDe = (p: ProdutoDoc): AntesDescricao => ({
   statusSEO: typeof p._statusSEO === 'string' ? p._statusSEO : null,
 });
 
-export async function criarLotesEmMassa(
-  uid: string,
-  corpo: { ferramenta?: unknown; docIds?: unknown; sobrescrever?: unknown },
-): Promise<RespostaMassa> {
+/**
+ * Status e descrição de cada variação quando o lote nasce — a gravação copia o
+ * texto do pai e marca "Gerado por IA" nelas. A descrição só vai quando difere
+ * da do pai: o doc do lote tem 1 MB, e o caso comum é a variação herdar o texto.
+ */
+function variacoesAntesDe(catalogo: ProdutoDoc[], pai: ProdutoDoc): Record<string, AntesVariacao> {
+  const sku = str(pai['Código (SKU)']);
+  if (!sku) return {};
+  const descPai = String(pai['Descrição complementar'] ?? '');
+  const out: Record<string, AntesVariacao> = {};
+  for (const v of catalogo) {
+    if (str(v['Código do pai']) !== sku) continue;
+    const desc = String(v['Descrição complementar'] ?? '');
+    out[v._docId] = {
+      status: typeof v._statusDescricao === 'string' ? v._statusDescricao : null,
+      ...(desc.trim() !== descPai.trim() ? { descricao: desc } : {}),
+    };
+  }
+  return out;
+}
+
+function lerCorpo(corpo: { ferramenta?: unknown; docIds?: unknown }): { ferramenta: FerramentaMassa; ids: string[] } {
   const ferramenta = corpo.ferramenta as FerramentaMassa;
   if (!FERRAMENTAS_MASSA.includes(ferramenta)) throw erro('Ferramenta não suportada.', 400);
   const ids = Array.isArray(corpo.docIds) ? [...new Set(corpo.docIds.filter((i): i is string => typeof i === 'string'))] : [];
   if (!ids.length) throw erro('Nenhum produto selecionado.', 400);
   if (ids.length > MAX_IDS) throw erro(`No máximo ${MAX_IDS} produtos por vez.`, 400);
+  return { ferramenta, ids };
+}
+
+// O custo por item sai do mesmo `estimateCredits` que o débito usa — a prévia
+// e a criação nunca discordam do que será cobrado.
+// O custo só depende de quantos itens há, então um item basta.
+const custoUnitarioDe = (ferramenta: FerramentaMassa) =>
+  estimateCredits({ name: ferramenta, provider: 'produtos' }, { payload: { itens: [{}] } });
+
+/** Prévia do card de confirmação: custo do servidor e quem não está salvo. Não cria nada. */
+export async function previaMassa(uid: string, corpo: { ferramenta?: unknown; docIds?: unknown }): Promise<PreviaMassa> {
+  const { ferramenta, ids } = lerCorpo(corpo);
+  const porDoc = new Map((await lerCatalogo(uid)).map((p) => [p._docId, p]));
+  return { custoUnitario: await custoUnitarioDe(ferramenta), naoEncontrados: ids.filter((id) => !porDoc.has(id)) };
+}
+
+export async function criarLotesEmMassa(
+  uid: string,
+  corpo: { ferramenta?: unknown; docIds?: unknown; sobrescrever?: unknown },
+): Promise<RespostaMassa> {
+  const { ferramenta, ids } = lerCorpo(corpo);
   const sobrescrever = corpo.sobrescrever === true;
 
   // Só produtos do próprio usuário (lidos da coleção dele) e só principais.
-  const porDoc = new Map((await lerCatalogo(uid)).map((p) => [p._docId, p]));
+  const catalogo = await lerCatalogo(uid);
+  const porDoc = new Map(catalogo.map((p) => [p._docId, p]));
+  const naoEncontrados = ids.filter((id) => !porDoc.has(id));
   const produtos = ids.map((id) => porDoc.get(id)).filter((p): p is ProdutoDoc => !!p && !str(p['Código do pai']));
-  if (!produtos.length) throw erro('Nenhum dos produtos foi encontrado no catálogo.', 404);
+  if (!produtos.length) throw erro('Nenhum dos produtos está salvo no catálogo — salve antes de gerar.', 404);
 
-  const def = { name: ferramenta, provider: 'produtos' as const };
-  const custoUnitario = await estimateCredits(def, { payload: { itens: [produtos[0]] } });
+  const custoUnitario = await custoUnitarioDe(ferramenta);
   const conf = montarConfirmacao(ferramenta, produtos.map(candidato), custoUnitario);
   const escolhidos = alvos(conf, sobrescrever);
   if (!escolhidos.length) {
@@ -83,7 +131,11 @@ export async function criarLotesEmMassa(
         docId: p._docId,
         sku: str(p['Código (SKU)']),
         nome: candidato(p).nome,
-        ...(imagem ? {} : { descricaoAntes: String(p['Descrição complementar'] ?? ''), antes: antesDe(p) }),
+        ...(imagem ? {} : {
+          descricaoAntes: String(p['Descrição complementar'] ?? ''),
+          antes: antesDe(p),
+          variacoesAntes: variacoesAntesDe(catalogo, p),
+        }),
       })),
       preview: {
         resumo: imagem
@@ -112,7 +164,7 @@ export async function criarLotesEmMassa(
     : 'Comecei. Cada item é gravado assim que fica pronto.';
   await registrarTrocaNaConversa(uid, textoUsuario, textoAlfred, actionIds);
 
-  return { actionIds, lotes: partes.length, gerados: nAlvo, jaTem: conf.jaTem.length, semFoto: conf.semFoto.length, custo };
+  return { actionIds, lotes: partes.length, gerados: nAlvo, jaTem: conf.jaTem.length, semFoto: conf.semFoto.length, custo, naoEncontrados };
 }
 
 /**
@@ -141,17 +193,20 @@ export async function desfazerLote(uid: string, id: string): Promise<{ restaurad
       restaurados++;
       continue;
     }
-    const campos = camposDeRestauro(item);
-    const gravada = 'descricao' in item.resultado ? item.resultado.descricao : '';
-    if (!campos || !podeRestaurar(String(atual['Descrição complementar'] ?? ''), gravada)) { mantidos++; continue; }
+    // Por grupo: descrição e SEO voltam cada um só se ninguém mexeu nele depois
+    // do lote; cada variação, só se ainda tem o texto que o lote copiou para ela.
+    const restauro = camposDeRestauro(item, atual);
     const batch = adminDb.batch();
-    batch.update(ref, { ...campos, updatedAt: agora });
+    let escritas = 0;
+    if (restauro) { batch.update(ref, { ...restauro.campos, updatedAt: agora }); escritas++; }
     if (item.sku) {
       const filhas = await produtosCol(uid).where('Código do pai', '==', item.sku).get();
-      filhas.docs
-        .filter((f) => podeRestaurar(String(f.data()['Descrição complementar'] ?? ''), gravada))
-        .forEach((f) => batch.update(f.ref, { 'Descrição complementar': item.descricaoAntes ?? '', updatedAt: agora }));
+      for (const f of filhas.docs) {
+        const campos = restauroDaVariacao(item, f.id, String(f.data()['Descrição complementar'] ?? ''));
+        if (campos) { batch.update(f.ref, { ...campos, updatedAt: agora }); escritas++; }
+      }
     }
+    if (!escritas) { mantidos++; continue; }
     await batch.commit();
     restaurados++;
   }
