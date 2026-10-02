@@ -93,10 +93,9 @@ const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirAlfred, products = [], o
   return (
     <div className="alfreds h-full flex flex-col" data-tema={tema}>
       <div
-        className="ag-aurora flex-1 min-h-0 rounded-[24px] sm:rounded-[28px] flex flex-col overflow-hidden"
-        style={{ border: '1px solid var(--ag-hairline)', boxShadow: 'var(--ag-shadow)' }}
+        className="flex-1 min-h-0 flex flex-col overflow-hidden"
       >
-        <header className="shrink-0 px-4 sm:px-6 pt-4 pb-3 flex flex-col gap-3">
+        <header className="ag-tela-x shrink-0 pt-4 pb-3 flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <BotaoConta />
             <h1 className="font-display text-[26px] sm:text-[30px] font-semibold tracking-tight text-[var(--ag-text)]">Atividade</h1>
@@ -124,7 +123,7 @@ const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirAlfred, products = [], o
           </div>
         </header>
 
-        <div className="ag-scroll flex-1 overflow-y-auto px-4 sm:px-6 pb-28 md:pb-6">
+        <div className="ag-tela-x ag-scroll flex-1 overflow-y-auto pb-28 md:pb-6">
           <div className="max-w-2xl flex flex-col gap-3">
             {erro && (
               <div

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronRight, Coins, Sparkles } from 'lucide-react';
+import { ArrowRight, ChevronRight, Package, PenLine, Sparkles, Store, Workflow } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { Product } from '../../types/models';
 import type { ExtrasSemana } from './useSemana';
 import type { AgentAction } from '../../types/agent';
@@ -11,6 +12,7 @@ import { proximoPasso, type DestinoTarefa, type OrigemTarefa, type TarefaSemana 
 import { ORIGEM } from './SemanaPanel';
 import { resumoConteudo, resumoProdutos, sugestoesAlfred } from './painelFerramentas';
 import { BotaoConta } from '../../components/ContaMenu';
+import AlfredLogo from '../../components/alfredLogo/AlfredLogo';
 
 export type ViewConta = 'categories' | 'history' | 'company' | 'missoes' | 'fontes';
 
@@ -19,12 +21,9 @@ interface Props {
   products: Product[];
   /** O que só o App sabe e a semana usa (categorias, vídeo, missões). */
   extras?: ExtrasSemana;
-  credits: number;
   hasAgente: boolean;
   hasContentAgent: boolean;
   hasMeli: boolean;
-  /** Missões só existem para a coorte que tem a trilha de onboarding. */
-  mostrarMissoes: boolean;
   onAbrir: (destino: DestinoTarefa, tarefa?: TarefaSemana) => void;
   onAbrirView: (view: ViewConta) => void;
   /** Leva ao chat já mandando `prompt` — o Alfred recebe o contexto da tela. */
@@ -54,28 +53,134 @@ const Linha: React.FC<{ rotulo: string; valor: React.ReactNode; tom?: 'alerta' |
   </div>
 );
 
-/** D2: um cartão por agente — número principal e as pendências dele. */
+/** Ícone de cada ferramenta — o mesmo no cartão e em qualquer lugar que a nomeie. */
+const ICONE: Record<OrigemTarefa, LucideIcon> = {
+  produto: Package,
+  conteudo: PenLine,
+  meli: Store,
+  operacoes: Workflow,
+};
+
+/**
+ * D2: um cartão por ferramenta, em três faixas que não se confundem —
+ * cabeçalho (ícone, nome, o que ela faz e se há pendência), corpo (o número
+ * principal e as linhas) e pé (o CTA para abrir a ferramenta, sempre no mesmo
+ * lugar e com o nome dela).
+ */
 const Cartao: React.FC<{
   origem: OrigemTarefa;
   nome: string;
+  papel: string;
+  pendencias: number;
   kpi: React.ReactNode;
   kpiRotulo: string;
+  cta: string;
   onVer: () => void;
   children: React.ReactNode;
-}> = ({ origem, nome, kpi, kpiRotulo, onVer, children }) => (
-  <section className="ag-glass ag-sheen rounded-[24px] p-5 flex flex-col gap-3">
-    <button onClick={onVer} className="flex items-center gap-2.5 min-h-[44px] -my-2 text-left group">
-      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: ORIGEM[origem].cor }} />
-      <span className="text-[17px] font-semibold text-[var(--ag-text)] flex-1">{nome}</span>
-      <span className="flex items-center text-[13px] font-medium text-[var(--ag-text-2)] group-hover:text-[var(--ag-text)]">
-        Ver agente <ChevronRight className="w-4 h-4" />
+}> = ({ origem, nome, papel, pendencias, kpi, kpiRotulo, cta, onVer, children }) => {
+  const Icone = ICONE[origem];
+  const cor = ORIGEM[origem].cor;
+  return (
+    <section className="ag-glass ag-sheen rounded-[24px] flex flex-col overflow-hidden">
+      <header
+        className="flex items-center gap-3 px-5 py-4"
+        style={{
+          background: `linear-gradient(135deg, color-mix(in srgb, ${cor} 10%, transparent), transparent 70%)`,
+          borderBottom: '1px solid var(--ag-hairline)',
+        }}
+      >
+        <span
+          className="w-11 h-11 rounded-[14px] grid place-items-center shrink-0"
+          style={{ background: `color-mix(in srgb, ${cor} 15%, transparent)`, color: cor, boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${cor} 22%, transparent)` }}
+        >
+          <Icone className="w-[22px] h-[22px]" strokeWidth={1.9} />
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-[17px] font-semibold leading-tight text-[var(--ag-text)]">{nome}</span>
+          <span className="block text-[12.5px] text-[var(--ag-text-2)] truncate">{papel}</span>
+        </span>
+        {pendencias > 0 ? <Chip tom="alerta">{pendencias} {pendencias === 1 ? 'pendência' : 'pendências'}</Chip> : <Chip tom="ok">em dia</Chip>}
+      </header>
+
+      <div className="px-5 pt-4 pb-2 flex flex-col gap-3 flex-1">
+        <div className="flex items-baseline gap-2">
+          <span className="font-display text-[34px] leading-none font-semibold tabular-nums text-[var(--ag-text)]">{kpi}</span>
+          <span className="text-[13px] text-[var(--ag-text-2)]">{kpiRotulo}</span>
+        </div>
+        <div>{children}</div>
+      </div>
+
+      <div className="px-5 pb-5 pt-2">
+        <button
+          onClick={onVer}
+          className="group w-full min-h-[44px] px-4 rounded-full flex items-center justify-between gap-2 text-[14px] font-semibold transition-[filter] hover:brightness-110"
+          style={{ background: 'var(--ag-text)', color: 'var(--ag-surface-solid)' }}
+        >
+          <span className="flex items-center gap-2">
+            <Icone className="w-4 h-4 opacity-80" />
+            {cta}
+          </span>
+          <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+        </button>
+      </div>
+    </section>
+  );
+};
+
+/**
+ * Próximos passos da loja, em coluna: o primeiro em destaque (o mesmo
+ * `proximoPasso` da semana e da barra), os seguintes como linhas.
+ */
+const ColunaPassos: React.FC<{
+  passo: TarefaSemana;
+  seguintes: TarefaSemana[];
+  podePedir: boolean;
+  onAbrir: (destino: DestinoTarefa, tarefa?: TarefaSemana) => void;
+  onPedirAlfred: (prompt: string) => void;
+}> = ({ passo, seguintes, podePedir, onAbrir, onPedirAlfred }) => (
+  <section className="rounded-[24px] overflow-hidden flex flex-col" style={{ background: 'var(--ag-text)', color: 'var(--ag-bg-2)', boxShadow: 'var(--ag-shadow)' }}>
+    <div className="p-5 flex flex-col gap-3">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--ag-accent)' }}>Próximos passos da loja</span>
+      <span className="flex items-start gap-2">
+        <span className="w-2 h-2 mt-2 rounded-full shrink-0" style={{ background: ORIGEM[passo.origem].cor }} aria-hidden />
+        <span className="text-[17px] font-semibold leading-snug">{passo.titulo}</span>
       </span>
-    </button>
-    <div className="flex items-baseline gap-2">
-      <span className="font-display text-[34px] leading-none font-semibold tabular-nums text-[var(--ag-text)]">{kpi}</span>
-      <span className="text-[13px] text-[var(--ag-text-2)]">{kpiRotulo}</span>
+      <div className="flex flex-col gap-2 pt-1">
+        <button
+          onClick={() => onAbrir(passo.destino, passo)}
+          className="min-h-[42px] px-4 rounded-full flex items-center justify-center gap-1.5 text-[14px] font-semibold"
+          style={{ background: 'var(--ag-bg-2)', color: 'var(--ag-text)' }}
+        >
+          {passo.estado === 'precisa' ? 'Revisar agora' : 'Resolver agora'} <ArrowRight className="w-4 h-4" />
+        </button>
+        {podePedir && passo.prompt && (
+          <button
+            onClick={() => onPedirAlfred(passo.prompt!)}
+            className="min-h-[42px] px-4 rounded-full flex items-center justify-center gap-1.5 text-[14px] font-semibold"
+            style={{ background: 'color-mix(in srgb, var(--ag-bg-2) 14%, transparent)', color: 'var(--ag-bg-2)' }}
+          >
+            <Sparkles className="w-4 h-4" /> Pedir ao Alfred
+          </button>
+        )}
+      </div>
     </div>
-    <div>{children}</div>
+    {seguintes.length > 0 && (
+      <div className="px-2 pb-2 flex flex-col">
+        <span className="px-3 pt-1 pb-1.5 text-[11px] font-medium uppercase tracking-[0.06em]" style={{ color: 'color-mix(in srgb, var(--ag-bg-2) 55%, transparent)' }}>Depois</span>
+        {seguintes.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => onAbrir(t.destino, t)}
+            className="flex items-center gap-2.5 px-3 py-2.5 rounded-[14px] text-left text-[13.5px] leading-snug transition-colors hover:bg-[color-mix(in_srgb,var(--ag-bg-2)_8%,transparent)]"
+            style={{ borderTop: '1px solid color-mix(in srgb, var(--ag-bg-2) 10%, transparent)' }}
+          >
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: ORIGEM[t.origem].cor }} aria-hidden />
+            <span className="flex-1 min-w-0">{t.titulo}</span>
+            <ChevronRight className="w-4 h-4 shrink-0 opacity-60" />
+          </button>
+        ))}
+      </div>
+    )}
   </section>
 );
 
@@ -99,13 +204,6 @@ const LinhaAgente: React.FC<{
   </button>
 );
 
-const Bloco: React.FC<{ titulo: string; detalhe: string; onClick: () => void }> = ({ titulo, detalhe, onClick }) => (
-  <button onClick={onClick} className="ag-glass rounded-[14px] p-3 text-left">
-    <span className="block text-[14px] font-semibold text-[var(--ag-text)]">{titulo}</span>
-    <span className="block text-[12px] text-[var(--ag-text-2)]">{detalhe}</span>
-  </button>
-);
-
 /**
  * Porta "Ferramentas": uma visão de cada agente com um número, as pendências e
  * o caminho para a tela completa. No topo, o próximo passo mais valioso da
@@ -114,7 +212,7 @@ const Bloco: React.FC<{ titulo: string; detalhe: string; onClick: () => void }> 
  * de `md`, cartões com números e a coluna "Alfred sugere" (D2).
  */
 const FerramentasScreen: React.FC<Props> = ({
-  uid, products, extras, credits, hasAgente, hasContentAgent, hasMeli, mostrarMissoes, onAbrir, onAbrirView, onPedirAlfred,
+  uid, products, extras, hasAgente, hasContentAgent, hasMeli, onAbrir, onAbrirView, onPedirAlfred,
 }) => {
   const { tema } = useAgentTheme();
   const [acoes, setAcoes] = useState<AgentAction[]>([]);
@@ -135,6 +233,10 @@ const FerramentasScreen: React.FC<Props> = ({
   });
   const achadosSeo = useAchadosSeo(uid, hasContentAgent);
   const passo = proximoPasso(tarefas, hoje);
+  const seguintes = useMemo(
+    () => tarefas.filter((t) => t.estado !== 'feita' && t.dia >= hoje && t.id !== passo?.id).slice(0, 4),
+    [tarefas, hoje, passo],
+  );
   const sugestoes = useMemo(() => (hasAgente ? sugestoesAlfred(tarefas, passo) : []), [hasAgente, tarefas, passo]);
 
   const produtos = useMemo(() => resumoProdutos(products), [products]);
@@ -151,25 +253,31 @@ const FerramentasScreen: React.FC<Props> = ({
   return (
     <div className="alfreds h-full flex flex-col" data-tema={tema}>
       <div
-        className="ag-aurora flex-1 min-h-0 rounded-[24px] sm:rounded-[28px] flex flex-col overflow-hidden"
-        style={{ border: '1px solid var(--ag-hairline)', boxShadow: 'var(--ag-shadow)' }}
+        className="relative isolate flex-1 min-h-0 flex flex-col overflow-hidden"
       >
-        <div className="ag-scroll flex-1 overflow-y-auto px-4 sm:px-6 pt-4 pb-28 md:pb-6">
-          <div className="max-w-6xl mx-auto flex flex-col gap-4">
+        {/* Fundo: a esfera do Alfred com o A da marca, grande, desfocada e à
+            deriva — presença, não ilustração. Só no desktop (no telefone a
+            lista ocupa a tela toda e o canvas custaria bateria). */}
+        <div aria-hidden className="hidden md:block pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+          <div className="ag-deriva absolute -right-[8%] top-[6%]" style={{ filter: 'blur(34px)', opacity: 0.38 }}>
+            <AlfredLogo size={560} marca="malha" ativo interativo={false} />
+          </div>
+        </div>
+
+        <div className="ag-tela-x ag-scroll flex-1 overflow-y-auto pt-4 pb-28 md:pb-8">
+          <div className="flex flex-col gap-4 md:gap-5">
             <div className="flex items-center gap-2">
               <BotaoConta />
               <h1 className="font-display text-[28px] sm:text-[30px] font-semibold tracking-tight text-[var(--ag-text)] flex-1">
                 <span className="md:hidden">Ferramentas</span>
                 <span className="hidden md:inline">Visão geral da loja</span>
               </h1>
-              <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12.5px] font-medium text-[var(--ag-text-2)] tabular-nums" style={{ background: 'var(--ag-fill)' }}>
-                <Coins className="w-3.5 h-3.5" /> {credits}
-              </span>
             </div>
 
+            {/* No telefone o próximo passo abre a tela; no desktop ele é a coluna da direita. */}
             {passo && (
               <section
-                className="rounded-[24px] p-5 flex flex-col sm:flex-row sm:items-center gap-4"
+                className="md:hidden rounded-[24px] p-5 flex flex-col sm:flex-row sm:items-center gap-4"
                 style={{ background: 'var(--ag-text)', color: 'var(--ag-bg-2)', boxShadow: 'var(--ag-shadow)' }}
               >
                 <div className="flex-1 min-w-0 flex flex-col gap-1.5">
@@ -235,21 +343,17 @@ const FerramentasScreen: React.FC<Props> = ({
                 />
               </section>
 
-              <h2 className="px-1 pt-1 text-[11px] font-medium uppercase tracking-[0.06em] text-[var(--ag-text-2)]">Conta</h2>
-              <div className="grid grid-cols-2 gap-2">
-                <Bloco titulo="Créditos" detalhe={`${credits.toLocaleString('pt-BR')} disponíveis`} onClick={() => onAbrirView('history')} />
-                <Bloco titulo="Integrações" detalhe={`${ativas} ${ativas === 1 ? 'ativa' : 'ativas'}${alertas ? ` · ${alertas} ${alertas === 1 ? 'alerta' : 'alertas'}` : ''}`} onClick={() => onAbrirView('fontes')} />
-                <Bloco titulo="Categorias" detalhe="Árvore e atributos" onClick={() => onAbrirView('categories')} />
-                {mostrarMissoes && extras?.missoesResumo
-                  ? <Bloco titulo="Missões" detalhe={`${extras.missoesResumo.feitas} de ${extras.missoesResumo.total}`} onClick={() => onAbrirView('missoes')} />
-                  : <Bloco titulo="Empresa" detalhe="Dados para nota" onClick={() => onAbrirView('company')} />}
-              </div>
             </div>
 
-            {/* D2 · desktop: cartões + Alfred sugere */}
-            <div className="hidden md:flex gap-4 items-start">
-              <div className="flex-1 min-w-0 grid lg:grid-cols-2 gap-4">
-                <Cartao origem="produto" nome="Produtos" kpi={produtos.incompletos} kpiRotulo={`produtos incompletos de ${produtos.total.toLocaleString('pt-BR')}`} onVer={() => onAbrir('produtos')}>
+            {/* D2 · desktop: cartões + coluna (próximos passos, Alfred sugere) */}
+            <div className="hidden md:grid gap-5 items-start grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_380px]">
+              <div className="min-w-0 grid lg:grid-cols-2 gap-5">
+                <Cartao
+                  origem="produto" nome="Produtos" papel="Catálogo, descrições e fotos"
+                  pendencias={produtos.incompletos}
+                  kpi={produtos.incompletos} kpiRotulo={`produtos incompletos de ${produtos.total.toLocaleString('pt-BR')}`}
+                  cta="Abrir Produtos" onVer={() => onAbrir('produtos')}
+                >
                   <Linha primeira rotulo="Sem descrição" valor={produtos.semDescricao} tom={produtos.semDescricao ? 'alerta' : 'neutro'} />
                   <Linha rotulo="Sem foto" valor={produtos.semFoto} tom={produtos.semFoto ? 'alerta' : 'neutro'} />
                   <Linha rotulo="Sem foto ambientada" valor={produtos.semAmbientada} />
@@ -257,7 +361,12 @@ const FerramentasScreen: React.FC<Props> = ({
                 </Cartao>
 
                 {hasContentAgent && (
-                  <Cartao origem="conteudo" nome="Conteúdo" kpi={conteudo.semana} kpiRotulo="artigos no calendário desta semana" onVer={() => onAbrir('conteudo')}>
+                  <Cartao
+                    origem="conteudo" nome="Conteúdo" papel="Blog, calendário e SEO"
+                    pendencias={conteudo.revisao}
+                    kpi={conteudo.semana} kpiRotulo="artigos no calendário desta semana"
+                    cta="Abrir Conteúdo" onVer={() => onAbrir('conteudo')}
+                  >
                     <Linha primeira rotulo="Para aprovar" valor={conteudo.revisao} tom={conteudo.revisao ? 'alerta' : 'neutro'} />
                     <Linha rotulo="Achados da auditoria SEO" valor={achadosSeo.length} />
                     <Linha rotulo="Publicados no mês" valor={conteudo.publicadosMes} tom={conteudo.publicadosMes ? 'ok' : 'neutro'} />
@@ -265,7 +374,12 @@ const FerramentasScreen: React.FC<Props> = ({
                 )}
 
                 {hasMeli && (
-                  <Cartao origem="meli" nome="Mercado Livre" kpi={meliPropostasAguardando ?? '—'} kpiRotulo="propostas de otimização" onVer={() => onAbrir('meli')}>
+                  <Cartao
+                    origem="meli" nome="Mercado Livre" papel="Otimização de anúncios"
+                    pendencias={meliPropostasAguardando ?? 0}
+                    kpi={meliPropostasAguardando ?? '—'} kpiRotulo="propostas de otimização"
+                    cta="Abrir Mercado Livre" onVer={() => onAbrir('meli')}
+                  >
                     <Linha
                       primeira
                       rotulo="Para revisar"
@@ -277,11 +391,11 @@ const FerramentasScreen: React.FC<Props> = ({
                 )}
 
                 <Cartao
-                  origem="operacoes"
-                  nome="Operações"
+                  origem="operacoes" nome="Operações" papel="Loja, ERP e integrações"
+                  pendencias={alertas + pendentes}
                   kpi={tiny ? n(numeros?.pedidosAbertos, numeros?.pedidosAbertosMais) : ativas}
                   kpiRotulo={tiny ? 'pedidos em aberto no Tiny' : `de ${integracoes.length || 4} integrações conectadas`}
-                  onVer={() => onAbrirView('fontes')}
+                  cta="Abrir Operações" onVer={() => onAbrirView('fontes')}
                 >
                   {integracoes.some((i) => i.chave === 'wake' && i.conectado) && (
                     <Linha primeira rotulo="Banners ativos na Wake" valor={n(numeros?.bannersAtivos)} />
@@ -291,7 +405,10 @@ const FerramentasScreen: React.FC<Props> = ({
                 </Cartao>
               </div>
 
-              <aside className="w-[300px] shrink-0 flex flex-col gap-3">
+              <aside className="min-w-0 flex flex-col gap-4">
+                {passo && (
+                  <ColunaPassos passo={passo} seguintes={seguintes} podePedir={hasAgente} onAbrir={onAbrir} onPedirAlfred={onPedirAlfred} />
+                )}
                 {sugestoes.length > 0 && (
                   <section className="ag-glass rounded-[24px] p-4 flex flex-col gap-2.5">
                     <div className="flex items-center gap-2.5">
@@ -311,26 +428,6 @@ const FerramentasScreen: React.FC<Props> = ({
                   </section>
                 )}
 
-                <section className="ag-glass rounded-[24px] p-4 flex flex-col">
-                  <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-[var(--ag-text-2)] pb-1">Conta</span>
-                  {([
-                    ['history', 'Créditos', credits.toLocaleString('pt-BR')],
-                    ...(mostrarMissoes && extras?.missoesResumo ? [['missoes', 'Missões', `${extras.missoesResumo.feitas} de ${extras.missoesResumo.total}`]] : []),
-                    ['fontes', 'Integrações', `${ativas} ativas${alertas ? ` · ${alertas} alerta` : ''}`],
-                    ['categories', 'Categorias', ''],
-                    ['company', 'Empresa', ''],
-                  ] as [ViewConta, string, string][]).map(([view, rotulo, valor], i) => (
-                    <button
-                      key={view}
-                      onClick={() => onAbrirView(view)}
-                      className="flex items-center justify-between gap-2 py-2.5 text-[14px] text-left"
-                      style={i ? { borderTop: '1px solid var(--ag-hairline)' } : undefined}
-                    >
-                      <span className="text-[var(--ag-text)]">{rotulo}</span>
-                      <span className="flex items-center gap-1 text-[var(--ag-text-2)] tabular-nums">{valor}<ChevronRight className="w-4 h-4 text-[var(--ag-text-3)]" /></span>
-                    </button>
-                  ))}
-                </section>
               </aside>
             </div>
           </div>

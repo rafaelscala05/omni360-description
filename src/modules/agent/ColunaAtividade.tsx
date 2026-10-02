@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Check, ChevronRight } from 'lucide-react';
+import { Check, ChevronRight, ScrollText } from 'lucide-react';
 import type { AgentAction } from '../../types/agent';
 import type { Product } from '../../types/models';
 import { useRodando } from './useRodando';
@@ -15,13 +15,14 @@ interface Props {
   onRejeitar: (id: string) => Promise<void>;
   onVerAtividade: () => void;
   onVerLogs: () => void;
+  /** As conexões (`ConnectionsBar` embutida), no mesmo card dos Logs. */
+  conexoes?: React.ReactNode;
 }
 
 const Bloco: React.FC<{ titulo: string; alerta?: boolean; children: React.ReactNode }> = ({ titulo, alerta, children }) => (
-  <section
-    className="ag-glass rounded-[24px] p-4 flex flex-col gap-2.5"
-    style={alerta ? { borderColor: 'color-mix(in srgb, var(--ag-accent) 35%, transparent)' } : undefined}
-  >
+  // Sem fundo próprio: o bloco é só um rótulo sobre o que ele agrupa — o
+  // `ActionCard` dentro já é um cartão, e cartão dentro de cartão pesa.
+  <section className="flex flex-col gap-2.5 px-1">
     <h2
       className="text-[11px] font-semibold uppercase tracking-[0.06em]"
       style={{ color: alerta ? 'var(--ag-accent)' : 'var(--ag-text-2)' }}
@@ -46,7 +47,7 @@ const Vazio: React.FC<{ children: React.ReactNode }> = ({ children }) => (
  * 320px com três cartões de aprovação empilhados empurraria Rodando e Feito
  * para fora da vista.
  */
-const ColunaAtividade: React.FC<Props> = ({ uid, acoes, products, onExecutar, onRejeitar, onVerAtividade, onVerLogs }) => {
+const ColunaAtividade: React.FC<Props> = ({ uid, acoes, products, onExecutar, onRejeitar, onVerAtividade, onVerLogs, conexoes }) => {
   const nomes = useMemo(() => new Map(products.map((p) => [p._id, String(p['Descrição'] ?? '')])), [products]);
   const rodando = useRodando(uid, nomes);
   const pendentes = useMemo(
@@ -102,11 +103,31 @@ const ColunaAtividade: React.FC<Props> = ({ uid, acoes, products, onExecutar, on
             <span className="min-w-0 truncate">{a.preview.resumo || rotuloFerramenta(a.tool)}</span>
           </div>
         )) : <Vazio>Nada gravado hoje ainda.</Vazio>}
-        <div className="flex items-center justify-between pt-1 text-[13px] font-medium">
-          <button onClick={onVerLogs} className="text-[var(--ag-text)] hover:text-[var(--ag-accent)]">Ver como ele trabalhou ›</button>
-          {feitas.length > 5 && <button onClick={onVerAtividade} className="text-[var(--ag-text-2)]">Ver tudo</button>}
-        </div>
+        {feitas.length > 5 && (
+          <button onClick={onVerAtividade} className="self-start pt-1 text-[13px] font-medium text-[var(--ag-text-2)] hover:text-[var(--ag-text)]">Ver tudo</button>
+        )}
       </Bloco>
+
+      {/* Logs e conexões num card só: os dois respondem "com o que o Alfred
+          está falando e o que ele chamou" — a infraestrutura por trás das
+          tarefas, embaixo do que rodou. Os Logs saíram do cabeçalho; as
+          conexões, da barra do topo. */}
+      <section className="ag-glass rounded-[20px] p-1.5 flex flex-col">
+        <button
+          onClick={onVerLogs}
+          className="min-h-[40px] flex items-center gap-2.5 px-2.5 rounded-[14px] text-left text-[13.5px] text-[var(--ag-text)] hover:bg-[var(--ag-fill)] transition-colors"
+        >
+          <ScrollText className="w-4 h-4 shrink-0 text-[var(--ag-text-3)]" />
+          <span className="flex-1 min-w-0">Logs · chamadas às APIs</span>
+          <ChevronRight className="w-4 h-4 shrink-0 text-[var(--ag-text-3)]" />
+        </button>
+        {conexoes && (
+          <>
+            <div className="mx-2.5 my-1" style={{ borderTop: '1px solid var(--ag-hairline)' }} />
+            {conexoes}
+          </>
+        )}
+      </section>
     </div>
   );
 };

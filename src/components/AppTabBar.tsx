@@ -19,6 +19,7 @@
 import React from 'react';
 import { Bell, Columns3, Layout, Menu, Plug, Plus } from 'lucide-react';
 import { useAgentTheme } from '../modules/agent/theme';
+import AlfredLogo from './alfredLogo/AlfredLogo';
 
 export type TabDestino = 'home' | 'atividade' | 'ferramentas' | 'products' | 'integrations';
 
@@ -81,12 +82,7 @@ const Barra: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   );
 };
 
-const Orbe: React.FC = () => (
-  <span
-    className="block w-[19px] h-[19px] rounded-full"
-    style={{ background: 'var(--ag-accent)', boxShadow: 'inset 0 0 0 3.5px color-mix(in srgb, var(--ag-accent) 45%, var(--ag-bg-2))' }}
-  />
-);
+const Orbe: React.FC = () => <AlfredLogo size={23} marca="frente" className="block -m-0.5" />;
 
 const AppTabBar: React.FC<Props> = ({ atual, mostrarAgente, pendentes = 0, onNavegar, onNovoProduto, onMenu }) => {
   if (mostrarAgente) {

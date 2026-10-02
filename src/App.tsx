@@ -3,6 +3,7 @@ import React, { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'rea
 import { Upload, Download, Search, Filter, Play, Eye, Copy, RefreshCw, Save, Check, AlertCircle, X, Sparkles, Link as LinkIcon, Settings, Plus, Trash2, Image as ImageIcon, LogIn, LogOut, Coins, Layout, ChevronLeft, ChevronRight, ChevronDown, DownloadCloud, Edit, Globe, FileText, Database, Folder, Bell, HelpCircle, Menu, Cloud, CloudUpload, Tag, Columns3, Plug, GraduationCap, Gift, Building2, Zap, Target, Store } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import logoAlfreds from './assets/brand/logo-alfreds-produtos.png';
+import AlfredLogo from './components/alfredLogo/AlfredLogo';
 import AgentHomeScreen from './modules/agent/AgentHomeScreen';
 import AtividadeScreen from './modules/agent/AtividadeScreen';
 import { AbrirNaFerramentaProvider } from './modules/agent/AbrirNaFerramentaContext';
@@ -15,6 +16,8 @@ import { usePendentesAlfred, useVideosDoAlfred } from './modules/agent/useSemana
 import type { DestinoTarefa } from './modules/agent/semana';
 import ProdutosAgenteScreen from './modules/agent/ProdutosAgenteScreen';
 import TrilhoDesktop, { type DestinoTrilho, type ItemConta } from './components/TrilhoDesktop';
+import FolhaConteudo from './components/FolhaConteudo';
+import { ASPECTO, estiloAspecto, type Aspecto } from './modules/agent/aspectos';
 import { ContaProvider, ContaSheet, AvatarConta, type DadosConta } from './components/ContaMenu';
 import { useAgentTheme } from './modules/agent/theme';
 import type { ChaveFonte } from './modules/agent/conectores';
@@ -3056,12 +3059,10 @@ Retorne APENAS um JSON válido no seguinte formato:
   if (!isAuthReady) {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
-        <img src={logoAlfreds} alt="Alfreds" className="h-10 w-auto animate-pulse mb-6" />
+        <AlfredLogo size={168} ativo marca="malha" rotulo="Carregando Alfreds" className="mb-5" />
+        <img src={logoAlfreds} alt="Alfreds" className="h-9 w-auto mb-4" />
         <div className="flex flex-col items-center gap-4">
-            <div className="flex items-center gap-2">
-                <RefreshCw className="w-4 h-4 text-orange-600 animate-spin" />
-                <span className="text-gray-600 font-bold tracking-tight">Carregando Alfreds...</span>
-            </div>
+            <span className="text-gray-500 text-sm font-semibold tracking-tight">Carregando Alfreds...</span>
             {isFirebaseUnavailable && (
                 <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl max-w-sm">
                     <p className="text-xs text-red-800 font-medium">
@@ -3223,6 +3224,20 @@ Retorne APENAS um JSON válido no seguinte formato:
   // Tema das telas convertidas que abrem o próprio escopo `.alfreds`: sem
   // agente não há alternador, então ficam no claro.
   const temaTelas = temAgente ? temaAgente : 'claro';
+  const temaColuna = temAgente && (telaDoAgente || telaComTokens) ? temaAgente : 'claro';
+  const folhaSolida = temAgente && temaColuna !== temaAgente;
+  // Com agente, o fundo (aurora) é uma camada só atrás do trilho, da barra
+  // Próximo passo e das telas — sem emenda entre o menu e o conteúdo. Fica
+  // num nó próprio, e não na raiz, para o escopo `.alfreds` (que muda a cor de
+  // texto herdada no tema escuro) não vazar para modais ainda em cores literais.
+  const fundoAgente = temAgente && (
+    <div
+      aria-hidden
+      className="alfreds ag-aurora pointer-events-none"
+      data-tema={temaAgente}
+      style={{ position: 'absolute', inset: 0, zIndex: -1 }}
+    />
+  );
   const portaAtual: DestinoTrilho | null =
     mainView === 'home' || mainView === 'fontes' ? 'home'
       : mainView === 'atividade' ? 'atividade'
@@ -3266,10 +3281,15 @@ Retorne APENAS um JSON válido no seguinte formato:
     };
     return (
       <ContaProvider value={temAgente ? { dados: dadosConta, abrir: abrirConta } : null}>
-        <div className="h-screen flex overflow-hidden">
+        <div className="h-screen flex overflow-hidden relative isolate">
+          {fundoAgente}
           {temAgente && (
             <TrilhoDesktop
               atual="ferramentas"
+              // No Conteúdo a aba encosta na coluna de seções do ContentApp,
+              // que é sólida (`--ag-bg-2`) — a aba usa a mesma cor.
+              temaFolha={temaTelas}
+              folhaSolida
               pendentes={pendentesAlfred}
               credits={credits}
               nome={user.displayName ?? ''}
@@ -3389,7 +3409,8 @@ Retorne APENAS um JSON válido no seguinte formato:
 
   const renderApp = () => (
     <ContaProvider value={temAgente ? { dados: dadosConta, abrir: abrirConta } : null}>
-    <div className="h-screen bg-[#f7f9fb] flex font-sans overflow-hidden">
+    <div className="h-screen bg-[#f7f9fb] flex font-sans overflow-hidden relative isolate">
+      {fundoAgente}
       <input type="file" accept=".xlsx, .xls" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
       {isFirebaseUnavailable && (
         <div className="absolute top-0 inset-x-0 bg-red-600 text-white px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-2 z-50">
@@ -3409,6 +3430,8 @@ Retorne APENAS um JSON válido no seguinte formato:
       {temAgente && (
         <TrilhoDesktop
           atual={portaAtual}
+          temaFolha={temaColuna}
+          folhaSolida={folhaSolida}
           pendentes={pendentesAlfred}
           credits={credits}
           nome={user.displayName ?? ''}
@@ -3659,11 +3682,21 @@ Retorne APENAS um JSON válido no seguinte formato:
       </aside>
 
       {/* Main Content Area */}
-      <div
+      <FolhaConteudo
+        chave={portaAtual}
         // Sempre `.alfreds` (o cabeçalho de topo é em tokens); sem agente, claro e no fundo antigo.
-        className={cn("alfreds flex-1 flex flex-col min-w-0 h-screen overflow-hidden", !temAgente && "bg-[#f7f9fb]")}
-        data-tema={temAgente && (telaDoAgente || telaComTokens) ? temaAgente : 'claro'}
-        style={temAgente ? { background: 'var(--ag-bg)' } : undefined}
+        // Com agente, no desktop a coluna é a folha que a aba ativa do trilho
+        // encosta (`--ag-folha`, a mesma cor da aba); no telefone, transparente
+        // sobre a aurora. Uma tela antiga que força o claro no tema escuro
+        // pinta uma folha sólida — e a aba acompanha (`folhaSolida`).
+        className={cn(
+          "alfreds flex-1 flex flex-col min-w-0 h-screen overflow-hidden",
+          !temAgente && "bg-[#f7f9fb]",
+          temAgente && "md:h-auto md:my-3 md:mr-3 md:rounded-[28px]",
+          temAgente && !folhaSolida && "md:bg-(--ag-folha)",
+        )}
+        tema={temaColuna}
+        style={folhaSolida ? { background: 'var(--ag-bg-2)' } : undefined}
       >
         {/* Top Bar */}
         {/* As telas do agente têm cabeçalho próprio (com o avatar da Conta no
@@ -3757,8 +3790,9 @@ Retorne APENAS um JSON válido no seguinte formato:
         </header>
 
         {/* Princípio "um próximo passo sempre visível": no desktop, em toda
-            tela menos Ferramentas (que já abre com o mesmo cartão no topo). */}
-        {(hasContentAgent || hasOperationsAgent) && mainView !== 'ferramentas' && mainView !== 'agenteProdutos' && (
+            tela menos Ferramentas (que já abre com o mesmo cartão no topo) e o
+            Alfred (que o mostra logo acima do campo de digitar). */}
+        {(hasContentAgent || hasOperationsAgent) && mainView !== 'ferramentas' && mainView !== 'agenteProdutos' && mainView !== 'home' && (
           <ProximoPassoBar
             uid={user.uid}
             products={products}
@@ -3772,7 +3806,7 @@ Retorne APENAS um JSON válido no seguinte formato:
 
         {/* Dynamic View Content */}
         <AbrirNaFerramentaProvider abrir={abrirNaFerramenta}>
-        <main className={cn(
+        <main data-folha-conteudo className={cn(
           "flex-1 overflow-y-auto w-full",
           !temAgente && "bg-[#f7f9fb]",
           // O chat do agente não tem barra inferior no telefone (o menu foi
@@ -3781,7 +3815,9 @@ Retorne APENAS um JSON válido no seguinte formato:
           mainView === 'atividade' || mainView === 'ferramentas' || mainView === 'fontes' ? "p-3 sm:p-6" :
           // A barra Próximo passo é o pé da própria tela, então ela termina acima da tab bar.
           mainView === 'agenteProdutos' ? "p-3 pb-24 sm:p-6 md:pb-6" :
-          mainView === 'home' ? (alfredFocado ? "p-3 sm:p-6" : "p-3 pb-24 sm:p-6 md:pb-6") : "p-6 pb-20 md:pb-6",
+          mainView === 'home' ? (alfredFocado ? "p-3 sm:p-6" : "p-3 pb-24 sm:p-6 md:pb-6") :
+          // Tabela completa com agente: a mesma margem das telas do agente (com `ag-tela-x` dentro).
+          mainView === 'products' && temAgente ? "p-3 pb-24 sm:p-6 md:pb-6" : "p-6 pb-20 md:pb-6",
         )}>
           {mainView === 'missoes' ? (
             <TrilhaMissoes
@@ -3831,11 +3867,9 @@ Retorne APENAS um JSON válido no seguinte formato:
               uid={user.uid}
               products={products}
               extras={extrasSemana}
-              credits={credits}
               hasAgente={hasContentAgent || hasOperationsAgent}
               hasContentAgent={hasContentAgent}
               hasMeli={hasMeliListingOptimizer}
-              mostrarMissoes={isCoorteMissao(cohort)}
               onAbrir={abrirDestino}
               onAbrirView={(v) => { if (v === 'history') fetchCreditLogs(); setMainView(v); }}
               onPedirAlfred={(p) => { setPromptAlfred({ texto: p }); setMainView('home'); }}
@@ -3890,8 +3924,17 @@ Retorne APENAS um JSON válido no seguinte formato:
               <CompanyProfile company={companyData} onSaved={setCompanyData} />
             </Suspense>
           ) : (
-            <div className="alfreds animate-in fade-in slide-in-from-bottom-4 duration-500 h-full flex flex-col max-w-[1600px] mx-auto" data-tema={temaTelas}>
-               {!onboardingCompleted && !onboardingBannerDismissed && (
+            <div
+              className={cn(
+                "alfreds animate-in fade-in slide-in-from-bottom-4 duration-500 h-full flex flex-col",
+                // Com agente, regra de tela: margem `ag-tela-x`, sem largura máxima centralizada.
+                temAgente ? "ag-tela-x" : "max-w-[1600px] mx-auto",
+              )}
+              data-tema={temaTelas}
+            >
+               {/* Com agente o convite de cadastro não aparece aqui: a tabela é
+                   uma ferramenta, e o onboarding tem a trilha de missões/Conta. */}
+               {!temAgente && !onboardingCompleted && !onboardingBannerDismissed && (
                  <div className="relative mb-4 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-[#141311] to-[#1e3a8a] shadow-lg shadow-slate-900/10">
                    <div className="pointer-events-none absolute -right-6 -top-10 h-32 w-32 rounded-full bg-orange-500/30 blur-3xl" />
 
@@ -3951,30 +3994,44 @@ Retorne APENAS um JSON válido no seguinte formato:
                    <LinkIcon className="w-4 h-4" /> Criar meu primeiro produto
                  </button>
                )}
-               <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-5 gap-4 flex-shrink-0">
-                 <div>
-                   <h1 className="font-display text-xl md:text-2xl font-bold text-(--ag-text) tracking-tight">Catálogo de Produtos</h1>
-                   <p className="text-xs md:text-sm text-(--ag-text-2) mt-0.5">Gerencie e enriqueça seu inventário de produtos.</p>
-                 </div>
+               <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-5 gap-4 flex-shrink-0">
+                 {temAgente ? (
+                   <div>
+                     <button
+                       onClick={() => setMainView('agenteProdutos')}
+                       className="min-h-[36px] -ml-1 flex items-center text-[14px] font-medium text-(--ag-text-2) hover:text-(--ag-text)"
+                     >
+                       <ChevronLeft className="w-5 h-5" /> Produtos
+                     </button>
+                     <h1 className="font-display text-[30px] leading-tight font-semibold text-(--ag-text) tracking-tight">Tabela completa</h1>
+                     <p className="text-[13.5px] text-(--ag-text-2)">Todas as colunas, variações, filtros, exportação e envio.</p>
+                   </div>
+                 ) : (
+                   <div>
+                     <h1 className="font-display text-xl md:text-2xl font-bold text-(--ag-text) tracking-tight">Catálogo de Produtos</h1>
+                     <p className="text-xs md:text-sm text-(--ag-text-2) mt-0.5">Gerencie e enriqueça seu inventário de produtos.</p>
+                   </div>
+                 )}
 
                  {/* Legenda de Status */}
-                 <div className="hidden xl:flex items-center gap-3 px-4 py-2 bg-(--ag-surface-solid) border border-(--ag-hairline) rounded-xl shadow-sm">
-                   <span className="text-[10px] font-bold text-(--ag-text-3) uppercase tracking-widest">Legenda</span>
+                 {/* Legenda: a cor diz qual aspecto (a mesma da aba Produtos e do modal);
+                     tingido = feito, cinza = falta. */}
+                 <div className="hidden xl:flex items-center gap-3 h-11 px-4 rounded-full" style={{ background: 'var(--ag-surface-solid)', border: '1px solid var(--ag-hairline)' }}>
+                   <span className="text-[11px] font-semibold text-(--ag-text-3) uppercase tracking-[0.06em]">Legenda</span>
                    <div className="h-4 w-px bg-(--ag-fill-2)" />
                    <div className="flex items-center gap-3.5">
-                     {([
-                       { Icon: Sparkles, label: 'Descrição', color: 'text-(--ag-accent) bg-(--ag-accent-soft)' },
-                       { Icon: Tag, label: 'Atributos', color: 'text-(--ag-warn) bg-(--ag-warn-soft)' },
-                       // { Icon: Search, label: 'Enriquecido', color: 'text-(--ag-violet) bg-(--ag-violet-soft)' }, // desativado temporariamente
-                       { Icon: ImageIcon, label: 'Imagens', color: 'text-(--ag-accent) bg-(--ag-accent-soft)' },
-                     ] as const).map(({ Icon, label, color }) => (
-                       <div key={label} className="flex items-center gap-1.5">
-                         <span className={cn("flex items-center justify-center w-5 h-5 rounded-md border border-(--ag-hairline)", color)}>
-                           <Icon className="w-3 h-3" />
-                         </span>
-                         <span className="text-[11px] font-medium text-(--ag-text-2)">{label}</span>
-                       </div>
-                     ))}
+                     {(['descricao', 'atributos', 'imagens'] as Aspecto[]).map((a) => {
+                       const { Icone, rotulo } = ASPECTO[a];
+                       return (
+                         <div key={a} className="flex items-center gap-1.5">
+                           <span className="flex items-center justify-center w-6 h-6 rounded-full border" style={estiloAspecto(a, true)}>
+                             <Icone className="w-3.5 h-3.5" />
+                           </span>
+                           <span className="text-[12px] font-medium text-(--ag-text-2)">{rotulo}</span>
+                         </div>
+                       );
+                     })}
+                     <span className="text-[11.5px] text-(--ag-text-3)">· cinza = falta</span>
                    </div>
                  </div>
 
@@ -3989,7 +4046,10 @@ Retorne APENAS um JSON válido no seguinte formato:
                    <div className="flex items-center gap-2 w-full sm:w-auto">
                      <button
                        onClick={handleOpenProductUrlImport}
-                       className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 font-bold text-xs md:text-sm text-white bg-(--ag-accent) hover:brightness-95 transition-all rounded-lg shadow-md h-9 whitespace-nowrap"
+                       className={cn(
+                         "flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 font-bold text-xs md:text-sm transition-all whitespace-nowrap",
+                         temAgente ? "h-11 px-4 rounded-full bg-(--ag-text) text-(--ag-surface-solid) font-semibold hover:brightness-110" : "h-9 rounded-lg shadow-md text-white bg-(--ag-accent) hover:brightness-95",
+                       )}
                      >
                        <Plus className="w-4 h-4" />
                        <span>Novo Produto</span>
@@ -3998,7 +4058,8 @@ Retorne APENAS um JSON válido no seguinte formato:
                        onClick={() => saveToCloud()}
                        disabled={isSavingToCloud || !hasUnsavedChanges || products.length === 0}
                        className={cn(
-                         "flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 border rounded-lg shadow-sm text-xs md:text-sm font-semibold transition-all h-9 whitespace-nowrap",
+                         "flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 border shadow-sm text-xs md:text-sm font-semibold transition-all whitespace-nowrap",
+                         temAgente ? "h-11 px-4 rounded-full" : "h-9 rounded-lg",
                          hasUnsavedChanges 
                            ? 'bg-(--ag-accent-soft) border-(--ag-accent-line) text-(--ag-accent) hover:bg-(--ag-accent-soft)' 
                            : 'bg-(--ag-fill) border-(--ag-hairline) text-(--ag-text-3) opacity-50'
@@ -4009,7 +4070,10 @@ Retorne APENAS um JSON válido no seguinte formato:
                      </button>
                      <button 
                        onClick={() => fileInputRef.current?.click()} 
-                       className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 font-bold text-xs md:text-sm text-white bg-(--ag-accent) hover:brightness-95 transition-all rounded-lg shadow-md h-9 whitespace-nowrap"
+                       className={cn(
+                         "flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 font-bold text-xs md:text-sm transition-all whitespace-nowrap",
+                         temAgente ? "h-11 px-4 rounded-full font-semibold text-(--ag-text) bg-(--ag-surface-solid) border border-(--ag-hairline) hover:bg-(--ag-fill-2)" : "h-9 rounded-lg shadow-md text-white bg-(--ag-accent) hover:brightness-95",
+                       )}
                      >
                        <Upload className="w-4 h-4" /> 
                        <span>Importar</span>
@@ -4166,10 +4230,12 @@ Retorne APENAS um JSON válido no seguinte formato:
                         <button
                           onClick={handleGenerateMass}
                           disabled={selectedIds.size === 0 || isGeneratingMass || isEnrichingMass}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-(--ag-surface-solid) text-(--ag-accent) border border-(--ag-accent-line) rounded-lg text-sm font-medium hover:bg-(--ag-accent-soft) hover:border-(--ag-accent) transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                          className="flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-sm font-medium hover:brightness-95 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                          style={estiloAspecto('descricao', true)}
+                          title="Gerar descrição + SEO dos selecionados"
                         >
-                          {isGeneratingMass ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                          <span className="hidden sm:inline">Gerar ({selectedIds.size})</span>
+                          {isGeneratingMass ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ASPECTO.descricao.Icone className="w-3.5 h-3.5" />}
+                          <span className="hidden sm:inline">Gerar descrições ({selectedIds.size})</span>
                         </button>
                         
                         <button
@@ -4489,22 +4555,22 @@ Retorne APENAS um JSON válido no seguinte formato:
                                    <div className="flex flex-col gap-1.5">
                                      <div className="flex items-center gap-1">
                                        {([
-                                         { on: flags.descricaoGerada, Icon: Sparkles, label: 'Descrição', onClass: 'bg-(--ag-accent-soft) text-(--ag-accent) border-(--ag-accent-line)' },
-                                         { on: flags.atributosGerados, Icon: Tag, label: 'Atributos', onClass: 'bg-(--ag-warn-soft) text-(--ag-warn) border-(--ag-warn-line)' },
-                                         // { on: flags.enriquecido, Icon: Search, label: 'Enriquecido', onClass: 'bg-(--ag-violet-soft) text-(--ag-violet) border-(--ag-violet-line)' }, // desativado temporariamente
-                                         { on: flags.imagensGeradas, Icon: ImageIcon, label: 'Imagens', onClass: 'bg-(--ag-accent-soft) text-(--ag-accent) border-(--ag-accent-line)' },
-                                       ] as const).map(({ on, Icon, label, onClass }) => (
-                                         <span
-                                           key={label}
-                                           title={`${label}: ${on ? 'concluído' : 'pendente'}`}
-                                           className={cn(
-                                             "inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase tracking-wider transition-colors",
-                                             on ? onClass : "bg-(--ag-fill) text-(--ag-text-3) border-(--ag-hairline)"
-                                           )}
-                                         >
-                                           <Icon className="w-3 h-3" />
-                                         </span>
-                                       ))}
+                                         ['descricao', flags.descricaoGerada],
+                                         ['atributos', flags.atributosGerados],
+                                         ['imagens', flags.imagensGeradas],
+                                       ] as [Aspecto, boolean][]).map(([a, on]) => {
+                                         const { Icone, rotulo } = ASPECTO[a];
+                                         return (
+                                           <span
+                                             key={a}
+                                             title={`${rotulo}: ${on ? 'feito' : 'falta'}`}
+                                             className="inline-flex items-center justify-center w-6 h-6 rounded-full border transition-colors"
+                                             style={estiloAspecto(a, on)}
+                                           >
+                                             <Icone className="w-3.5 h-3.5" />
+                                           </span>
+                                         );
+                                       })}
                                      </div>
                                      {isError && (
                                        <div className="flex items-center gap-2">
@@ -4520,7 +4586,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                                 <div className="flex items-center justify-end gap-1.5 bg-inherit h-full">
                                   <button
                                     onClick={() => openPreview(product)}
-                                    className="text-(--ag-accent) hover:bg-(--ag-accent) hover:text-white bg-(--ag-accent-soft) border border-(--ag-accent-line) p-1.5 rounded-lg transition-all shadow-sm flex items-center justify-center w-8 h-8 group/edit"
+                                    className="text-(--ag-text) hover:bg-(--ag-fill-2) bg-(--ag-fill) border border-(--ag-hairline) p-1.5 rounded-full transition-all flex items-center justify-center w-8 h-8 group/edit"
                                     title="Visualizar Detalhes"
                                     id="product-edit-btn"
                                   >
@@ -4528,27 +4594,19 @@ Retorne APENAS um JSON válido no seguinte formato:
                                   </button>
                                   <button
                                     onClick={() => openPreview(product, 'atributos')}
-                                    className={cn(
-                                      "rounded-md transition-all shadow-sm flex items-center justify-center w-8 h-8",
-                                      flags.atributosGerados
-                                        ? "bg-(--ag-warn-soft) text-(--ag-warn) border border-(--ag-warn-line)"
-                                        : "bg-(--ag-surface-solid) text-(--ag-text-3) hover:text-(--ag-warn) border border-(--ag-hairline) hover:border-(--ag-warn-line) hover:bg-(--ag-warn-soft)"
-                                    )}
-                                    title="Gerar Atributos"
+                                    className="rounded-full border transition-all flex items-center justify-center w-8 h-8 hover:brightness-95"
+                                    style={estiloAspecto('atributos', flags.atributosGerados)}
+                                    title={flags.atributosGerados ? 'Atributos (já gerados)' : 'Gerar atributos'}
                                   >
-                                    <Tag className="w-3.5 h-3.5" />
+                                    <ASPECTO.atributos.Icone className="w-3.5 h-3.5" />
                                   </button>
                                   <button
                                     onClick={() => openPreview(product, 'imagem')}
-                                    className={cn(
-                                      "rounded-md transition-all shadow-sm flex items-center justify-center w-8 h-8",
-                                      flags.imagensGeradas
-                                        ? "bg-(--ag-accent-soft) text-(--ag-accent) border border-(--ag-accent-line)"
-                                        : "bg-(--ag-surface-solid) text-(--ag-text-3) hover:text-(--ag-accent) border border-(--ag-hairline) hover:border-(--ag-accent-line) hover:bg-(--ag-accent-soft)"
-                                    )}
-                                    title="Gerar Imagens"
+                                    className="rounded-full border transition-all flex items-center justify-center w-8 h-8 hover:brightness-95"
+                                    style={estiloAspecto('imagens', flags.imagensGeradas)}
+                                    title={flags.imagensGeradas ? 'Imagens (já geradas)' : 'Gerar imagens'}
                                   >
-                                    <ImageIcon className="w-3.5 h-3.5" />
+                                    <ASPECTO.imagens.Icone className="w-3.5 h-3.5" />
                                   </button>
                                   {/* Botão Enriquecer individual — desativado temporariamente
                                   <div className="w-px h-5 bg-(--ag-fill-2) mx-0.5"></div>
@@ -4569,15 +4627,11 @@ Retorne APENAS um JSON válido no seguinte formato:
                                   <button
                                     onClick={() => handleGenerateSingle(product._id)}
                                     disabled={product._isGenerating}
-                                    className={cn(
-                                      "rounded-md transition-all shadow-sm disabled:opacity-50 flex items-center justify-center w-8 h-8",
-                                      isProcessed
-                                        ? "bg-(--ag-accent-soft) text-(--ag-accent) border border-(--ag-accent-line)"
-                                        : "bg-(--ag-surface-solid) text-(--ag-text-3) hover:text-(--ag-accent) border border-(--ag-hairline) hover:border-(--ag-accent-line) hover:bg-(--ag-accent-soft)"
-                                    )}
-                                    title={isProcessed ? "Gerar Descrição (já gerada)" : "Gerar Descrição"}
+                                    className="rounded-full border transition-all disabled:opacity-50 flex items-center justify-center w-8 h-8 hover:brightness-95"
+                                    style={estiloAspecto('descricao', isProcessed)}
+                                    title={isProcessed ? "Gerar descrição (já gerada)" : "Gerar descrição"}
                                   >
-                                    <Sparkles className={`w-3.5 h-3.5 ${product._isGenerating ? 'animate-pulse text-(--ag-accent)' : ''}`} />
+                                    <ASPECTO.descricao.Icone className={`w-3.5 h-3.5 ${product._isGenerating ? 'animate-pulse' : ''}`} />
                                    </button>
                                  </div>
                               </td>
@@ -4639,47 +4693,35 @@ Retorne APENAS um JSON válido no seguinte formato:
                                   <div className="flex items-center justify-end gap-1.5">
                                     <button
                                       onClick={() => openPreview(child)}
-                                      className="text-(--ag-accent) hover:bg-(--ag-accent) hover:text-white bg-(--ag-accent-soft) border border-(--ag-accent-line) p-1.5 rounded-lg transition-all shadow-sm flex items-center justify-center w-7 h-7"
+                                      className="text-(--ag-text) hover:bg-(--ag-fill-2) bg-(--ag-fill) border border-(--ag-hairline) p-1.5 rounded-full transition-all flex items-center justify-center w-7 h-7"
                                       title="Visualizar Detalhes desta variante"
                                     >
                                       <Eye className="w-3 h-3" />
                                     </button>
                                     <button
                                       onClick={() => openPreview(child, 'atributos')}
-                                      className={cn(
-                                        "rounded-md transition-all shadow-sm flex items-center justify-center w-7 h-7",
-                                        getProductStatusFlags(child).atributosGerados
-                                          ? "bg-(--ag-warn-soft) text-(--ag-warn) border border-(--ag-warn-line)"
-                                          : "bg-(--ag-surface-solid) text-(--ag-text-3) hover:text-(--ag-warn) border border-(--ag-hairline) hover:border-(--ag-warn-line) hover:bg-(--ag-warn-soft)"
-                                      )}
-                                      title="Gerar Atributos desta variante"
+                                      className="rounded-full border transition-all flex items-center justify-center w-7 h-7 hover:brightness-95"
+                                      style={estiloAspecto('atributos', getProductStatusFlags(child).atributosGerados)}
+                                      title="Gerar atributos desta variante"
                                     >
-                                      <Tag className="w-3 h-3" />
+                                      <ASPECTO.atributos.Icone className="w-3 h-3" />
                                     </button>
                                     <button
                                       onClick={() => openPreview(child, 'imagem')}
-                                      className={cn(
-                                        "rounded-md transition-all shadow-sm flex items-center justify-center w-7 h-7",
-                                        getProductStatusFlags(child).imagensGeradas
-                                          ? "bg-(--ag-accent-soft) text-(--ag-accent) border border-(--ag-accent-line)"
-                                          : "bg-(--ag-surface-solid) text-(--ag-text-3) hover:text-(--ag-accent) border border-(--ag-hairline) hover:border-(--ag-accent-line) hover:bg-(--ag-accent-soft)"
-                                      )}
-                                      title="Gerar Imagens desta variante"
+                                      className="rounded-full border transition-all flex items-center justify-center w-7 h-7 hover:brightness-95"
+                                      style={estiloAspecto('imagens', getProductStatusFlags(child).imagensGeradas)}
+                                      title="Gerar imagens desta variante"
                                     >
-                                      <ImageIcon className="w-3 h-3" />
+                                      <ASPECTO.imagens.Icone className="w-3 h-3" />
                                     </button>
                                     <button
                                       onClick={() => handleGenerateSingle(child._id)}
                                       disabled={child._isGenerating}
-                                      className={cn(
-                                        "rounded-md transition-all shadow-sm disabled:opacity-50 flex items-center justify-center w-7 h-7",
-                                        child._statusDescricao === 'Gerado por IA'
-                                          ? "bg-(--ag-accent-soft) text-(--ag-accent) border border-(--ag-accent-line)"
-                                          : "bg-(--ag-surface-solid) text-(--ag-text-3) hover:text-(--ag-accent) border border-(--ag-hairline) hover:border-(--ag-accent-line) hover:bg-(--ag-accent-soft)"
-                                      )}
-                                      title="Gerar Descrição desta variante"
+                                      className="rounded-full border transition-all disabled:opacity-50 flex items-center justify-center w-7 h-7 hover:brightness-95"
+                                      style={estiloAspecto('descricao', child._statusDescricao === 'Gerado por IA')}
+                                      title="Gerar descrição desta variante"
                                     >
-                                      <Sparkles className={`w-3 h-3 ${child._isGenerating ? 'animate-pulse text-(--ag-accent)' : ''}`} />
+                                      <ASPECTO.descricao.Icone className={`w-3 h-3 ${child._isGenerating ? 'animate-pulse' : ''}`} />
                                     </button>
                                   </div>
                                 </td>
@@ -4732,31 +4774,33 @@ Retorne APENAS um JSON válido no seguinte formato:
                       const flags = getProductStatusFlags(product);
                       const isGeneratingDesc = !!product._isGenerating;
                       const isError = !!product._generationError || product._statusDescricao === 'Erro';
-                      const statusPill = (on: boolean, Icon: typeof Sparkles, label: string) => (
-                        <span
-                          key={label}
-                          title={`${label}: ${on ? 'concluído' : 'pendente'}`}
-                          className={cn(
-                            "inline-flex items-center justify-center w-6 h-6 rounded-md border",
-                            on ? "bg-(--ag-accent-soft) text-(--ag-accent) border-(--ag-accent-line)" : "bg-(--ag-fill) text-(--ag-text-3) border-(--ag-hairline)"
-                          )}
-                        >
-                          <Icon className="w-3.5 h-3.5" />
-                        </span>
-                      );
-                      const actionBtn = (onClick: () => void, active: boolean, disabled: boolean, Icon: typeof Sparkles, label: string) => (
-                        <button
-                          onClick={onClick}
-                          disabled={disabled}
-                          className={cn(
-                            "flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl border text-[10px] font-bold uppercase tracking-wide transition-colors min-h-[44px] disabled:opacity-50",
-                            active ? "bg-(--ag-accent-soft) text-(--ag-accent) border-(--ag-accent-line)" : "bg-(--ag-surface-solid) text-(--ag-text-3) border-(--ag-hairline)"
-                          )}
-                        >
-                          <Icon className={cn("w-4 h-4", disabled && "animate-pulse")} />
-                          {label}
-                        </button>
-                      );
+                      const statusPill = (on: boolean, a: Aspecto) => {
+                        const { Icone, rotulo } = ASPECTO[a];
+                        return (
+                          <span
+                            key={a}
+                            title={`${rotulo}: ${on ? 'feito' : 'falta'}`}
+                            className="inline-flex items-center gap-1 h-6 pl-1.5 pr-2 rounded-full border text-[11px] font-medium"
+                            style={estiloAspecto(a, on)}
+                          >
+                            <Icone className="w-3.5 h-3.5" /> {rotulo}
+                          </span>
+                        );
+                      };
+                      const actionBtn = (onClick: () => void, active: boolean, disabled: boolean, a: Aspecto | null, label: string) => {
+                        const Icone = a ? ASPECTO[a].Icone : Eye;
+                        return (
+                          <button
+                            onClick={onClick}
+                            disabled={disabled}
+                            className="flex flex-col items-center justify-center gap-1 py-2.5 rounded-2xl border text-[11px] font-semibold transition-colors min-h-[44px] disabled:opacity-50"
+                            style={a ? estiloAspecto(a, active) : { background: 'var(--ag-fill)', color: 'var(--ag-text)', borderColor: 'var(--ag-hairline)' }}
+                          >
+                            <Icone className={cn("w-4 h-4", disabled && "animate-pulse")} />
+                            {label}
+                          </button>
+                        );
+                      };
                       return (
                         <div key={product._id} className={cn(
                           "bg-(--ag-surface-solid) border rounded-2xl shadow-sm p-3.5 flex flex-col gap-2.5",
@@ -4813,9 +4857,9 @@ Retorne APENAS um JSON válido no seguinte formato:
                           </div>
 
                           <div className="flex items-center gap-1.5 pl-[68px] flex-wrap">
-                            {statusPill(flags.descricaoGerada, Sparkles, 'Descrição')}
-                            {statusPill(flags.atributosGerados, Tag, 'Atributos')}
-                            {statusPill(flags.imagensGeradas, ImageIcon, 'Imagens')}
+                            {statusPill(flags.descricaoGerada, 'descricao')}
+                            {statusPill(flags.atributosGerados, 'atributos')}
+                            {statusPill(flags.imagensGeradas, 'imagens')}
                             {isError && (
                               <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-(--ag-danger) ml-1">
                                 <AlertCircle className="w-3 h-3" /> Erro
@@ -4824,10 +4868,10 @@ Retorne APENAS um JSON válido no seguinte formato:
                           </div>
 
                           <div className="grid grid-cols-4 gap-2">
-                            {actionBtn(() => handleGenerateSingle(product._id), flags.descricaoGerada, isGeneratingDesc, Sparkles, 'Descrição')}
-                            {actionBtn(() => openPreview(product, 'atributos'), flags.atributosGerados, false, Tag, 'Atributos')}
-                            {actionBtn(() => openPreview(product, 'imagem'), flags.imagensGeradas, false, ImageIcon, 'Imagem')}
-                            {actionBtn(() => openPreview(product), false, false, Eye, 'Ver')}
+                            {actionBtn(() => handleGenerateSingle(product._id), flags.descricaoGerada, isGeneratingDesc, 'descricao', 'Descrição')}
+                            {actionBtn(() => openPreview(product, 'atributos'), flags.atributosGerados, false, 'atributos', 'Atributos')}
+                            {actionBtn(() => openPreview(product, 'imagem'), flags.imagensGeradas, false, 'imagens', 'Imagem')}
+                            {actionBtn(() => openPreview(product), false, false, null, 'Ver')}
                           </div>
                         </div>
                       );
@@ -4868,7 +4912,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             )}
         </main>
         </AbrirNaFerramentaProvider>
-      </div>
+      </FolhaConteudo>
 
       {/* Preview Modal */}
       {previewProduct && (

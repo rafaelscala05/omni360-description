@@ -6,12 +6,12 @@
 // /api/*/status), quantas ferramentas o agente ganha por estar conectado
 // (/api/agent/tools) e quantas aprovações estão paradas esperando o usuário.
 //
-// A régua é a barra fechada; clicar numa plataforma abre o detalhe embaixo, no
-// mesmo bloco de vidro, em vez de um popover flutuante — posicionamento de
-// popover em barra com scroll horizontal é uma fonte infinita de bug e aqui
-// não compra nada.
+// Fechada, é um botão só ("2/5 conectadas" + os glifos de quem está ligado);
+// ao passar o mouse ou clicar, abre uma coluna com uma linha por plataforma, e
+// clicar numa linha mostra o detalhe dela ali mesmo. Clicar fixa a coluna
+// aberta (o hover sozinho fecha ao sair); Esc ou clique fora fecham.
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle, Check, ChevronDown, Plug, Plus, Wrench,
 } from 'lucide-react';
@@ -53,6 +53,9 @@ interface Props {
   onConectar: () => void;
   /** O "+" da régua: a lista de fontes, com o que ainda dá para conectar. */
   onAdicionar?: () => void;
+  /** Embutida num card (coluna de atividade): a linha expande a lista no
+   *  lugar, por clique, em vez de abrir uma coluna flutuante. */
+  embutida?: boolean;
 }
 
 const Ponto: React.FC<{ estado: 'on' | 'warn' | 'off' }> = ({ estado }) => {
@@ -68,7 +71,7 @@ const Ponto: React.FC<{ estado: 'on' | 'warn' | 'off' }> = ({ estado }) => {
   );
 };
 
-const Pilula: React.FC<{
+const Linha: React.FC<{
   item: ConnectionItem;
   aberto: boolean;
   onClick: () => void;
@@ -79,38 +82,38 @@ const Pilula: React.FC<{
     <button
       onClick={onClick}
       aria-expanded={aberto}
-      title={item.conectado ? `${item.nome} — conectado` : `${item.nome} — não conectado`}
-      className="group relative flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-full border transition-all duration-200 shrink-0"
-      style={{
-        borderColor: aberto ? 'var(--ag-hairline-2)' : 'var(--ag-hairline)',
-        background: aberto ? 'var(--ag-fill-2)' : 'var(--ag-fill)',
-        opacity: item.conectado ? 1 : 0.72,
-      }}
+      className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[14px] text-left transition-colors hover:bg-[var(--ag-fill)]"
+      style={{ background: aberto ? 'var(--ag-fill)' : undefined, opacity: item.conectado ? 1 : 0.72 }}
     >
       <span
-        className="w-6 h-6 rounded-full grid place-items-center text-[10px] font-bold tracking-tight text-white shrink-0"
+        className="w-7 h-7 rounded-full grid place-items-center text-[10px] font-bold tracking-tight text-white shrink-0"
         style={{ background: item.cor, filter: item.conectado ? undefined : 'grayscale(1)' }}
       >
         {item.glifo}
       </span>
-      <span className="text-[13px] font-medium text-[var(--ag-text)] whitespace-nowrap">{item.nome}</span>
-      <Ponto estado={estado} />
+      <span className="flex-1 min-w-0">
+        <span className="block text-[13.5px] font-medium text-[var(--ag-text)] truncate">{item.nome}</span>
+        <span className="block text-[11px] text-[var(--ag-text-3)] truncate">
+          {item.conectado ? (item.atencao ? 'revalidar credencial' : item.papel) : 'não conectado'}
+        </span>
+      </span>
       {!!item.pendentes && (
         <span
-          className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full grid place-items-center text-[10px] font-bold tabular-nums"
+          className="min-w-[18px] h-[18px] px-1 rounded-full grid place-items-center text-[10px] font-bold tabular-nums"
           style={{ background: 'var(--ag-accent)', color: 'var(--ag-accent-ink)' }}
         >
           {item.pendentes}
         </span>
       )}
+      <Ponto estado={estado} />
     </button>
   );
 };
 
 const Detalhe: React.FC<{ item: ConnectionItem; onConectar: () => void }> = ({ item, onConectar }) => (
-  <div className="ag-rise px-1 pt-3">
+  <div className="ag-rise px-1 pt-1 pb-2">
     <div
-      className="rounded-2xl p-3.5 flex flex-wrap items-center gap-x-5 gap-y-2.5"
+      className="rounded-2xl p-3 flex flex-wrap items-center gap-x-4 gap-y-2"
       style={{ background: 'var(--ag-fill)', border: '1px solid var(--ag-hairline)' }}
     >
       <div className="flex items-center gap-2.5 min-w-0">
@@ -176,58 +179,133 @@ const Detalhe: React.FC<{ item: ConnectionItem; onConectar: () => void }> = ({ i
   </div>
 );
 
-const ConnectionsBar: React.FC<Props> = ({ itens, carregando, onConectar, onAdicionar }) => {
+const ConnectionsBar: React.FC<Props> = ({ itens, carregando, onConectar, onAdicionar, embutida = false }) => {
+  const [hover, setHover] = useState(false);
+  const [fixo, setFixo] = useState(false);
   const [abertoId, setAbertoId] = useState<string | null>(null);
+  const caixaRef = useRef<HTMLDivElement>(null);
+  const fecharRef = useRef<number | null>(null);
+  const visivel = hover || fixo;
+
+  // Conectadas primeiro: é o que a coluna existe para mostrar.
+  const ordenados = [...itens].sort((a, b) => Number(b.conectado) - Number(a.conectado));
   const conectadas = itens.filter((i) => i.conectado);
+  const pendentes = itens.reduce((n, i) => n + (i.pendentes ?? 0), 0);
   const aberto = itens.find((i) => i.id === abertoId) ?? null;
 
-  return (
-    <div className="ag-glass ag-sheen rounded-[22px] px-2.5 py-2 shrink-0">
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-2 pl-1.5 pr-2 shrink-0">
-          <Plug className="w-[15px] h-[15px] text-[var(--ag-text-3)]" />
-          <span className="text-[12px] font-medium text-[var(--ag-text-2)] whitespace-nowrap tabular-nums">
-            {carregando ? '…' : `${conectadas.length}/${itens.length}`}
-            <span className="hidden sm:inline"> {carregando ? 'checando' : 'conectadas'}</span>
+  useEffect(() => {
+    // Embutida, a lista faz parte do card: só fecha pelo próprio botão.
+    if (!fixo || embutida) return;
+    const fora = (e: MouseEvent) => {
+      if (caixaRef.current && !caixaRef.current.contains(e.target as Node)) { setFixo(false); setHover(false); }
+    };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { setFixo(false); setHover(false); } };
+    document.addEventListener('mousedown', fora);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', fora);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [fixo, embutida]);
+  useEffect(() => () => { if (fecharRef.current) window.clearTimeout(fecharRef.current); }, []);
+
+  // Hover só no mouse de verdade; no toque o clique é que abre e fixa. A
+  // folga de 160 ms evita fechar no caminho entre o botão e a coluna.
+  const entrar = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'mouse') return;
+    if (fecharRef.current) window.clearTimeout(fecharRef.current);
+    setHover(true);
+  };
+  const sair = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'mouse') return;
+    fecharRef.current = window.setTimeout(() => setHover(false), 160);
+  };
+
+  const glifos = !carregando && conectadas.length > 0 && (
+    <span className="flex items-center -space-x-1.5">
+      {conectadas.slice(0, 4).map((i) => (
+        <span
+          key={i.id}
+          className="w-5 h-5 rounded-full grid place-items-center text-[8px] font-bold text-white"
+          style={{ background: i.cor, boxShadow: '0 0 0 2px var(--ag-surface-solid)' }}
+        >
+          {i.glifo}
+        </span>
+      ))}
+    </span>
+  );
+
+  const lista = (
+    <>
+      {carregando && !itens.length
+        ? [0, 1, 2].map((i) => <div key={i} className="ag-shimmer h-11 mx-1 my-0.5 rounded-[14px]" />)
+        : ordenados.map((item) => (
+          <React.Fragment key={item.id}>
+            <Linha item={item} aberto={abertoId === item.id} onClick={() => setAbertoId((a) => (a === item.id ? null : item.id))} />
+            {aberto?.id === item.id && <Detalhe item={item} onConectar={onConectar} />}
+          </React.Fragment>
+        ))}
+      <button
+        onClick={onAdicionar ?? onConectar}
+        className="flex items-center gap-2.5 px-2.5 py-2 rounded-[14px] text-[13px] font-medium text-[var(--ag-text-2)] hover:text-[var(--ag-text)] hover:bg-[var(--ag-fill)] transition-colors"
+      >
+        <span className="w-7 h-7 rounded-full grid place-items-center shrink-0" style={{ border: '1px dashed var(--ag-hairline-2)' }}>
+          <Plus className="w-4 h-4" />
+        </span>
+        Fontes e conectores
+      </button>
+    </>
+  );
+
+  if (embutida) {
+    return (
+      <div className="flex flex-col">
+        <button
+          onClick={() => setFixo((f) => !f)}
+          aria-expanded={fixo}
+          className="min-h-[40px] flex items-center gap-2.5 px-2.5 rounded-[14px] text-left text-[13.5px] text-[var(--ag-text)] hover:bg-[var(--ag-fill)] transition-colors"
+        >
+          <Plug className="w-4 h-4 shrink-0 text-[var(--ag-text-3)]" />
+          <span className="flex-1 min-w-0 tabular-nums">
+            {carregando ? 'Checando conexões…' : `${conectadas.length}/${itens.length} conectadas`}
           </span>
-        </div>
-
-        <div className="w-px h-6 shrink-0" style={{ background: 'var(--ag-hairline)' }} />
-
-        <div className="ag-scroll-x flex items-center gap-2 overflow-x-auto flex-1 min-w-0 py-0.5">
-          {carregando && !itens.length
-            ? [0, 1, 2].map((i) => <div key={i} className="ag-shimmer h-9 w-32 rounded-full shrink-0" />)
-            : itens.map((item) => (
-              <Pilula
-                key={item.id}
-                item={item}
-                aberto={abertoId === item.id}
-                onClick={() => setAbertoId((a) => (a === item.id ? null : item.id))}
-              />
-            ))}
-
-          <button
-            onClick={onAdicionar ?? onConectar}
-            title="Fontes e conectores"
-            className="w-8 h-8 rounded-full grid place-items-center shrink-0 transition-colors"
-            style={{ border: '1px dashed var(--ag-hairline-2)', color: 'var(--ag-text-3)' }}
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
-
-        {aberto && (
-          <button
-            onClick={() => setAbertoId(null)}
-            className="p-1.5 rounded-full shrink-0 text-[var(--ag-text-3)] hover:text-[var(--ag-text)] transition-colors"
-            title="Fechar detalhe"
-          >
-            <ChevronDown className="w-4 h-4" />
-          </button>
-        )}
+          {glifos}
+          {pendentes > 0 && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: 'var(--ag-accent)' }} aria-label={`${pendentes} pendente(s)`} />}
+          <ChevronDown className={`w-4 h-4 shrink-0 text-[var(--ag-text-3)] transition-transform duration-200 ${fixo ? 'rotate-180' : ''}`} />
+        </button>
+        {fixo && <div className="ag-rise flex flex-col pt-1">{lista}</div>}
       </div>
+    );
+  }
 
-      {aberto && <Detalhe item={aberto} onConectar={onConectar} />}
+  return (
+    <div ref={caixaRef} className="relative shrink-0" onPointerEnter={entrar} onPointerLeave={sair}>
+      <button
+        onClick={() => setFixo((f) => !f)}
+        aria-expanded={visivel}
+        aria-haspopup="true"
+        className="h-9 pl-3 pr-2.5 rounded-full flex items-center gap-2 transition-colors"
+        style={{ background: visivel ? 'var(--ag-fill-2)' : 'var(--ag-fill)' }}
+      >
+        <Plug className="w-[15px] h-[15px] text-[var(--ag-text-3)]" />
+        <span className="text-[12.5px] font-medium text-[var(--ag-text-2)] whitespace-nowrap tabular-nums">
+          {carregando ? 'checando…' : `${conectadas.length}/${itens.length} conectadas`}
+        </span>
+        {glifos && <span className="hidden sm:flex">{glifos}</span>}
+        {pendentes > 0 && <span className="w-2 h-2 rounded-full" style={{ background: 'var(--ag-accent)' }} aria-label={`${pendentes} pendente(s)`} />}
+        <ChevronDown className={`w-3.5 h-3.5 text-[var(--ag-text-3)] transition-transform duration-200 ${visivel ? 'rotate-180' : ''}`} />
+      </button>
+
+      {visivel && (
+        // Sólida, não vidro: abre por cima da semana e do chat.
+        <div
+          className="ag-rise absolute left-0 top-full mt-2 z-30 w-[320px] max-w-[calc(100vw-24px)] rounded-[20px] p-1.5 flex flex-col"
+          style={{ background: 'var(--ag-surface-solid)', border: '1px solid var(--ag-hairline)', boxShadow: 'var(--ag-shadow-lg)' }}
+        >
+          <div className="px-2.5 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--ag-text-3)]">Conexões</div>
+          {lista}
+        </div>
+      )}
     </div>
   );
 };

@@ -168,10 +168,9 @@ const ConectoresScreen: React.FC<Props> = ({ uid, hasMeli, hasContentAgent, onVo
   return (
     <div className="alfreds h-full flex flex-col" data-tema={tema}>
       <div
-        className="ag-aurora flex-1 min-h-0 rounded-[24px] sm:rounded-[28px] flex flex-col overflow-hidden"
-        style={{ border: '1px solid var(--ag-hairline)', boxShadow: 'var(--ag-shadow)' }}
+        className="flex-1 min-h-0 flex flex-col overflow-hidden"
       >
-        <div className="ag-scroll flex-1 overflow-y-auto px-4 sm:px-6 pt-4 pb-28 md:pb-6">
+        <div className="ag-tela-x ag-scroll flex-1 overflow-y-auto pt-4 pb-28 md:pb-6">
           <div className="max-w-2xl mx-auto flex flex-col gap-5">
             <div className="flex items-center gap-2">
               <BotaoConta />

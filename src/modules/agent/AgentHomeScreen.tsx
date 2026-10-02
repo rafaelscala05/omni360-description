@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Coins, Moon, ScrollText, Sun } from 'lucide-react';
+import { AlertCircle, ScrollText } from 'lucide-react';
 import type { Product } from '../../types/models';
 import type { ExtrasSemana } from './useSemana';
 import type { AgentAction, PedidoAlfred, ThreadMessage, WorkspaceContext } from '../../types/agent';
@@ -8,7 +8,7 @@ import {
 } from '../../services/agentChatService';
 import { fetchIntegrationsOverview, desde, type IntegrationSummary } from '../../services/integrationsStatusService';
 import { listenProjects } from '../../services/contentService';
-import VoiceOrb from './VoiceOrb';
+import AlfredLogo from '../../components/alfredLogo/AlfredLogo';
 import ConnectionsBar, { MARCA, type ConnectionItem } from './ConnectionsBar';
 import { useAgentTheme } from './theme';
 import { useAlturaTeclado, useTelaLarga, useTelaPequena } from './useViewport';
@@ -21,7 +21,8 @@ import ColunaAtividade from './ColunaAtividade';
 import { useHistoricoSemana, useSemana } from './useSemana';
 import { useEstadoMeli } from './useFontes';
 import { entradasDoApp, montarFontes, resumoFontes } from './conectores';
-import type { DestinoTarefa, TarefaSemana } from './semana';
+import { proximoPasso, type DestinoTarefa, type TarefaSemana } from './semana';
+import { FaixaProximoPasso } from './ProximoPassoBar';
 import CabecalhoTarefa from './chat/CabecalhoTarefa';
 import { BotaoConta } from '../../components/ContaMenu';
 
@@ -59,7 +60,7 @@ const AgentHomeScreen: React.FC<Props> = ({
   uid, credits, products, extras, hasContentAgent, hasMeli, onOpenIntegrations, onAbrirFontes, onAbrirAtividade, onAbrirDestino,
   onFocoChange, promptInicial, onPromptConsumido,
 }) => {
-  const { tema, alternar } = useAgentTheme();
+  const { tema } = useAgentTheme();
   const telaPequena = useTelaPequena();
   // Desktop largo (D1): semana | conversa | atividade lado a lado, sem
   // alternar entre semana e conversa.
@@ -155,6 +156,9 @@ const AgentHomeScreen: React.FC<Props> = ({
   const { tarefas, hoje } = useSemana({
     uid, products, acoes: listaAcoes, integracoes, hasContentAgent, hasMeli, providers, extras,
   });
+  // O próximo passo mora logo acima do campo de digitar nesta tela (nas
+  // outras, é a barra do topo) — a mesma conta, então nunca discordam.
+  const passo = proximoPasso(tarefas, hoje);
   // Só esta tela grava o histórico (Ferramentas e a barra também calculam a semana).
   const semanaPassada = useHistoricoSemana(uid, tarefas, true);
 
@@ -263,6 +267,13 @@ const AgentHomeScreen: React.FC<Props> = ({
   // A2: a conversa que nasceu de uma tarefa da semana mostra de qual, no topo.
   const [tarefaAtual, setTarefaAtual] = useState<TarefaSemana | null>(null);
   const fazerTarefa = (prompt: string, t: TarefaSemana) => { setTarefaAtual(t); void enviar(prompt, {}); };
+  // Só no desktop: no telefone a semana já abre com essa tarefa no topo, e a
+  // faixa disputaria o pouco espaço acima do teclado.
+  const faixaPasso = passo && (
+    <div className="hidden md:block mb-2">
+      <FaixaProximoPasso compacta passo={passo} onAbrir={onAbrirDestino} onPedirAlfred={(p) => fazerTarefa(p, passo)} />
+    </div>
+  );
 
   const executar = (id: string) => responder(() => executarAcao(id, handlers, contextoRef.current));
   const rejeitar = (id: string) => responder(() => rejeitarAcao(id, handlers, contextoRef.current));
@@ -337,45 +348,32 @@ const AgentHomeScreen: React.FC<Props> = ({
   return (
     <div className="alfreds h-full flex flex-col" data-tema={tema}>
       <div
-        className="ag-aurora flex-1 min-h-0 rounded-[24px] sm:rounded-[28px] flex flex-col overflow-hidden"
-        style={{ border: '1px solid var(--ag-hairline)', boxShadow: 'var(--ag-shadow)' }}
+        className="flex-1 min-h-0 flex flex-col overflow-hidden"
       >
-        {/* Barra de título — identidade, estado e os controles da superfície.
-            No telefone ela também carrega o menu: esta tela não tem barra
-            inferior, para a base da tela ser só do campo de digitar. */}
-        <header
-          className="ag-glass shrink-0 px-2.5 sm:pl-5 sm:pr-4 py-2 sm:py-2.5 flex items-center gap-2 sm:gap-3"
-          style={{ borderBottom: '1px solid var(--ag-hairline)', borderRadius: 0, borderLeft: 0, borderRight: 0, borderTop: 0 }}
-        >
+        {/* Barra do topo: as conexões (botão que abre a coluna) e, à direita,
+            o que só esta tela precisa. Créditos e tema moram no trilho;
+            os Logs, na coluna de atividade — no telefone e em telas sem a
+            coluna, o atalho dos Logs fica aqui. No telefone ela também
+            carrega o avatar da Conta. */}
+        <header className="ag-tela-x relative z-20 shrink-0 pt-2.5 sm:pt-3 pb-1 flex items-center gap-2 sm:gap-3">
           <BotaoConta />
 
-          <div className="flex items-center gap-2.5 min-w-0">
-            <VoiceOrb size={34} ativo={streaming} />
-            <div className="min-w-0">
-              <div className="font-display text-[15px] font-semibold text-[var(--ag-text)] leading-tight">Alfreds</div>
-              <div className="text-[11px] text-[var(--ag-text-3)] leading-tight flex items-center gap-1.5">
-                {streaming ? (
-                  <>
-                    <span className="flex items-center gap-[3px]">
-                      {[0, 1, 2].map((i) => (
-                        <span key={i} className="ag-dot w-1 h-1 rounded-full" style={{ background: 'var(--ag-accent)' }} />
-                      ))}
-                    </span>
-                    trabalhando…
-                  </>
-                ) : (
-                  <>
-                    <span className="relative flex items-center" style={{ color: 'var(--ag-ok)' }}>
-                      <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                    </span>
-                    pronto
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
+          {/* No desktop largo as conexões moram na coluna da direita (card dos Logs). */}
+          {!larga && (
+            <ConnectionsBar itens={itensConexao} carregando={statusCarregando} onConectar={onOpenIntegrations} onAdicionar={onAbrirFontes} />
+          )}
 
           <div className="ml-auto flex items-center gap-1.5">
+            {streaming && (
+              <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] text-[var(--ag-text-3)]">
+                <span className="flex items-center gap-[3px]">
+                  {[0, 1, 2].map((i) => (
+                    <span key={i} className="ag-dot w-1 h-1 rounded-full" style={{ background: 'var(--ag-accent)' }} />
+                  ))}
+                </span>
+                trabalhando…
+              </span>
+            )}
             {temConversa && !larga && (
               <button
                 onClick={() => setModo(semChat ? 'chat' : 'semana')}
@@ -393,47 +391,25 @@ const AgentHomeScreen: React.FC<Props> = ({
                 {pendentesTotal} {pendentesTotal === 1 ? 'aprovação' : 'aprovações'}
               </span>
             )}
-
-            <span
-              className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[12px] font-medium text-[var(--ag-text-2)] tabular-nums"
-              style={{ background: 'var(--ag-fill)' }}
-              title="Créditos disponíveis"
-            >
-              <Coins className="w-3.5 h-3.5 text-[var(--ag-text-3)]" />
-              {credits}
-            </span>
-
-            <button
-              onClick={alternar}
-              title={tema === 'claro' ? 'Tema escuro' : 'Tema claro'}
-              className="w-9 h-9 rounded-full grid place-items-center text-[var(--ag-text-2)] hover:text-[var(--ag-text)] transition-colors"
-              style={{ background: 'var(--ag-fill)' }}
-            >
-              {tema === 'claro' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-            </button>
-
-            <button
-              onClick={() => setLogsAberto(true)}
-              title="Ver as chamadas feitas à API da Wake e do Tiny"
-              className="h-9 px-3 rounded-full flex items-center gap-1.5 text-[12px] font-medium text-[var(--ag-text-2)] hover:text-[var(--ag-text)] transition-colors"
-              style={{ background: 'var(--ag-fill)' }}
-            >
-              <ScrollText className="w-4 h-4" />
-              <span className="hidden sm:inline">Logs</span>
-            </button>
+            {!larga && (
+              <button
+                onClick={() => setLogsAberto(true)}
+                title="Logs — as chamadas feitas às APIs"
+                aria-label="Logs"
+                className="w-9 h-9 rounded-full grid place-items-center text-[var(--ag-text-2)] hover:text-[var(--ag-text)] transition-colors"
+                style={{ background: 'var(--ag-fill)' }}
+              >
+                <ScrollText className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </header>
 
-        {/* Com o teclado aberto no telefone a régua vira ruído: some para o
-            campo ficar com o que sobrou da viewport. */}
-        <div className="ag-recolhe px-3 sm:px-4 pt-3 shrink-0" data-recolhido={emFoco} style={{ maxHeight: 220 }}>
-          <ConnectionsBar itens={itensConexao} carregando={statusCarregando} onConectar={onOpenIntegrations} onAdicionar={onAbrirFontes} />
-        </div>
-
         {larga ? (
-          <div className="flex-1 min-h-0 flex gap-4 px-4 pt-3 pb-4">
-            <aside className="ag-glass ag-scroll w-[320px] shrink-0 overflow-y-auto rounded-[24px] p-4">
-              <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={fazerTarefa} onAbrir={onAbrirDestino} semanaPassada={semanaPassada} fontes={resumoDasFontes} onAbrirFontes={onAbrirFontes} />
+          <div className="ag-tela-x flex-1 min-h-0 flex gap-4 pt-3 pb-4">
+            <aside className="ag-scroll w-[320px] shrink-0 overflow-y-auto pr-1">
+              {/* Sem o rodapé de fontes: as conexões estão na coluna da direita. */}
+              <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={fazerTarefa} onAbrir={onAbrirDestino} semanaPassada={semanaPassada} />
             </aside>
 
             <div className="flex-1 min-w-0 flex flex-col">
@@ -464,7 +440,7 @@ const AgentHomeScreen: React.FC<Props> = ({
                       <span>{erro}</span>
                     </div>
                   )}
-                  <VoiceOrb size={56} ativo={streaming} />
+                  <AlfredLogo size={132} ativo={streaming} marca="malha" rotulo="Alfreds" />
                   <p className="text-[15px] text-[var(--ag-text-2)] max-w-sm">
                     Escolha uma tarefa da semana ou peça qualquer coisa ao Alfred.
                   </p>
@@ -491,7 +467,7 @@ const AgentHomeScreen: React.FC<Props> = ({
                 onFoco={focar}
                 recuoTeclado={0}
                 emFoco={false}
-                acima={<LoteEmAndamento uid={uid} />}
+                acima={<>{faixaPasso}<LoteEmAndamento uid={uid} /></>}
               />
             </div>
 
@@ -504,13 +480,16 @@ const AgentHomeScreen: React.FC<Props> = ({
                 onRejeitar={rejeitar}
                 onVerAtividade={onAbrirAtividade}
                 onVerLogs={() => setLogsAberto(true)}
+                conexoes={
+                  <ConnectionsBar embutida itens={itensConexao} carregando={statusCarregando} onConectar={onOpenIntegrations} onAdicionar={onAbrirFontes} />
+                }
               />
             </aside>
           </div>
         ) : (
           <>
             {semChat ? (
-              <div className="ag-scroll flex-1 overflow-y-auto px-4 sm:px-6 py-6 sm:py-8">
+              <div className="ag-tela-x ag-scroll flex-1 overflow-y-auto py-6 sm:py-8">
                 {/* No modo foco os blocos recolhem para altura zero, mas o `gap` do
                     flex continua valendo e sobra um buraco no topo — por isso ele
                     também zera. */}
@@ -585,7 +564,7 @@ const AgentHomeScreen: React.FC<Props> = ({
               onFoco={focar}
               recuoTeclado={alturaTeclado}
               emFoco={emFoco}
-              acima={modo === 'chat' ? <LoteEmAndamento uid={uid} /> : undefined}
+              acima={<>{faixaPasso}{modo === 'chat' && <LoteEmAndamento uid={uid} />}</>}
             />
           </>
         )}

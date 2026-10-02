@@ -7,6 +7,7 @@ import { listReusableArticles } from '../../services/contentService';
 import VideoGenerationTab from './VideoGenerationTab';
 import UgcVideoGenerationTab from './UgcVideoGenerationTab';
 import ProductReferenceStep from './ProductReferenceStep';
+import { ASPECTO, type Aspecto } from '../../modules/agent/aspectos';
 import type { CreditAction } from '../../credits';
 import {
   Sparkles,
@@ -462,55 +463,65 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
 
   const statusFlags = getProductStatusFlags(editedProduct);
 
-  const tabs: Array<{ id: ProductModalTab; label: string; icon: React.ElementType; done: boolean }> = [
+  // Abas de aspecto usam o ícone e a cor de `aspectos.tsx` — os mesmos da aba
+  // Produtos e da tabela; Geral e Simular são neutras.
+  const tabs: Array<{ id: ProductModalTab; label: string; icon: React.ElementType; done: boolean; aspecto?: Aspecto }> = [
     { id: 'geral', label: 'Geral', icon: Layout, done: false },
-    { id: 'atributos', label: 'Atributos', icon: Tag, done: statusFlags.atributosGerados },
+    { id: 'atributos', label: 'Atributos', icon: ASPECTO.atributos.Icone, done: statusFlags.atributosGerados, aspecto: 'atributos' },
     // { id: 'tecnico', label: 'Técnico', icon: Cpu, done: statusFlags.enriquecido }, // Aba técnica desativada temporariamente
-    { id: 'ia', label: 'Conteúdo', icon: Sparkles, done: statusFlags.descricaoGerada },
-    { id: 'imagem', label: 'Imagens', icon: ImageIcon, done: statusFlags.imagensGeradas },
-    ...(hasVideoModule ? [{ id: 'video' as ProductModalTab, label: 'Vídeo', icon: Video, done: !!editedProduct._videoUrl }] : []),
-    { id: 'simular', label: 'Simular Produto', icon: Eye, done: false },
+    { id: 'ia', label: 'Descrição e SEO', icon: ASPECTO.descricao.Icone, done: statusFlags.descricaoGerada, aspecto: 'descricao' },
+    { id: 'imagem', label: 'Imagens', icon: ASPECTO.imagens.Icone, done: statusFlags.imagensGeradas, aspecto: 'imagens' },
+    ...(hasVideoModule ? [{ id: 'video' as ProductModalTab, label: 'Vídeo', icon: ASPECTO.video.Icone, done: !!editedProduct._videoUrl, aspecto: 'video' as Aspecto }] : []),
+    { id: 'simular', label: 'Simular produto', icon: Eye, done: false },
   ];
 
   return (
-    <div className="fixed inset-0 z-[100] bg-slate-50 flex flex-col animate-in fade-in duration-300">
+    // Moldura no design system do Alfred (tokens `--ag-*`), sempre no claro: o
+    // miolo das abas ainda tem cores literais claras, e o modal abre por cima
+    // do app inteiro — inclusive de telas sem escopo `.alfreds`.
+    <div className="alfreds fixed inset-0 z-[100] flex flex-col animate-in fade-in duration-300" data-tema="claro" style={{ background: 'var(--ag-bg)' }}>
       {/* Header Bar */}
-      <header className="h-16 bg-white border-b border-slate-200 px-3 md:px-6 flex items-center justify-between sticky top-0 z-20 gap-2">
-        <div className="flex items-center gap-2 md:gap-4 min-w-0">
+      <header
+        className="h-16 px-3 md:px-6 flex items-center justify-between sticky top-0 z-20 gap-2"
+        style={{ background: 'var(--ag-surface-solid)', borderBottom: '1px solid var(--ag-hairline)' }}
+      >
+        <div className="flex items-center gap-2 md:gap-3 min-w-0">
           <button 
             onClick={handleCloseAttempt}
-            className="p-1.5 md:p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors shrink-0"
+            aria-label="Voltar"
+            className="w-10 h-10 grid place-items-center rounded-full text-(--ag-text-2) hover:text-(--ag-text) transition-colors shrink-0"
+            style={{ background: 'var(--ag-fill)' }}
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div className="h-8 w-px bg-slate-200 shrink-0"></div>
           <div className="flex items-center gap-2 md:gap-3 min-w-0">
              {editedProduct['URL imagem 1'] || editedProduct._selectedImage ? (
-                <img src={editedProduct._selectedImage || editedProduct['URL imagem 1']} alt="" className="h-8 w-8 md:h-10 md:w-10 rounded-md object-cover border border-slate-200 shrink-0" referrerPolicy="no-referrer" />
+                <img src={editedProduct._selectedImage || editedProduct['URL imagem 1']} alt="" className="h-9 w-9 md:h-10 md:w-10 rounded-[12px] object-cover shrink-0" style={{ boxShadow: 'inset 0 0 0 1px var(--ag-hairline)' }} referrerPolicy="no-referrer" />
               ) : (
-                <div className="h-8 w-8 md:h-10 md:w-10 rounded-md bg-slate-100 flex items-center justify-center border border-slate-200 shrink-0">
-                  <ImageIcon className="w-4 h-4 md:w-5 md:h-5 text-slate-400" />
+                <div className="h-9 w-9 md:h-10 md:w-10 rounded-[12px] flex items-center justify-center shrink-0" style={{ background: 'var(--ag-fill)' }}>
+                  <ImageIcon className="w-4 h-4 md:w-5 md:h-5 text-(--ag-text-3)" />
                 </div>
               )}
               <div className="min-w-0">
-                <h1 className="text-sm md:text-base font-bold text-slate-900 truncate max-w-[120px] sm:max-w-[260px] md:max-w-[400px]">
-                    {editedProduct['Descrição'] || 'Produto Sem Nome'}
+                <h1 className="font-display text-[14px] md:text-[16px] font-semibold text-(--ag-text) truncate max-w-[120px] sm:max-w-[260px] md:max-w-[440px]">
+                    {editedProduct['Descrição'] || 'Produto sem nome'}
                 </h1>
-                <p className="text-[10px] text-slate-500 font-mono">SKU: {editedProduct['Código (SKU)'] || 'N/A'}</p>
+                <p className="text-[11px] text-(--ag-text-3) font-mono">SKU {editedProduct['Código (SKU)'] || '—'}</p>
               </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 md:gap-3 shrink-0">
+        <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
           <button 
             onClick={handleCloseAttempt}
-            className="px-2.5 py-2 text-xs md:text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors whitespace-nowrap"
+            className="h-10 px-3 md:px-4 text-[13px] md:text-[14px] font-semibold text-(--ag-text-2) hover:text-(--ag-text) hover:bg-(--ag-fill) rounded-full transition-colors whitespace-nowrap"
           >
             Cancelar
           </button>
           <button 
             onClick={() => { handleSave(); onClose(); }}
-            className="px-3 md:px-6 py-2 bg-[#FF5B03] text-white text-xs md:text-sm font-bold rounded-xl shadow-lg shadow-orange-200 hover:bg-orange-700 transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap"
+            className="h-10 px-4 md:px-5 text-[13px] md:text-[14px] font-semibold rounded-full transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap hover:brightness-110"
+            style={{ background: 'var(--ag-text)', color: 'var(--ag-surface-solid)' }}
           >
             <Save className="w-4 h-4" />
             <span className="hidden xs:inline">Salvar e Fechar</span>
@@ -521,53 +532,52 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
 
       <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
         {/* Sidebar Navigation */}
-        <aside className="w-full md:w-64 bg-white border-b md:border-b-0 md:border-r border-slate-200 flex flex-row md:flex-col p-2 md:p-4 gap-1.5 md:gap-2 shrink-0 overflow-x-auto scrollbar-none whitespace-nowrap z-10">
+        <aside
+          className="w-full md:w-64 flex flex-row md:flex-col p-2 md:p-3 gap-1 md:gap-1 shrink-0 overflow-x-auto scrollbar-none whitespace-nowrap z-10 border-b md:border-b-0 md:border-r border-(--ag-hairline)"
+          style={{ background: 'var(--ag-bg-2)' }}
+        >
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
+            const cor = tab.aspecto ? ASPECTO[tab.aspecto].cor : 'var(--ag-text-2)';
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "flex items-center gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 rounded-lg md:rounded-xl text-xs md:text-sm font-bold transition-all shrink-0",
-                  isActive 
-                    ? "bg-orange-50 text-[#FF5B03] shadow-sm" 
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                )}
+                aria-current={isActive ? 'page' : undefined}
+                className="flex items-center gap-2.5 h-10 md:h-11 px-3 rounded-full md:rounded-[14px] text-[13px] md:text-[14px] transition-all shrink-0 hover:bg-(--ag-fill)"
+                style={isActive
+                  ? { background: 'var(--ag-surface-solid)', color: 'var(--ag-text)', fontWeight: 600, boxShadow: '0 0 0 1px var(--ag-hairline), var(--ag-shadow-sm)' }
+                  : { color: 'var(--ag-text-2)', fontWeight: 500 }}
               >
-                <Icon className={cn("w-5 h-5", isActive ? "text-[#FF5B03]" : "text-slate-400")} />
+                {/* Ícone num selo da cor do aspecto: o mesmo da tabela e da aba Produtos. */}
+                <span
+                  className="w-7 h-7 rounded-full grid place-items-center shrink-0"
+                  style={{ background: tab.aspecto ? `color-mix(in srgb, ${cor} 12%, transparent)` : 'var(--ag-fill)', color: cor }}
+                >
+                  <Icon className="w-4 h-4" />
+                </span>
                 {tab.label}
                 {tab.id === 'video' && (
-                  <span className="ml-1 px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 text-[10px] font-bold uppercase tracking-wide">
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide" style={{ background: 'var(--ag-violet-soft)', color: 'var(--ag-violet)' }}>
                     Beta
                   </span>
                 )}
                 {tab.id === 'atributos' && effectiveAttributes.length > 0 && (
-                   <span className="ml-1 px-1.5 py-0.5 rounded-full bg-orange-100 text-[#FF5B03] text-[10px]">
+                   <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold tabular-nums" style={{ background: 'var(--ag-fill-2)', color: 'var(--ag-text-2)' }}>
                       {effectiveAttributes.length}
                    </span>
                 )}
                 {tab.done && (
-                   <CheckCircle2 className="w-4 h-4 text-emerald-500 ml-auto shrink-0" />
+                   <CheckCircle2 className="w-4 h-4 ml-auto shrink-0" style={{ color: cor }} aria-label="feito" />
                 )}
               </button>
             );
           })}
-          
-          <div className="hidden md:block mt-auto p-4 bg-slate-50 rounded-2xl border border-slate-100">
-             <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                <span className="text-[10px] font-bold text-slate-900 uppercase tracking-wider">Dica de IA</span>
-             </div>
-             <p className="text-[11px] text-slate-500 leading-relaxed">
-                Use a aba de Atributos para preencher detalhes técnicos automaticamente usando o Gemini 2.0.
-             </p>
-          </div>
         </aside>
 
         {/* Content Area */}
-        <main className="flex-1 overflow-y-auto p-8">
+        <main className="flex-1 overflow-y-auto p-4 md:p-8">
            <div className="max-w-4xl mx-auto">
               
               {editedProduct._generationError && (

@@ -78,6 +78,10 @@ body {
   --ag-surface-a: 0.72;
   --ag-surface-solid: #ffffff;
   --ag-raised: rgba(255, 255, 255, 0.55);
+  /* Folha de conteúdo do desktop e a aba ativa do trilho que encosta nela:
+     a mesma cor nas duas, senão a junção aparece. Translúcida, sem blur — a
+     aurora atrás já é borrada, e blur diferente em cada peça marcaria a emenda. */
+  --ag-folha: rgba(255, 255, 255, 0.62);
   --ag-hairline: rgba(15, 23, 42, 0.09);
   --ag-hairline-2: rgba(15, 23, 42, 0.16);
   --ag-text: #0b0d12;
@@ -103,8 +107,9 @@ body {
   --ag-aurora-2: rgba(48, 83, 255, 0.22);
   --ag-aurora-3: rgba(130, 142, 209, 0.22);
   --ag-sphere-node: #ff5b03;
-  --ag-sphere-link: #1e293b;
-  --ag-sphere-link-a: 0.32;
+  --ag-sphere-link: #141311;
+  --ag-sphere-link-a: 0.23;
+  --ag-sphere-sat: #e8e0d5;
   --ag-sphere-blend: normal;
 
   /* Origem de cada tarefa da semana — só em pontos de 8px e rótulos, nunca
@@ -113,6 +118,15 @@ body {
   --ag-orig-conteudo: #7c3aed;
   --ag-orig-meli: #c9a800;
   --ag-orig-operacoes: #0e7c86;
+
+  /* Aspecto do produto — a mesma cor e o mesmo ícone (src/modules/agent/aspectos.tsx)
+     na aba Produtos, na tabela completa e no modal. A cor diz *qual* aspecto;
+     se ele está feito ou faltando é o fundo (tingido × neutro) — laranja/âmbar
+     continua reservado para "falta e é obrigatório". */
+  --ag-asp-descricao: #3053ff;
+  --ag-asp-atributos: #7c3aed;
+  --ag-asp-imagem: #0e7c86;
+  --ag-asp-video: #d6336c;
 
   color: var(--ag-text);
 }
@@ -124,6 +138,7 @@ body {
   --ag-surface-a: 0.1;
   --ag-surface-solid: #14171f;
   --ag-raised: rgba(255, 255, 255, 0.06);
+  --ag-folha: rgba(22, 25, 34, 0.72);
   --ag-hairline: rgba(255, 255, 255, 0.1);
   --ag-hairline-2: rgba(255, 255, 255, 0.18);
   --ag-text: #f2f5f9;
@@ -149,13 +164,18 @@ body {
   --ag-aurora-2: rgba(48, 83, 255, 0.32);
   --ag-aurora-3: rgba(130, 142, 209, 0.24);
   --ag-sphere-node: #ff7a33;
-  --ag-sphere-link: #94a3b8;
-  --ag-sphere-link-a: 0.34;
+  --ag-sphere-link: #e8e0d5;
+  --ag-sphere-link-a: 0.36;
+  --ag-sphere-sat: #e8e0d5;
   --ag-sphere-blend: aditivo;
   --ag-orig-produto: #ff7a33;
   --ag-orig-conteudo: #a78bfa;
   --ag-orig-meli: #facc15;
   --ag-orig-operacoes: #2dd4bf;
+  --ag-asp-descricao: #8ea0ff;
+  --ag-asp-atributos: #b89bfb;
+  --ag-asp-imagem: #3cc4cf;
+  --ag-asp-video: #f47fb0;
   /* Selects, checkboxes e a barra de rolagem nativos acompanham o escuro. */
   color-scheme: dark;
 }
@@ -241,6 +261,40 @@ body {
   right: -14%;
   background: radial-gradient(circle at 60% 40%, var(--ag-aurora-2), transparent 66%);
   animation: ag-drift-b 32s ease-in-out infinite;
+}
+
+/* Margem lateral de toda tela do agente (Alfred, Atividade, Ferramentas,
+   Fontes, Produtos): 12px no telefone, 16px a partir de 640px — a mesma do
+   composer. Telas do agente não somam outra margem lateral por cima disto nem
+   centralizam o conteúdo inteiro numa largura máxima; quem precisa de largura
+   de leitura (listas de texto) limita o bloco de dentro, não a tela. */
+.ag-tela-x {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+@media (min-width: 640px) {
+  .ag-tela-x {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+/* Deriva lenta de um enfeite de fundo (a esfera desfocada da Visão geral):
+   sobe, desce e gira de leve, num ciclo longo o bastante para não chamar o olho. */
+.ag-deriva {
+  animation: ag-deriva 34s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes ag-deriva {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+  33% { transform: translate3d(-6%, 8%, 0) rotate(8deg) scale(1.06); }
+  66% { transform: translate3d(4%, -5%, 0) rotate(-6deg) scale(0.96); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-deriva { animation: none; }
 }
 
 @keyframes ag-drift-a {
