@@ -1,16 +1,18 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowUpRight, Check, ChevronLeft, CloudUpload, FolderTree, Loader2, Package, Search, Table2, X } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-import { ASPECTO, ASPECTO_DO_ROTULO, type Aspecto } from './aspectos';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowUpRight, ChevronLeft, CloudUpload, FolderTree, Search, SlidersHorizontal, Table2, X } from 'lucide-react';
 import type { Product, ProductModalTab } from '../../types/models';
 import type { PedidoAlfred } from '../../types/agent';
 import BarraProximoPasso from './BarraProximoPasso';
 import { useAgentTheme } from './theme';
+import { useTelaPequena } from './useViewport';
 import {
-  ABA_DO_SEGMENTO, FILTROS_DO_SEGMENTO, ROTULO_FILTRO, contarFiltros, filtrarProdutos, nomeDe, pedidoDaSelecao,
-  pilulasDe, principais, semDescricao, skuDe,
-  type EstadoPilula, type FiltroProdutos, type SegmentoProdutos,
+  FILTROS_PADRAO, FILTROS_VAZIOS, ROTULO_OPCAO, aplicarFiltros, contarFiltros, contarOpcoes, estadoSelecao, paginar,
+  pedidoDaSelecao, principais, quantosFiltrosAtivos, semDescricao,
+  type FiltrosProdutos, type OpcaoConteudo, type OpcaoIntegracao, type OpcaoSync,
 } from './produtosAgente';
+import LinhaProduto, { Caixa } from './produtos/LinhaProduto';
+import PainelFiltros from './produtos/PainelFiltros';
+import Paginacao from './produtos/Paginacao';
 import { BotaoConta } from '../../components/ContaMenu';
 
 export type ViewProdutos = 'categories' | 'integrations' | 'products';
@@ -34,103 +36,51 @@ interface Props {
   hasAgente: boolean;
 }
 
-const PAGINA = 60;
+/** Um filtro ativo, como pílula removível abaixo do topo. */
+interface FiltroAtivo { chave: string; rotulo: string; remover: (f: FiltrosProdutos) => FiltrosProdutos }
 
-const SEGMENTOS: { id: SegmentoProdutos | ViewProdutos; rotulo: string; Icone: LucideIcon }[] = [
-  { id: 'catalogo', rotulo: 'Catálogo', Icone: Package },
-  { id: 'imagens', rotulo: 'Imagens', Icone: ASPECTO.imagens.Icone },
-  { id: 'videos', rotulo: 'Vídeos', Icone: ASPECTO.video.Icone },
-  { id: 'categories', rotulo: 'Categorias', Icone: FolderTree },
-  { id: 'integrations', rotulo: 'Envio ERP', Icone: CloudUpload },
-];
-const ehView = (id: string): id is ViewProdutos => id === 'categories' || id === 'integrations' || id === 'products';
+function filtrosAtivos(f: FiltrosProdutos): FiltroAtivo[] {
+  const sem = <T,>(lista: T[], v: T) => lista.filter((x) => x !== v);
+  return [
+    ...f.integracao.map((o: OpcaoIntegracao) => ({ chave: `i:${o}`, rotulo: ROTULO_OPCAO[o], remover: (x: FiltrosProdutos) => ({ ...x, integracao: sem(x.integracao, o) }) })),
+    ...f.sync.map((o: OpcaoSync) => ({ chave: `s:${o}`, rotulo: ROTULO_OPCAO[o], remover: (x: FiltrosProdutos) => ({ ...x, sync: sem(x.sync, o) }) })),
+    ...f.conteudo.map((o: OpcaoConteudo) => ({ chave: `c:${o}`, rotulo: ROTULO_OPCAO[o], remover: (x: FiltrosProdutos) => ({ ...x, conteudo: sem(x.conteudo, o) }) })),
+    ...f.categoria.map((o) => ({ chave: `k:${o}`, rotulo: o, remover: (x: FiltrosProdutos) => ({ ...x, categoria: sem(x.categoria, o) }) })),
+  ];
+}
 
-/**
- * Pílula de um aspecto: o ícone diz qual (a cor dele, de `aspectos.tsx`), o
- * fundo diz o estado — feito (tingido na cor do aspecto, com ✓), falta e é
- * obrigatório (âmbar, "sem …"), opcional (só contorno) e gerando (azul).
- */
-const Pilula: React.FC<{ rotulo: string; estado: EstadoPilula }> = ({ rotulo, estado }) => {
-  const aspecto: Aspecto = ASPECTO_DO_ROTULO[rotulo] ?? 'descricao';
-  const { Icone, cor } = ASPECTO[aspecto];
-  const estilo: React.CSSProperties =
-    estado === 'ok' ? { background: `color-mix(in srgb, ${cor} 11%, transparent)`, color: cor }
-      : estado === 'alerta' ? { background: 'var(--ag-warn-soft)', color: 'var(--ag-warn)' }
-        : estado === 'rodando' ? { background: 'var(--ag-blue-soft)', color: 'var(--ag-blue)' }
-          : { color: 'var(--ag-text-3)', boxShadow: 'inset 0 0 0 1px var(--ag-hairline-2)' };
-  const texto = estado === 'alerta' ? `sem ${rotulo}` : estado === 'rodando' ? `${rotulo} gerando` : rotulo;
-  return (
-    <span className="inline-flex items-center gap-1 h-6 pl-1.5 pr-2 rounded-full text-[11.5px] font-medium whitespace-nowrap" style={estilo}>
-      {estado === 'rodando' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Icone className="w-3 h-3" />}
-      {texto}
-      {estado === 'ok' && <Check className="w-3 h-3" strokeWidth={2.5} />}
-    </span>
-  );
-};
-
-const primeiraImagem = (p: Product): string | null => {
-  if (p._selectedImage) return p._selectedImage;
-  const rec = p as unknown as Record<string, unknown>;
-  const chave = Object.keys(rec).filter((k) => /^URL imagem/i.test(k)).sort().find((k) => String(rec[k] ?? '').trim());
-  return chave ? String(rec[chave]).trim() : null;
-};
-
-const Miniatura: React.FC<{ p: Product }> = ({ p }) => {
-  const url = primeiraImagem(p);
-  const [falhou, setFalhou] = useState(false);
-  return (
-    <span className="w-12 h-12 rounded-[12px] shrink-0 overflow-hidden grid place-items-center" style={{ background: 'var(--ag-fill)', boxShadow: 'inset 0 0 0 1px var(--ag-hairline)' }}>
-      {url && !falhou ? (
-        <img src={url} alt="" loading="lazy" className="w-full h-full object-cover" onError={() => setFalhou(true)} />
-      ) : (
-        <span className="text-[15px] font-semibold text-[var(--ag-text-3)]">{nomeDe(p).slice(0, 1).toUpperCase()}</span>
-      )}
-    </span>
-  );
-};
-
-const Caixa: React.FC<{ marcada: boolean; rotulo: string; onClick: () => void }> = ({ marcada, rotulo, onClick }) => (
-  <button
-    onClick={onClick}
-    role="checkbox"
-    aria-checked={marcada}
-    aria-label={rotulo}
-    className="w-11 h-11 -mr-1.5 grid place-items-center shrink-0"
-  >
-    <span
-      className="w-[22px] h-[22px] rounded-[7px] grid place-items-center transition-colors"
-      style={marcada
-        ? { background: 'var(--ag-text)', color: 'var(--ag-bg-2)' }
-        : { border: '1.5px solid var(--ag-hairline-2)', background: 'var(--ag-surface-solid)' }}
-    >
-      {marcada && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
-    </span>
-  </button>
-);
+const estiloBotaoTopo: React.CSSProperties = { background: 'var(--ag-surface-solid)', border: '1px solid var(--ag-hairline)' };
 
 /**
  * F2 · Agente Produtos — a porta Ferramentas do catálogo. Lista só os produtos
- * principais com o que falta em cada um, deixa selecionar em massa e põe uma
- * única ação embaixo ("Próximo passo"): a mesma geração do botão da tabela,
- * com a confirmação de custo dela, ou "Pedir ao Alfred" levando a seleção como
- * contexto. A tabela antiga continua a um toque, para o que esta tela não faz.
+ * principais com a integração de cada um (e se está em dia com ela) e o que
+ * falta, filtra por painel (OU dentro do grupo, E entre grupos), pagina de 50 em
+ * 50 e deixa selecionar em massa — a seleção atravessa páginas e filtros. Uma
+ * única ação embaixo ("Próximo passo"). A tabela antiga continua a um toque.
  */
 const ProdutosAgenteScreen: React.FC<Props> = ({
   products, selecionados, onSelecionar, custoPorDescricao, gerando, progresso,
   onGerarDescricoes, onAbrirProduto, onAbrirView, onPedirAlfred, onVoltar, hasAgente,
 }) => {
   const { tema } = useAgentTheme();
-  const [segmento, setSegmento] = useState<SegmentoProdutos>('catalogo');
-  const [filtro, setFiltro] = useState<FiltroProdutos>('incompletos');
+  const telaPequena = useTelaPequena();
   const [busca, setBusca] = useState('');
   const [buscando, setBuscando] = useState(false);
-  const [limite, setLimite] = useState(PAGINA);
+  const [filtros, setFiltros] = useState<FiltrosProdutos>(FILTROS_PADRAO);
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const [pagina, setPagina] = useState(1);
+  const listaRef = useRef<HTMLDivElement>(null);
 
   const lista = useMemo(() => principais(products), [products]);
   const idsPrincipais = useMemo(() => new Set(lista.map((p) => p._id)), [lista]);
-  const filtros = FILTROS_DO_SEGMENTO[segmento];
-  const contagens = useMemo(() => contarFiltros(lista, filtros), [lista, filtros]);
-  const visiveis = useMemo(() => filtrarProdutos(lista, filtro, busca), [lista, filtro, busca]);
+  const visiveis = useMemo(() => aplicarFiltros(lista, filtros, busca), [lista, filtros, busca]);
+  const contagem = useMemo(() => contarOpcoes(lista, filtros, busca), [lista, filtros, busca]);
+  const pag = useMemo(() => paginar(visiveis, pagina), [visiveis, pagina]);
+  const idsDaPagina = useMemo(() => pag.itens.map((p) => p._id), [pag.itens]);
+  const selecao = estadoSelecao(idsDaPagina, selecionados, visiveis.length);
+  const nFiltros = quantosFiltrosAtivos(filtros);
+  const ativos = filtrosAtivos(filtros);
+  const incompletos = useMemo(() => contarFiltros(lista, ['incompletos']).incompletos, [lista]);
 
   // A seleção é a mesma da tabela, que aceita variações. Aqui só pais existem:
   // uma variação selecionada lá seria gerada sem aparecer nesta lista.
@@ -140,52 +90,43 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
     }
   }, [selecionados, idsPrincipais, onSelecionar]);
 
-  useEffect(() => { setLimite(PAGINA); }, [filtro, busca, segmento]);
+  useEffect(() => { setPagina(1); }, [filtros, busca]);
+  // scrollTop, nunca scrollIntoView: este rola todos os ancestrais roláveis.
+  const irPara = (n: number) => { setPagina(n); if (listaRef.current) listaRef.current.scrollTop = 0; };
 
-  const escolherSegmento = (id: SegmentoProdutos | ViewProdutos) => {
-    if (ehView(id)) { onAbrirView(id); return; }
-    setSegmento(id);
-    setFiltro(FILTROS_DO_SEGMENTO[id][0]);
-  };
-
-  const selecionaveis = segmento === 'catalogo';
+  // A barra age sobre toda a seleção (todas as páginas), não só a aberta.
   const produtosSelecionados = useMemo(() => lista.filter((p) => selecionados.has(p._id)), [lista, selecionados]);
   const n = produtosSelecionados.length;
-  const todosVisiveisMarcados = visiveis.length > 0 && visiveis.every((p) => selecionados.has(p._id));
 
   const alternar = (id: string) => {
     const prox = new Set(selecionados);
     if (prox.has(id)) prox.delete(id); else prox.add(id);
     onSelecionar(prox);
   };
-  const alternarTodos = () => {
+  const alternarPagina = () => {
     const prox = new Set(selecionados);
-    if (todosVisiveisMarcados) visiveis.forEach((p) => prox.delete(p._id));
-    else visiveis.forEach((p) => prox.add(p._id));
+    if (selecao.paginaToda) idsDaPagina.forEach((id) => prox.delete(id));
+    else idsDaPagina.forEach((id) => prox.add(id));
     onSelecionar(prox);
   };
 
   // O próximo passo sem seleção é selecionar o que está incompleto — a tela
   // nunca fica sem uma ação principal.
   const semDescricaoNaLista = visiveis.filter(semDescricao);
-  const acao: { rotulo: string; detalhe?: string; onClick: () => void; desabilitada?: boolean } | null = !selecionaveis
-    ? null
-    : gerando
-      ? { rotulo: `Gerando ${progresso.current} de ${progresso.total}`, onClick: () => {}, desabilitada: true }
-      : n > 0
+  const acao: { rotulo: string; detalhe?: string; onClick: () => void; desabilitada?: boolean } | null = gerando
+    ? { rotulo: `Gerando ${progresso.current} de ${progresso.total}`, onClick: () => {}, desabilitada: true }
+    : n > 0
+      ? {
+        rotulo: n === 1 ? 'Gerar descrição' : `Gerar ${n} descrições`,
+        detalhe: `${n * custoPorDescricao} créditos`,
+        onClick: () => onGerarDescricoes(new Set(produtosSelecionados.map((p) => p._id))),
+      }
+      : semDescricaoNaLista.length
         ? {
-          rotulo: n === 1 ? 'Gerar descrição' : `Gerar ${n} descrições`,
-          detalhe: `${n * custoPorDescricao} créditos`,
-          onClick: () => onGerarDescricoes(new Set(produtosSelecionados.map((p) => p._id))),
+          rotulo: `Selecionar os ${semDescricaoNaLista.length} sem descrição`,
+          onClick: () => onSelecionar(new Set(semDescricaoNaLista.map((p) => p._id))),
         }
-        : semDescricaoNaLista.length
-          ? {
-            rotulo: `Selecionar os ${semDescricaoNaLista.length} sem descrição`,
-            onClick: () => onSelecionar(new Set(semDescricaoNaLista.map((p) => p._id))),
-          }
-          : null;
-
-  const incompletos = contagens.incompletos ?? contarFiltros(lista, ['incompletos']).incompletos;
+        : null;
 
   const campoBusca = (
     <label className="relative flex items-center">
@@ -208,11 +149,26 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
     </label>
   );
 
+  const atalho = (rotulo: string, Icone: typeof Table2, view: ViewProdutos, title?: string) => (
+    <button
+      onClick={() => onAbrirView(view)}
+      title={title}
+      aria-label={rotulo}
+      className="h-11 px-3 lg:px-4 rounded-full flex items-center gap-2 text-[13.5px] font-semibold text-[var(--ag-text)] transition-colors hover:bg-[var(--ag-fill-2)] shrink-0"
+      style={estiloBotaoTopo}
+    >
+      <Icone className="w-4 h-4 text-[var(--ag-text-2)]" />
+      <span className="hidden lg:inline">{rotulo}</span>
+      {view === 'products' && <ArrowUpRight className="hidden lg:block w-3.5 h-3.5 text-[var(--ag-text-3)]" />}
+    </button>
+  );
+
+  const faixa = 'px-4 py-2 text-[13px] text-[var(--ag-text-2)]';
+  const estiloFaixa: React.CSSProperties = { borderTop: '1px solid var(--ag-hairline)', background: 'var(--ag-fill)' };
+
   return (
     <div className="alfreds h-full flex flex-col" data-tema={tema}>
-      <div
-        className="flex-1 min-h-0 flex flex-col overflow-hidden"
-      >
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {/* Barra do topo: volta para Ferramentas; no telefone, a lupa abre a busca. */}
         <div className="ag-tela-x flex items-center gap-1 pt-2 shrink-0">
           <button
@@ -232,9 +188,9 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
           <BotaoConta />
         </div>
 
-        <div className="ag-tela-x ag-scroll flex-1 overflow-y-auto pb-6">
+        <div ref={listaRef} className="ag-tela-x ag-scroll flex-1 overflow-y-auto pb-6">
           <div className="flex flex-col gap-4">
-            {/* Título + o que esta tela resume; à direita, a busca (desktop) e a tabela completa. */}
+            {/* Título + resumo; à direita, busca (desktop), filtros e os atalhos. */}
             <div className="flex flex-col md:flex-row md:items-end gap-3">
               <div className="flex-1 min-w-0">
                 <h1 className="font-display text-[30px] leading-tight font-semibold tracking-tight text-[var(--ag-text)]">Produtos</h1>
@@ -243,120 +199,101 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
                   {incompletos > 0 && <> · <span style={{ color: 'var(--ag-warn)' }}>{incompletos} incompletos</span></>}
                 </p>
               </div>
-              <div className="hidden md:block w-[300px] lg:w-[360px]">{campoBusca}</div>
-              <button
-                onClick={() => onAbrirView('products')}
-                title="A planilha inteira: todas as colunas, variações, filtros, exportar e enviar"
-                className="self-start md:self-auto h-11 px-4 rounded-full flex items-center gap-2 text-[13.5px] font-semibold text-[var(--ag-text)] transition-colors hover:bg-[var(--ag-fill-2)]"
-                style={{ background: 'var(--ag-surface-solid)', border: '1px solid var(--ag-hairline)' }}
-              >
-                <Table2 className="w-4 h-4 text-[var(--ag-text-2)]" /> Tabela completa <ArrowUpRight className="w-3.5 h-3.5 text-[var(--ag-text-3)]" />
-              </button>
+              <div className="hidden md:block w-[260px] lg:w-[320px]">{campoBusca}</div>
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <button
+                    onClick={() => setFiltrosAbertos((v) => !v)}
+                    aria-expanded={filtrosAbertos}
+                    className="h-11 px-4 rounded-full flex items-center gap-2 text-[13.5px] font-semibold text-[var(--ag-text)]"
+                    style={nFiltros ? { ...estiloBotaoTopo, boxShadow: 'inset 0 0 0 1px var(--ag-text)' } : estiloBotaoTopo}
+                  >
+                    <SlidersHorizontal className="w-4 h-4 text-[var(--ag-text-2)]" />
+                    Filtros{nFiltros > 0 && <span className="tabular-nums"> · {nFiltros}</span>}
+                  </button>
+                  {filtrosAbertos && (
+                    <PainelFiltros folha={telaPequena} filtros={filtros} contagem={contagem} onMudar={setFiltros} onFechar={() => setFiltrosAbertos(false)} />
+                  )}
+                </div>
+                {atalho('Categorias', FolderTree, 'categories')}
+                {atalho('Envio ERP', CloudUpload, 'integrations')}
+                {atalho('Tabela completa', Table2, 'products', 'A planilha inteira: todas as colunas, variações, filtros, exportar e enviar')}
+              </div>
             </div>
 
             {buscando && <div className="md:hidden">{campoBusca}</div>}
 
-            {/* Segmentos: os três primeiros filtram esta lista; os dois últimos abrem outra tela (↗). */}
-            <div className="flex gap-1.5 overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0 [scrollbar-width:none]">
-              {SEGMENTOS.map((sg) => {
-                const ativo = sg.id === segmento;
-                return (
+            {ativos.length > 0 && (
+              <div className="flex gap-1.5 flex-wrap">
+                {ativos.map((a) => (
                   <button
-                    key={sg.id}
-                    onClick={() => escolherSegmento(sg.id)}
-                    aria-pressed={ativo}
-                    className="h-10 pl-3 pr-3.5 rounded-full text-[13.5px] font-medium whitespace-nowrap shrink-0 flex items-center gap-1.5 transition-colors"
-                    style={ativo
-                      ? { background: 'var(--ag-text)', color: 'var(--ag-bg-2)' }
-                      : { background: 'var(--ag-surface-solid)', color: 'var(--ag-text)', border: '1px solid var(--ag-hairline)' }}
+                    key={a.chave}
+                    onClick={() => setFiltros(a.remover(filtros))}
+                    aria-label={`Remover filtro ${a.rotulo}`}
+                    className="h-8 pl-3 pr-2 rounded-full text-[12.5px] font-medium flex items-center gap-1"
+                    style={{ background: 'var(--ag-fill-2)', color: 'var(--ag-text)', boxShadow: 'inset 0 0 0 1px var(--ag-hairline-2)' }}
                   >
-                    <sg.Icone className="w-4 h-4" style={{ opacity: ativo ? 1 : 0.7 }} />
-                    {sg.rotulo}
-                    {ehView(sg.id) && <ArrowUpRight className="w-3.5 h-3.5 opacity-50" />}
+                    {a.rotulo} <X className="w-3.5 h-3.5 text-[var(--ag-text-3)]" />
                   </button>
-                );
-              })}
-            </div>
-
-            <div className="flex gap-1.5 flex-wrap">
-              {filtros.map((f) => {
-                const ativo = f === filtro;
-                const alerta = f !== 'todos' && contagens[f] > 0;
-                return (
-                  <button
-                    key={f}
-                    onClick={() => setFiltro(f)}
-                    aria-pressed={ativo}
-                    className="h-8 px-3 rounded-full text-[12.5px] font-medium tabular-nums flex items-center gap-1.5"
-                    style={ativo
-                      ? (alerta ? { background: 'var(--ag-warn-soft)', color: 'var(--ag-warn)', boxShadow: 'inset 0 0 0 1px var(--ag-warn)' } : { background: 'var(--ag-fill-2)', color: 'var(--ag-text)', boxShadow: 'inset 0 0 0 1px var(--ag-hairline-2)' })
-                      : { background: 'var(--ag-fill)', color: 'var(--ag-text-2)' }}
-                  >
-                    {ROTULO_FILTRO[f]}
-                    <span className="font-semibold" style={{ opacity: ativo ? 1 : 0.8 }}>{contagens[f]}</span>
-                  </button>
-                );
-              })}
-            </div>
+                ))}
+                <button onClick={() => setFiltros(FILTROS_VAZIOS)} className="h-8 px-2 text-[12.5px] font-medium text-[var(--ag-text-2)] hover:text-[var(--ag-text)]">
+                  Limpar
+                </button>
+              </div>
+            )}
 
             {visiveis.length === 0 ? (
-              <div className="ag-glass rounded-[22px] px-5 py-10 text-center text-[14px] text-[var(--ag-text-2)]">
-                {busca ? 'Nenhum produto com esse nome ou SKU.' : lista.length === 0 ? 'O catálogo está vazio.' : 'Nada aqui — esta parte do catálogo está em dia.'}
+              <div className="ag-glass rounded-[22px] px-5 py-10 flex flex-col items-center gap-3 text-center text-[14px] text-[var(--ag-text-2)]">
+                {busca ? 'Nenhum produto com esse nome ou SKU.' : lista.length === 0 ? 'O catálogo está vazio.' : nFiltros ? 'Nenhum produto com esses filtros.' : 'Nada aqui.'}
+                {nFiltros > 0 && (
+                  <button onClick={() => setFiltros(FILTROS_VAZIOS)} className="h-10 px-4 rounded-full text-[13px] font-semibold text-[var(--ag-text)]" style={{ background: 'var(--ag-fill-2)' }}>
+                    Limpar filtros
+                  </button>
+                )}
               </div>
             ) : (
               <section className="ag-glass rounded-[22px] overflow-hidden">
-                {/* Cabeçalho da lista: contagem, seleção e (desktop) o que cada coluna mostra. */}
-                <div className="flex items-center gap-3 pl-4 pr-3 py-1 text-[12.5px] text-[var(--ag-text-2)]" style={{ background: 'var(--ag-fill)' }}>
+                {/* Cabeçalho: caixa da página, contagem e (desktop largo) o que cada coluna mostra. */}
+                <div className="flex items-center gap-1 pl-1 pr-3 py-1 text-[12.5px] text-[var(--ag-text-2)]" style={{ background: 'var(--ag-fill)' }}>
+                  <Caixa marcada={selecao.paginaToda} rotulo="Selecionar os desta página" onClick={alternarPagina} />
                   <span className="flex-1">
-                    {visiveis.length} {visiveis.length === 1 ? 'produto' : 'produtos'}
+                    {visiveis.length.toLocaleString('pt-BR')} {visiveis.length === 1 ? 'produto' : 'produtos'}
                     {n > 0 && <> · <span className="font-semibold text-[var(--ag-text)]">{n} selecionado{n === 1 ? '' : 's'}</span></>}
                   </span>
-                  <span className="hidden md:block w-[46%] text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--ag-text-3)]">O que tem</span>
-                  {selecionaveis ? (
-                    <Caixa marcada={todosVisiveisMarcados} rotulo="Selecionar todos os da lista" onClick={alternarTodos} />
-                  ) : <span className="h-11" />}
+                  <span className="hidden lg:block w-[170px] text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--ag-text-3)]">Integração</span>
+                  <span className="hidden lg:block w-[38%] text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--ag-text-3)]">O que tem</span>
                 </div>
-                {visiveis.slice(0, limite).map((p) => (
-                  <div
-                    key={p._id}
-                    className="flex items-center gap-3 pl-3.5 pr-3 py-2.5 transition-colors hover:bg-[var(--ag-fill)]"
-                    style={{ borderTop: '1px solid var(--ag-hairline)', background: selecionados.has(p._id) ? 'var(--ag-fill)' : undefined }}
-                  >
-                    <button
-                      onClick={() => onAbrirProduto(p, ABA_DO_SEGMENTO[segmento])}
-                      className="flex-1 min-w-0 flex flex-col md:flex-row md:items-center gap-1.5 md:gap-3 text-left"
-                    >
-                      <span className="flex-1 min-w-0 flex items-center gap-3">
-                        <Miniatura p={p} />
-                        <span className="min-w-0 flex flex-col">
-                          <span className="text-[14px] font-semibold text-[var(--ag-text)] truncate">{nomeDe(p)}</span>
-                          {skuDe(p) && <span className="text-[12px] font-mono text-[var(--ag-text-3)] truncate">{skuDe(p)}</span>}
-                        </span>
-                      </span>
-                      <span className="md:w-[46%] flex gap-1 flex-wrap pl-[60px] md:pl-0">
-                        {pilulasDe(p, segmento).map((pl) => <Pilula key={pl.rotulo} rotulo={pl.rotulo} estado={pl.estado} />)}
-                      </span>
+                {selecao.oferecerTodos && (
+                  <div className={faixa} style={estiloFaixa}>
+                    {idsDaPagina.length} desta página selecionados ·{' '}
+                    <button className="font-semibold text-[var(--ag-accent)]" onClick={() => onSelecionar(new Set([...selecionados, ...visiveis.map((p) => p._id)]))}>
+                      Selecionar todos os {visiveis.length.toLocaleString('pt-BR')} do filtro
                     </button>
-                    {selecionaveis && (
-                      <Caixa marcada={selecionados.has(p._id)} rotulo={`Selecionar ${nomeDe(p)}${skuDe(p) ? ` (${skuDe(p)})` : ''}`} onClick={() => alternar(p._id)} />
-                    )}
                   </div>
+                )}
+                {!selecao.oferecerTodos && n > 0 && n > idsDaPagina.filter((id) => selecionados.has(id)).length && (
+                  <div className={faixa} style={estiloFaixa}>
+                    {n} selecionados no total ·{' '}
+                    <button className="font-semibold text-[var(--ag-accent)]" onClick={() => onSelecionar(new Set())}>Limpar seleção</button>
+                  </div>
+                )}
+                {pag.itens.map((p) => (
+                  <LinhaProduto
+                    key={p._id}
+                    p={p}
+                    marcado={selecionados.has(p._id)}
+                    onMarcar={() => alternar(p._id)}
+                    onAbrir={() => onAbrirProduto(p, 'geral')}
+                    mostrarVideo={filtros.conteudo.includes('semVideo')}
+                  />
                 ))}
               </section>
             )}
-            {visiveis.length > limite && (
-              <button
-                onClick={() => setLimite((l) => l + PAGINA)}
-                className="self-center h-10 px-4 rounded-full text-[13px] font-medium text-[var(--ag-text-2)] hover:text-[var(--ag-text)]"
-                style={{ background: 'var(--ag-fill)' }}
-              >
-                Mostrar mais {Math.min(PAGINA, visiveis.length - limite)} de {visiveis.length - limite}
-              </button>
-            )}
+            <Paginacao pagina={pag.pagina} totalPaginas={pag.totalPaginas} inicio={pag.inicio} fim={pag.fim} total={visiveis.length} onIr={irPara} />
           </div>
         </div>
 
-        {(acao || (hasAgente && selecionaveis)) && (
+        {(acao || hasAgente) && (
           <BarraProximoPasso
             n={n}
             acao={acao ? { ...acao, ocupada: gerando } : null}
