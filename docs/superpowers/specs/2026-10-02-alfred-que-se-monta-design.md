@@ -67,10 +67,12 @@ Peças: `produtos`, `meli`, `conteudo`, `erp`, `video`. Estados **derivados**, n
 | Peça | Disponível | Ativa | Conectada | 1º resultado | Automático |
 |---|---|---|---|---|---|
 | Produtos | sempre | criação da conta | ≥1 produto | 1 descrição aprovada | `produtos.descricoes.gerar` |
-| Mercado Livre | objetivo ou ERP conectado | `meliListingOptimizer` | OAuth + sync | 1 proposta publicada | propostas/fotos; publicar é trava |
-| Conteúdo | objetivo ou site | `contentAgent` + `blog` | site lido + blog criado | 1º artigo | produção; publicar é trava |
+| Mercado Livre | sempre (sem módulo) | `meliListingOptimizer` | OAuth + sync | 1 proposta publicada | propostas/fotos; publicar é trava |
+| Conteúdo | sempre (sem módulo) | `contentAgent` + `blog` | site lido + blog criado | 1º artigo | produção; publicar é trava |
 | Loja/ERP | após 1º produto salvo | (é conexão) | Tiny/Bling/IdWorks/Wake | 1 envio | nunca (trava fixa) |
 | Vídeo | produto com ≥2 fotos reais | `video` | — | 1 vídeo | nunca (trava fixa) |
+
+Decisão da implementação (2026-10-02): ML e Conteúdo ficam sempre disponíveis, porque condicioná-los a objetivo/ERP/site repetiria o problema 4 (o que não está ativo some). A Semana continua oferecendo uma peça por vez. Objetivo já aderido não religa o módulo: se o admin desligou, a revogação vale (achado da revisão de segurança).
 
 ### `src/modules/agent/capacidades.ts` (novo, puro)
 
