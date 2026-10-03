@@ -30,6 +30,8 @@ import type { MissionState } from './modules/onboarding/mission/missionTypes';
 import MissionPicker from './modules/onboarding/mission/MissionPicker';
 import MissaoProduto from './modules/onboarding/mission/MissaoProduto';
 import MissaoConteudo from './modules/onboarding/mission/MissaoConteudo';
+import ObjetivosPicker from './modules/onboarding/mission/ObjetivosPicker';
+import { missaoDoObjetivo } from './modules/onboarding/mission/objetivos';
 import TrilhaMissoes from './modules/onboarding/mission/TrilhaMissoes';
 import { montarTrilha, type EstadoItem, type ItemId } from './modules/onboarding/mission/trilha';
 import { iniciarMissao, ouvirMissoes, salvarMissao } from './services/missionService';
@@ -98,6 +100,7 @@ import {
   trackCategoryHierarchyGenerated,
   trackTemplateDownloaded,
   trackAttributesGenerated,
+  trackMissionStarted,
 } from './analytics';
 import type { CompanyData } from './types/onboarding';
 import { registerReferralSignup } from './services/referralService';
@@ -3435,7 +3438,26 @@ Retorne APENAS um JSON válido no seguinte formato:
     };
     const aoConcluir = () => { setJornadaConcluida(true); setMainView(isCoorteObjetivos(cohort) ? 'home' : 'missoes'); };
 
-    if (!emCurso && !jornadaConcluida) {
+    // v2: a Tela 0 é a dos objetivos, até o cliente escolher. Uma missão por
+    // sessão: só o primeiro objetivo abre; os outros ficam na Semana.
+    if (isCoorteObjetivos(cohort) && !emCurso && !jornadaConcluida && objetivos.length === 0) {
+      return (
+        <ObjetivosPicker
+          onComecar={async (sel) => {
+            await aderirObjetivos(sel);
+            const primeiro = sel[0];
+            const missaoId = missaoDoObjetivo(primeiro);
+            trackMissionStarted({ missionId: missaoId ?? 'meli', sugerida: null, aceitouSugestao: false, objetivos: sel });
+            if (missaoId) { setMissao(await iniciarMissao(user.uid, missaoId)); return; }
+            // Mercado Livre ainda sem missão própria: abre o otimizador.
+            meliAderindo.current = true;
+            setObjetivos(sel);
+            setMainView('meli');
+          }}
+        />
+      );
+    }
+    if (!isCoorteObjetivos(cohort) && !emCurso && !jornadaConcluida) {
       return (
         <MissionPicker
           signal={{
