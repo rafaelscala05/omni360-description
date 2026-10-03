@@ -16,13 +16,14 @@
 //   que precisa do usuário na frente.
 
 import type { AgentAction } from '../../types/agent';
+import type { Objetivo } from './capacidades';
 
 export type OrigemTarefa = 'produto' | 'conteudo' | 'meli' | 'operacoes';
 export type EstadoTarefa = 'aberta' | 'precisa' | 'feita';
-export type DestinoTarefa = 'produtos' | 'conteudo' | 'meli' | 'integracoes' | 'atividade' | 'missao';
+export type DestinoTarefa = 'produtos' | 'conteudo' | 'meli' | 'integracoes' | 'atividade' | 'missao' | 'montar';
 
 /** As missões de onboarding que viram tarefas da primeira semana (ver trilha.ts). */
-export type MissaoSemana = 'produto' | 'conteudo' | 'catalogo' | 'erp' | 'publicar-blog' | 'empresa';
+export type MissaoSemana = 'produto' | 'conteudo' | 'meli' | 'catalogo' | 'erp' | 'publicar-blog' | 'empresa';
 
 export interface TarefaSemana {
   id: string;
@@ -39,6 +40,8 @@ export interface TarefaSemana {
   estimativa?: { minutos: number; creditos: number };
   /** destino === 'missao': qual missão abrir. */
   missao?: MissaoSemana;
+  /** destino === 'montar': qual objetivo aderir. */
+  montar?: Objetivo;
 }
 
 export interface ArtigoAgendado {
@@ -73,6 +76,8 @@ export interface SinaisSemana {
   videoSugerido?: { sku: string; nome: string } | null;
   /** Coorte de onboarding: as missões ainda abertas viram as primeiras tarefas. */
   missoes?: { id: MissaoSemana; titulo: string; meta: string; estado: 'agora' | 'opcional' }[];
+  /** A próxima peça do Alfred (proximaPecaParaMontar). Só entra sem missão `agora` aberta. */
+  pecaParaMontar?: { objetivo: Objetivo; titulo: string; libera: string } | null;
 }
 
 export const PROMPT_DESCRICOES = 'Complete as descrições dos produtos que estão sem, num lote de 5, e me mostre uma amostra antes de gravar.';
@@ -318,7 +323,9 @@ export function montarSemana(s: SinaisSemana): TarefaSemana[] {
   // de tudo que não precisa do usuário (sem trilha paralela).
   const missoes = (s.missoes ?? []).map<Omit<TarefaSemana, 'dia'>>((m) => ({
     id: `missao-${m.id}`,
-    origem: m.id === 'conteudo' || m.id === 'publicar-blog' ? 'conteudo' : m.id === 'produto' || m.id === 'catalogo' ? 'produto' : 'operacoes',
+    origem: m.id === 'meli' ? 'meli'
+      : m.id === 'conteudo' || m.id === 'publicar-blog' ? 'conteudo'
+        : m.id === 'produto' || m.id === 'catalogo' ? 'produto' : 'operacoes',
     titulo: m.titulo,
     detalhe: m.meta,
     estado: 'aberta',
@@ -327,6 +334,21 @@ export function montarSemana(s: SinaisSemana): TarefaSemana[] {
   }));
   flexiveis.unshift(...missoes.filter((_, i) => (s.missoes ?? [])[i].estado === 'agora'));
   flexiveis.push(...missoes.filter((_, i) => (s.missoes ?? [])[i].estado === 'opcional'));
+
+  // Uma peça nova por vez, e só quando a primeira semana (missões) não tem
+  // nada `agora`: oferecer outro agente no meio da missão divide a atenção.
+  const p = s.pecaParaMontar;
+  if (p && !(s.missoes ?? []).some((m) => m.estado === 'agora')) {
+    flexiveis.push({
+      id: `montar-${p.objetivo}`,
+      origem: p.objetivo === 'produto' ? 'produto' : p.objetivo === 'meli' ? 'meli' : 'conteudo',
+      titulo: `Montar ${p.titulo} no Alfred`,
+      detalhe: `Libera: ${p.libera}`,
+      estado: 'aberta',
+      destino: 'montar',
+      montar: p.objetivo,
+    });
+  }
 
   // `precisa` na frente; dentro do mesmo estado, a ordem de inserção acima.
   flexiveis.sort((a, b) => Number(b.estado === 'precisa') - Number(a.estado === 'precisa'));

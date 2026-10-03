@@ -11,6 +11,7 @@ import { adminDb } from '../firebaseAdmin';
 import { getV2Token } from '../tinyV2';
 import type { ToolCtx, ToolProvider } from './types';
 import { DEFAULT_AGENT_SETTINGS, sanitizeSettings, type AgentSettings } from './agentSettings';
+import { temAlfred } from '../../src/modules/agent/capacidades';
 
 const WAKE_SECRET = (uid: string) =>
   adminDb.collection('users').doc(uid).collection('integration_secrets').doc('wake');
@@ -90,19 +91,20 @@ export async function resolveAgentContext(uid: string): Promise<AgentContext> {
 
   const providers: ToolProvider[] = [...conns.providers];
   if (modules.contentAgent === true) providers.push('content');
-  // O catálogo existe para toda conta: com qualquer módulo de agente ligado, o
-  // Alfred lê e completa produtos. O Mercado Livre depende do módulo próprio.
-  if (modules.contentAgent === true || modules.operationsAgent === true) providers.push('produtos');
+  // O catálogo existe para toda conta com Alfred: contas legadas (Conteúdo ou
+  // Operacional) e a coorte missao-v2 (modules.produtos, ligado na criação).
+  // O Mercado Livre depende do módulo próprio.
+  if (temAlfred(modules)) providers.push('produtos');
   if (modules.meliListingOptimizer === true) providers.push('meli');
 
   return { providers, conexoes: { wake: conns.wake, tiny: conns.tiny, bling: conns.bling, idworks: conns.idworks }, settings: await loadAgentSettings(uid) };
 }
 
-/** users/{uid}.modules.contentAgent or .operationsAgent must be on — the account needs at least one of the two features this agent covers. */
+/** users/{uid}.modules.produtos, .contentAgent or .operationsAgent must be on (temAlfred) — the account needs at least one agent module. */
 export async function requireAnyModule(uid: string): Promise<void> {
   const snap = await adminDb.collection('users').doc(uid).get();
   const modules = snap.data()?.modules ?? {};
-  if (modules.contentAgent !== true && modules.operationsAgent !== true) {
+  if (!temAlfred(modules)) {
     throw Object.assign(new Error('Nenhum módulo de agente está habilitado nesta conta.'), { status: 403 });
   }
 }

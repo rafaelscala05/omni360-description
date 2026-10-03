@@ -28,6 +28,7 @@ const ROTULO_DESTINO: Record<DestinoTarefa, string> = {
   integracoes: 'Abrir Integrações',
   atividade: 'Revisar',
   missao: 'Começar',
+  montar: 'Montar',
 };
 
 export const Origem: React.FC<{ origem: OrigemTarefa }> = ({ origem }) => (

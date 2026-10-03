@@ -13,6 +13,7 @@ import { ORIGEM } from './SemanaPanel';
 import { resumoConteudo, resumoProdutos, sugestoesAlfred } from './painelFerramentas';
 import { BotaoConta } from '../../components/ContaMenu';
 import AlfredLogo from '../../components/alfredLogo/AlfredLogo';
+import type { Objetivo, Peca } from './capacidades';
 
 export type ViewConta = 'categories' | 'history' | 'company' | 'missoes' | 'fontes';
 
@@ -28,6 +29,9 @@ interface Props {
   onAbrirView: (view: ViewConta) => void;
   /** Leva ao chat já mandando `prompt` — o Alfred recebe o contexto da tela. */
   onPedirAlfred: (prompt: string) => void;
+  /** Peças do Alfred (capacidades.ts) — as disponíveis viram "Para montar". */
+  pecas: Peca[];
+  onMontar: (o: Objetivo) => void;
 
 }
 
@@ -185,6 +189,33 @@ const ColunaPassos: React.FC<{
 );
 
 /** F1: no celular, um agente por linha com o chip do que está pendente. */
+/** Peça que a conta ainda não tem: tracejada, com o que libera, e "Montar". */
+const LinhaParaMontar: React.FC<{ peca: Peca; onMontar: () => void }> = ({ peca, onMontar }) => (
+  <div
+    className="flex items-center gap-3 px-4 py-3 rounded-[18px]"
+    style={{ border: '1.5px dashed', borderColor: 'var(--ag-hairline)' }}
+  >
+    <div className="min-w-0 flex-1">
+      <p className="text-[15px] font-semibold text-[var(--ag-text)]">{peca.titulo}</p>
+      <p className="text-[13px] text-[var(--ag-text-2)]">Libera: {peca.libera}</p>
+    </div>
+    <button
+      onClick={onMontar}
+      className="shrink-0 min-h-[44px] px-4 rounded-full text-[14px] font-semibold"
+      style={{ background: 'var(--ag-accent)', color: 'var(--ag-accent-ink)' }}
+    >
+      Montar
+    </button>
+  </div>
+);
+
+const SecaoParaMontar: React.FC<{ pecas: Peca[]; onMontar: (o: Objetivo) => void }> = ({ pecas, onMontar }) => (
+  <section className="flex flex-col gap-2">
+    <h2 className="text-[13px] font-semibold uppercase tracking-wide px-1 text-[var(--ag-text-2)]">Para montar</h2>
+    {pecas.map((p) => <LinhaParaMontar key={p.id} peca={p} onMontar={() => onMontar(p.objetivo!)} />)}
+  </section>
+);
+
 const LinhaAgente: React.FC<{
   origem: OrigemTarefa;
   nome: string;
@@ -212,7 +243,7 @@ const LinhaAgente: React.FC<{
  * de `md`, cartões com números e a coluna "Alfred sugere" (D2).
  */
 const FerramentasScreen: React.FC<Props> = ({
-  uid, products, extras, hasAgente, hasContentAgent, hasMeli, onAbrir, onAbrirView, onPedirAlfred,
+  uid, products, extras, hasAgente, hasContentAgent, hasMeli, onAbrir, onAbrirView, onPedirAlfred, pecas, onMontar,
 }) => {
   const { tema } = useAgentTheme();
   const [acoes, setAcoes] = useState<AgentAction[]>([]);
@@ -243,6 +274,7 @@ const FerramentasScreen: React.FC<Props> = ({
   const conteudo = useMemo(() => resumoConteudo(artigos), [artigos]);
 
   const pendentes = acoes.filter((a) => a.status === 'pending').length;
+  const paraMontar = pecas.filter((p) => p.estado === 'disponivel' && p.objetivo !== null);
   const ativas = integracoes.filter((i) => i.conectado && !i.erro).length;
   const alertas = integracoes.filter((i) => i.erro || (i.conectado && !i.validado)).length;
   const tiny = integracoes.find((i) => i.chave === 'tiny')?.conectado;
@@ -342,7 +374,7 @@ const FerramentasScreen: React.FC<Props> = ({
                   onClick={() => onAbrirView('fontes')}
                 />
               </section>
-
+              {paraMontar.length > 0 && <SecaoParaMontar pecas={paraMontar} onMontar={onMontar} />}
             </div>
 
             {/* D2 · desktop: cartões + coluna (próximos passos, Alfred sugere) */}
@@ -403,6 +435,9 @@ const FerramentasScreen: React.FC<Props> = ({
                   <Linha primeira={!integracoes.some((i) => i.chave === 'wake' && i.conectado)} rotulo="Integrações com alerta" valor={alertas} tom={alertas ? 'alerta' : 'neutro'} />
                   {hasAgente && <Linha rotulo="Aprovações do Alfred" valor={pendentes} tom={pendentes ? 'alerta' : 'neutro'} />}
                 </Cartao>
+                {paraMontar.length > 0 && (
+                  <div className="lg:col-span-2"><SecaoParaMontar pecas={paraMontar} onMontar={onMontar} /></div>
+                )}
               </div>
 
               <aside className="min-w-0 flex flex-col gap-4">

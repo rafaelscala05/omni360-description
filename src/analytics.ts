@@ -189,7 +189,7 @@ export function trackProductUrlImportResult(params: { source: 'structured' | 'hy
 }
 
 export function trackMissionStarted(params: {
-  missionId: MissionId; sugerida: MissionId | null; aceitouSugestao: boolean;
+  missionId: MissionId | 'meli'; sugerida: MissionId | null; aceitouSugestao: boolean; objetivos?: string[];
 }) {
   const a = getAnalyticsInstance();
   if (a) logEvent(a, 'mission_started', params);

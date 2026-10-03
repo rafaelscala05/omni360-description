@@ -114,6 +114,8 @@ export interface ExtrasSemana {
   missoes?: SinaisSemana['missoes'];
   /** Coorte de onboarding: quantas missões da trilha já foram feitas ("2 de 5" em Ferramentas). */
   missoesResumo?: { feitas: number; total: number };
+  /** A próxima peça do Alfred para montar (capacidades.ts). */
+  pecaParaMontar?: SinaisSemana['pecaParaMontar'];
 }
 
 /** Custos por item de config/credits, lidos uma vez por sessão. */
@@ -254,7 +256,7 @@ export function useSemana({ uid, products, acoes, integracoes, hasContentAgent, 
   const artigos = useArtigosDaSemana(uid, hasContentAgent);
   const custos = useCustos();
   const seoAchados = useAchadosSeo(uid, hasContentAgent);
-  const { categories, hasVideo, missoes } = extras;
+  const { categories, hasVideo, missoes, pecaParaMontar } = extras;
   const meliPropostasAguardando = useMeliPropostasAguardando(hasMeli);
 
   // Variação herda descrição e foto do pai na vitrine — contar as filhas
@@ -310,12 +312,13 @@ export function useSemana({ uid, products, acoes, integracoes, hasContentAgent, 
         produtosForaDoErp: foraDoErp,
         videoSugerido,
         missoes,
+        pecaParaMontar,
       }),
       hoje: diaNaSemana(inicioDaSemana(agora), agora) ?? 0,
       artigos,
       meliPropostasAguardando,
     };
-  }, [semDescricao, semFoto, semAtributos, semAmbientada, custos, seoAchados, foraDoErp, videoSugerido, missoes, acoes, artigos, meliPropostasAguardando, integracoesComAlerta, providers]);
+  }, [semDescricao, semFoto, semAtributos, semAmbientada, custos, seoAchados, foraDoErp, videoSugerido, missoes, pecaParaMontar, acoes, artigos, meliPropostasAguardando, integracoesComAlerta, providers]);
 }
 
 /**

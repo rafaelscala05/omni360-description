@@ -161,8 +161,8 @@ export type EstadoMeli =
 
 /**
  * Junta as fontes que o app conhece. O catálogo vem sempre (toda conta com
- * agente tem o provider `produtos`); Mercado Livre e Conteúdo só quando o
- * módulo está ligado — sem módulo não há o que conectar ali.
+ * agente tem o provider `produtos`). Mercado Livre e Conteúdo entram sempre:
+ * com o módulo, pelo estado real; sem ele, como disponíveis (aderir é livre).
  */
 export function entradasDoApp(opts: {
   integracoes: ResumoIntegracao[];
@@ -170,19 +170,26 @@ export function entradasDoApp(opts: {
   hasMeli: boolean;
   hasContentAgent: boolean;
   projetos?: number | null;
+  /** Desligados pelo admin (módulo gravado `false`): não aparecem como disponíveis. */
+  revogados?: ChaveFonte[];
 }): EntradaFonte[] {
   const lista: EntradaFonte[] = [{ chave: 'produtos', conectado: true }];
   for (const i of opts.integracoes) {
     lista.push({ chave: i.chave, conectado: i.conectado, validado: i.validado, detalhe: i.detalhe, erro: i.erro });
   }
-  if (opts.hasMeli && opts.meli) {
-    lista.push('erro' in opts.meli && opts.meli.erro
-      ? { chave: 'meli', conectado: false, erro: opts.meli.erro }
-      : {
-        chave: 'meli',
-        conectado: (opts.meli as { conectado: boolean }).conectado,
-        reautorizar: (opts.meli as { status: string }).status === 'reauthorization_required',
-      });
+  if (opts.hasMeli) {
+    if (opts.meli) {
+      lista.push('erro' in opts.meli && opts.meli.erro
+        ? { chave: 'meli', conectado: false, erro: opts.meli.erro }
+        : {
+          chave: 'meli',
+          conectado: (opts.meli as { conectado: boolean }).conectado,
+          reautorizar: (opts.meli as { status: string }).status === 'reauthorization_required',
+        });
+    }
+  } else if (!opts.revogados?.includes('meli')) {
+    // Sem módulo: a fonte fica em "Disponíveis" — conectar é aderir (livre).
+    lista.push({ chave: 'meli', conectado: false });
   }
   if (opts.hasContentAgent) {
     const n = opts.projetos;
@@ -191,6 +198,8 @@ export function entradasDoApp(opts: {
       conectado: true,
       detalhe: n == null ? null : `${n} ${n === 1 ? 'projeto' : 'projetos'}`,
     });
+  } else if (!opts.revogados?.includes('content')) {
+    lista.push({ chave: 'content', conectado: false });
   }
   return lista;
 }

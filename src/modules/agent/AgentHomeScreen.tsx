@@ -19,7 +19,7 @@ import SemanaPanel from './SemanaPanel';
 import ColunaAtividade from './ColunaAtividade';
 import { useHistoricoSemana, useSemana } from './useSemana';
 import { useEstadoMeli } from './useFontes';
-import { entradasDoApp, montarFontes, resumoFontes } from './conectores';
+import { entradasDoApp, montarFontes, resumoFontes, type ChaveFonte } from './conectores';
 import { proximoPasso, type DestinoTarefa, type TarefaSemana } from './semana';
 import { FaixaProximoPasso } from './ProximoPassoBar';
 import CabecalhoTarefa from './chat/CabecalhoTarefa';
@@ -40,6 +40,8 @@ interface Props {
   onAbrirAtividade: () => void;
   /** Módulo do otimizador do Mercado Livre — alimenta a semana com propostas. */
   hasMeli: boolean;
+  /** Fontes cujo módulo o admin desligou — não aparecem como disponíveis. */
+  revogados?: ChaveFonte[];
   /** "Abrir" de uma tarefa da semana: leva à ferramenta dona dela. */
   onAbrirDestino: (destino: DestinoTarefa, tarefa?: TarefaSemana) => void;
   /** Campo focado no telefone — o App esconde a tab bar para o teclado. */
@@ -56,7 +58,7 @@ const SUGESTOES = [
 ];
 
 const AgentHomeScreen: React.FC<Props> = ({
-  uid, credits, products, extras, hasContentAgent, hasMeli, onOpenIntegrations, onAbrirFontes, onAbrirAtividade, onAbrirDestino,
+  uid, credits, products, extras, hasContentAgent, hasMeli, revogados, onOpenIntegrations, onAbrirFontes, onAbrirAtividade, onAbrirDestino,
   onFocoChange, promptInicial, onPromptConsumido,
 }) => {
   const { tema } = useAgentTheme();
@@ -213,8 +215,8 @@ const AgentHomeScreen: React.FC<Props> = ({
   // antes disso toda integração pareceria "para conectar".
   const meli = useEstadoMeli(hasMeli);
   const resumoDasFontes = useMemo(() => (statusCarregando || (hasMeli && !meli) ? null : resumoFontes(montarFontes(
-    entradasDoApp({ integracoes, meli, hasMeli, hasContentAgent, projetos: projetosCount }),
-  ))), [statusCarregando, integracoes, meli, hasMeli, hasContentAgent, projetosCount]);
+    entradasDoApp({ integracoes, meli, hasMeli, hasContentAgent, projetos: projetosCount, revogados }),
+  ))), [statusCarregando, integracoes, meli, hasMeli, hasContentAgent, projetosCount, revogados]);
 
   // `mensagens` só reflete o Firestore quando o listener entrega o snapshot,
   // o que chega depois do fim do SSE — sem `interagiu`, essa janela faz a

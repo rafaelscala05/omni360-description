@@ -27,15 +27,18 @@ import { useAgentTheme } from './modules/agent/theme';
 import type { ChaveFonte } from './modules/agent/conectores';
 import type { PedidoAlfred } from './types/agent';
 import AppTabBar from './components/AppTabBar';
-import { COORTE_ATUAL, isCoorteMissao } from './modules/onboarding/mission/missionTypes';
+import { COORTE_ATUAL, isCoorteMissao, isCoorteObjetivos } from './modules/onboarding/mission/missionTypes';
+import { montarAlfred, objetivoRevogado, proximaPecaParaMontar, temAlfred, type ModulosConta, type Objetivo } from './modules/agent/capacidades';
 import type { MissionState } from './modules/onboarding/mission/missionTypes';
 import MissionPicker from './modules/onboarding/mission/MissionPicker';
 import MissaoProduto from './modules/onboarding/mission/MissaoProduto';
 import MissaoConteudo from './modules/onboarding/mission/MissaoConteudo';
+import ObjetivosPicker from './modules/onboarding/mission/ObjetivosPicker';
+import { aterrissaNoAlfred, missaoDoObjetivo } from './modules/onboarding/mission/objetivos';
 import TrilhaMissoes from './modules/onboarding/mission/TrilhaMissoes';
 import { montarTrilha, type EstadoItem, type ItemId } from './modules/onboarding/mission/trilha';
 import { iniciarMissao, ouvirMissoes, salvarMissao } from './services/missionService';
-import { enviarContatoMissao } from './services/onboardingService';
+import { aderirObjetivos, enviarContatoMissao } from './services/onboardingService';
 import { listenProjects } from './services/contentService';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import MarketingLayout from './marketing/MarketingLayout';
@@ -100,10 +103,12 @@ import {
   trackCategoryHierarchyGenerated,
   trackTemplateDownloaded,
   trackAttributesGenerated,
+  trackMissionStarted,
 } from './analytics';
 import type { CompanyData } from './types/onboarding';
 import { registerReferralSignup } from './services/referralService';
 import { openSupportChat } from './services/supportChat';
+import { useEstadoMeli } from './modules/agent/useFontes';
 const OnboardingWizard = lazy(() => import('./modules/onboarding/OnboardingWizard'));
 const CompanyProfile = lazy(() => import('./modules/onboarding/CompanyProfile'));
 const ReferralPage = lazy(() => import('./modules/referral/ReferralPage'));
@@ -311,22 +316,54 @@ export default function App() {
   const [hasVideoModule, setHasVideoModule] = useState<boolean>(false);
   const [hasBlogModule, setHasBlogModule] = useState<boolean>(false);
   const [hasMeliListingOptimizer, setHasMeliListingOptimizer] = useState<boolean>(false);
+  const [hasProdutosModule, setHasProdutosModule] = useState<boolean>(false);
+  // users/{uid}.modules cru: `false` explícito é revogação do admin (capacidades.ts).
+  const [modulosConta, setModulosConta] = useState<Record<string, unknown>>({});
+  const [objetivos, setObjetivos] = useState<Objetivo[]>([]);
+  // Uma regra só para "esta conta tem Alfred" (capacidades.ts) — o mesmo
+  // temAlfred que o servidor usa para liberar o provider `produtos`.
+  const temAgente = temAlfred({ produtos: hasProdutosModule, contentAgent: hasContentAgent, operationsAgent: hasOperationsAgent });
   // Coorte da jornada de missão (users/{uid}.cohort). null = ainda não lida ou conta legada.
   const [cohort, setCohort] = useState<string | null>(null);
   // Preenchido depois de loadFromCloud: o Alfred gravou no catálogo, relê do Firestore.
   const catalogoAlteradoRef = useRef<() => void>(() => {});
-  const pendentesAlfred = usePendentesAlfred(!!user && (hasContentAgent || hasOperationsAgent), () => catalogoAlteradoRef.current());
+  const pendentesAlfred = usePendentesAlfred(!!user && temAgente, () => catalogoAlteradoRef.current());
   // Vídeo aprovado no chat: o app aberto o inicia e segura a requisição, como o wizard.
-  useVideosDoAlfred(!!user && (hasContentAgent || hasOperationsAgent));
+  useVideosDoAlfred(!!user && temAgente);
+  // Adesão ao ML em curso: o snapshot com o módulo novo ainda não chegou, e o
+  // efeito que expulsa da tela do ML sem permissão não pode disparar nesse meio.
+  const meliAderindo = useRef(false);
+  // "Montar" uma peça: adesão livre pelo servidor e a tela da peça em seguida.
+  // O snapshot do usuário traz os módulos novos; a tela não espera por ele.
+  const montarPeca = async (o: Objetivo) => {
+    if (o === 'meli') meliAderindo.current = true;
+    try {
+      const r = await aderirObjetivos([o]);
+      if (r.bloqueados?.includes(o)) {
+        meliAderindo.current = false;
+        alert('Este módulo foi desativado pelo suporte. Fale com a gente pela Ajuda para reativar.');
+        return;
+      }
+    } catch (err) {
+      meliAderindo.current = false;
+      console.error('Erro ao aderir:', err);
+      alert('Não foi possível ativar agora. Tente de novo em instantes.');
+      return;
+    }
+    if (o === 'meli') setMainView('meli');
+    else if (o === 'conteudo') setWorkspace('content');
+    else setMainView('agenteProdutos');
+  };
   // "Abrir" de uma tarefa da semana / de um cartão de Ferramentas.
-  const abrirDestino = (destino: DestinoTarefa, tarefa?: { missao?: ItemId }) => {
+  const abrirDestino = (destino: DestinoTarefa, tarefa?: { missao?: ItemId; montar?: Objetivo }) => {
+    if (destino === 'montar') { if (tarefa?.montar) void montarPeca(tarefa.montar); return; }
     if (destino === 'missao') { if (tarefa?.missao) void acaoDaTrilha(tarefa.missao, 'agora'); return; }
     // Com agente, Produtos abre a tela do agente (F2); a tabela fica a um toque dela.
-    if (destino === 'produtos') setMainView(hasContentAgent || hasOperationsAgent ? 'agenteProdutos' : 'products');
+    if (destino === 'produtos') setMainView(temAgente ? 'agenteProdutos' : 'products');
     else if (destino === 'conteudo') setWorkspace('content');
     else if (destino === 'meli') setMainView(hasMeliListingOptimizer ? 'meli' : 'products');
     // Com agente, uma conexão com alerta abre Fontes e conectores (A4), que tem o Verificar.
-    else if (destino === 'integracoes') setMainView(hasContentAgent || hasOperationsAgent ? 'fontes' : 'integrations');
+    else if (destino === 'integracoes') setMainView(temAgente ? 'fontes' : 'integrations');
     else setMainView('atividade');
   };
   // "Abrir na ferramenta" de um card do Alfred: a tela exata do item.
@@ -356,8 +393,9 @@ export default function App() {
   // Conectar/revalidar/gerenciar na tela de fontes: cada fonte se liga na
   // tela que já existe para ela — a de Integrações para ERPs e a Wake.
   const conectarFonte = (chave: ChaveFonte) => {
-    if (chave === 'meli') abrirDestino('meli');
-    else if (chave === 'content') abrirDestino('conteudo');
+    // Sem o módulo, "Conectar" é a adesão (livre) e já abre a tela da peça.
+    if (chave === 'meli') { if (hasMeliListingOptimizer) abrirDestino('meli'); else void montarPeca('meli'); }
+    else if (chave === 'content') { if (hasContentAgent) abrirDestino('conteudo'); else void montarPeca('conteudo'); }
     else if (chave === 'produtos') abrirDestino('produtos');
     else setMainView('integrations');
   };
@@ -525,8 +563,9 @@ export default function App() {
   // usuário estiver no módulo, volta ao catálogo sem manter a tela protegida
   // montada no client.
   useEffect(() => {
-    if (mainView === 'meli' && !hasMeliListingOptimizer) setMainView('products');
+    if (mainView === 'meli' && !hasMeliListingOptimizer && !meliAderindo.current) setMainView('products');
   }, [hasMeliListingOptimizer, mainView]);
+  useEffect(() => { if (hasMeliListingOptimizer) meliAderindo.current = false; }, [hasMeliListingOptimizer]);
 
   // Aterrissagem na trilha: quem é da coorte e já concluiu a primeira missão
   // abre na trilha — uma vez por sessão. `jornadaConcluida` chega de forma
@@ -535,10 +574,14 @@ export default function App() {
   // "já aterrissou" e não forçamos a trilha por cima da navegação dele.
   const trilhaAterrissou = useRef(false);
   useEffect(() => {
-    if (!isCoorteMissao(cohort) || !jornadaConcluida || trilhaAterrissou.current) return;
+    if (!isCoorteMissao(cohort) || trilhaAterrissou.current) return;
+    // v2: abre no Alfred assim que já escolheu objetivos e não há missão em
+    // curso — quem começou pelo ML não tem doc de missão para concluir.
+    const v2 = isCoorteObjetivos(cohort);
+    if (v2 ? !aterrissaNoAlfred({ v2, objetivos: objetivos.length, emCurso: !!missao && !missao.concluidaEm, jornadaConcluida }) : !jornadaConcluida) return;
     trilhaAterrissou.current = true;
-    if (mainViewRef.current === 'products') setMainView('missoes');
-  }, [cohort, jornadaConcluida]);
+    if (mainViewRef.current === 'products') setMainView(v2 ? 'home' : 'missoes');
+  }, [cohort, jornadaConcluida, objetivos.length, missao]);
 
   // Track changes for auto-save
   useEffect(() => {
@@ -597,6 +640,9 @@ export default function App() {
               // Coorte da jornada de onboarding. Gravada só na criação: contas
               // existentes seguem sem o campo e permanecem no fluxo legado.
               cohort: COORTE_ATUAL,
+              // A coorte nova nasce com o Agente de Produto: é o que liga o
+              // shell do Alfred e o provider `produtos` desde o primeiro login.
+              modules: { produtos: true },
               ...(phone ? { phone } : {}),
             });
             setCredits(initialCredits);
@@ -618,6 +664,9 @@ export default function App() {
               setCredits(snap.data().credits ?? 0);
               setHasContentAgent(snap.data().modules?.contentAgent === true);
               setHasOperationsAgent(snap.data().modules?.operationsAgent === true);
+              setHasProdutosModule(snap.data().modules?.produtos === true);
+              setModulosConta((snap.data().modules ?? {}) as Record<string, unknown>);
+              setObjetivos(Array.isArray(snap.data().objetivos) ? snap.data().objetivos : []);
               setHasVideoModule(snap.data().modules?.video === true);
               setHasBlogModule(snap.data().modules?.blog === true);
               setHasMeliListingOptimizer(snap.data().modules?.meliListingOptimizer === true);
@@ -679,6 +728,25 @@ export default function App() {
   }, []);
 
   // O que só o App sabe e a semana do Alfred usa (ver ExtrasSemana em useSemana.ts).
+  // Coorte v2: o item "Conectar seu Mercado Livre" da trilha fica feito com o
+  // OAuth ativo. EstadoMeli é `{ conectado, status }` ou `{ erro }`; falha de
+  // checagem não conta como conectado.
+  const estadoMeliTrilha = useEstadoMeli(isCoorteObjetivos(cohort) && hasMeliListingOptimizer);
+  const meliConectadoTrilha = !!estadoMeliTrilha && 'conectado' in estadoMeliTrilha && estadoMeliTrilha.conectado === true;
+  // As peças do Alfred para esta conta (capacidades.ts). O status do ML não é
+  // conhecido aqui; para a Semana basta saber o que está montado ou não.
+  const pecasAlfred = useMemo(() => montarAlfred({
+    objetivos,
+    // Módulos crus: ausente ≠ false (false = revogado pelo admin).
+    modules: modulosConta as ModulosConta,
+    conexoes: { erp: products.some((p) => p._tinyProductId || p._blingProductId || p._idworksProductId), meli: false, site: projetosConteudo > 0 },
+    marcos: { produtos: products.length, produtosComDescricao: products.filter((p) => String(p['Descrição complementar'] ?? '').trim()).length },
+  }), [objetivos, modulosConta, products, projetosConteudo]);
+  // Fontes que o admin desligou: não aparecem como "Disponíveis".
+  const fontesRevogadas = useMemo<ChaveFonte[]>(() => [
+    ...(objetivoRevogado(modulosConta, 'meli') ? ['meli' as const] : []),
+    ...(objetivoRevogado(modulosConta, 'conteudo') ? ['content' as const] : []),
+  ], [modulosConta]);
   const extrasSemana = useMemo<ExtrasSemana>(() => ({
     categories: existingCategories,
     hasVideo: hasVideoModule,
@@ -690,6 +758,7 @@ export default function App() {
           produtos: products.length,
           erpConectado: products.some((p) => p._tinyProductId || p._blingProductId || p._idworksProductId),
           empresaCompleta: !!companyData?.cnpj,
+          ...(isCoorteObjetivos(cohort) ? { objetivos, meliConectado: meliConectadoTrilha } : {}),
         }).filter((m) => m.estado !== 'opcional');
         return { feitas: t.filter((m) => m.estado === 'feito').length, total: t.length };
       })()
@@ -700,10 +769,14 @@ export default function App() {
         produtos: products.length,
         erpConectado: products.some((p) => p._tinyProductId || p._blingProductId || p._idworksProductId),
         empresaCompleta: !!companyData?.cnpj,
+        ...(isCoorteObjetivos(cohort) ? { objetivos, meliConectado: meliConectadoTrilha } : {}),
       }).filter((m) => m.estado === 'agora' || m.estado === 'opcional')
         .map((m) => ({ id: m.id, titulo: m.titulo, meta: m.meta, estado: m.estado as 'agora' | 'opcional' }))
       : undefined,
-  }), [existingCategories, hasVideoModule, cohort, todasMissoes, products, companyData?.cnpj]);
+    pecaParaMontar: temAgente
+      ? (() => { const p = proximaPecaParaMontar(pecasAlfred, objetivos); return p && p.objetivo ? { objetivo: p.objetivo, titulo: p.titulo, libera: p.libera } : null; })()
+      : null,
+  }), [existingCategories, hasVideoModule, cohort, todasMissoes, products, companyData?.cnpj, objetivos, meliConectadoTrilha, pecasAlfred, temAgente]);
 
   // Cost of a given action, resolved against the loaded config (fallbacks inside).
   const getCreditCost = (key: string) => resolveCreditCost(creditCosts, key);
@@ -1913,11 +1986,12 @@ export default function App() {
     await enviarContatoMissao(whatsapp);
   };
 
-  // Quem inicia a Missão Conteúdo passa a ter o workspace de Conteúdo e o
-  // blog nativo — sem isso o blog criado na missão ficaria inalcançável.
+  // Quem inicia a Missão Conteúdo adere ao Conteúdo pelo servidor (liga
+  // contentAgent + blog e paga o crédito de missão uma vez) — sem isso o blog
+  // criado na missão ficaria inalcançável.
   const habilitarConteudo = async () => {
     if (!user) return;
-    await updateDoc(doc(db, `users/${user.uid}`), { 'modules.contentAgent': true, 'modules.blog': true });
+    await aderirObjetivos(['conteudo']);
   };
 
   const custoMissaoConteudo =
@@ -2467,12 +2541,14 @@ Retorne APENAS um JSON válido no seguinte formato:
     // Item feito só leva ao resultado — nunca reinicia a missão: iniciarMissao
     // numa missão concluída recria o doc e apaga a conclusão.
     if (estado === 'feito') {
+      if (id === 'meli') { setMainView('meli'); return; }
       if (id === 'produto' || id === 'catalogo') { setMainView('products'); return; }
       if (id === 'conteudo' || id === 'publicar-blog') { setWorkspace('content'); return; }
       if (id === 'erp') { setMainView('integrations'); return; }
       if (id === 'empresa') { setMainView('company'); }
       return;
     }
+    if (id === 'meli') { setMainView('meli'); return; }
     if (id === 'produto' || id === 'conteudo') { setMissao(await iniciarMissao(user.uid, id)); return; }
     if (id === 'catalogo') { setMainView('products'); handleOpenProductUrlImport(); return; }
     if (id === 'erp') { setMainView('integrations'); return; }
@@ -3248,7 +3324,6 @@ Retorne APENAS um JSON válido no seguinte formato:
   // Com agente, o desktop navega pelo trilho de vidro (três portas + Conta);
   // o menu escuro fica só como gaveta do telefone. Telas de ferramenta contam
   // como Ferramentas; as de conta (créditos, empresa…) não acendem porta.
-  const temAgente = hasContentAgent || hasOperationsAgent;
   const telaDoAgente = ['home', 'atividade', 'ferramentas', 'agenteProdutos', 'fontes'].includes(mainView);
   // Telas antigas já convertidas para os tokens `--ag-*`: seguem o tema do Alfred.
   const telaComTokens = ['history', 'products', 'categories', 'meli'].includes(mainView);
@@ -3374,7 +3449,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                 onSwitchToProduct={() => setWorkspace('product')}
                 abrirArtigo={conteudoAbrirArtigo}
                 onArtigoAberto={() => setConteudoAbrirArtigo(null)}
-                onPedirAlfred={hasContentAgent || hasOperationsAgent ? (pedido) => { setWorkspace('product'); setPromptAlfred(pedido); setMainView('home'); } : undefined}
+                onPedirAlfred={temAgente ? (pedido) => { setWorkspace('product'); setPromptAlfred(pedido); setMainView('home'); } : undefined}
                 onBuyCredits={() => { setIsCreditPurchaseOpen(true); trackCreditPurchaseOpen(); }}
                 onLogout={handleLogout}
                 agente={temAgente}
@@ -3414,9 +3489,28 @@ Retorne APENAS um JSON válido no seguinte formato:
       setMissao(s);
       salvarMissao(user.uid, s).catch((err) => console.error('Erro ao salvar missão:', err));
     };
-    const aoConcluir = () => { setJornadaConcluida(true); setMainView('missoes'); };
+    const aoConcluir = () => { setJornadaConcluida(true); setMainView(isCoorteObjetivos(cohort) ? 'home' : 'missoes'); };
 
-    if (!emCurso && !jornadaConcluida) {
+    // v2: a Tela 0 é a dos objetivos, até o cliente escolher. Uma missão por
+    // sessão: só o primeiro objetivo abre; os outros ficam na Semana.
+    if (isCoorteObjetivos(cohort) && !emCurso && !jornadaConcluida && objetivos.length === 0) {
+      return (
+        <ObjetivosPicker
+          onComecar={async (sel) => {
+            await aderirObjetivos(sel);
+            const primeiro = sel[0];
+            const missaoId = missaoDoObjetivo(primeiro);
+            trackMissionStarted({ missionId: missaoId ?? 'meli', sugerida: null, aceitouSugestao: false, objetivos: sel });
+            if (missaoId) { setMissao(await iniciarMissao(user.uid, missaoId)); return; }
+            // Mercado Livre ainda sem missão própria: abre o otimizador.
+            meliAderindo.current = true;
+            setObjetivos(sel);
+            setMainView('meli');
+          }}
+        />
+      );
+    }
+    if (!isCoorteObjetivos(cohort) && !emCurso && !jornadaConcluida) {
       return (
         <MissionPicker
           signal={{
@@ -3913,6 +4007,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               hasContentAgent={hasContentAgent}
               hasOperationsAgent={hasOperationsAgent}
               hasMeli={hasMeliListingOptimizer}
+              revogados={fontesRevogadas}
               onOpenIntegrations={() => setMainView('integrations')}
               onAbrirFontes={() => setMainView('fontes')}
               onAbrirAtividade={() => setMainView('atividade')}
@@ -3926,6 +4021,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               uid={user.uid}
               hasMeli={hasMeliListingOptimizer}
               hasContentAgent={hasContentAgent}
+              revogados={fontesRevogadas}
               onVoltar={() => setMainView('home')}
               onConectar={conectarFonte}
             />
@@ -3946,6 +4042,8 @@ Retorne APENAS um JSON válido no seguinte formato:
               hasMeli={hasMeliListingOptimizer}
               onAbrir={abrirDestino}
               onAbrirView={(v) => { if (v === 'history') fetchCreditLogs(); setMainView(v); }}
+              pecas={pecasAlfred}
+              onMontar={(o) => { void montarPeca(o); }}
               onPedirAlfred={(p) => { setPromptAlfred({ texto: p }); setMainView('home'); }}
             />
           ) : mainView === 'agenteProdutos' ? (
@@ -5710,7 +5808,7 @@ Retorne APENAS um JSON válido no seguinte formato:
       {!((mainView === 'home' || mainView === 'agenteProdutos') && alfredFocado) && (
         <AppTabBar
           atual={mainView === 'agenteProdutos' ? 'ferramentas' : mainView === 'fontes' ? 'home' : mainView}
-          mostrarAgente={hasContentAgent || hasOperationsAgent}
+          mostrarAgente={temAgente}
           pendentes={pendentesAlfred}
           onNavegar={setMainView}
           onNovoProduto={handleOpenProductUrlImport}

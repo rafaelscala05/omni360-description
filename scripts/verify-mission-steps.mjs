@@ -5,7 +5,7 @@
 import {
   MISSOES, avancar, criarEstadoInicial, produtosSemDescricao, progresso, proximoStep, stepConcluido, sugerirTrilha,
 } from '../src/modules/onboarding/mission/missionSteps.ts';
-import { STEP_ORDER } from '../src/modules/onboarding/mission/missionTypes.ts';
+import { STEP_ORDER, isCoorteMissao, isCoorteObjetivos, COORTE_ATUAL } from '../src/modules/onboarding/mission/missionTypes.ts';
 
 let failures = 0;
 function check(label, actual, expected) {
@@ -83,6 +83,14 @@ const cat = [
 check('só produtos sem descrição, na ordem', produtosSemDescricao(cat).map((p) => p._id), ['b', 'c', 'd']);
 check('respeita o limite', produtosSemDescricao(cat, 2).map((p) => p._id), ['b', 'c']);
 check('catálogo todo descrito', produtosSemDescricao([{ _id: 'a', 'Descrição complementar': 'x' }]), []);
+
+check('coorte atual é a v2', COORTE_ATUAL, 'missao-v2');
+check('v1 continua na jornada de missão', isCoorteMissao('missao-v1'), true);
+check('v2 está na jornada de missão', isCoorteMissao('missao-v2'), true);
+check('sem coorte é legado', isCoorteMissao(undefined), false);
+check('v1 não vê a Tela 0 de objetivos', isCoorteObjetivos('missao-v1'), false);
+check('v2 vê a Tela 0 de objetivos', isCoorteObjetivos('missao-v2'), true);
+check('lixo não é coorte', isCoorteObjetivos('missao-v3'), false);
 
 console.log(failures === 0 ? '\nTudo ok.' : `\n${failures} falha(s).`);
 process.exit(failures === 0 ? 0 : 1);

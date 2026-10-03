@@ -34,7 +34,9 @@ check('disponível não exibe ferramentas', f.disponiveis[0].ferramentas, 0);
 check('resumo do rodapé', resumoFontes(f), { ativas: 6, paraConectar: 1, alerta: 2 });
 
 const semModulos = entradasDoApp({ integracoes, hasMeli: false, meli: { conectado: true, status: 'active' }, hasContentAgent: false });
-check('sem módulo, sem Mercado Livre nem Conteúdo', semModulos.some((e) => e.chave === 'meli' || e.chave === 'content'), false);
+const dispSemModulo = montarFontes(semModulos).disponiveis.filter((x) => x.chave === 'meli' || x.chave === 'content');
+check('sem módulo, ML e Conteúdo ficam disponíveis para montar', dispSemModulo.map((x) => x.chave), ['meli', 'content']);
+check('sem módulo, a linha diz o que libera', dispSemModulo.map((x) => x.linha), ['Libera: anúncios e propostas do otimizador', 'Libera: artigos, calendário e SEO']);
 
 const reauth = montarFontes(entradasDoApp({ integracoes: [], hasMeli: true, meli: { conectado: false, status: 'reauthorization_required' }, hasContentAgent: false }));
 check('ML com autorização vencida vai para atenção, mesmo com connected false', reauth.atencao.map((x) => [x.chave, x.acao]), [['meli', 'reconectar']]);
@@ -43,12 +45,16 @@ const meliErro = montarFontes(entradasDoApp({ integracoes: [], hasMeli: true, me
 check('falha ao checar o ML pede verificação', meliErro.atencao.map((x) => x.acao), ['verificar']);
 
 const meliOff = montarFontes(entradasDoApp({ integracoes: [], hasMeli: true, meli: { conectado: false, status: 'disconnected' }, hasContentAgent: false }));
-check('ML desconectado fica disponível', meliOff.disponiveis.map((x) => x.chave), ['meli']);
+check('ML desconectado fica disponível', meliOff.disponiveis.filter((x) => x.chave === 'meli').map((x) => x.chave), ['meli']);
 
 const meliCarregando = entradasDoApp({ integracoes: [], hasMeli: true, meli: null, hasContentAgent: false });
 check('ML ainda não checado não aparece (nem como disponível)', meliCarregando.some((e) => e.chave === 'meli'), false);
 
 check('chave repetida não duplica', montarFontes([{ chave: 'tiny', conectado: true }, { chave: 'tiny', conectado: false }]).conectados.length, 1);
+
+const bloqueado = entradasDoApp({ integracoes: [], hasMeli: false, meli: null, hasContentAgent: false, revogados: ['meli'] });
+check('ML revogado não aparece em Fontes', bloqueado.some((e) => e.chave === 'meli'), false);
+check('Conteúdo não revogado segue disponível', bloqueado.some((e) => e.chave === 'content'), true);
 
 console.log(failures ? `\n${failures} falha(s)` : '\ntudo certo');
 process.exit(failures ? 1 : 0);
