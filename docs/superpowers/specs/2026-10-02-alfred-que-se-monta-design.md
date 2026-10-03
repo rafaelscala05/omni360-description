@@ -56,7 +56,7 @@ Toda peça passa por quatro camadas, sempre nesta ordem, cada uma com um único 
 | Camada | Pergunta ao cliente | Onde mora |
 |---|---|---|
 | Objetivo | o que você quer resolver | `users/{uid}.objetivos: Objetivo[]` |
-| Módulo | ativar este agente | `users/{uid}.modules.*` (só servidor) + `adesoes/{modulo}` |
+| Módulo | ativar este agente | `users/{uid}.modules.*` (só servidor) + `adesoes/{objetivo}` |
 | Conexão | conectar a fonte de dados | estado das integrações já existente |
 | Permissão | pode fazer sem perguntar | `users/{uid}/agent_settings/config` |
 
