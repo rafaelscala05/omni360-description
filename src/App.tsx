@@ -24,7 +24,8 @@ import { useAgentTheme } from './modules/agent/theme';
 import type { ChaveFonte } from './modules/agent/conectores';
 import type { PedidoAlfred } from './types/agent';
 import AppTabBar from './components/AppTabBar';
-import { COORTE_ATUAL, isCoorteMissao } from './modules/onboarding/mission/missionTypes';
+import { COORTE_ATUAL, isCoorteMissao, isCoorteObjetivos } from './modules/onboarding/mission/missionTypes';
+import { temAlfred, type Objetivo } from './modules/agent/capacidades';
 import type { MissionState } from './modules/onboarding/mission/missionTypes';
 import MissionPicker from './modules/onboarding/mission/MissionPicker';
 import MissaoProduto from './modules/onboarding/mission/MissaoProduto';
@@ -308,22 +309,27 @@ export default function App() {
   const [hasVideoModule, setHasVideoModule] = useState<boolean>(false);
   const [hasBlogModule, setHasBlogModule] = useState<boolean>(false);
   const [hasMeliListingOptimizer, setHasMeliListingOptimizer] = useState<boolean>(false);
+  const [hasProdutosModule, setHasProdutosModule] = useState<boolean>(false);
+  const [objetivos, setObjetivos] = useState<Objetivo[]>([]);
+  // Uma regra só para "esta conta tem Alfred" (capacidades.ts) — o mesmo
+  // temAlfred que o servidor usa para liberar o provider `produtos`.
+  const temAgente = temAlfred({ produtos: hasProdutosModule, contentAgent: hasContentAgent, operationsAgent: hasOperationsAgent });
   // Coorte da jornada de missão (users/{uid}.cohort). null = ainda não lida ou conta legada.
   const [cohort, setCohort] = useState<string | null>(null);
   // Preenchido depois de loadFromCloud: o Alfred gravou no catálogo, relê do Firestore.
   const catalogoAlteradoRef = useRef<() => void>(() => {});
-  const pendentesAlfred = usePendentesAlfred(!!user && (hasContentAgent || hasOperationsAgent), () => catalogoAlteradoRef.current());
+  const pendentesAlfred = usePendentesAlfred(!!user && temAgente, () => catalogoAlteradoRef.current());
   // Vídeo aprovado no chat: o app aberto o inicia e segura a requisição, como o wizard.
-  useVideosDoAlfred(!!user && (hasContentAgent || hasOperationsAgent));
+  useVideosDoAlfred(!!user && temAgente);
   // "Abrir" de uma tarefa da semana / de um cartão de Ferramentas.
   const abrirDestino = (destino: DestinoTarefa, tarefa?: { missao?: ItemId }) => {
     if (destino === 'missao') { if (tarefa?.missao) void acaoDaTrilha(tarefa.missao, 'agora'); return; }
     // Com agente, Produtos abre a tela do agente (F2); a tabela fica a um toque dela.
-    if (destino === 'produtos') setMainView(hasContentAgent || hasOperationsAgent ? 'agenteProdutos' : 'products');
+    if (destino === 'produtos') setMainView(temAgente ? 'agenteProdutos' : 'products');
     else if (destino === 'conteudo') setWorkspace('content');
     else if (destino === 'meli') setMainView(hasMeliListingOptimizer ? 'meli' : 'products');
     // Com agente, uma conexão com alerta abre Fontes e conectores (A4), que tem o Verificar.
-    else if (destino === 'integracoes') setMainView(hasContentAgent || hasOperationsAgent ? 'fontes' : 'integrations');
+    else if (destino === 'integracoes') setMainView(temAgente ? 'fontes' : 'integrations');
     else setMainView('atividade');
   };
   // "Abrir na ferramenta" de um card do Alfred: a tela exata do item.
@@ -534,7 +540,7 @@ export default function App() {
   useEffect(() => {
     if (!isCoorteMissao(cohort) || !jornadaConcluida || trilhaAterrissou.current) return;
     trilhaAterrissou.current = true;
-    if (mainViewRef.current === 'products') setMainView('missoes');
+    if (mainViewRef.current === 'products') setMainView(isCoorteObjetivos(cohort) ? 'home' : 'missoes');
   }, [cohort, jornadaConcluida]);
 
   // Track changes for auto-save
@@ -594,6 +600,9 @@ export default function App() {
               // Coorte da jornada de onboarding. Gravada só na criação: contas
               // existentes seguem sem o campo e permanecem no fluxo legado.
               cohort: COORTE_ATUAL,
+              // A coorte nova nasce com o Agente de Produto: é o que liga o
+              // shell do Alfred e o provider `produtos` desde o primeiro login.
+              modules: { produtos: true },
               ...(phone ? { phone } : {}),
             });
             setCredits(initialCredits);
@@ -615,6 +624,8 @@ export default function App() {
               setCredits(snap.data().credits ?? 0);
               setHasContentAgent(snap.data().modules?.contentAgent === true);
               setHasOperationsAgent(snap.data().modules?.operationsAgent === true);
+              setHasProdutosModule(snap.data().modules?.produtos === true);
+              setObjetivos(Array.isArray(snap.data().objetivos) ? snap.data().objetivos : []);
               setHasVideoModule(snap.data().modules?.video === true);
               setHasBlogModule(snap.data().modules?.blog === true);
               setHasMeliListingOptimizer(snap.data().modules?.meliListingOptimizer === true);
@@ -3246,7 +3257,6 @@ Retorne APENAS um JSON válido no seguinte formato:
   // Com agente, o desktop navega pelo trilho de vidro (três portas + Conta);
   // o menu escuro fica só como gaveta do telefone. Telas de ferramenta contam
   // como Ferramentas; as de conta (créditos, empresa…) não acendem porta.
-  const temAgente = hasContentAgent || hasOperationsAgent;
   const telaDoAgente = ['home', 'atividade', 'ferramentas', 'agenteProdutos', 'fontes'].includes(mainView);
   // Telas antigas já convertidas para os tokens `--ag-*`: seguem o tema do Alfred.
   const telaComTokens = ['history', 'products', 'categories', 'meli'].includes(mainView);
@@ -3340,7 +3350,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                 onSwitchToProduct={() => setWorkspace('product')}
                 abrirArtigo={conteudoAbrirArtigo}
                 onArtigoAberto={() => setConteudoAbrirArtigo(null)}
-                onPedirAlfred={hasContentAgent || hasOperationsAgent ? (pedido) => { setWorkspace('product'); setPromptAlfred(pedido); setMainView('home'); } : undefined}
+                onPedirAlfred={temAgente ? (pedido) => { setWorkspace('product'); setPromptAlfred(pedido); setMainView('home'); } : undefined}
                 onBuyCredits={() => { setIsCreditPurchaseOpen(true); trackCreditPurchaseOpen(); }}
                 onLogout={handleLogout}
                 agente={temAgente}
@@ -3380,7 +3390,7 @@ Retorne APENAS um JSON válido no seguinte formato:
       setMissao(s);
       salvarMissao(user.uid, s).catch((err) => console.error('Erro ao salvar missão:', err));
     };
-    const aoConcluir = () => { setJornadaConcluida(true); setMainView('missoes'); };
+    const aoConcluir = () => { setJornadaConcluida(true); setMainView(isCoorteObjetivos(cohort) ? 'home' : 'missoes'); };
 
     if (!emCurso && !jornadaConcluida) {
       return (
@@ -3529,7 +3539,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             </button>
           )}
           {/* Chat unificado (Alfreds) — só aparece pra quem tem pelo menos um módulo de agente habilitado (conteúdo ou operações). */}
-          {(hasContentAgent || hasOperationsAgent) && (
+          {temAgente && (
             <button
               onClick={() => { setMainView('home'); setIsSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'home' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
@@ -3538,7 +3548,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               <Sparkles className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Alfred'}
             </button>
           )}
-          {(hasContentAgent || hasOperationsAgent) && (
+          {temAgente && (
             <button
               onClick={() => { setMainView('atividade'); setIsSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'atividade' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
@@ -3560,7 +3570,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           {/* As três portas (Alfred · Atividade · Ferramentas) em cima; daqui
               para baixo, as telas de cada ferramenta — o mesmo desenho da
               tab bar do telefone, com o resto à mão no desktop. */}
-          {(hasContentAgent || hasOperationsAgent) && (
+          {temAgente && (
             <div className="my-2 mx-3 h-px bg-white/10" role="separator" />
           )}
           <button
@@ -3821,7 +3831,7 @@ Retorne APENAS um JSON válido no seguinte formato:
         {/* Princípio "um próximo passo sempre visível": no desktop, em toda
             tela menos Ferramentas (que já abre com o mesmo cartão no topo) e o
             Alfred (que o mostra logo acima do campo de digitar). */}
-        {(hasContentAgent || hasOperationsAgent) && mainView !== 'ferramentas' && mainView !== 'agenteProdutos' && mainView !== 'home' && (
+        {temAgente && mainView !== 'ferramentas' && mainView !== 'agenteProdutos' && mainView !== 'home' && (
           <ProximoPassoBar
             uid={user.uid}
             products={products}
@@ -3896,7 +3906,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               uid={user.uid}
               products={products}
               extras={extrasSemana}
-              hasAgente={hasContentAgent || hasOperationsAgent}
+              hasAgente={temAgente}
               hasContentAgent={hasContentAgent}
               hasMeli={hasMeliListingOptimizer}
               onAbrir={abrirDestino}
@@ -3916,7 +3926,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               onAbrirView={(v) => setMainView(v)}
               onPedirAlfred={(pedido) => { setPromptAlfred(pedido); setMainView('home'); }}
               onVoltar={() => setMainView('ferramentas')}
-              hasAgente={hasContentAgent || hasOperationsAgent}
+              hasAgente={temAgente}
               uid={user?.uid ?? ''}
               credits={credits}
               onFocoChange={setAlfredFocado}
@@ -3944,7 +3954,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             renderHistoryView()
           ) : mainView === 'meli' && hasMeliListingOptimizer ? (
             <Suspense fallback={<div className="h-full flex items-center justify-center text-(--ag-text-3)"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
-              <div className="alfreds" data-tema={temaTelas}><MeliOptimizer credits={{ ensureCredits, consumeCredit }} abrirItemId={meliAbrirItem} onItemAberto={() => setMeliAbrirItem(null)} onPedirAlfred={hasContentAgent || hasOperationsAgent ? (pedido) => { setPromptAlfred(pedido); setMainView('home'); } : undefined} /></div>
+              <div className="alfreds" data-tema={temaTelas}><MeliOptimizer credits={{ ensureCredits, consumeCredit }} abrirItemId={meliAbrirItem} onItemAberto={() => setMeliAbrirItem(null)} onPedirAlfred={temAgente ? (pedido) => { setPromptAlfred(pedido); setMainView('home'); } : undefined} /></div>
             </Suspense>
           ) : mainView === 'integrations' ? (
             <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} onTinyImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getTinyPushPayload={buildTinyPushPayload} tinyPushCandidateCount={tinySelectedProducts(products).length} onBlingImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getBlingPushPayload={buildBlingPushPayload} getBlingPushCandidates={getBlingPushCandidates} onBlingPushed={handleBlingPushed} onIdworksImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getIdworksPushPayload={buildIdworksPushPayload} getIdworksPushCandidates={getIdworksPushCandidates} onIdworksPushed={handleIdworksPushed} />
@@ -5619,7 +5629,7 @@ Retorne APENAS um JSON válido no seguinte formato:
       {!((mainView === 'home' || mainView === 'agenteProdutos') && alfredFocado) && (
         <AppTabBar
           atual={mainView === 'agenteProdutos' ? 'ferramentas' : mainView === 'fontes' ? 'home' : mainView}
-          mostrarAgente={hasContentAgent || hasOperationsAgent}
+          mostrarAgente={temAgente}
           pendentes={pendentesAlfred}
           onNavegar={setMainView}
           onNovoProduto={handleOpenProductUrlImport}

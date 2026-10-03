@@ -7,12 +7,17 @@ export type StepId = 'contexto' | 'palco' | 'chegada';
 export const STEP_ORDER: readonly StepId[] = ['contexto', 'palco', 'chegada'] as const;
 
 /** Coorte gravada em users/{uid}.cohort na criação da conta. */
-export type MissionCohort = 'missao-v1';
-export const COORTE_ATUAL: MissionCohort = 'missao-v1';
+export type MissionCohort = 'missao-v1' | 'missao-v2';
+export const COORTE_ATUAL: MissionCohort = 'missao-v2';
 
-/** Única porta da jornada nova. Ausência de coorte = fluxo legado. */
+/** Jornada de missão (v1 e v2). Ausência de coorte = fluxo legado. */
 export function isCoorteMissao(cohort: unknown): boolean {
-  return cohort === COORTE_ATUAL;
+  return cohort === 'missao-v1' || cohort === 'missao-v2';
+}
+
+/** Só a v2: nasce no Alfred e escolhe objetivos na Tela 0 nova. */
+export function isCoorteObjetivos(cohort: unknown): boolean {
+  return cohort === 'missao-v2';
 }
 
 /** Sinal da conta usado pela Tela 0 para sugerir uma trilha. */
