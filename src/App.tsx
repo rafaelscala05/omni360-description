@@ -380,8 +380,9 @@ export default function App() {
   // Conectar/revalidar/gerenciar na tela de fontes: cada fonte se liga na
   // tela que já existe para ela — a de Integrações para ERPs e a Wake.
   const conectarFonte = (chave: ChaveFonte) => {
-    if (chave === 'meli') abrirDestino('meli');
-    else if (chave === 'content') abrirDestino('conteudo');
+    // Sem o módulo, "Conectar" é a adesão (livre) e já abre a tela da peça.
+    if (chave === 'meli') { if (hasMeliListingOptimizer) abrirDestino('meli'); else void montarPeca('meli'); }
+    else if (chave === 'content') { if (hasContentAgent) abrirDestino('conteudo'); else void montarPeca('conteudo'); }
     else if (chave === 'produtos') abrirDestino('produtos');
     else setMainView('integrations');
   };
@@ -3953,6 +3954,8 @@ Retorne APENAS um JSON válido no seguinte formato:
               hasMeli={hasMeliListingOptimizer}
               onAbrir={abrirDestino}
               onAbrirView={(v) => { if (v === 'history') fetchCreditLogs(); setMainView(v); }}
+              pecas={pecasAlfred}
+              onMontar={(o) => { void montarPeca(o); }}
               onPedirAlfred={(p) => { setPromptAlfred({ texto: p }); setMainView('home'); }}
             />
           ) : mainView === 'agenteProdutos' ? (
