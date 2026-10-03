@@ -52,5 +52,9 @@ check('ML ainda não checado não aparece (nem como disponível)', meliCarregand
 
 check('chave repetida não duplica', montarFontes([{ chave: 'tiny', conectado: true }, { chave: 'tiny', conectado: false }]).conectados.length, 1);
 
+const bloqueado = entradasDoApp({ integracoes: [], hasMeli: false, meli: null, hasContentAgent: false, revogados: ['meli'] });
+check('ML revogado não aparece em Fontes', bloqueado.some((e) => e.chave === 'meli'), false);
+check('Conteúdo não revogado segue disponível', bloqueado.some((e) => e.chave === 'content'), true);
+
 console.log(failures ? `\n${failures} falha(s)` : '\ntudo certo');
 process.exit(failures ? 1 : 0);

@@ -49,5 +49,16 @@ const p3 = planejarAdesao({ pedidos: ['conteudo'], jaAderidos: [], config: { mis
 check('conteúdo liga dois módulos', p3.campos, { 'modules.contentAgent': true, 'modules.blog': true });
 check('conteúdo com config', p3.creditos, 40);
 
+// Revogação do admin: módulo gravado como false não volta pela adesão.
+const p5 = planejarAdesao({ pedidos: ['meli', 'produto'], jaAderidos: [], config: undefined, modulos: { meliListingOptimizer: false } });
+check('revogado não é novo', p5.novos, ['produto']);
+check('revogado não liga módulo', p5.campos, { 'modules.produtos': true });
+check('revogado não paga', p5.creditos, 10);
+check('revogado é reportado', p5.bloqueados, ['meli']);
+const p6 = planejarAdesao({ pedidos: ['conteudo'], jaAderidos: [], config: undefined, modulos: { blog: false } });
+check('conteúdo com um dos módulos revogado fica bloqueado', p6.bloqueados, ['conteudo']);
+check('módulo ausente continua aderível', planejarAdesao({ pedidos: ['meli'], jaAderidos: [], config: undefined, modulos: {} }).novos, ['meli']);
+check('sem modulos informado continua aderível', planejarAdesao({ pedidos: ['meli'], jaAderidos: [], config: undefined }).bloqueados, []);
+
 console.log(failures === 0 ? '\nTudo ok.' : `\n${failures} falha(s).`);
 process.exit(failures === 0 ? 0 : 1);

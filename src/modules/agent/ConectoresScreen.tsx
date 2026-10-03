@@ -14,6 +14,8 @@ interface Props {
   uid: string;
   hasMeli: boolean;
   hasContentAgent: boolean;
+  /** Fontes cujo módulo o admin desligou — não aparecem como disponíveis. */
+  revogados?: ChaveFonte[];
   onVoltar: () => void;
   /** Conectar, revalidar ou gerenciar: leva à tela onde aquela conexão se faz. */
   onConectar: (chave: ChaveFonte) => void;
@@ -113,7 +115,7 @@ const Linha: React.FC<{ f: Fonte; primeira: boolean; verificando: boolean; onAca
  * separado em o que precisa de um toque, o que está ligado (e quantas
  * ferramentas libera) e o que ainda dá para conectar.
  */
-const ConectoresScreen: React.FC<Props> = ({ uid, hasMeli, hasContentAgent, onVoltar, onConectar }) => {
+const ConectoresScreen: React.FC<Props> = ({ uid, hasMeli, hasContentAgent, revogados, onVoltar, onConectar }) => {
   const { tema } = useAgentTheme();
   // Recarga manual ("Verificar"): refaz as checagens de status sem sair da tela.
   const [recarga, setRecarga] = useState(0);
@@ -152,8 +154,8 @@ const ConectoresScreen: React.FC<Props> = ({ uid, hasMeli, hasContentAgent, onVo
   }, [acoes]);
 
   const fontes = useMemo(
-    () => montarFontes(entradasDoApp({ integracoes, meli, hasMeli, hasContentAgent, projetos }), ferramentas, pendentes),
-    [integracoes, meli, hasMeli, hasContentAgent, projetos, ferramentas, pendentes],
+    () => montarFontes(entradasDoApp({ integracoes, meli, hasMeli, hasContentAgent, projetos, revogados }), ferramentas, pendentes),
+    [integracoes, meli, hasMeli, hasContentAgent, projetos, ferramentas, pendentes, revogados],
   );
 
   const acionar = (f: Fonte) => {

@@ -264,7 +264,7 @@ export function registerOnboardingRoutes(app: express.Application, deps: Onboard
         const adesoes = await Promise.all(pedido.objetivos.map((o) => tx.get(adesaoRef(o))));
         const jaAderidos = pedido.objetivos.filter((_, i) => adesoes[i].exists);
 
-        const plano = planejarAdesao({ pedidos: pedido.objetivos, jaAderidos, config: configSnap.data() });
+        const plano = planejarAdesao({ pedidos: pedido.objetivos, jaAderidos, config: configSnap.data(), modulos: userSnap.data()?.modules ?? {} });
         const agora = new Date().toISOString();
 
         for (const o of plano.novos) {
@@ -290,7 +290,7 @@ export function registerOnboardingRoutes(app: express.Application, deps: Onboard
             timestamp: agora,
           });
         }
-        return { novos: plano.novos, creditsAdded: plano.creditos };
+        return { novos: plano.novos, creditsAdded: plano.creditos, bloqueados: plano.bloqueados };
       });
 
       for (const o of result.novos) void recordEvent(decoded.uid, 'module_adopted', { objetivo: o });

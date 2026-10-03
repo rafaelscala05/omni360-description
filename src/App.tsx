@@ -25,13 +25,13 @@ import type { ChaveFonte } from './modules/agent/conectores';
 import type { PedidoAlfred } from './types/agent';
 import AppTabBar from './components/AppTabBar';
 import { COORTE_ATUAL, isCoorteMissao, isCoorteObjetivos } from './modules/onboarding/mission/missionTypes';
-import { montarAlfred, proximaPecaParaMontar, temAlfred, type Objetivo } from './modules/agent/capacidades';
+import { montarAlfred, objetivoRevogado, proximaPecaParaMontar, temAlfred, type ModulosConta, type Objetivo } from './modules/agent/capacidades';
 import type { MissionState } from './modules/onboarding/mission/missionTypes';
 import MissionPicker from './modules/onboarding/mission/MissionPicker';
 import MissaoProduto from './modules/onboarding/mission/MissaoProduto';
 import MissaoConteudo from './modules/onboarding/mission/MissaoConteudo';
 import ObjetivosPicker from './modules/onboarding/mission/ObjetivosPicker';
-import { missaoDoObjetivo } from './modules/onboarding/mission/objetivos';
+import { aterrissaNoAlfred, missaoDoObjetivo } from './modules/onboarding/mission/objetivos';
 import TrilhaMissoes from './modules/onboarding/mission/TrilhaMissoes';
 import { montarTrilha, type EstadoItem, type ItemId } from './modules/onboarding/mission/trilha';
 import { iniciarMissao, ouvirMissoes, salvarMissao } from './services/missionService';
@@ -314,6 +314,8 @@ export default function App() {
   const [hasBlogModule, setHasBlogModule] = useState<boolean>(false);
   const [hasMeliListingOptimizer, setHasMeliListingOptimizer] = useState<boolean>(false);
   const [hasProdutosModule, setHasProdutosModule] = useState<boolean>(false);
+  // users/{uid}.modules cru: `false` explícito é revogação do admin (capacidades.ts).
+  const [modulosConta, setModulosConta] = useState<Record<string, unknown>>({});
   const [objetivos, setObjetivos] = useState<Objetivo[]>([]);
   // Uma regra só para "esta conta tem Alfred" (capacidades.ts) — o mesmo
   // temAlfred que o servidor usa para liberar o provider `produtos`.
@@ -333,7 +335,12 @@ export default function App() {
   const montarPeca = async (o: Objetivo) => {
     if (o === 'meli') meliAderindo.current = true;
     try {
-      await aderirObjetivos([o]);
+      const r = await aderirObjetivos([o]);
+      if (r.bloqueados?.includes(o)) {
+        meliAderindo.current = false;
+        alert('Este módulo foi desativado pelo suporte. Fale com a gente pela Ajuda para reativar.');
+        return;
+      }
     } catch (err) {
       meliAderindo.current = false;
       console.error('Erro ao aderir:', err);
@@ -564,10 +571,14 @@ export default function App() {
   // "já aterrissou" e não forçamos a trilha por cima da navegação dele.
   const trilhaAterrissou = useRef(false);
   useEffect(() => {
-    if (!isCoorteMissao(cohort) || !jornadaConcluida || trilhaAterrissou.current) return;
+    if (!isCoorteMissao(cohort) || trilhaAterrissou.current) return;
+    // v2: abre no Alfred assim que já escolheu objetivos e não há missão em
+    // curso — quem começou pelo ML não tem doc de missão para concluir.
+    const v2 = isCoorteObjetivos(cohort);
+    if (v2 ? !aterrissaNoAlfred({ v2, objetivos: objetivos.length, emCurso: !!missao && !missao.concluidaEm, jornadaConcluida }) : !jornadaConcluida) return;
     trilhaAterrissou.current = true;
-    if (mainViewRef.current === 'products') setMainView(isCoorteObjetivos(cohort) ? 'home' : 'missoes');
-  }, [cohort, jornadaConcluida]);
+    if (mainViewRef.current === 'products') setMainView(v2 ? 'home' : 'missoes');
+  }, [cohort, jornadaConcluida, objetivos.length, missao]);
 
   // Track changes for auto-save
   useEffect(() => {
@@ -651,6 +662,7 @@ export default function App() {
               setHasContentAgent(snap.data().modules?.contentAgent === true);
               setHasOperationsAgent(snap.data().modules?.operationsAgent === true);
               setHasProdutosModule(snap.data().modules?.produtos === true);
+              setModulosConta((snap.data().modules ?? {}) as Record<string, unknown>);
               setObjetivos(Array.isArray(snap.data().objetivos) ? snap.data().objetivos : []);
               setHasVideoModule(snap.data().modules?.video === true);
               setHasBlogModule(snap.data().modules?.blog === true);
@@ -722,10 +734,16 @@ export default function App() {
   // conhecido aqui; para a Semana basta saber o que está montado ou não.
   const pecasAlfred = useMemo(() => montarAlfred({
     objetivos,
-    modules: { produtos: hasProdutosModule, contentAgent: hasContentAgent, operationsAgent: hasOperationsAgent, meliListingOptimizer: hasMeliListingOptimizer, video: hasVideoModule, blog: hasBlogModule },
+    // Módulos crus: ausente ≠ false (false = revogado pelo admin).
+    modules: modulosConta as ModulosConta,
     conexoes: { erp: products.some((p) => p._tinyProductId || p._blingProductId || p._idworksProductId), meli: false, site: projetosConteudo > 0 },
     marcos: { produtos: products.length, produtosComDescricao: products.filter((p) => String(p['Descrição complementar'] ?? '').trim()).length },
-  }), [objetivos, hasProdutosModule, hasContentAgent, hasOperationsAgent, hasMeliListingOptimizer, hasVideoModule, hasBlogModule, products, projetosConteudo]);
+  }), [objetivos, modulosConta, products, projetosConteudo]);
+  // Fontes que o admin desligou: não aparecem como "Disponíveis".
+  const fontesRevogadas = useMemo<ChaveFonte[]>(() => [
+    ...(objetivoRevogado(modulosConta, 'meli') ? ['meli' as const] : []),
+    ...(objetivoRevogado(modulosConta, 'conteudo') ? ['content' as const] : []),
+  ], [modulosConta]);
   const extrasSemana = useMemo<ExtrasSemana>(() => ({
     categories: existingCategories,
     hasVideo: hasVideoModule,
@@ -3943,6 +3961,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               hasContentAgent={hasContentAgent}
               hasOperationsAgent={hasOperationsAgent}
               hasMeli={hasMeliListingOptimizer}
+              revogados={fontesRevogadas}
               onOpenIntegrations={() => setMainView('integrations')}
               onAbrirFontes={() => setMainView('fontes')}
               onAbrirAtividade={() => setMainView('atividade')}
@@ -3956,6 +3975,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               uid={user.uid}
               hasMeli={hasMeliListingOptimizer}
               hasContentAgent={hasContentAgent}
+              revogados={fontesRevogadas}
               onVoltar={() => setMainView('home')}
               onConectar={conectarFonte}
             />

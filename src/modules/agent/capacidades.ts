@@ -57,6 +57,15 @@ export function modulosDoObjetivo(o: Objetivo): (keyof ModulosConta)[] {
   return ['contentAgent', 'blog'];
 }
 
+/**
+ * Revogado pelo admin: algum módulo do objetivo gravado como `false` (o código
+ * nunca grava `false`; ausente = nunca teve). Revogado não é oferecido nem
+ * religado pela adesão.
+ */
+export function objetivoRevogado(m: ModulosConta | Record<string, unknown>, o: Objetivo): boolean {
+  return modulosDoObjetivo(o).some((k) => (m as Record<string, unknown>)[k] === false);
+}
+
 const escada = (ativa: boolean, conectada: boolean, resultado: boolean, semModulo: EstadoPeca): EstadoPeca =>
   !ativa ? semModulo : resultado ? 'com-resultado' : conectada ? 'conectada' : 'ativa';
 
@@ -65,15 +74,15 @@ export function montarAlfred(c: ContaAlfred): Peca[] {
   return [
     {
       id: 'produtos', titulo: 'Produtos', libera: 'descrições, atributos e imagens', objetivo: 'produto',
-      estado: escada(temAlfred(m), c.marcos.produtos > 0, c.marcos.produtosComDescricao > 0, 'disponivel'),
+      estado: escada(temAlfred(m), c.marcos.produtos > 0, c.marcos.produtosComDescricao > 0, objetivoRevogado(m, 'produto') ? 'oculta' : 'disponivel'),
     },
     {
       id: 'meli', titulo: 'Mercado Livre', libera: 'títulos, fichas e fotos dos anúncios', objetivo: 'meli',
-      estado: escada(m.meliListingOptimizer === true, c.conexoes.meli, c.marcos.propostaPublicada === true, 'disponivel'),
+      estado: escada(m.meliListingOptimizer === true, c.conexoes.meli, c.marcos.propostaPublicada === true, objetivoRevogado(m, 'meli') ? 'oculta' : 'disponivel'),
     },
     {
       id: 'conteudo', titulo: 'Conteúdo e blog', libera: 'artigos, calendário e SEO', objetivo: 'conteudo',
-      estado: escada(m.contentAgent === true, c.conexoes.site, c.marcos.artigoNoBlog === true, 'disponivel'),
+      estado: escada(m.contentAgent === true, c.conexoes.site, c.marcos.artigoNoBlog === true, objetivoRevogado(m, 'conteudo') ? 'oculta' : 'disponivel'),
     },
     {
       // Não tem módulo: "ativa" é já ter o que mandar para o ERP.

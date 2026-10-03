@@ -19,4 +19,4 @@ export const enviarContatoMissao = (whatsapp: string) =>
 
 /** Adesão livre: liga os módulos e paga o crédito de missão (uma vez por objetivo). */
 export const aderirObjetivos = (objetivos: Objetivo[]) =>
-  callJson<{ novos: Objetivo[]; creditsAdded: number }>('/api/onboarding/aderir', 'POST', { objetivos });
+  callJson<{ novos: Objetivo[]; creditsAdded: number; bloqueados: Objetivo[] }>('/api/onboarding/aderir', 'POST', { objetivos });

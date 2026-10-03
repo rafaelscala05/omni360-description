@@ -170,6 +170,8 @@ export function entradasDoApp(opts: {
   hasMeli: boolean;
   hasContentAgent: boolean;
   projetos?: number | null;
+  /** Desligados pelo admin (módulo gravado `false`): não aparecem como disponíveis. */
+  revogados?: ChaveFonte[];
 }): EntradaFonte[] {
   const lista: EntradaFonte[] = [{ chave: 'produtos', conectado: true }];
   for (const i of opts.integracoes) {
@@ -185,7 +187,7 @@ export function entradasDoApp(opts: {
           reautorizar: (opts.meli as { status: string }).status === 'reauthorization_required',
         });
     }
-  } else {
+  } else if (!opts.revogados?.includes('meli')) {
     // Sem módulo: a fonte fica em "Disponíveis" — conectar é aderir (livre).
     lista.push({ chave: 'meli', conectado: false });
   }
@@ -196,7 +198,7 @@ export function entradasDoApp(opts: {
       conectado: true,
       detalhe: n == null ? null : `${n} ${n === 1 ? 'projeto' : 'projetos'}`,
     });
-  } else {
+  } else if (!opts.revogados?.includes('content')) {
     lista.push({ chave: 'content', conectado: false });
   }
   return lista;

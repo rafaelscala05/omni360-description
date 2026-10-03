@@ -38,7 +38,7 @@ O que já ajuda: `resolveAgentContext` já deriva os providers de módulos + con
 ## Decisões
 
 1. **Adesão livre.** Nenhum módulo depende de plano. Ao aceitar um objetivo (Tela 0 ou peça "para
-   montar"), o servidor liga o módulo e grava o aceite em `users/{uid}/adesoes/{modulo}`
+   montar"), o servidor liga o módulo e grava o aceite em `users/{uid}/adesoes/{objetivo}`
    (`{ modulo, objetivo, aceitoEm, texto }`). O consumo continua em créditos.
 2. **Uma missão por sessão.** A Tela 0 aceita vários objetivos; o primeiro marcado vira a missão
    em tela cheia. Os outros entram no topo da Semana e não abrem sozinhos na mesma sessão.
@@ -72,7 +72,7 @@ Peças: `produtos`, `meli`, `conteudo`, `erp`, `video`. Estados **derivados**, n
 | Loja/ERP | após 1º produto salvo | (é conexão) | Tiny/Bling/IdWorks/Wake | 1 envio | nunca (trava fixa) |
 | Vídeo | produto com ≥2 fotos reais | `video` | — | 1 vídeo | nunca (trava fixa) |
 
-Decisão da implementação (2026-10-02): ML e Conteúdo ficam sempre disponíveis, porque condicioná-los a objetivo/ERP/site repetiria o problema 4 (o que não está ativo some). A Semana continua oferecendo uma peça por vez. Objetivo já aderido não religa o módulo: se o admin desligou, a revogação vale (achado da revisão de segurança).
+Decisão da implementação (2026-10-02): a rota recebe `objetivos[]` (a Tela 0 manda vários de uma vez) e o doc de aceite é por objetivo; módulo gravado `false` é revogação do admin e bloqueia a adesão em qualquer conta. ML e Conteúdo ficam sempre disponíveis, porque condicioná-los a objetivo/ERP/site repetiria o problema 4 (o que não está ativo some). A Semana continua oferecendo uma peça por vez. Objetivo já aderido não religa o módulo: se o admin desligou, a revogação vale (achado da revisão de segurança).
 
 ### `src/modules/agent/capacidades.ts` (novo, puro)
 
@@ -88,9 +88,9 @@ Lido por Tela 0, `SemanaPanel` (no máximo uma peça "para montar" por vez), `Fe
 `ConectoresScreen` e `resolveAgentContext`. Verificar com `npx tsx scripts/verify-capacidades.mjs`.
 Regra: nenhuma tela volta a decidir sozinha a partir de `hasX` solto.
 
-### `POST /api/onboarding/aderir { objetivo }`
+### `POST /api/onboarding/aderir { objetivos: Objetivo[] }`
 
-Numa transação: `create()` em `adesoes/{modulo}` (se já existe, responde 200 sem efeito), liga
+Numa transação: `create()` em `adesoes/{objetivo}` (se já existe, responde 200 sem efeito), liga
 `modules.*` do objetivo, acrescenta o objetivo em `objetivos`, soma o crédito de missão e grava
 o `credit_logs`. Emite `recordEvent('module_adopted', { modulo, objetivo })` para o CRM.
 `habilitarConteudo` no cliente passa a chamar esta rota.

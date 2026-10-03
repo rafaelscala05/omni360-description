@@ -5,7 +5,7 @@
 // paga o crédito de missão uma única vez — quem decide "uma vez" é o create() do doc
 // users/{uid}/adesoes/{objetivo}; aqui só se calcula o que pagar.
 
-import { OBJETIVOS, modulosDoObjetivo, type Objetivo } from '../src/modules/agent/capacidades';
+import { OBJETIVOS, modulosDoObjetivo, objetivoRevogado, type Objetivo } from '../src/modules/agent/capacidades';
 
 export const BONUS_MISSAO_PADRAO: Record<Objetivo, number> = { produto: 10, meli: 20, conteudo: 15 };
 const BONUS_MAXIMO = 200;
@@ -34,15 +34,18 @@ export function bonusDaMissao(config: unknown, o: Objetivo): number {
   return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= BONUS_MAXIMO ? v : BONUS_MISSAO_PADRAO[o];
 }
 
-export function planejarAdesao(p: { pedidos: Objetivo[]; jaAderidos: Objetivo[]; config: unknown }): {
+export function planejarAdesao(p: { pedidos: Objetivo[]; jaAderidos: Objetivo[]; config: unknown; modulos?: Record<string, unknown> }): {
   novos: Objetivo[];
   creditos: number;
   campos: Record<string, true>;
+  /** Pedidos cujo módulo o admin desligou (gravado `false`): não ligam nem pagam. */
+  bloqueados: Objetivo[];
 } {
-  const novos = p.pedidos.filter((o) => !p.jaAderidos.includes(o));
+  const bloqueados = p.pedidos.filter((o) => objetivoRevogado(p.modulos ?? {}, o));
+  const novos = p.pedidos.filter((o) => !p.jaAderidos.includes(o) && !bloqueados.includes(o));
   const campos: Record<string, true> = {};
   // Só o objetivo novo liga módulo. Já aderido e com o módulo desligado quer
   // dizer que o admin desligou (abuso, suporte) — o cliente não religa sozinho.
   for (const o of novos) for (const m of modulosDoObjetivo(o)) campos[`modules.${m}`] = true;
-  return { novos, creditos: novos.reduce((s, o) => s + bonusDaMissao(p.config, o), 0), campos };
+  return { novos, creditos: novos.reduce((s, o) => s + bonusDaMissao(p.config, o), 0), campos, bloqueados };
 }

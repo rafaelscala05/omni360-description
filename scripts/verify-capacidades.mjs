@@ -68,5 +68,10 @@ check('objetivo marcado vem primeiro', proximaPecaParaMontar(pecasNova, ['conteu
 const tudo = montarAlfred(conta({ modules: { produtos: true, meliListingOptimizer: true, contentAgent: true, blog: true } }));
 check('tudo montado: nenhuma peça', proximaPecaParaMontar(tudo, []), null);
 
+// Revogado pelo admin (false explícito): a peça some, não vira "para montar".
+check('ML revogado fica oculto', estados(conta({ modules: { meliListingOptimizer: false } })).meli, 'oculta');
+check('Conteúdo revogado fica oculto', estados(conta({ modules: { contentAgent: false } })).conteudo, 'oculta');
+check('revogado não é oferecido', proximaPecaParaMontar(montarAlfred(conta({ modules: { produtos: true, meliListingOptimizer: false } })), ['meli'])?.id, 'conteudo');
+
 console.log(failures === 0 ? '\nTudo ok.' : `\n${failures} falha(s).`);
 process.exit(failures === 0 ? 0 : 1);

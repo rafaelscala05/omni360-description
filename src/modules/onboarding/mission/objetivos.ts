@@ -23,3 +23,12 @@ export function rotuloComecar(sel: Objetivo[]): string {
 export function missaoDoObjetivo(o: Objetivo): MissionId | null {
   return o === 'meli' ? null : o;
 }
+
+/**
+ * v2 abre no Alfred (Semana) quando já escolheu objetivos e não há missão em
+ * curso — inclusive quem começou pelo Mercado Livre, que não tem doc de missão
+ * e por isso nunca conclui uma.
+ */
+export function aterrissaNoAlfred(s: { v2: boolean; objetivos: number; emCurso: boolean; jornadaConcluida: boolean }): boolean {
+  return s.v2 && s.objetivos > 0 && !s.emCurso;
+}
