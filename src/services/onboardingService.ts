@@ -3,6 +3,7 @@
 
 import { callJson } from './apiClient';
 import type { CompanyData, OnboardingContact, OnboardingStep1 } from '../types/onboarding';
+import type { Objetivo } from '../modules/agent/capacidades';
 
 export const lookupCnpj = (cnpj: string) =>
   callJson<{ company: CompanyData }>('/api/onboarding/lookup-cnpj', 'POST', { cnpj });
@@ -15,3 +16,7 @@ export const saveCompanyProfile = (company: CompanyData) =>
 
 export const enviarContatoMissao = (whatsapp: string) =>
   callJson<{ alreadyCompleted: boolean; creditsAdded: number }>('/api/onboarding/mission-contact', 'POST', { whatsapp });
+
+/** Adesão livre: liga os módulos e paga o crédito de missão (uma vez por objetivo). */
+export const aderirObjetivos = (objetivos: Objetivo[]) =>
+  callJson<{ novos: Objetivo[]; creditsAdded: number }>('/api/onboarding/aderir', 'POST', { objetivos });

@@ -32,7 +32,7 @@ import MissaoConteudo from './modules/onboarding/mission/MissaoConteudo';
 import TrilhaMissoes from './modules/onboarding/mission/TrilhaMissoes';
 import { montarTrilha, type EstadoItem, type ItemId } from './modules/onboarding/mission/trilha';
 import { iniciarMissao, ouvirMissoes, salvarMissao } from './services/missionService';
-import { enviarContatoMissao } from './services/onboardingService';
+import { aderirObjetivos, enviarContatoMissao } from './services/onboardingService';
 import { listenProjects } from './services/contentService';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import MarketingLayout from './marketing/MarketingLayout';
@@ -1910,11 +1910,12 @@ export default function App() {
     await enviarContatoMissao(whatsapp);
   };
 
-  // Quem inicia a Missão Conteúdo passa a ter o workspace de Conteúdo e o
-  // blog nativo — sem isso o blog criado na missão ficaria inalcançável.
+  // Quem inicia a Missão Conteúdo adere ao Conteúdo pelo servidor (liga
+  // contentAgent + blog e paga o crédito de missão uma vez) — sem isso o blog
+  // criado na missão ficaria inalcançável.
   const habilitarConteudo = async () => {
     if (!user) return;
-    await updateDoc(doc(db, `users/${user.uid}`), { 'modules.contentAgent': true, 'modules.blog': true });
+    await aderirObjetivos(['conteudo']);
   };
 
   const custoMissaoConteudo =

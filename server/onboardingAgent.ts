@@ -9,6 +9,7 @@ import type { CompanyData, OnboardingContact, OnboardingStep1 } from '../src/typ
 import { ONBOARDING_BONUS } from '../src/types/onboarding';
 import { REFERRAL_ONBOARDING_BONUS } from '../src/types/referral';
 import { montarContatoMissao, validarPedidoContato } from './onboardingMissionRules';
+import { planejarAdesao, validarPedidoAdesao, bonusDaMissao, TEXTO_ADESAO } from './adesaoRules';
 
 const CNPJ_BASE_URL = 'https://publica.cnpj.ws/cnpj';
 
@@ -234,6 +235,64 @@ export function registerOnboardingRoutes(app: express.Application, deps: Onboard
       });
 
       if (!result.alreadyCompleted) void recordEvent(decoded.uid, 'onboarding_completed', { source: 'missao' });
+      res.json(result);
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // Adesão a módulos (coorte missao-v2 e o "Montar" das peças do Alfred).
+  // Livre: aceitou, liga. O crédito de missão é pago uma vez por objetivo —
+  // o create() de adesoes/{objetivo} dentro da transação é o que garante isso
+  // contra duplo clique e duas abas. Objetivo já aderido só religa o módulo.
+  app.post('/api/onboarding/aderir', async (req, res) => {
+    try {
+      const decoded = await verifyFirebaseToken(req);
+      const pedido = validarPedidoAdesao(req.body);
+      if (pedido.ok === false) throw Object.assign(new Error(pedido.erro), { status: 422 });
+
+      const userRef = adminDb.collection('users').doc(decoded.uid);
+      const configRef = adminDb.collection('config').doc('credits');
+      const adesaoRef = (o: string) => userRef.collection('adesoes').doc(o);
+
+      const result = await adminDb.runTransaction(async (tx) => {
+        // Todas as leituras antes de qualquer escrita.
+        const userSnap = await tx.get(userRef);
+        if (!userSnap.exists) throw Object.assign(new Error('Usuário não encontrado'), { status: 404 });
+        const configSnap = await tx.get(configRef);
+        const adesoes = await Promise.all(pedido.objetivos.map((o) => tx.get(adesaoRef(o))));
+        const jaAderidos = pedido.objetivos.filter((_, i) => adesoes[i].exists);
+
+        const plano = planejarAdesao({ pedidos: pedido.objetivos, jaAderidos, config: configSnap.data() });
+        const agora = new Date().toISOString();
+
+        for (const o of plano.novos) {
+          tx.create(adesaoRef(o), { objetivo: o, aceitoEm: agora, texto: TEXTO_ADESAO[o], creditos: bonusDaMissao(configSnap.data(), o) });
+        }
+        tx.update(userRef, {
+          ...plano.campos,
+          objetivos: FieldValue.arrayUnion(...pedido.objetivos),
+          ...(plano.creditos > 0 ? { credits: FieldValue.increment(plano.creditos) } : {}),
+        });
+        for (const o of plano.novos) {
+          const creditos = bonusDaMissao(configSnap.data(), o);
+          if (creditos === 0) continue;
+          tx.set(userRef.collection('credit_logs').doc(), {
+            type: 'bonus',
+            actionType: 'Crédito de missão',
+            actionKey: `missao_bonus_${o}`,
+            productName: 'N/A',
+            sku: 'N/A',
+            userName: decoded.name ?? decoded.email ?? '',
+            creditsConsumed: 0,
+            creditsAdded: creditos,
+            timestamp: agora,
+          });
+        }
+        return { novos: plano.novos, creditsAdded: plano.creditos };
+      });
+
+      for (const o of result.novos) void recordEvent(decoded.uid, 'module_adopted', { objetivo: o });
       res.json(result);
     } catch (err) {
       sendError(res, err);
