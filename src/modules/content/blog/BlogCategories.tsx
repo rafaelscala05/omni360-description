@@ -138,55 +138,55 @@ const BlogCategories: React.FC<Props> = ({ uid, projectId, categories, posts, cl
 
   return (
     <div>
-      <div className="bg-gradient-to-r from-[#FF5B03]/[0.07] to-transparent border border-[#FF5B03]/20 rounded-2xl p-5 mb-5 flex items-center gap-4">
-        <div className="shrink-0 w-11 h-11 rounded-xl bg-[#FF5B03]/10 flex items-center justify-center text-[#FF5B03]">
+      <div className="bg-gradient-to-r from-(--ag-accent)/[0.07] to-transparent border border-(--ag-accent)/20 rounded-2xl p-5 mb-5 flex items-center gap-4">
+        <div className="shrink-0 w-11 h-11 rounded-xl bg-(--ag-accent)/10 flex items-center justify-center text-(--ag-accent)">
           <Network className="w-5 h-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-slate-900">Popular menus pelos Clusters</p>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-sm font-semibold text-(--ag-text)">Popular menus pelos Clusters</p>
+          <p className="text-xs text-(--ag-text-2) mt-0.5">
             Cria uma categoria com o nome de cada cluster e vincula os posts já publicados.
             {linkablePosts > 0 ? ` ${linkablePosts} post(s) elegível(is).` : ' Nenhum post publicado com cluster ainda.'}
           </p>
-          {populateMsg && <p className="text-xs text-emerald-600 mt-1.5 font-medium">{populateMsg}</p>}
+          {populateMsg && <p className="text-xs text-(--ag-ok) mt-1.5 font-medium">{populateMsg}</p>}
         </div>
         <button
           onClick={handlePopulateFromClusters}
           disabled={populating || linkablePosts === 0}
-          className="shrink-0 flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-sm transition-colors"
+          className="shrink-0 flex items-center gap-1.5 h-11 px-4 text-[13.5px] font-semibold text-(--ag-surface-solid) bg-(--ag-text) hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed rounded-full transition-colors"
         >
           {populating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Network className="w-4 h-4" />} Popular
         </button>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 mb-5">
-        <h3 className="font-semibold text-slate-900 mb-4">Nova categoria</h3>
-        {error && <div className="mb-4 text-sm text-red-400 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+      <div className="ag-glass rounded-[22px] p-6 mb-5">
+        <h3 className="font-semibold text-(--ag-text) mb-4">Nova categoria</h3>
+        {error && <div className="mb-4 text-sm text-(--ag-danger) bg-(--ag-danger-soft) border border-(--ag-danger-line) rounded-lg px-3 py-2">{error}</div>}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1">Nome</label>
+            <label className="block text-xs font-semibold text-(--ag-text-2) mb-1">Nome</label>
             <input
               value={name}
               onChange={(e) => handleNameChange(e.target.value)}
               placeholder="Ex.: Novidades"
-              className="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
+              className="w-full border border-(--ag-hairline-2) rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent)"
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1">Slug</label>
+            <label className="block text-xs font-semibold text-(--ag-text-2) mb-1">Slug</label>
             <input
               value={slug}
               onChange={(e) => { setSlugManuallyEdited(true); setSlug(e.target.value); }}
               placeholder="novidades"
-              className="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
+              className="w-full border border-(--ag-hairline-2) rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent)"
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1">Descrição (opcional)</label>
+            <label className="block text-xs font-semibold text-(--ag-text-2) mb-1">Descrição (opcional)</label>
             <input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
+              className="w-full border border-(--ag-hairline-2) rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent)"
             />
           </div>
         </div>
@@ -194,7 +194,7 @@ const BlogCategories: React.FC<Props> = ({ uid, projectId, categories, posts, cl
           <button
             onClick={handleAdd}
             disabled={saving}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-xl shadow-sm transition-colors"
+            className="flex items-center gap-1.5 h-11 px-4 text-[13.5px] font-semibold text-(--ag-surface-solid) bg-(--ag-text) hover:brightness-110 disabled:opacity-60 rounded-full transition-colors"
           >
             {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Adicionar categoria
           </button>
@@ -202,21 +202,21 @@ const BlogCategories: React.FC<Props> = ({ uid, projectId, categories, posts, cl
       </div>
 
       {categories.length === 0 ? (
-        <div className="text-center py-16 text-slate-400">
+        <div className="text-center py-16 text-(--ag-text-3)">
           <p className="text-sm">Nenhuma categoria criada ainda.</p>
         </div>
       ) : (
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm divide-y divide-slate-100 overflow-hidden">
+        <div className="ag-glass rounded-[22px] [&>*+*]:border-t [&>*+*]:border-(--ag-hairline) overflow-hidden">
           {categories.map((c) => (
             <div key={c.id} className="flex items-center justify-between gap-3 px-5 py-3.5">
               <div className="min-w-0">
-                <p className="text-sm font-medium text-slate-900">{c.name}</p>
-                <p className="text-xs text-slate-400">/{c.slug}{c.description ? ` — ${c.description}` : ''}</p>
+                <p className="text-sm font-medium text-(--ag-text)">{c.name}</p>
+                <p className="text-xs text-(--ag-text-3)">/{c.slug}{c.description ? ` — ${c.description}` : ''}</p>
               </div>
               <button
                 onClick={() => handleDelete(c)}
                 disabled={deletingId === c.id}
-                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-60 rounded-lg transition-colors shrink-0"
+                className="p-2 text-(--ag-text-3) hover:text-(--ag-danger) hover:bg-(--ag-danger-soft) disabled:opacity-60 rounded-lg transition-colors shrink-0"
                 title="Excluir"
               >
                 {deletingId === c.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}

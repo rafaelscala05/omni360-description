@@ -57,28 +57,28 @@ const ProductLinkPicker: React.FC<Props> = ({ products, selectedIds, onChange, l
         <div className="flex flex-col gap-1.5 mb-1.5">
           {selected.map((p) =>
             onLinksChange ? (
-              <div key={p.id} className="flex items-start gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+              <div key={p.id} className="flex items-start gap-2 p-2 bg-(--ag-fill) border border-(--ag-hairline) rounded-lg">
                 {p.imagemPrincipal ? (
                   <img src={p.imagemPrincipal} alt="" className="w-9 h-9 rounded-md object-cover shrink-0" />
                 ) : (
-                  <span className="w-9 h-9 rounded-md bg-slate-200 shrink-0" />
+                  <span className="w-9 h-9 rounded-md bg-(--ag-fill-2) shrink-0" />
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-slate-700 truncate leading-tight">{p.nome}</p>
-                  <div className="flex items-center gap-1 mt-1 border border-slate-200 rounded-md bg-white px-2 py-1 focus-within:ring-1 focus-within:ring-[#FF5B03] focus-within:border-[#FF5B03]">
-                    <Link2 className="w-3 h-3 text-slate-400 shrink-0" />
+                  <p className="text-xs font-medium text-(--ag-text) truncate leading-tight">{p.nome}</p>
+                  <div className="flex items-center gap-1 mt-1 border border-(--ag-hairline) rounded-md bg-(--ag-surface-solid) px-2 py-1 focus-within:ring-1 focus-within:ring-(--ag-accent) focus-within:border-(--ag-accent)">
+                    <Link2 className="w-3 h-3 text-(--ag-text-3) shrink-0" />
                     <input
                       value={links?.[p.id] ?? ''}
                       onChange={(e) => setLink(p.id, e.target.value)}
                       placeholder="Link do produto (opcional)"
-                      className="flex-1 min-w-0 text-xs text-slate-600 focus:outline-none"
+                      className="flex-1 min-w-0 text-xs text-(--ag-text-2) focus:outline-none"
                     />
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => removeProduct(p.id)}
-                  className="text-slate-400 hover:text-slate-700 shrink-0 mt-0.5"
+                  className="text-(--ag-text-3) hover:text-(--ag-text) shrink-0 mt-0.5"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -86,18 +86,18 @@ const ProductLinkPicker: React.FC<Props> = ({ products, selectedIds, onChange, l
             ) : (
               <span
                 key={p.id}
-                className="inline-flex items-center gap-1.5 pl-1 pr-2 py-1 bg-slate-100 border border-slate-200 rounded-full text-xs text-slate-700 self-start"
+                className="inline-flex items-center gap-1.5 pl-1 pr-2 py-1 bg-(--ag-fill-2) border border-(--ag-hairline) rounded-full text-xs text-(--ag-text) self-start"
               >
                 {p.imagemPrincipal ? (
                   <img src={p.imagemPrincipal} alt="" className="w-5 h-5 rounded-full object-cover" />
                 ) : (
-                  <span className="w-5 h-5 rounded-full bg-slate-300" />
+                  <span className="w-5 h-5 rounded-full bg-(--ag-hairline-2)" />
                 )}
                 {p.nome}
                 <button
                   type="button"
                   onClick={() => removeProduct(p.id)}
-                  className="text-slate-400 hover:text-slate-700"
+                  className="text-(--ag-text-3) hover:text-(--ag-text)"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -107,8 +107,8 @@ const ProductLinkPicker: React.FC<Props> = ({ products, selectedIds, onChange, l
         </div>
       )}
       <div className="relative">
-        <div className="flex items-center border border-slate-300 rounded-lg px-3 py-2 focus-within:ring-1 focus-within:ring-[#FF5B03] focus-within:border-[#FF5B03]">
-          <Search className="w-4 h-4 text-slate-400 mr-2 shrink-0" />
+        <div className="flex items-center border border-(--ag-hairline-2) rounded-lg px-3 py-2 focus-within:ring-1 focus-within:ring-(--ag-accent) focus-within:border-(--ag-accent)">
+          <Search className="w-4 h-4 text-(--ag-text-3) mr-2 shrink-0" />
           <input
             value={query}
             onChange={(e) => {
@@ -122,22 +122,22 @@ const ProductLinkPicker: React.FC<Props> = ({ products, selectedIds, onChange, l
           />
         </div>
         {open && suggestions.length > 0 && (
-          <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+          <div className="absolute z-10 mt-1 w-full bg-(--ag-surface-solid) border border-(--ag-hairline) rounded-lg shadow-lg max-h-56 overflow-y-auto">
             {suggestions.map((p) => (
               <button
                 key={p.id}
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => addProduct(p.id)}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-slate-50"
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-(--ag-fill)"
               >
                 {p.imagemPrincipal ? (
                   <img src={p.imagemPrincipal} alt="" className="w-6 h-6 rounded object-cover" />
                 ) : (
-                  <span className="w-6 h-6 rounded bg-slate-200" />
+                  <span className="w-6 h-6 rounded bg-(--ag-fill-2)" />
                 )}
                 <span className="flex-1 truncate">{p.nome}</span>
-                <span className="text-slate-400 text-xs">{p.sku}</span>
+                <span className="text-(--ag-text-3) text-xs">{p.sku}</span>
               </button>
             ))}
           </div>

@@ -140,64 +140,64 @@ const PostEditor: React.FC<Props> = ({ uid, projectId, post, existingPosts, cate
   };
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-3xl">
       <div className="flex items-center gap-3 mb-5">
         <button
           onClick={onClose}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-(--ag-text-2) hover:bg-(--ag-fill-2) rounded-lg transition-colors"
         >
           <ArrowLeft className="w-4 h-4" /> Voltar
         </button>
-        <h1 className="font-display text-2xl font-bold text-slate-900">{isNew ? 'Novo post' : 'Editar post'}</h1>
+        <h1 className="font-display text-[30px] leading-tight font-semibold tracking-tight text-(--ag-text)">{isNew ? 'Novo post' : 'Editar post'}</h1>
       </div>
 
-      {error && <div className="mb-4 text-sm text-red-400 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+      {error && <div className="mb-4 text-sm text-(--ag-danger) bg-(--ag-danger-soft) border border-(--ag-danger-line) rounded-lg px-3 py-2">{error}</div>}
 
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-5">
+      <div className="ag-glass rounded-[22px] p-6 space-y-5">
         <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-1.5">Título</label>
+          <label className="block text-sm font-semibold text-(--ag-text) mb-1.5">Título</label>
           <input
             value={title}
             onChange={(e) => handleTitleChange(e.target.value)}
             placeholder="Título do post"
-            className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
+            className="w-full border border-(--ag-hairline-2) rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent)"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-1.5">Slug</label>
+          <label className="block text-sm font-semibold text-(--ag-text) mb-1.5">Slug</label>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-400">/</span>
+            <span className="text-sm text-(--ag-text-3)">/</span>
             <input
               value={slug}
               onChange={(e) => handleSlugChange(e.target.value)}
               disabled={slugLocked}
               placeholder="slug-do-post"
-              className="flex-1 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03] disabled:bg-slate-50 disabled:text-slate-400"
+              className="flex-1 border border-(--ag-hairline-2) rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent) disabled:bg-(--ag-fill) disabled:text-(--ag-text-3)"
             />
           </div>
-          {slugLocked && <p className="text-xs text-slate-400 mt-1">Slug imutável após publicado.</p>}
+          {slugLocked && <p className="text-xs text-(--ag-text-3) mt-1">Slug imutável após publicado.</p>}
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-1.5">Resumo</label>
+          <label className="block text-sm font-semibold text-(--ag-text) mb-1.5">Resumo</label>
           <textarea
             value={excerpt}
             onChange={(e) => setExcerpt(e.target.value.slice(0, 300))}
             maxLength={300}
             rows={3}
             placeholder="Resumo curto exibido nas listagens (máx. 300 caracteres)"
-            className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03] resize-none"
+            className="w-full border border-(--ag-hairline-2) rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent) resize-none"
           />
-          <p className="text-xs text-slate-400 mt-1 text-right">{excerpt.length}/300</p>
+          <p className="text-xs text-(--ag-text-3) mt-1 text-right">{excerpt.length}/300</p>
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-1.5">Imagem de capa</label>
+          <label className="block text-sm font-semibold text-(--ag-text) mb-1.5">Imagem de capa</label>
           {coverImageUrl && (
-            <img src={coverImageUrl} alt="Capa" className="w-full max-h-48 object-cover rounded-xl border border-slate-200 mb-2" />
+            <img src={coverImageUrl} alt="Capa" className="w-full max-h-48 object-cover rounded-xl border border-(--ag-hairline) mb-2" />
           )}
-          <label className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 shadow-sm hover:bg-slate-50 rounded-xl transition-colors cursor-pointer">
+          <label className="inline-flex items-center gap-1.5 h-11 px-4 text-[13.5px] font-semibold text-(--ag-text) bg-(--ag-surface-solid) border border-(--ag-hairline) hover:bg-(--ag-fill) rounded-full transition-colors cursor-pointer">
             {uploadingCover ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
             {coverImageUrl ? 'Trocar imagem' : 'Enviar imagem'}
             <input
@@ -214,19 +214,19 @@ const PostEditor: React.FC<Props> = ({ uid, projectId, post, existingPosts, cate
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-1.5">Categorias</label>
+          <label className="block text-sm font-semibold text-(--ag-text) mb-1.5">Categorias</label>
           {categories.length === 0 ? (
-            <p className="text-sm text-slate-400">Nenhuma categoria criada ainda.</p>
+            <p className="text-sm text-(--ag-text-3)">Nenhuma categoria criada ainda.</p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {categories.map((c) => (
                 <label
                   key={c.id}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border cursor-pointer transition-colors ${
-                    categoryIds.includes(c.id)
-                      ? 'bg-[#FF5B03]/10 border-[#FF5B03] text-[#FF5B03]'
-                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                  }`}
+ categoryIds.includes(c.id)
+ ? 'bg-(--ag-accent)/10 border-(--ag-text) text-(--ag-text)'
+ : 'bg-(--ag-surface-solid) border-(--ag-hairline) text-(--ag-text-2) hover:bg-(--ag-fill)'
+ }`}
                 >
                   <input
                     type="checkbox"
@@ -243,40 +243,40 @@ const PostEditor: React.FC<Props> = ({ uid, projectId, post, existingPosts, cate
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">Meta título (SEO)</label>
+            <label className="block text-sm font-semibold text-(--ag-text) mb-1.5">Meta título (SEO)</label>
             <input
               value={metaTitle}
               onChange={(e) => setMetaTitle(e.target.value)}
-              className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
+              className="w-full border border-(--ag-hairline-2) rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent)"
             />
           </div>
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">Meta descrição (SEO)</label>
+            <label className="block text-sm font-semibold text-(--ag-text) mb-1.5">Meta descrição (SEO)</label>
             <input
               value={metaDescription}
               onChange={(e) => setMetaDescription(e.target.value)}
-              className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
+              className="w-full border border-(--ag-hairline-2) rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent)"
             />
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-1.5">Corpo</label>
-          <div className="border border-slate-300 rounded-xl overflow-hidden">
-            <div className="flex items-center gap-1 px-2 py-1.5 bg-slate-50 border-b border-slate-200">
-              <button type="button" onClick={() => exec('bold')} title="Negrito" className="p-1.5 text-slate-600 hover:bg-slate-200 rounded-md">
+          <label className="block text-sm font-semibold text-(--ag-text) mb-1.5">Corpo</label>
+          <div className="border border-(--ag-hairline-2) rounded-xl overflow-hidden">
+            <div className="flex items-center gap-1 px-2 py-1.5 bg-(--ag-fill) border-b border-(--ag-hairline)">
+              <button type="button" onClick={() => exec('bold')} title="Negrito" className="p-1.5 text-(--ag-text-2) hover:bg-(--ag-fill-2) rounded-md">
                 <Bold className="w-4 h-4" />
               </button>
-              <button type="button" onClick={() => exec('italic')} title="Itálico" className="p-1.5 text-slate-600 hover:bg-slate-200 rounded-md">
+              <button type="button" onClick={() => exec('italic')} title="Itálico" className="p-1.5 text-(--ag-text-2) hover:bg-(--ag-fill-2) rounded-md">
                 <Italic className="w-4 h-4" />
               </button>
-              <button type="button" onClick={() => exec('formatBlock', 'h2')} title="Título 2" className="p-1.5 text-slate-600 hover:bg-slate-200 rounded-md">
+              <button type="button" onClick={() => exec('formatBlock', 'h2')} title="Título 2" className="p-1.5 text-(--ag-text-2) hover:bg-(--ag-fill-2) rounded-md">
                 <Heading2 className="w-4 h-4" />
               </button>
-              <button type="button" onClick={() => exec('formatBlock', 'h3')} title="Título 3" className="p-1.5 text-slate-600 hover:bg-slate-200 rounded-md">
+              <button type="button" onClick={() => exec('formatBlock', 'h3')} title="Título 3" className="p-1.5 text-(--ag-text-2) hover:bg-(--ag-fill-2) rounded-md">
                 <Heading3 className="w-4 h-4" />
               </button>
-              <button type="button" onClick={() => exec('insertUnorderedList')} title="Lista" className="p-1.5 text-slate-600 hover:bg-slate-200 rounded-md">
+              <button type="button" onClick={() => exec('insertUnorderedList')} title="Lista" className="p-1.5 text-(--ag-text-2) hover:bg-(--ag-fill-2) rounded-md">
                 <List className="w-4 h-4" />
               </button>
             </div>
@@ -287,7 +287,7 @@ const PostEditor: React.FC<Props> = ({ uid, projectId, post, existingPosts, cate
               contentEditable
               suppressContentEditableWarning
               dangerouslySetInnerHTML={{ __html: ensureHtml(post?.html ?? '') }}
-              className="min-h-[240px] px-3.5 py-3 text-sm text-slate-800 focus:outline-none prose prose-sm max-w-none"
+              className="min-h-[240px] px-3.5 py-3 text-sm text-(--ag-text) focus:outline-none prose prose-sm max-w-none"
             />
           </div>
         </div>
@@ -296,14 +296,14 @@ const PostEditor: React.FC<Props> = ({ uid, projectId, post, existingPosts, cate
           <button
             onClick={() => handleSave('draft')}
             disabled={saving !== null}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 shadow-sm hover:bg-slate-50 disabled:opacity-60 rounded-xl transition-colors"
+            className="flex items-center gap-1.5 h-11 px-4 text-[13.5px] font-semibold text-(--ag-text) bg-(--ag-surface-solid) border border-(--ag-hairline) hover:bg-(--ag-fill) disabled:opacity-60 rounded-full transition-colors"
           >
             {saving === 'draft' ? <RefreshCw className="w-4 h-4 animate-spin" /> : null} Salvar rascunho
           </button>
           <button
             onClick={() => handleSave('published')}
             disabled={saving !== null}
-            className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-xl shadow-sm transition-colors"
+            className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-(--ag-surface-solid) bg-(--ag-text) hover:brightness-110 disabled:opacity-60 rounded-full transition-colors"
           >
             {saving === 'published' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Publicar
           </button>

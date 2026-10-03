@@ -13,8 +13,8 @@ const Json: React.FC<{ titulo: string; valor: unknown }> = ({ titulo, valor }) =
   if (valor === null || valor === undefined) return null;
   return (
     <div className="space-y-1">
-      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{titulo}</div>
-      <pre className="text-[11px] leading-relaxed font-mono bg-slate-900 text-slate-200 rounded-lg p-3 overflow-x-auto max-h-72">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-(--ag-text-3)">{titulo}</div>
+      <pre className="text-[11px] leading-relaxed font-mono bg-(--ag-text) text-(--ag-text-3) rounded-lg p-3 overflow-x-auto max-h-72">
         {JSON.stringify(valor, null, 2)}
       </pre>
     </div>
@@ -26,32 +26,32 @@ const Linha: React.FC<{ log: PublishLog }> = ({ log }) => {
   const hora = new Date(log.at).toLocaleTimeString('pt-BR');
 
   return (
-    <div className={`border rounded-lg overflow-hidden ${log.ok ? 'border-slate-200' : 'border-red-200 bg-red-50/40'}`}>
+    <div className={`border rounded-lg overflow-hidden ${log.ok ? 'border-(--ag-hairline)' : 'border-(--ag-danger-line) bg-(--ag-danger-soft)/40'}`}>
       <button
         onClick={() => setAberto((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-slate-50/80 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-(--ag-fill)/80 transition-colors"
       >
-        {aberto ? <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
-        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${log.ok ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+        {aberto ? <ChevronDown className="w-3.5 h-3.5 text-(--ag-text-3) shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-(--ag-text-3) shrink-0" />}
+        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${log.ok ? 'bg-(--ag-ok-soft) text-(--ag-ok)' : 'bg-(--ag-danger-soft) text-(--ag-danger)'}`}>
           {log.status ?? 'ERR'}
         </span>
-        <span className="text-[11px] font-medium text-slate-500 uppercase shrink-0">{log.destino}</span>
-        <span className="font-mono text-xs text-slate-700 truncate flex-1 min-w-0" title={log.articleTitulo}>
+        <span className="text-[11px] font-medium text-(--ag-text-2) uppercase shrink-0">{log.destino}</span>
+        <span className="font-mono text-xs text-(--ag-text) truncate flex-1 min-w-0" title={log.articleTitulo}>
           {log.operacao} · {log.articleTitulo}
         </span>
-        <span className="text-[11px] text-slate-400 shrink-0 tabular-nums">{log.ms}ms</span>
-        <span className="text-[11px] text-slate-400 shrink-0 tabular-nums hidden sm:inline">{hora}</span>
+        <span className="text-[11px] text-(--ag-text-3) shrink-0 tabular-nums">{log.ms}ms</span>
+        <span className="text-[11px] text-(--ag-text-3) shrink-0 tabular-nums hidden sm:inline">{hora}</span>
       </button>
 
       {aberto && (
-        <div className="px-3 pb-3 space-y-3 border-t border-slate-100 pt-3">
+        <div className="px-3 pb-3 space-y-3 border-t border-(--ag-hairline) pt-3">
           {log.erro && (
-            <div className="flex gap-2 text-xs text-red-700 bg-red-100/70 rounded-lg px-3 py-2">
+            <div className="flex gap-2 text-xs text-(--ag-danger) bg-(--ag-danger-soft)/70 rounded-lg px-3 py-2">
               <AlertOctagon className="w-3.5 h-3.5 shrink-0 mt-px" />
               <span className="font-medium">{log.erro}</span>
             </div>
           )}
-          <div className="text-[11px] text-slate-500">endpoint: <span className="font-mono break-all">{log.alvo}</span></div>
+          <div className="text-[11px] text-(--ag-text-2)">endpoint: <span className="font-mono break-all">{log.alvo}</span></div>
           <Json titulo="Enviado" valor={log.requisicao} />
           <Json titulo="Resposta" valor={log.resposta} />
         </div>
@@ -87,43 +87,43 @@ const PublishLogsPanel: React.FC<Props> = ({ projectId, aberto, onFechar }) => {
 
   return (
     <>
-      <div onClick={onFechar} className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-40" />
-      <aside className="fixed right-0 inset-y-0 z-50 w-full max-w-2xl bg-white shadow-2xl flex flex-col">
-        <header className="h-14 px-4 flex items-center gap-3 border-b border-slate-200 shrink-0">
-          <div className="font-medium text-slate-800 text-sm">Envios ao Sanity/WordPress</div>
+      <div onClick={onFechar} className="fixed inset-0 bg-(--ag-scrim) backdrop-blur-sm z-40" />
+      <aside className="fixed right-0 inset-y-0 z-50 w-full max-w-2xl bg-(--ag-surface-solid) shadow-2xl flex flex-col">
+        <header className="h-14 px-4 flex items-center gap-3 border-b border-(--ag-hairline) shrink-0">
+          <div className="font-medium text-(--ag-text) text-sm">Envios ao Sanity/WordPress</div>
           {falhas > 0 && (
-            <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+            <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-(--ag-danger-soft) text-(--ag-danger)">
               {falhas} {falhas === 1 ? 'falha' : 'falhas'}
             </span>
           )}
-          <label className="ml-auto flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+          <label className="ml-auto flex items-center gap-1.5 text-xs text-(--ag-text-2) cursor-pointer">
             <input
               type="checkbox"
               checked={apenasErros}
               onChange={(e) => setApenasErros(e.target.checked)}
-              className="rounded border-slate-300 accent-[#FF5B03]"
+              className="rounded border-(--ag-hairline-2) accent-(--ag-accent)"
             />
             só erros
           </label>
-          <button onClick={carregar} disabled={carregando} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-50" title="Atualizar">
+          <button onClick={carregar} disabled={carregando} className="p-1.5 rounded-lg text-(--ag-text-3) hover:text-(--ag-text) hover:bg-(--ag-fill-2) disabled:opacity-50" title="Atualizar">
             <RefreshCw className={`w-4 h-4 ${carregando ? 'animate-spin' : ''}`} />
           </button>
-          <button onClick={onFechar} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100" title="Fechar">
+          <button onClick={onFechar} className="p-1.5 rounded-lg text-(--ag-text-3) hover:text-(--ag-text) hover:bg-(--ag-fill-2)" title="Fechar">
             <X className="w-4 h-4" />
           </button>
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {erro && <div className="text-sm text-red-600">{erro}</div>}
+          {erro && <div className="text-sm text-(--ag-danger)">{erro}</div>}
           {!erro && !visiveis.length && !carregando && (
-            <p className="text-sm text-slate-400 text-center py-8">
+            <p className="text-sm text-(--ag-text-3) text-center py-8">
               {apenasErros ? 'Nenhuma falha registrada.' : 'Nenhum envio ainda.'}
             </p>
           )}
           {visiveis.map((l) => <Linha key={l.id} log={l} />)}
         </div>
 
-        <footer className="px-4 py-3 border-t border-slate-100 text-[11px] text-slate-400 shrink-0">
+        <footer className="px-4 py-3 border-t border-(--ag-hairline) text-[11px] text-(--ag-text-3) shrink-0">
           Cada linha é uma chamada HTTP real de publicação. Tokens e senhas são omitidos.
         </footer>
       </aside>

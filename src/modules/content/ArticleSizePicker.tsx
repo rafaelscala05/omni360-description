@@ -18,7 +18,7 @@ const OPTIONS: { size: ArticleSize; letter: string; label: string; range: string
 const ArticleSizePicker: React.FC<Props> = ({ value, onChange, disabled }) => {
   const active = value ?? 'medio';
   return (
-    <div className="inline-flex items-center rounded-lg border border-slate-200 overflow-hidden shrink-0" role="group" aria-label="Tamanho do artigo">
+    <div className="inline-flex items-center rounded-lg border border-(--ag-hairline) overflow-hidden shrink-0" role="group" aria-label="Tamanho do artigo">
       {OPTIONS.map((opt) => (
         <button
           key={opt.size}
@@ -27,8 +27,8 @@ const ArticleSizePicker: React.FC<Props> = ({ value, onChange, disabled }) => {
           title={`${opt.label} (${opt.range})`}
           onClick={() => opt.size !== active && onChange(opt.size)}
           className={`px-1.5 py-0.5 text-[10px] font-semibold transition-colors disabled:opacity-50 ${
-            opt.size === active ? 'bg-[#FF5B03] text-white' : 'bg-white text-slate-500 hover:bg-slate-100'
-          }`}
+ opt.size === active ? 'bg-(--ag-accent) text-white' : 'bg-(--ag-surface-solid) text-(--ag-text-2) hover:bg-(--ag-fill-2)'
+ }`}
         >
           {opt.letter}
         </button>

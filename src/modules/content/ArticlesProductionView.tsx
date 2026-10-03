@@ -36,12 +36,12 @@ const STATUS_LABEL: Record<ArticleStatus, string> = {
 };
 
 const STATUS_STYLE: Record<ArticleStatus, string> = {
-  agendado: 'bg-slate-100 text-slate-600',
-  em_producao: 'bg-amber-100 text-amber-700',
-  revisao: 'bg-orange-100 text-orange-700',
-  aprovado: 'bg-emerald-100 text-emerald-700',
-  publicado: 'bg-[#FF5B03] text-white',
-  erro: 'bg-red-100 text-red-700',
+  agendado: 'bg-(--ag-fill-2) text-(--ag-text-2)',
+  em_producao: 'bg-(--ag-warn-soft) text-(--ag-warn)',
+  revisao: 'bg-(--ag-accent-soft) text-(--ag-accent)',
+  aprovado: 'bg-(--ag-ok-soft) text-(--ag-ok)',
+  publicado: 'bg-(--ag-accent) text-white',
+  erro: 'bg-(--ag-danger-soft) text-(--ag-danger)',
 };
 
 function formatDateTime(date: string, time?: string): string {
@@ -261,23 +261,23 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
   const clusterName = (clusterId: string) => clusters.find((c) => c.id === clusterId)?.nome ?? null;
 
   return (
-    <div className="max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 mb-6">
         <div>
-          <h1 className="font-display text-2xl font-bold text-slate-900">Produção de Artigos</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Artigos agendados. Produza manualmente ou aguarde a automação na data.</p>
+          <h1 className="font-display text-[30px] leading-tight font-semibold tracking-tight text-(--ag-text)">Produção de Artigos</h1>
+          <p className="text-[13.5px] text-(--ag-text-2)">Artigos agendados. Produza manualmente ou aguarde a automação na data.</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={openCreateArticle}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+            className="flex items-center gap-2 h-11 px-4 text-[13.5px] font-semibold text-(--ag-text) bg-(--ag-surface-solid) border border-(--ag-hairline) hover:bg-(--ag-fill-2) rounded-full transition-colors"
           >
             <Plus className="w-4 h-4" /> Criar artigo
           </button>
           <button
             onClick={handleGenerate}
             disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-lg shadow-sm transition-colors"
+            className="flex items-center gap-2 h-11 px-4 text-[13.5px] font-semibold text-(--ag-surface-solid) bg-(--ag-text) hover:brightness-110 disabled:opacity-60 rounded-full transition-colors"
           >
             {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
             {articles.length ? 'Regerar calendário' : 'Gerar calendário'}
@@ -285,10 +285,10 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
         </div>
       </div>
 
-      {error && <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+      {error && <div className="mb-4 text-sm text-(--ag-danger) bg-(--ag-danger-soft) border border-(--ag-danger-line) rounded-lg px-3 py-2">{error}</div>}
 
       {!articles.length && !loading && (
-        <div className="text-center py-16 text-slate-400">
+        <div className="text-center py-16 text-(--ag-text-3)">
           <CalendarDays className="w-10 h-10 mx-auto mb-3" />
           <p className="text-sm">Nenhum artigo agendado. Aprove clusters e gere o calendário.</p>
         </div>
@@ -299,7 +299,7 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
         axis="y"
         values={sortedArticles}
         onReorder={handleReorder}
-        className="bg-white border border-slate-200 rounded-2xl shadow-sm divide-y divide-slate-100 overflow-hidden"
+        className="ag-glass rounded-[22px] [&>*+*]:border-t [&>*+*]:border-(--ag-hairline) overflow-hidden"
       >
         {sortedArticles.map((a) => {
           const cName = clusterName(a.clusterId);
@@ -308,17 +308,17 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
               key={a.id}
               value={a}
               as="div"
-              className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors bg-white"
+              className="flex items-center gap-3 px-5 py-3.5 hover:bg-(--ag-fill) transition-colors bg-(--ag-surface-solid)"
             >
-              <GripVertical className="w-4 h-4 text-slate-300 cursor-grab active:cursor-grabbing shrink-0" />
+              <GripVertical className="w-4 h-4 text-(--ag-text-3) cursor-grab active:cursor-grabbing shrink-0" />
               <input
                 type="checkbox"
                 checked={marcados.has(a.id)}
                 onChange={() => alternarMarcado(a.id)}
                 aria-label={`Selecionar ${a.titulo}`}
-                className="w-4 h-4 accent-[#FF5B03] shrink-0 cursor-pointer"
+                className="w-4 h-4 accent-(--ag-accent) shrink-0 cursor-pointer"
               />
-              <div className="text-xs font-medium text-slate-500 w-24 shrink-0">
+              <div className="text-xs font-medium text-(--ag-text-2) w-24 shrink-0">
                 {formatDateTime(a.scheduledDate, a.scheduledTime)}
               </div>
 
@@ -330,32 +330,32 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
                       value={titleDraft}
                       onChange={(e) => setTitleDraft(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') saveTitleEdit(); if (e.key === 'Escape') setEditingTitleId(null); }}
-                      className="flex-1 border border-slate-300 rounded px-2 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
+                      className="flex-1 border border-(--ag-hairline-2) rounded px-2 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-(--ag-accent)"
                     />
-                    <button onClick={saveTitleEdit} className="p-0.5 text-emerald-600 hover:bg-emerald-50 rounded"><Check className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => setEditingTitleId(null)} className="p-0.5 text-slate-400 hover:bg-slate-100 rounded"><X className="w-3.5 h-3.5" /></button>
+                    <button onClick={saveTitleEdit} className="p-0.5 text-(--ag-ok) hover:bg-(--ag-ok-soft) rounded"><Check className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => setEditingTitleId(null)} className="p-0.5 text-(--ag-text-3) hover:bg-(--ag-fill-2) rounded"><X className="w-3.5 h-3.5" /></button>
                   </div>
                 ) : (
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <button onClick={() => setSelected(a.id)} className="text-sm font-medium text-slate-900 hover:text-[#FF5B03] truncate text-left">
+                    <button onClick={() => setSelected(a.id)} className="text-sm font-medium text-(--ag-text) hover:text-(--ag-accent) truncate text-left">
                       {a.titulo}
                     </button>
                     <button
                       onClick={() => startTitleEdit(a)}
                       title="Editar título"
-                      className="p-1 text-slate-400 hover:text-[#FF5B03] hover:bg-[#FFF3EC] rounded shrink-0 transition-colors"
+                      className="p-1 text-(--ag-text-3) hover:text-(--ag-accent) hover:bg-(--ag-accent-soft) rounded shrink-0 transition-colors"
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 )}
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-[11px] text-slate-400">KW: {a.kwPrincipal}{a.status === 'em_producao' ? ` · etapa ${a.stage}/5` : ''}</span>
+                  <span className="text-[11px] text-(--ag-text-3)">KW: {a.kwPrincipal}{a.status === 'em_producao' ? ` · etapa ${a.stage}/5` : ''}</span>
                   <ArticleSizePicker value={a.tamanho} onChange={(size) => changeSize(a.id, size)} />
                   {cName && (
                     <button
                       onClick={() => onGoCluster(a.clusterId)}
-                      className="text-[11px] font-medium text-[#FF5B03] bg-[#FFF3EC] px-1.5 py-0.5 rounded hover:bg-[#FFD3BF] transition-colors"
+                      className="text-[11px] font-medium text-(--ag-accent) bg-(--ag-accent-soft) px-1.5 py-0.5 rounded hover:bg-(--ag-accent-line) transition-colors"
                     >
                       {cName}
                     </button>
@@ -371,7 +371,7 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
                 <button
                   onClick={() => openReschedule(a)}
                   title="Reagendar"
-                  className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+                  className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg bg-(--ag-fill-2) text-(--ag-text-2) hover:bg-(--ag-fill-2) transition-colors"
                 >
                   <Clock className="w-3.5 h-3.5" />
                 </button>
@@ -380,7 +380,7 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
                     onClick={() => handleProduce(a.id)}
                     disabled={producing[a.id]}
                     title="Produzir agora"
-                    className="flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-60 transition-colors"
+                    className="flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg bg-(--ag-fill-2) text-(--ag-text) hover:bg-(--ag-fill-2) disabled:opacity-60 transition-colors"
                   >
                     {producing[a.id] ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />} Produzir
                   </button>
@@ -389,7 +389,7 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
                   <button
                     onClick={() => setSelected(a.id)}
                     title="Ver artigo"
-                    className="flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+                    className="flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg bg-(--ag-fill-2) text-(--ag-text) hover:bg-(--ag-fill-2) transition-colors"
                   >
                     <FileText className="w-3.5 h-3.5" /> Ver
                   </button>
@@ -397,7 +397,7 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
                 <button
                   onClick={() => handleDelete(a)}
                   title="Excluir artigo"
-                  className="flex items-center gap-1 text-xs font-medium p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                  className="flex items-center gap-1 text-xs font-medium p-1.5 rounded-lg text-(--ag-text-3) hover:text-(--ag-danger) hover:bg-(--ag-danger-soft) transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -408,83 +408,83 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
       </Reorder.Group>
 
       {reschedulingId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm" onClick={() => setReschedulingId(null)}>
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-display text-lg font-bold text-slate-900 mb-4">Reagendar artigo</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-(--ag-scrim) backdrop-blur-sm" onClick={() => setReschedulingId(null)}>
+          <div className="bg-(--ag-surface-solid) rounded-2xl shadow-xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-display text-lg font-bold text-(--ag-text) mb-4">Reagendar artigo</h3>
             <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Data</label>
+                <label className="block text-sm font-medium text-(--ag-text) mb-1">Data</label>
                 <input
                   type="date"
                   value={reschedDate}
                   onChange={(e) => setReschedDate(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
+                  className="w-full border border-(--ag-hairline-2) rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-(--ag-accent)"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Horário</label>
+                <label className="block text-sm font-medium text-(--ag-text) mb-1">Horário</label>
                 <input
                   type="time"
                   value={reschedTime}
                   onChange={(e) => setReschedTime(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
+                  className="w-full border border-(--ag-hairline-2) rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-(--ag-accent)"
                 />
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-5">
-              <button onClick={() => setReschedulingId(null)} className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg">Cancelar</button>
-              <button onClick={confirmReschedule} className="px-4 py-2 text-sm font-medium text-white bg-[#FF5B03] hover:bg-[#E14E00] rounded-lg">Confirmar</button>
+              <button onClick={() => setReschedulingId(null)} className="px-4 py-2 text-sm font-medium text-(--ag-text-2) bg-(--ag-fill-2) hover:bg-(--ag-fill-2) rounded-lg">Cancelar</button>
+              <button onClick={confirmReschedule} className="px-4 py-2 text-sm font-medium text-(--ag-surface-solid) bg-(--ag-text) hover:brightness-110 rounded-full">Confirmar</button>
             </div>
           </div>
         </div>
       )}
 
       {creatingArticle && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm" onClick={() => setCreatingArticle(false)}>
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-display text-lg font-bold text-slate-900 mb-4">Criar artigo</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-(--ag-scrim) backdrop-blur-sm" onClick={() => setCreatingArticle(false)}>
+          <div className="bg-(--ag-surface-solid) rounded-2xl shadow-xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-display text-lg font-bold text-(--ag-text) mb-4">Criar artigo</h3>
             {creatingError && (
-              <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{creatingError}</div>
+              <div className="mb-3 text-sm text-(--ag-danger) bg-(--ag-danger-soft) border border-(--ag-danger-line) rounded-lg px-3 py-2">{creatingError}</div>
             )}
             <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Título</label>
+                <label className="block text-sm font-medium text-(--ag-text) mb-1">Título</label>
                 <input
                   autoFocus
                   value={newTitulo}
                   onChange={(e) => setNewTitulo(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
+                  className="w-full border border-(--ag-hairline-2) rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-(--ag-accent)"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Palavra-chave principal</label>
+                <label className="block text-sm font-medium text-(--ag-text) mb-1">Palavra-chave principal</label>
                 <input
                   value={newKw}
                   onChange={(e) => setNewKw(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
+                  className="w-full border border-(--ag-hairline-2) rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-(--ag-accent)"
                 />
               </div>
               <div className="flex items-end gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Tamanho</label>
+                  <label className="block text-sm font-medium text-(--ag-text) mb-1">Tamanho</label>
                   <ArticleSizePicker value={newTamanho} onChange={setNewTamanho} />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Data agendada</label>
+                  <label className="block text-sm font-medium text-(--ag-text) mb-1">Data agendada</label>
                   <input
                     type="date"
                     value={newScheduledDate}
                     onChange={(e) => setNewScheduledDate(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
+                    className="w-full border border-(--ag-hairline-2) rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-(--ag-accent)"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Cluster</label>
+                <label className="block text-sm font-medium text-(--ag-text) mb-1">Cluster</label>
                 <select
                   value={newClusterId}
                   onChange={(e) => setNewClusterId(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
+                  className="w-full border border-(--ag-hairline-2) rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-(--ag-accent)"
                 >
                   <option value="">Nenhum</option>
                   {approvedClusters.map((c) => (
@@ -493,18 +493,18 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Produtos vinculados</label>
+                <label className="block text-sm font-medium text-(--ag-text) mb-1">Produtos vinculados</label>
                 <ProductLinkPicker products={allProducts} selectedIds={newProdutoIds} onChange={setNewProdutoIds} />
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-5">
-              <button onClick={() => setCreatingArticle(false)} className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg">
+              <button onClick={() => setCreatingArticle(false)} className="px-4 py-2 text-sm font-medium text-(--ag-text-2) bg-(--ag-fill-2) hover:bg-(--ag-fill-2) rounded-lg">
                 Cancelar
               </button>
               <button
                 onClick={confirmCreateArticle}
                 disabled={creatingSaving}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-lg"
+                className="flex items-center gap-2 h-11 px-4 text-[13.5px] font-semibold text-(--ag-surface-solid) bg-(--ag-text) hover:brightness-110 disabled:opacity-60 rounded-full"
               >
                 {creatingSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : null} Criar artigo
               </button>

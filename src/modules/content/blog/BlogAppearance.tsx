@@ -54,19 +54,19 @@ function useGoogleFontsPreview() {
 // Mini-previews esquemáticos em CSS puro por (eixo, variante). Refletem a
 // estrutura de cada opção sem renderizar o blog inteiro.
 const bar = (w: string, dark = false) => (
-  <div className={`h-1 rounded ${dark ? 'bg-slate-400' : 'bg-slate-200'}`} style={{ width: w }} />
+  <div className={`h-1 rounded ${dark ? 'bg-(--ag-hairline-2)' : 'bg-(--ag-fill-2)'}`} style={{ width: w }} />
 );
 
 const AXIS_PREVIEW: Record<string, Record<string, React.ReactNode>> = {
   header: {
     'logo-esquerda': (
-      <div className="flex items-center justify-between px-1"><div className="h-2 w-6 bg-slate-400 rounded-sm" /><div className="flex gap-1">{bar('10px')}{bar('10px')}{bar('10px')}</div></div>
+      <div className="flex items-center justify-between px-1"><div className="h-2 w-6 bg-(--ag-hairline-2) rounded-sm" /><div className="flex gap-1">{bar('10px')}{bar('10px')}{bar('10px')}</div></div>
     ),
     'logo-centro': (
-      <div className="flex flex-col items-center gap-1"><div className="h-2 w-8 bg-slate-400 rounded-sm" /><div className="flex gap-1">{bar('9px')}{bar('9px')}{bar('9px')}</div></div>
+      <div className="flex flex-col items-center gap-1"><div className="h-2 w-8 bg-(--ag-hairline-2) rounded-sm" /><div className="flex gap-1">{bar('9px')}{bar('9px')}{bar('9px')}</div></div>
     ),
     'logo-topo': (
-      <div className="flex flex-col items-center gap-1"><div className="h-2.5 w-10 bg-slate-500 rounded-sm" />{bar('26px')}<div className="flex gap-1">{bar('8px')}{bar('8px')}</div></div>
+      <div className="flex flex-col items-center gap-1"><div className="h-2.5 w-10 bg-(--ag-text-3) rounded-sm" />{bar('26px')}<div className="flex gap-1">{bar('8px')}{bar('8px')}</div></div>
     ),
   },
   footer: {
@@ -75,24 +75,24 @@ const AXIS_PREVIEW: Record<string, Record<string, React.ReactNode>> = {
     centralizado: (<div className="flex flex-col items-center gap-1"><div className="flex gap-1">{bar('8px')}{bar('8px')}{bar('8px')}</div>{bar('24px', true)}</div>),
   },
   category: {
-    grade: (<div className="grid grid-cols-3 gap-1">{[0, 1, 2, 3, 4, 5].map((i) => <div key={i} className="h-4 bg-slate-200 rounded" />)}</div>),
-    lista: (<div className="flex flex-col gap-1">{[0, 1, 2].map((i) => <div key={i} className="flex gap-1 items-center"><div className="h-3 w-4 bg-slate-300 rounded shrink-0" /><div className="flex-1 flex flex-col gap-0.5">{bar('100%')}{bar('60%')}</div></div>)}</div>),
-    'destaque-grade': (<div className="flex flex-col gap-1"><div className="h-5 bg-slate-300 rounded" /><div className="grid grid-cols-3 gap-1">{[0, 1, 2].map((i) => <div key={i} className="h-3 bg-slate-200 rounded" />)}</div></div>),
+    grade: (<div className="grid grid-cols-3 gap-1">{[0, 1, 2, 3, 4, 5].map((i) => <div key={i} className="h-4 bg-(--ag-fill-2) rounded" />)}</div>),
+    lista: (<div className="flex flex-col gap-1">{[0, 1, 2].map((i) => <div key={i} className="flex gap-1 items-center"><div className="h-3 w-4 bg-(--ag-hairline-2) rounded shrink-0" /><div className="flex-1 flex flex-col gap-0.5">{bar('100%')}{bar('60%')}</div></div>)}</div>),
+    'destaque-grade': (<div className="flex flex-col gap-1"><div className="h-5 bg-(--ag-hairline-2) rounded" /><div className="grid grid-cols-3 gap-1">{[0, 1, 2].map((i) => <div key={i} className="h-3 bg-(--ag-fill-2) rounded" />)}</div></div>),
   },
   card: {
-    'com-borda': (<div className="border border-slate-300 rounded p-1 flex flex-col gap-1"><div className="h-3 bg-slate-200 rounded" />{bar('80%', true)}{bar('60%')}</div>),
-    plano: (<div className="flex flex-col gap-1"><div className="h-3 bg-slate-200 rounded" />{bar('80%', true)}{bar('60%')}</div>),
-    sombra: (<div className="rounded p-1 flex flex-col gap-1 bg-white shadow-md"><div className="h-3 bg-slate-200 rounded" />{bar('80%', true)}{bar('60%')}</div>),
+    'com-borda': (<div className="border border-(--ag-hairline-2) rounded p-1 flex flex-col gap-1"><div className="h-3 bg-(--ag-fill-2) rounded" />{bar('80%', true)}{bar('60%')}</div>),
+    plano: (<div className="flex flex-col gap-1"><div className="h-3 bg-(--ag-fill-2) rounded" />{bar('80%', true)}{bar('60%')}</div>),
+    sombra: (<div className="rounded p-1 flex flex-col gap-1 bg-(--ag-surface-solid) shadow-md"><div className="h-3 bg-(--ag-fill-2) rounded" />{bar('80%', true)}{bar('60%')}</div>),
   },
   article: {
-    centrado: (<div className="flex flex-col items-center gap-1"><div className="h-3 w-full bg-slate-200 rounded" />{bar('50%', true)}{bar('80%')}{bar('70%')}</div>),
-    'capa-larga': (<div className="flex flex-col gap-1"><div className="h-5 bg-slate-500 rounded" />{bar('80%')}{bar('70%')}</div>),
+    centrado: (<div className="flex flex-col items-center gap-1"><div className="h-3 w-full bg-(--ag-fill-2) rounded" />{bar('50%', true)}{bar('80%')}{bar('70%')}</div>),
+    'capa-larga': (<div className="flex flex-col gap-1"><div className="h-5 bg-(--ag-text-3) rounded" />{bar('80%')}{bar('70%')}</div>),
     'lateral-meta': (<div className="flex gap-1.5"><div className="flex flex-col gap-0.5 w-1/3">{bar('100%', true)}{bar('70%')}</div><div className="flex-1 flex flex-col gap-0.5">{bar('100%')}{bar('90%')}{bar('80%')}</div></div>),
   },
 };
 
 const AxisPreview: React.FC<{ axis: string; variant: string }> = ({ axis, variant }) => (
-  <div className="h-14 w-full bg-slate-50 rounded-lg p-2 flex flex-col justify-center overflow-hidden">
+  <div className="h-14 w-full bg-(--ag-fill) rounded-lg p-2 flex flex-col justify-center overflow-hidden">
     {AXIS_PREVIEW[axis]?.[variant]}
   </div>
 );
@@ -102,17 +102,17 @@ const ToggleRow: React.FC<{
 }> = ({ label, hint, checked, onChange }) => (
   <div className="flex items-center justify-between gap-3 py-1.5">
     <div>
-      <p className="text-xs font-medium text-slate-700">{label}</p>
-      {hint && <p className="text-[11px] text-slate-400">{hint}</p>}
+      <p className="text-xs font-medium text-(--ag-text)">{label}</p>
+      {hint && <p className="text-[11px] text-(--ag-text-3)">{hint}</p>}
     </div>
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${checked ? 'bg-[#FF5B03]' : 'bg-slate-300'}`}
+      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${checked ? 'bg-(--ag-accent)' : 'bg-(--ag-hairline-2)'}`}
     >
-      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-5' : 'translate-x-1'}`} />
+      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-(--ag-surface-solid) transition-transform ${checked ? 'translate-x-5' : 'translate-x-1'}`} />
     </button>
   </div>
 );
@@ -195,24 +195,24 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
 
   return (
     <div className="space-y-5">
-      {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+      {error && <div className="text-sm text-(--ag-danger) bg-(--ag-danger-soft) border border-(--ag-danger-line) rounded-lg px-3 py-2">{error}</div>}
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,44%)] gap-5 items-start">
         <div className="space-y-5">
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
-            <h3 className="font-semibold text-slate-900 mb-1">Estilos rápidos</h3>
-            <p className="text-xs text-slate-500 mb-4">Pontos de partida que preenchem todas as opções de uma vez. Ajuste cada seção abaixo depois.</p>
+          <div className="ag-glass rounded-[22px] p-6">
+            <h3 className="font-semibold text-(--ag-text) mb-1">Estilos rápidos</h3>
+            <p className="text-xs text-(--ag-text-2) mb-4">Pontos de partida que preenchem todas as opções de uma vez. Ajuste cada seção abaixo depois.</p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {BLOG_TEMPLATES.map((t) => (
                 <button
                   key={t.id}
                   onClick={() => applyPreset(t.id)}
                   className={`text-left p-3 rounded-xl border-2 transition-colors ${
-                    settings.template === t.id ? 'border-[#FF5B03] bg-[#FF5B03]/5' : 'border-slate-200 hover:border-slate-300'
-                  }`}
+ settings.template === t.id ? 'border-(--ag-accent) bg-(--ag-accent)/5' : 'border-(--ag-hairline) hover:border-(--ag-hairline-2)'
+ }`}
                 >
-                  <p className="text-sm font-semibold text-slate-900">{t.nome}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{t.descricao}</p>
+                  <p className="text-sm font-semibold text-(--ag-text)">{t.nome}</p>
+                  <p className="text-xs text-(--ag-text-2) mt-0.5">{t.descricao}</p>
                 </button>
               ))}
             </div>
@@ -226,8 +226,8 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
             ['Estilo do card', 'card'],
             ['Página de artigo', 'article'],
           ] as const).map(([label, axis]) => (
-            <div key={axis} className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
-              <h3 className="font-semibold text-slate-900 mb-4">{label}</h3>
+            <div key={axis} className="ag-glass rounded-[22px] p-6">
+              <h3 className="font-semibold text-(--ag-text) mb-4">{label}</h3>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {BLOG_APPEARANCE_OPTIONS[axis].map((opt) => {
                   const active = appearance[axis] === opt.id;
@@ -236,12 +236,12 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
                       key={opt.id}
                       onClick={() => patchAppearance({ [axis]: opt.id } as Partial<BlogAppearanceModel>)}
                       className={`text-left p-3 rounded-xl border-2 transition-colors ${
-                        active ? 'border-[#FF5B03] bg-[#FF5B03]/5' : 'border-slate-200 hover:border-slate-300'
-                      }`}
+ active ? 'border-(--ag-accent) bg-(--ag-accent)/5' : 'border-(--ag-hairline) hover:border-(--ag-hairline-2)'
+ }`}
                     >
                       <AxisPreview axis={axis} variant={opt.id} />
-                      <p className="text-sm font-semibold text-slate-900 mt-2.5">{opt.nome}</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">{opt.descricao}</p>
+                      <p className="text-sm font-semibold text-(--ag-text) mt-2.5">{opt.nome}</p>
+                      <p className="text-[11px] text-(--ag-text-2) mt-0.5 leading-snug">{opt.descricao}</p>
                     </button>
                   );
                 })}
@@ -257,8 +257,8 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
                 />
               )}
               {axis === 'card' && (
-                <div className="mt-4 pt-4 border-t border-slate-100 space-y-1">
-                  <p className="text-xs font-semibold text-slate-500 mb-2">Itens exibidos no card</p>
+                <div className="mt-4 pt-4 border-t border-(--ag-hairline) space-y-1">
+                  <p className="text-xs font-semibold text-(--ag-text-2) mb-2">Itens exibidos no card</p>
                   <ToggleRow label="Categoria (chip)" checked={appearance.cardShowCategory} onChange={(v) => patchAppearance({ cardShowCategory: v })} />
                   <ToggleRow label="Mini descrição (resumo)" checked={appearance.cardShowExcerpt} onChange={(v) => patchAppearance({ cardShowExcerpt: v })} />
                   <ToggleRow label="Data e tempo de leitura" checked={appearance.cardShowMeta} onChange={(v) => patchAppearance({ cardShowMeta: v })} />
@@ -268,13 +268,13 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
             </div>
           ))}
 
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
-            <h3 className="font-semibold text-slate-900 mb-1">Tipografia</h3>
-            <p className="text-xs text-slate-500 mb-4">Fontes servidas via Google Fonts no blog publicado.</p>
+          <div className="ag-glass rounded-[22px] p-6">
+            <h3 className="font-semibold text-(--ag-text) mb-1">Tipografia</h3>
+            <p className="text-xs text-(--ag-text-2) mb-4">Fontes servidas via Google Fonts no blog publicado.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {([['heading', 'Títulos'], ['body', 'Texto do corpo']] as const).map(([key, label]) => (
                 <div key={key}>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1.5">{label}</label>
+                  <label className="block text-xs font-semibold text-(--ag-text-2) mb-1.5">{label}</label>
                   <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
                     {BLOG_FONTS.map((f) => (
                       <button
@@ -282,15 +282,15 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
                         type="button"
                         onClick={() => patch({ fonts: { ...fonts, [key]: f.family } }, 'Erro ao salvar fonte')}
                         className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border text-left transition-colors ${
-                          fonts[key] === f.family
-                            ? 'border-[#FF5B03] bg-[#FF5B03]/5'
-                            : 'border-slate-200 hover:border-slate-300 bg-white'
-                        }`}
+ fonts[key] === f.family
+ ? 'border-(--ag-accent) bg-(--ag-accent)/5'
+ : 'border-(--ag-hairline) hover:border-(--ag-hairline-2) bg-(--ag-surface-solid)'
+ }`}
                       >
-                        <span className="text-sm text-slate-800" style={{ fontFamily: `'${f.family}', ${f.stack}` }}>
+                        <span className="text-sm text-(--ag-text)" style={{ fontFamily: `'${f.family}', ${f.stack}` }}>
                           {f.family}
                         </span>
-                        <span className="text-[10px] uppercase tracking-wide text-slate-400">{f.categoria}</span>
+                        <span className="text-[10px] uppercase tracking-wide text-(--ag-text-3)">{f.categoria}</span>
                       </button>
                     ))}
                   </div>
@@ -299,13 +299,13 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
             </div>
           </div>
 
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
-            <h3 className="font-semibold text-slate-900 mb-1">Navegação</h3>
-            <p className="text-xs text-slate-500 mb-4">A estrutura e o visual das páginas vêm do template escolhido.</p>
+          <div className="ag-glass rounded-[22px] p-6">
+            <h3 className="font-semibold text-(--ag-text) mb-1">Navegação</h3>
+            <p className="text-xs text-(--ag-text-2) mb-4">A estrutura e o visual das páginas vêm do template escolhido.</p>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-semibold text-slate-500">Menu de categorias no cabeçalho</p>
-                <p className="text-[11px] text-slate-400">Exibe os links das categorias no topo do blog.</p>
+                <p className="text-xs font-semibold text-(--ag-text-2)">Menu de categorias no cabeçalho</p>
+                <p className="text-[11px] text-(--ag-text-3)">Exibe os links das categorias no topo do blog.</p>
               </div>
               <button
                 type="button"
@@ -313,46 +313,46 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
                 aria-checked={layout.showCategoriesNav}
                 onClick={() => patchLayout({ showCategoriesNav: !layout.showCategoriesNav })}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  layout.showCategoriesNav ? 'bg-[#FF5B03]' : 'bg-slate-300'
-                }`}
+ layout.showCategoriesNav ? 'bg-(--ag-accent)' : 'bg-(--ag-hairline-2)'
+ }`}
               >
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  layout.showCategoriesNav ? 'translate-x-6' : 'translate-x-1'
-                }`} />
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-(--ag-surface-solid) transition-transform ${
+ layout.showCategoriesNav ? 'translate-x-6' : 'translate-x-1'
+ }`} />
               </button>
             </div>
           </div>
 
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
-            <h3 className="font-semibold text-slate-900 mb-4">Cores</h3>
+          <div className="ag-glass rounded-[22px] p-6">
+            <h3 className="font-semibold text-(--ag-text) mb-4">Cores</h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {([['primary', 'Primária'], ['background', 'Fundo'], ['text', 'Texto']] as const).map(([key, label]) => (
                 <div key={key}>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">{label}</label>
+                  <label className="block text-xs font-semibold text-(--ag-text-2) mb-1">{label}</label>
                   <input
                     type="color"
                     value={settings.colors[key]}
                     onChange={(e) => patch({ colors: { ...settings.colors, [key]: e.target.value } }, 'Erro ao salvar cor')}
-                    className="w-full h-10 rounded-lg border border-slate-300 cursor-pointer"
+                    className="w-full h-10 rounded-lg border border-(--ag-hairline-2) cursor-pointer"
                   />
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
-            <h3 className="font-semibold text-slate-900 mb-4">Identidade e textos</h3>
+          <div className="ag-glass rounded-[22px] p-6">
+            <h3 className="font-semibold text-(--ag-text) mb-4">Identidade e textos</h3>
             <div className="space-y-3">
               <div className="flex items-center gap-4">
                 {settings.logoUrl ? (
-                  <img src={settings.logoUrl} alt="Logo" className="h-14 w-auto rounded-lg border border-slate-200 bg-slate-50 p-1" />
+                  <img src={settings.logoUrl} alt="Logo" className="h-14 w-auto rounded-lg border border-(--ag-hairline) bg-(--ag-fill) p-1" />
                 ) : (
-                  <div className="h-14 w-14 rounded-lg border border-dashed border-slate-300 flex items-center justify-center text-slate-300">
+                  <div className="h-14 w-14 rounded-lg border border-dashed border-(--ag-hairline-2) flex items-center justify-center text-(--ag-text-3)">
                     <ImageIcon className="w-6 h-6" />
                   </div>
                 )}
                 <div className="flex items-center gap-2">
-                  <label className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 shadow-sm hover:bg-slate-50 rounded-xl transition-colors cursor-pointer">
+                  <label className="inline-flex items-center gap-1.5 h-11 px-4 text-[13.5px] font-semibold text-(--ag-text) bg-(--ag-surface-solid) border border-(--ag-hairline) hover:bg-(--ag-fill) rounded-full transition-colors cursor-pointer">
                     {uploadingLogo ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
                     {settings.logoUrl ? 'Trocar logo' : 'Enviar logo'}
                     <input
@@ -369,7 +369,7 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
                   {settings.logoUrl && (
                     <button
                       onClick={() => patch({ logoUrl: '' }, 'Erro ao remover logo')}
-                      className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-(--ag-danger) hover:bg-(--ag-danger-soft) rounded-xl transition-colors"
                     >
                       <X className="w-4 h-4" /> Remover
                     </button>
@@ -377,38 +377,38 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">Título do blog</label>
+                <label className="block text-xs font-semibold text-(--ag-text-2) mb-1">Título do blog</label>
                 <input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
+                  className="w-full border border-(--ag-hairline-2) rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent)"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">Descrição</label>
+                <label className="block text-xs font-semibold text-(--ag-text-2) mb-1">Descrição</label>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={2}
-                  className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03] resize-none"
+                  className="w-full border border-(--ag-hairline-2) rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent) resize-none"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">Texto do rodapé</label>
+                <label className="block text-xs font-semibold text-(--ag-text-2) mb-1">Texto do rodapé</label>
                 <input
                   value={footerText}
                   onChange={(e) => setFooterText(e.target.value)}
                   placeholder={`© ${new Date().getFullYear()} ${settings.title}`}
-                  className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
+                  className="w-full border border-(--ag-hairline-2) rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent)"
                 />
               </div>
             </div>
             <div className="flex items-center justify-end gap-3 mt-4">
-              {savedText && <span className="flex items-center gap-1 text-sm text-emerald-600 font-medium"><Check className="w-4 h-4" /> Salvo</span>}
+              {savedText && <span className="flex items-center gap-1 text-sm text-(--ag-ok) font-medium"><Check className="w-4 h-4" /> Salvo</span>}
               <button
                 onClick={handleSaveText}
                 disabled={savingText}
-                className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-xl shadow-sm transition-colors"
+                className="flex items-center gap-1.5 h-11 px-4 text-[13.5px] font-semibold text-(--ag-surface-solid) bg-(--ag-text) hover:brightness-110 disabled:opacity-60 rounded-full transition-colors"
               >
                 {savingText ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Salvar
               </button>
@@ -418,20 +418,20 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
 
         {/* Preview ao vivo do blog (recarrega a cada alteração salva). */}
         <div className="xl:sticky xl:top-4">
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50/60">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Preview ao vivo</p>
+          <div className="ag-glass rounded-[22px] overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-(--ag-hairline) bg-(--ag-fill)/60">
+              <p className="text-xs font-semibold text-(--ag-text-2) uppercase tracking-wide">Preview ao vivo</p>
               <a
                 href={`/b/${settings.slug}/`}
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center gap-1 text-xs font-medium text-[#FF5B03] hover:underline"
+                className="flex items-center gap-1 text-xs font-medium text-(--ag-accent) hover:underline"
               >
                 Abrir em nova aba <ExternalLink className="w-3.5 h-3.5" />
               </a>
             </div>
             {!hasPosts && (
-              <div className="px-4 py-2 text-xs text-slate-500 bg-amber-50 border-b border-amber-100">
+              <div className="px-4 py-2 text-xs text-(--ag-text-2) bg-(--ag-warn-soft) border-b border-(--ag-warn-line)">
                 Mostrando conteúdo de exemplo — some assim que você publicar o primeiro post de verdade.
               </div>
             )}
@@ -439,7 +439,7 @@ const BlogAppearance: React.FC<Props> = ({ uid, projectId, settings, hasPosts })
               key={previewUrl}
               src={previewUrl}
               title="Preview do blog"
-              className="w-full h-[640px] bg-white"
+              className="w-full h-[640px] bg-(--ag-surface-solid)"
             />
           </div>
         </div>

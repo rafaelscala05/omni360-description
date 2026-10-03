@@ -154,29 +154,29 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
 
   return (
     <div className="space-y-5">
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
-        <h3 className="font-semibold text-slate-900 mb-4">Adicionar domínio</h3>
-        {error && <div className="mb-3 text-sm text-red-400 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+      <div className="ag-glass rounded-[22px] p-6">
+        <h3 className="font-semibold text-(--ag-text) mb-4">Adicionar domínio</h3>
+        {error && <div className="mb-3 text-sm text-(--ag-danger) bg-(--ag-danger-soft) border border-(--ag-danger-line) rounded-lg px-3 py-2">{error}</div>}
 
         <div className="flex gap-2 mb-3.5">
           <button
             onClick={() => setMethod('cname')}
             className={`flex-1 text-sm font-medium px-3.5 py-2 rounded-xl border transition-colors ${
-              method === 'cname' ? 'border-[#FF5B03] bg-[#FF5B03]/5 text-[#FF5B03]' : 'border-slate-200 text-slate-500 hover:bg-slate-50'
-            }`}
+ method === 'cname' ? 'border-(--ag-accent) bg-(--ag-accent)/5 text-(--ag-accent)' : 'border-(--ag-hairline) text-(--ag-text-2) hover:bg-(--ag-fill)'
+ }`}
           >
             Domínio ou subdomínio dedicado
           </button>
           <button
             onClick={() => setMethod('proxy')}
             className={`flex-1 text-sm font-medium px-3.5 py-2 rounded-xl border transition-colors ${
-              method === 'proxy' ? 'border-[#FF5B03] bg-[#FF5B03]/5 text-[#FF5B03]' : 'border-slate-200 text-slate-500 hover:bg-slate-50'
-            }`}
+ method === 'proxy' ? 'border-(--ag-accent) bg-(--ag-accent)/5 text-(--ag-accent)' : 'border-(--ag-hairline) text-(--ag-text-2) hover:bg-(--ag-fill)'
+ }`}
           >
             Caminho /blog no meu site atual
           </button>
         </div>
-        <p className="text-xs text-slate-500 mb-3.5">
+        <p className="text-xs text-(--ag-text-2) mb-3.5">
           {method === 'cname'
             ? 'O domínio (ou subdomínio) informado passa a servir o blog inteiro na raiz.'
             : 'Só o caminho /blog do domínio informado é encaminhado para cá — o resto do site continua onde está.'}
@@ -187,12 +187,12 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
             value={domain}
             onChange={(e) => setDomain(e.target.value)}
             placeholder={method === 'cname' ? 'blog.suaempresa.com.br' : 'suaempresa.com.br'}
-            className="flex-1 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
+            className="flex-1 border border-(--ag-hairline-2) rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent)"
           />
           <button
             onClick={handleAdd}
             disabled={adding || !domain.trim()}
-            className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-xl shadow-sm transition-colors shrink-0"
+            className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-(--ag-surface-solid) bg-(--ag-text) hover:brightness-110 disabled:opacity-60 rounded-full transition-colors shrink-0"
           >
             {adding ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Adicionar
           </button>
@@ -200,32 +200,32 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
       </div>
 
       {instructions?.kind === 'cname' && (
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
-          <h3 className="font-semibold text-slate-900 mb-1">Configuração de DNS para {instructions.domain}</h3>
-          <p className="text-sm text-slate-500 mb-4">
+        <div className="ag-glass rounded-[22px] p-6">
+          <h3 className="font-semibold text-(--ag-text) mb-1">Configuração de DNS para {instructions.domain}</h3>
+          <p className="text-sm text-(--ag-text-2) mb-4">
             Crie o registro abaixo no seu provedor de DNS e depois clique em "Verificar". É o único
             registro necessário.
           </p>
 
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
-            <p className="text-xs font-semibold text-slate-500 mb-2">Registro CNAME</p>
+          <div className="bg-(--ag-fill) border border-(--ag-hairline) rounded-xl p-3.5">
+            <p className="text-xs font-semibold text-(--ag-text-2) mb-2">Registro CNAME</p>
             <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1.5 text-sm">
-              <span className="text-xs text-slate-400">Nome</span>
-              <code className="text-slate-800 break-all">{instructions.domain}</code>
+              <span className="text-xs text-(--ag-text-3)">Nome</span>
+              <code className="text-(--ag-text) break-all">{instructions.domain}</code>
               <span />
-              <span className="text-xs text-slate-400">Valor</span>
-              <code className="text-slate-800 break-all">{instructions.cnameTarget}</code>
+              <span className="text-xs text-(--ag-text-3)">Valor</span>
+              <code className="text-(--ag-text) break-all">{instructions.cnameTarget}</code>
               <button
                 onClick={() => handleCopy(instructions.cnameTarget, 'cname')}
-                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-md shrink-0"
+                className="p-1.5 text-(--ag-text-3) hover:text-(--ag-text) hover:bg-(--ag-fill-2) rounded-md shrink-0"
                 title="Copiar"
               >
-                {copied === 'cname' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                {copied === 'cname' ? <Check className="w-4 h-4 text-(--ag-ok)" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
           </div>
 
-          <p className="text-xs text-slate-500 mt-3">
+          <p className="text-xs text-(--ag-text-2) mt-3">
             O certificado HTTPS é emitido automaticamente, mas só depois que o CNAME estiver no ar —
             costuma levar alguns minutos. Se já existir um registro A ou CNAME com esse mesmo nome,
             remova antes, senão a emissão fica travada.
@@ -234,70 +234,70 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
       )}
 
       {instructions?.kind === 'proxy' && (
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-4">
+        <div className="ag-glass rounded-[22px] p-6 space-y-4">
           <div>
-            <h3 className="font-semibold text-slate-900 mb-1">Configuração do caminho /blog para {instructions.domain}</h3>
-            <p className="text-sm text-slate-500">
+            <h3 className="font-semibold text-(--ag-text) mb-1">Configuração do caminho /blog para {instructions.domain}</h3>
+            <p className="text-sm text-(--ag-text-2)">
               Esse token autentica só este domínio — não reaproveite em outro lugar. Configure o
               encaminhamento de <code>/blog</code> usando um dos exemplos abaixo e depois clique em
               "Verificar" na lista.
             </p>
           </div>
 
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+          <div className="bg-(--ag-fill) border border-(--ag-hairline) rounded-xl p-3.5">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-xs font-semibold text-slate-500 mb-1">Token do domínio</p>
-                <code className="text-slate-800 break-all text-sm">{instructions.proxyToken}</code>
+                <p className="text-xs font-semibold text-(--ag-text-2) mb-1">Token do domínio</p>
+                <code className="text-(--ag-text) break-all text-sm">{instructions.proxyToken}</code>
               </div>
               <button
                 onClick={() => handleCopy(instructions.proxyToken, 'token')}
-                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-md shrink-0"
+                className="p-1.5 text-(--ag-text-3) hover:text-(--ag-text) hover:bg-(--ag-fill-2) rounded-md shrink-0"
                 title="Copiar"
               >
-                {copied === 'token' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                {copied === 'token' ? <Check className="w-4 h-4 text-(--ag-ok)" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <p className="text-xs font-semibold text-slate-500">Cloudflare Worker Route (se o domínio estiver na Cloudflare)</p>
+              <p className="text-xs font-semibold text-(--ag-text-2)">Cloudflare Worker Route (se o domínio estiver na Cloudflare)</p>
               <button
                 onClick={() => handleCopy(cloudflareWorkerSnippet(instructions.proxyToken), 'worker')}
-                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-md shrink-0"
+                className="p-1.5 text-(--ag-text-3) hover:text-(--ag-text) hover:bg-(--ag-fill-2) rounded-md shrink-0"
                 title="Copiar"
               >
-                {copied === 'worker' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                {copied === 'worker' ? <Check className="w-4 h-4 text-(--ag-ok)" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
-            <pre className="bg-slate-900 text-slate-100 text-xs rounded-xl p-3.5 overflow-x-auto"><code>{cloudflareWorkerSnippet(instructions.proxyToken)}</code></pre>
-            <p className="text-xs text-slate-500 mt-1.5">Crie uma Worker Route escopada a {instructions.domain}/blog* — não use o wildcard da zona inteira.</p>
+            <pre className="bg-(--ag-text) text-(--ag-text-3) text-xs rounded-xl p-3.5 overflow-x-auto"><code>{cloudflareWorkerSnippet(instructions.proxyToken)}</code></pre>
+            <p className="text-xs text-(--ag-text-2) mt-1.5">Crie uma Worker Route escopada a {instructions.domain}/blog* — não use o wildcard da zona inteira.</p>
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <p className="text-xs font-semibold text-slate-500">Reverse proxy genérico (Nginx, Apache/cPanel, API Gateway)</p>
+              <p className="text-xs font-semibold text-(--ag-text-2)">Reverse proxy genérico (Nginx, Apache/cPanel, API Gateway)</p>
               <button
                 onClick={() => handleCopy(reverseProxySnippet(instructions.proxyToken), 'proxy')}
-                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-md shrink-0"
+                className="p-1.5 text-(--ag-text-3) hover:text-(--ag-text) hover:bg-(--ag-fill-2) rounded-md shrink-0"
                 title="Copiar"
               >
-                {copied === 'proxy' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                {copied === 'proxy' ? <Check className="w-4 h-4 text-(--ag-ok)" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
-            <pre className="bg-slate-900 text-slate-100 text-xs rounded-xl p-3.5 overflow-x-auto"><code>{reverseProxySnippet(instructions.proxyToken)}</code></pre>
-            <p className="text-xs text-slate-500 mt-1.5">Sintaxe de exemplo em Nginx — adapte pro seu gateway mantendo os dois headers de request e garantindo que o header de resposta X-Alfred-Blog não seja removido (alguns API Gateways filtram headers de resposta por allowlist).</p>
+            <pre className="bg-(--ag-text) text-(--ag-text-3) text-xs rounded-xl p-3.5 overflow-x-auto"><code>{reverseProxySnippet(instructions.proxyToken)}</code></pre>
+            <p className="text-xs text-(--ag-text-2) mt-1.5">Sintaxe de exemplo em Nginx — adapte pro seu gateway mantendo os dois headers de request e garantindo que o header de resposta X-Alfred-Blog não seja removido (alguns API Gateways filtram headers de resposta por allowlist).</p>
           </div>
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
-        <h3 className="font-semibold text-slate-900 mb-4">Domínios configurados</h3>
+      <div className="ag-glass rounded-[22px] p-6">
+        <h3 className="font-semibold text-(--ag-text) mb-4">Domínios configurados</h3>
         {settings.customDomains.length === 0 ? (
-          <p className="text-sm text-slate-400">Nenhum domínio adicionado ainda.</p>
+          <p className="text-sm text-(--ag-text-3)">Nenhum domínio adicionado ainda.</p>
         ) : (
-          <div className="divide-y divide-slate-100">
+          <div className="[&>*+*]:border-t [&>*+*]:border-(--ag-hairline)">
             {settings.customDomains.map((d) => {
               const isVerified = verifiedDomains.includes(d);
               const isProxy = proxyDomains.includes(d);
@@ -305,16 +305,16 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
                 <div key={d} className="py-3.5">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-sm font-medium text-slate-900 truncate">{d}</span>
-                      <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 shrink-0">
+                      <span className="text-sm font-medium text-(--ag-text) truncate">{d}</span>
+                      <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-(--ag-fill-2) text-(--ag-text-2) shrink-0">
                         {isProxy ? '/blog' : 'domínio'}
                       </span>
                       {isVerified ? (
-                        <span className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 shrink-0">
+                        <span className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-(--ag-ok-soft) text-(--ag-ok) shrink-0">
                           <ShieldCheck className="w-3 h-3" /> Verificado
                         </span>
                       ) : (
-                        <span className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 shrink-0">
+                        <span className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-(--ag-fill-2) text-(--ag-text-2) shrink-0">
                           <Clock className="w-3 h-3" /> Pendente
                         </span>
                       )}
@@ -324,7 +324,7 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
                         <button
                           onClick={() => handleShowToken(d)}
                           disabled={loadingToken === d}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 shadow-sm hover:bg-slate-50 disabled:opacity-60 rounded-lg transition-colors"
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-(--ag-text) bg-(--ag-surface-solid) border border-(--ag-hairline) hover:bg-(--ag-fill) disabled:opacity-60 rounded-full transition-colors"
                           title="Ver token e instruções"
                         >
                           {loadingToken === d ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
@@ -334,7 +334,7 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
                       <button
                         onClick={() => handleVerify(d)}
                         disabled={verifying === d}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 shadow-sm hover:bg-slate-50 disabled:opacity-60 rounded-lg transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-(--ag-text) bg-(--ag-surface-solid) border border-(--ag-hairline) hover:bg-(--ag-fill) disabled:opacity-60 rounded-full transition-colors"
                       >
                         {verifying === d ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
                         Verificar
@@ -342,7 +342,7 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
                       <button
                         onClick={() => handleRemove(d)}
                         disabled={removingDomain === d}
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-60 rounded-lg transition-colors"
+                        className="p-1.5 text-(--ag-text-3) hover:text-(--ag-danger) hover:bg-(--ag-danger-soft) disabled:opacity-60 rounded-lg transition-colors"
                         title="Remover"
                       >
                         {removingDomain === d ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
@@ -350,13 +350,13 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
                     </div>
                   </div>
                   {verifyDetail[d] && (
-                    <p className="text-xs text-red-400 mt-1.5">{verifyDetail[d]}</p>
+                    <p className="text-xs text-(--ag-danger) mt-1.5">{verifyDetail[d]}</p>
                   )}
                   {isProxy && (
                     <button
                       onClick={() => handleRotateToken(d)}
                       disabled={loadingToken === d}
-                      className="text-xs text-slate-400 hover:text-slate-700 mt-1.5 underline disabled:opacity-60"
+                      className="text-xs text-(--ag-text-3) hover:text-(--ag-text) mt-1.5 underline disabled:opacity-60"
                     >
                       Gerar novo token
                     </button>

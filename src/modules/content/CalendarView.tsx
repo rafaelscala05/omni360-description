@@ -10,12 +10,12 @@ interface Props {
 }
 
 const STATUS_DOT: Record<ArticleStatus, string> = {
-  agendado: 'bg-slate-400',
-  em_producao: 'bg-amber-400',
-  revisao: 'bg-orange-400',
-  aprovado: 'bg-emerald-400',
-  publicado: 'bg-[#FF5B03]',
-  erro: 'bg-red-400',
+  agendado: 'bg-(--ag-hairline-2)',
+  em_producao: 'bg-(--ag-warn)',
+  revisao: 'bg-(--ag-accent)',
+  aprovado: 'bg-(--ag-ok)',
+  publicado: 'bg-(--ag-accent)',
+  erro: 'bg-(--ag-danger)',
 };
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -65,34 +65,34 @@ const CalendarView: React.FC<Props> = ({ uid, projectId, onOpenArticle }) => {
   const todayIso = toIso(now.getFullYear(), now.getMonth(), now.getDate());
 
   return (
-    <div className="max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 mb-6">
         <div>
-          <h1 className="font-display text-2xl font-bold text-slate-900">Calendário</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Visualize quando cada artigo será publicado. Clique para abrir.</p>
+          <h1 className="font-display text-[30px] leading-tight font-semibold tracking-tight text-(--ag-text)">Calendário</h1>
+          <p className="text-[13.5px] text-(--ag-text-2)">Visualize quando cada artigo será publicado. Clique para abrir.</p>
         </div>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
-          <button onClick={prev} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
+      <div className="ag-glass rounded-[22px] overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-(--ag-hairline)">
+          <button onClick={prev} className="p-1.5 text-(--ag-text-3) hover:text-(--ag-text) hover:bg-(--ag-fill-2) rounded-lg transition-colors">
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <span className="text-sm font-semibold text-slate-800 capitalize">{monthLabel}</span>
-          <button onClick={next} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
+          <span className="text-sm font-semibold text-(--ag-text) capitalize">{monthLabel}</span>
+          <button onClick={next} className="p-1.5 text-(--ag-text-3) hover:text-(--ag-text) hover:bg-(--ag-fill-2) rounded-lg transition-colors">
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="grid grid-cols-7 border-b border-slate-100">
+        <div className="grid grid-cols-7 border-b border-(--ag-hairline)">
           {WEEKDAYS.map((d) => (
-            <div key={d} className="px-2 py-2 text-center text-[11px] font-bold text-slate-400 uppercase tracking-wider">{d}</div>
+            <div key={d} className="px-2 py-2 text-center text-[11px] font-bold text-(--ag-text-3) uppercase tracking-wider">{d}</div>
           ))}
         </div>
 
         <div className="grid grid-cols-7">
           {Array.from({ length: startOffset }).map((_, i) => (
-            <div key={`empty-${i}`} className="min-h-[80px] border-b border-r border-slate-100 bg-slate-50/50" />
+            <div key={`empty-${i}`} className="min-h-[80px] border-b border-r border-(--ag-hairline) bg-(--ag-fill)/50" />
           ))}
           {Array.from({ length: totalDays }).map((_, i) => {
             const day = i + 1;
@@ -100,21 +100,21 @@ const CalendarView: React.FC<Props> = ({ uid, projectId, onOpenArticle }) => {
             const dayArticles = byDate.get(iso) ?? [];
             const isToday = iso === todayIso;
             return (
-              <div key={day} className={`min-h-[80px] p-1.5 border-b border-r border-slate-100 ${isToday ? 'bg-[#FFF3EC]' : ''}`}>
-                <span className={`inline-flex text-xs font-semibold mb-1 w-5 h-5 items-center justify-center rounded-full ${isToday ? 'bg-[#FF5B03] text-white' : 'text-slate-500'}`}>{day}</span>
+              <div key={day} className={`min-h-[80px] p-1.5 border-b border-r border-(--ag-hairline) ${isToday ? 'bg-(--ag-accent-soft)' : ''}`}>
+                <span className={`inline-flex text-xs font-semibold mb-1 w-5 h-5 items-center justify-center rounded-full ${isToday ? 'bg-(--ag-accent) text-white' : 'text-(--ag-text-2)'}`}>{day}</span>
                 <div className="space-y-0.5">
                   {dayArticles.slice(0, 3).map((a) => (
                     <button
                       key={a.id}
                       onClick={() => onOpenArticle(a.id)}
-                      className="w-full flex items-center gap-1 text-left px-1 py-0.5 rounded hover:bg-white/80 transition-colors group"
+                      className="w-full flex items-center gap-1 text-left px-1 py-0.5 rounded hover:bg-(--ag-surface-solid)/80 transition-colors group"
                     >
                       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[a.status]}`} />
-                      <span className="text-[10px] text-slate-700 truncate group-hover:text-[#FF5B03]">{a.titulo}</span>
+                      <span className="text-[10px] text-(--ag-text) truncate group-hover:text-(--ag-accent)">{a.titulo}</span>
                     </button>
                   ))}
                   {dayArticles.length > 3 && (
-                    <span className="text-[10px] text-slate-400 pl-1">+{dayArticles.length - 3}</span>
+                    <span className="text-[10px] text-(--ag-text-3) pl-1">+{dayArticles.length - 3}</span>
                   )}
                 </div>
               </div>
@@ -124,7 +124,7 @@ const CalendarView: React.FC<Props> = ({ uid, projectId, onOpenArticle }) => {
       </div>
 
       {!articles.length && (
-        <div className="text-center py-12 text-slate-400 mt-4">
+        <div className="text-center py-12 text-(--ag-text-3) mt-4">
           <CalendarDays className="w-8 h-8 mx-auto mb-2" />
           <p className="text-sm">Nenhum artigo agendado ainda. Gere o calendário na seção Produção de Artigos.</p>
         </div>

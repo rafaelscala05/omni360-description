@@ -31,15 +31,15 @@ const CompanyProfile: React.FC<Props> = ({ uid, project, onGoClusters }) => {
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <div className="flex items-center justify-between mb-5">
+    <div className="max-w-2xl">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 mb-5">
         <div>
-          <h1 className="font-display text-2xl font-bold text-slate-900">Perfil da empresa</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Como o Alfred enxerga o seu negócio.</p>
+          <h1 className="font-display text-[30px] leading-tight font-semibold tracking-tight text-(--ag-text)">Perfil da empresa</h1>
+          <p className="text-[13.5px] text-(--ag-text-2)">Como o Alfred enxerga o seu negócio.</p>
         </div>
         <button
           onClick={() => setEditing(true)}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 shadow-sm hover:bg-slate-50 rounded-xl transition-colors"
+          className="flex items-center gap-1.5 h-11 px-4 text-[13.5px] font-semibold text-(--ag-text) bg-(--ag-surface-solid) border border-(--ag-hairline) hover:bg-(--ag-fill) rounded-full transition-colors"
         >
           <Pencil className="w-4 h-4" /> Editar
         </button>
@@ -53,12 +53,12 @@ const CompanyProfile: React.FC<Props> = ({ uid, project, onGoClusters }) => {
         <button
           onClick={onGoClusters}
           disabled={audit?.domainStatus !== 'finished'}
-          className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-40 disabled:cursor-not-allowed rounded-xl shadow-sm transition-colors"
+          className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-(--ag-surface-solid) bg-(--ag-text) hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed rounded-full transition-colors"
         >
           Avançar para Clusters <ArrowRight className="w-4 h-4" />
         </button>
         {audit?.domainStatus !== 'finished' && (
-          <p className="text-[11px] text-slate-400">
+          <p className="text-[11px] text-(--ag-text-3)">
             {audit === undefined
               ? 'Carregando status da análise…'
               : audit === null

@@ -90,7 +90,7 @@ const BlogView: React.FC<Props> = ({ uid, projectId }) => {
 
   if (settings === undefined) {
     return (
-      <div className="h-full flex items-center justify-center text-slate-400">
+      <div className="h-full flex items-center justify-center text-(--ag-text-3)">
         <RefreshCw className="w-6 h-6 animate-spin" />
       </div>
     );
@@ -98,41 +98,41 @@ const BlogView: React.FC<Props> = ({ uid, projectId }) => {
 
   if (settings === null) {
     return (
-      <div className="max-w-lg mx-auto">
+      <div className="max-w-lg">
         <div className="text-center mb-6">
-          <Rocket className="w-10 h-10 mx-auto text-[#FF5B03] mb-3" />
-          <h1 className="font-display text-2xl font-bold text-slate-900">Criar blog</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Configure o endereço e o título do seu blog para começar.</p>
+          <Rocket className="w-10 h-10 mx-auto text-(--ag-accent) mb-3" />
+          <h1 className="font-display text-[30px] leading-tight font-semibold tracking-tight text-(--ag-text)">Criar blog</h1>
+          <p className="text-[13.5px] text-(--ag-text-2)">Configure o endereço e o título do seu blog para começar.</p>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-4">
-          {setupError && <div className="text-sm text-red-400 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{setupError}</div>}
+        <div className="ag-glass rounded-[22px] p-6 space-y-4">
+          {setupError && <div className="text-sm text-(--ag-danger) bg-(--ag-danger-soft) border border-(--ag-danger-line) rounded-lg px-3 py-2">{setupError}</div>}
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">Endereço do blog</label>
+            <label className="block text-sm font-semibold text-(--ag-text) mb-1.5">Endereço do blog</label>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-slate-400 whitespace-nowrap">{window.location.origin}/b/</span>
+              <span className="text-sm text-(--ag-text-3) whitespace-nowrap">{window.location.origin}/b/</span>
               <input
                 value={setupSlug}
                 onChange={(e) => setSetupSlug(e.target.value)}
                 placeholder="minha-empresa"
-                className="flex-1 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
+                className="flex-1 border border-(--ag-hairline-2) rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent)"
               />
             </div>
           </div>
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">Título</label>
+            <label className="block text-sm font-semibold text-(--ag-text) mb-1.5">Título</label>
             <input
               value={setupTitle}
               onChange={(e) => setSetupTitle(e.target.value)}
               placeholder="Blog da Minha Empresa"
-              className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
+              className="w-full border border-(--ag-hairline-2) rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent)"
             />
           </div>
           <div className="flex justify-end pt-2">
             <button
               onClick={handleCreateBlog}
               disabled={creating}
-              className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-xl shadow-sm transition-colors"
+              className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-(--ag-surface-solid) bg-(--ag-text) hover:brightness-110 disabled:opacity-60 rounded-full transition-colors"
             >
               {creating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />} Criar blog
             </button>
@@ -156,28 +156,28 @@ const BlogView: React.FC<Props> = ({ uid, projectId }) => {
   }
 
   return (
-    <div className="max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 mb-6">
         <div>
-          <h1 className="font-display text-2xl font-bold text-slate-900">{settings.title}</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Gerencie posts, categorias, aparência e domínios do seu blog.</p>
+          <h1 className="font-display text-[30px] leading-tight font-semibold tracking-tight text-(--ag-text)">{settings.title}</h1>
+          <p className="text-[13.5px] text-(--ag-text-2)">Gerencie posts, categorias, aparência e domínios do seu blog.</p>
         </div>
         <button
           onClick={() => window.open(`/b/${settings.slug}/`, '_blank')}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 shadow-sm hover:bg-slate-50 rounded-xl transition-colors"
+          className="flex items-center gap-1.5 h-11 px-4 text-[13.5px] font-semibold text-(--ag-text) bg-(--ag-surface-solid) border border-(--ag-hairline) hover:bg-(--ag-fill) rounded-full transition-colors"
         >
           <ExternalLink className="w-4 h-4" /> Ver blog
         </button>
       </div>
 
-      <div className="flex items-center gap-1 mb-5 bg-slate-100 rounded-xl p-1 w-fit">
+      <div className="flex items-center gap-1 mb-5 bg-(--ag-fill-2) rounded-xl p-1 w-fit">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             onClick={() => setTab(key)}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors ${
-              tab === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            }`}
+ tab === key ? 'bg-(--ag-surface-solid) text-(--ag-text) shadow-sm' : 'text-(--ag-text-2) hover:text-(--ag-text)'
+ }`}
           >
             <Icon className="w-4 h-4" /> {label}
           </button>
@@ -189,38 +189,38 @@ const BlogView: React.FC<Props> = ({ uid, projectId }) => {
           <div className="flex justify-end mb-4">
             <button
               onClick={() => setEditingPost('new')}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] rounded-xl shadow-sm transition-colors"
+              className="flex items-center gap-1.5 h-11 px-4 text-[13.5px] font-semibold text-(--ag-surface-solid) bg-(--ag-text) hover:brightness-110 rounded-full transition-colors"
             >
               <Plus className="w-4 h-4" /> Novo post
             </button>
           </div>
 
           {posts.length === 0 ? (
-            <div className="text-center py-16 text-slate-400">
+            <div className="text-center py-16 text-(--ag-text-3)">
               <FileText className="w-10 h-10 mx-auto mb-3" />
               <p className="text-sm">Nenhum post criado ainda.</p>
             </div>
           ) : (
-            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm divide-y divide-slate-100 overflow-hidden">
+            <div className="ag-glass rounded-[22px] [&>*+*]:border-t [&>*+*]:border-(--ag-hairline) overflow-hidden">
               {posts.map((post) => (
-                <div key={post.id} className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors">
+                <div key={post.id} className="flex items-center gap-3 px-5 py-3.5 hover:bg-(--ag-fill) transition-colors">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-900 truncate">{post.title}</p>
-                    <p className="text-xs text-slate-400">
+                    <p className="text-sm font-medium text-(--ag-text) truncate">{post.title}</p>
+                    <p className="text-xs text-(--ag-text-3)">
                       Atualizado em {new Date(post.updatedAt).toLocaleDateString('pt-BR')}
                     </p>
                   </div>
                   <span
                     className={`text-[11px] font-medium px-2.5 py-1 rounded-full shrink-0 ${
-                      post.status === 'published' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                    }`}
+ post.status === 'published' ? 'bg-(--ag-ok-soft) text-(--ag-ok)' : 'bg-(--ag-fill-2) text-(--ag-text-2)'
+ }`}
                   >
                     {post.status === 'published' ? 'Publicado' : 'Rascunho'}
                   </span>
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       onClick={() => setEditingPost(post)}
-                      className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                      className="p-2 text-(--ag-text-3) hover:text-(--ag-text) hover:bg-(--ag-fill-2) rounded-lg transition-colors"
                       title="Editar"
                     >
                       <Pencil className="w-4 h-4" />
@@ -228,7 +228,7 @@ const BlogView: React.FC<Props> = ({ uid, projectId }) => {
                     <button
                       onClick={() => handleDelete(post)}
                       disabled={deletingId === post.id}
-                      className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-60 rounded-lg transition-colors"
+                      className="p-2 text-(--ag-text-3) hover:text-(--ag-danger) hover:bg-(--ag-danger-soft) disabled:opacity-60 rounded-lg transition-colors"
                       title="Excluir"
                     >
                       {deletingId === post.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}

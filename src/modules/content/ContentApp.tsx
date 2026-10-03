@@ -42,8 +42,7 @@ type ContentView = 'dashboard' | 'clusters' | 'producao' | 'calendar' | 'integra
 
 const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToProduct, onBuyCredits, onLogout, abrirArtigo, onArtigoAberto, onPedirAlfred, agente = false }) => {
   const uid = user.uid;
-  // O shell (seções, projeto, barra de topo) segue o tema do Alfred; as telas
-  // internas ainda têm cores literais e abrem um escopo claro próprio.
+  // O shell e as telas internas seguem o tema do Alfred (tudo em tokens `--ag-*`).
   const { tema: temaAgente } = useAgentTheme();
   const tema = agente ? temaAgente : 'claro';
   const [projects, setProjects] = useState<ContentProject[]>([]);
@@ -203,8 +202,10 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+        {/* Com agente, no desktop os créditos e a Conta estão no trilho: a barra
+            de topo fica só no telefone (seções + avatar). */}
         <header
-          className="h-16 px-4 md:px-6 flex items-center justify-between flex-shrink-0 z-10 sticky top-0 gap-3"
+          className={`h-16 px-4 md:px-6 flex items-center justify-between flex-shrink-0 z-10 sticky top-0 gap-3 ${agente ? 'md:hidden' : ''}`}
           style={{ background: 'var(--ag-bg)', borderBottom: '1px solid var(--ag-hairline)' }}
         >
           <button
@@ -240,14 +241,10 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
           </div>
         </header>
 
-        <main className={`flex-1 overflow-y-auto w-full p-3 sm:p-4 ${agente ? 'pb-28 md:pb-6' : ''}`}>
-          {/* As telas internas ainda têm cores literais: ficam numa moldura
-              clara, como Integrações, até serem convertidas para os tokens. */}
-          <div
-            className="alfreds min-h-full rounded-[24px] p-3 sm:p-6"
-            data-tema="claro"
-            style={{ background: 'var(--ag-bg-2)', border: '1px solid var(--ag-hairline)', boxShadow: 'var(--ag-shadow)' }}
-          >
+        <main className={`ag-scroll flex-1 overflow-y-auto w-full ${agente ? 'pb-28 md:pb-6' : 'pb-6'}`}>
+          {/* Sem moldura: as telas abrem direto sobre o fundo, com a margem
+              lateral das telas do agente. */}
+          <div className="ag-tela-x pt-4 sm:pt-6 min-h-full">
           {!ready ? (
             <div className="h-full flex items-center justify-center text-[var(--ag-text-3)]"><RefreshCw className="w-6 h-6 animate-spin" /></div>
           ) : creatingProject || !projects.length ? (
@@ -257,7 +254,7 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
               onCancel={projects.length ? () => setCreatingProject(false) : undefined}
             />
           ) : !selected ? (
-            <div className="text-center text-slate-400 py-16">Selecione um projeto.</div>
+            <div className="text-center text-(--ag-text-3) py-16">Selecione um projeto.</div>
           ) : view === 'dashboard' ? (
             <DashboardPanel
               uid={uid}
@@ -268,6 +265,7 @@ const ContentApp: React.FC<Props> = ({ user, credits, hasBlogModule, onSwitchToP
                 setPendingClusterId(clusterId);
                 setView('clusters');
               }}
+              onOpenArticle={goToArticle}
             />
           ) : view === 'clusters' ? (
             <ClustersView

@@ -38,8 +38,8 @@ const TagInput: React.FC<Props> = ({ label, hint, value, onChange, suggestions =
 
   return (
     <div>
-      {label && <label className="block text-sm font-semibold text-slate-700 mb-1.5">{label}</label>}
-      <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-2.5 py-2 focus-within:ring-2 focus-within:ring-[#FF5B03]/30 focus-within:border-[#FF5B03] transition-all">
+      {label && <label className="block text-sm font-semibold text-(--ag-text) mb-1.5">{label}</label>}
+      <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-(--ag-hairline-2) bg-(--ag-surface-solid) px-2.5 py-2 focus-within:ring-2 focus-within:ring-(--ag-accent)/30 focus-within:border-(--ag-accent) transition-all">
         <AnimatePresence initial={false}>
           {value.map((tag) => (
             <motion.span
@@ -49,10 +49,10 @@ const TagInput: React.FC<Props> = ({ label, hint, value, onChange, suggestions =
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.8, opacity: 0 }}
               transition={{ duration: 0.15 }}
-              className="inline-flex items-center gap-1 rounded-lg border border-[#FFD3BF] bg-[#FFF3EC] px-2 py-0.5 text-xs font-medium text-[#FF5B03]"
+              className="inline-flex items-center gap-1 rounded-lg border border-(--ag-accent-line) bg-(--ag-accent-soft) px-2 py-0.5 text-xs font-medium text-(--ag-accent)"
             >
               {tag}
-              <button type="button" onClick={() => remove(tag)} className="hover:text-slate-900/70">
+              <button type="button" onClick={() => remove(tag)} className="hover:text-(--ag-text)/70">
                 <X className="w-3 h-3" />
               </button>
             </motion.span>
@@ -64,10 +64,10 @@ const TagInput: React.FC<Props> = ({ label, hint, value, onChange, suggestions =
           onKeyDown={onKeyDown}
           onBlur={() => { if (draft.trim()) { add(draft); setDraft(''); } }}
           placeholder={value.length ? '' : placeholder}
-          className="flex-1 min-w-[120px] bg-transparent text-sm outline-none py-0.5 text-slate-700 placeholder-slate-400"
+          className="flex-1 min-w-[120px] bg-transparent text-sm outline-none py-0.5 text-(--ag-text) placeholder-(--ag-text-3)"
         />
       </div>
-      {hint && <p className="text-xs text-slate-400 mt-1">{hint}</p>}
+      {hint && <p className="text-xs text-(--ag-text-3) mt-1">{hint}</p>}
       {remaining.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-2">
           {remaining.map((s) => (
@@ -75,7 +75,7 @@ const TagInput: React.FC<Props> = ({ label, hint, value, onChange, suggestions =
               key={s}
               type="button"
               onClick={() => add(s)}
-              className="inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-500 hover:border-[#FF5B03] hover:text-[#FF5B03] transition-colors"
+              className="inline-flex items-center gap-1 rounded-lg border border-dashed border-(--ag-hairline-2) bg-(--ag-fill) px-2 py-0.5 text-xs font-medium text-(--ag-text-2) hover:border-(--ag-accent) hover:text-(--ag-accent) transition-colors"
             >
               <Plus className="w-3 h-3" /> {s}
             </button>

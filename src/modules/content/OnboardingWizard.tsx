@@ -166,15 +166,15 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
       value={val}
       onChange={(e) => set(e.target.value)}
       placeholder={ph}
-      className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03] transition-all"
+      className="w-full border border-(--ag-hairline-2) rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent) transition-all"
     />
   );
 
   return (
-    <div className="max-w-2xl mx-auto">
-      {/* Header */}
+    <div className="max-w-2xl">
+      {/* Header — escuro nos dois temas de propósito, como o banner de onboarding. */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#141311] to-[#1e3a8a] p-6 mb-6 text-white shadow-lg">
-        <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-[#FF5B03]/30 blur-2xl" />
+        <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-(--ag-accent)/30 blur-2xl" />
         <div className="relative flex items-center gap-3">
           <div className="bg-white/10 backdrop-blur p-2.5 rounded-2xl ring-1 ring-white/20">
             <Sparkles className="w-5 h-5" />
@@ -195,7 +195,7 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
         </div>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 md:p-8 overflow-hidden">
+      <div className="ag-glass rounded-[22px] p-6 md:p-8 overflow-hidden">
         <AnimatePresence mode="wait" custom={dir}>
           <motion.div
             key={step}
@@ -208,61 +208,61 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
             {step === 0 && (
               <div className="space-y-5">
                 {/* AI site import */}
-                <div className="rounded-2xl border border-[#FFD3BF] bg-gradient-to-br from-[#FFF3EC] to-white p-4">
-                  <div className="flex items-center gap-2 mb-2 text-[#FF5B03]">
+                <div className="rounded-2xl border border-(--ag-accent-line) bg-gradient-to-br from-(--ag-accent-soft) to-(--ag-surface-solid) p-4">
+                  <div className="flex items-center gap-2 mb-2 text-(--ag-accent)">
                     <Wand2 className="w-4 h-4" />
                     <span className="text-sm font-bold">Preencher com IA a partir do site</span>
                   </div>
-                  <p className="text-xs text-slate-500 mb-3">Cole o site da empresa e o Alfred entende o negócio e preenche os campos pra você.</p>
+                  <p className="text-xs text-(--ag-text-2) mb-3">Cole o site da empresa e o Alfred entende o negócio e preenche os campos pra você.</p>
                   <div className="flex gap-2">
                     <div className="flex-1 relative">
-                      <Globe className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <Globe className="w-4 h-4 text-(--ag-text-3) absolute left-3 top-1/2 -translate-y-1/2" />
                       <input
                         value={siteUrl}
                         onChange={(e) => setSiteUrl(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleScan()}
                         placeholder="suaempresa.com.br"
-                        className="w-full border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
+                        className="w-full border border-(--ag-hairline-2) rounded-xl pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent)"
                       />
                     </div>
                     <button
                       onClick={handleScan}
                       disabled={scanning || !siteUrl.trim()}
-                      className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-50 rounded-xl shadow-sm transition-colors whitespace-nowrap"
+                      className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-(--ag-surface-solid) bg-(--ag-text) hover:brightness-110 disabled:opacity-50 rounded-full transition-colors whitespace-nowrap"
                     >
                       {scanning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                       {scanning ? 'Analisando…' : 'Analisar'}
                     </button>
                   </div>
                   {scanDone && !scanning && (
-                    <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-1.5 text-xs text-emerald-600 mt-2 font-medium">
+                    <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-1.5 text-xs text-(--ag-ok) mt-2 font-medium">
                       <Check className="w-3.5 h-3.5" /> Campos preenchidos! Revise abaixo.
                     </motion.p>
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Nome da empresa *</label>
+                  <label className="block text-sm font-semibold text-(--ag-text) mb-1.5">Nome da empresa *</label>
                   {input(nomeEmpresa, setNomeEmpresa, 'Ex.: Loja Verde')}
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">O que a empresa faz?</label>
+                  <label className="block text-sm font-semibold text-(--ag-text) mb-1.5">O que a empresa faz?</label>
                   <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} rows={3} placeholder="Breve descrição do negócio"
-                    className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]" />
+                    className="w-full border border-(--ag-hairline-2) rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent)" />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Principal produto ou serviço *</label>
+                  <label className="block text-sm font-semibold text-(--ag-text) mb-1.5">Principal produto ou serviço *</label>
                   {input(produtoServico, setProdutoServico, 'Ex.: Plantas e jardinagem')}
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Estilo de imagem</label>
+                  <label className="block text-sm font-semibold text-(--ag-text) mb-2">Estilo de imagem</label>
                   <div className="flex flex-wrap gap-2">
                     {ESTILOS_IMAGEM.map((e) => (
                       <button
                         key={e}
                         type="button"
                         onClick={() => setEstiloImagem(e)}
-                        className={`rounded-xl border px-3 py-1.5 text-sm font-medium transition-all ${estiloImagem === e ? 'border-[#FF5B03] bg-[#FF5B03] text-white shadow-sm' : 'border-slate-300 bg-white text-slate-600 hover:border-[#FF5B03] hover:text-[#FF5B03]'}`}
+                        className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-all ${estiloImagem === e ? 'border-(--ag-accent) bg-(--ag-text) text-(--ag-surface-solid) ' : 'border-(--ag-hairline-2) bg-(--ag-surface-solid) text-(--ag-text-2) hover:border-(--ag-accent) hover:text-(--ag-accent)'}`}
                       >
                         {e === 'Ilustracao' ? 'Ilustração' : e}
                       </button>
@@ -283,14 +283,14 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
                   placeholder="Adicionar persona…"
                 />
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Tom de voz</label>
+                  <label className="block text-sm font-semibold text-(--ag-text) mb-2">Tom de voz</label>
                   <div className="flex flex-wrap gap-2">
                     {tomOptions.map((t) => (
                       <button
                         key={t}
                         type="button"
                         onClick={() => setTomDeVoz(t)}
-                        className={`rounded-xl border px-3 py-1.5 text-sm font-medium transition-all ${tomDeVoz === t ? 'border-[#FF5B03] bg-[#FF5B03] text-white shadow-sm' : 'border-slate-300 bg-white text-slate-600 hover:border-[#FF5B03] hover:text-[#FF5B03]'}`}
+                        className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-all ${tomDeVoz === t ? 'border-(--ag-accent) bg-(--ag-text) text-(--ag-surface-solid) ' : 'border-(--ag-hairline-2) bg-(--ag-surface-solid) text-(--ag-text-2) hover:border-(--ag-accent) hover:text-(--ag-accent)'}`}
                       >
                         {t}
                       </button>
@@ -302,12 +302,12 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
                       onChange={(e) => setTomCustom(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter' && tomCustom.trim()) { e.preventDefault(); setTomDeVoz(tomCustom.trim()); setTomCustom(''); } }}
                       placeholder="Ou crie um tom personalizado…"
-                      className="flex-1 border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
+                      className="flex-1 border border-(--ag-hairline-2) rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent)"
                     />
                     <button
                       type="button"
                       onClick={() => { if (tomCustom.trim()) { setTomDeVoz(tomCustom.trim()); setTomCustom(''); } }}
-                      className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                      className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-(--ag-text-2) bg-(--ag-fill-2) hover:bg-(--ag-fill-2) rounded-xl transition-colors"
                     >
                       <Plus className="w-4 h-4" /> Adicionar
                     </button>
@@ -322,11 +322,11 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
                 <TagInput label="Palavras-chave para dominar" value={palavrasChave} onChange={setPalavrasChave} placeholder="Adicionar palavra-chave…" />
                 <TagInput label="Referências / concorrentes" value={referencias} onChange={setReferencias} placeholder="Adicionar referência…" />
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Frequência de publicações</label>
+                  <label className="block text-sm font-semibold text-(--ag-text) mb-1.5">Frequência de publicações</label>
                   <select
                     value={frequenciaPostagens}
                     onChange={(e) => setFrequenciaPostagens(e.target.value)}
-                    className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#FF5B03]/30 focus:border-[#FF5B03]"
+                    className="w-full border border-(--ag-hairline-2) rounded-xl px-3.5 py-2.5 text-sm bg-(--ag-surface-solid) focus:outline-none focus:ring-2 focus:ring-(--ag-accent)/30 focus:border-(--ag-accent)"
                   >
                     {FREQUENCIAS.map((f) => <option key={f} value={f}>{f}</option>)}
                   </select>
@@ -336,11 +336,11 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
 
             {step === 3 && (
               <div className="space-y-4">
-                <div className="flex items-center gap-2 text-slate-900">
-                  <Sparkles className="w-5 h-5 text-[#FF5B03]" />
+                <div className="flex items-center gap-2 text-(--ag-text)">
+                  <Sparkles className="w-5 h-5 text-(--ag-accent)" />
                   <h3 className="font-display text-lg font-bold">Análise de Domínio</h3>
                 </div>
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-(--ag-text-2)">
                   Já disparamos a análise das palavras-chave do domínio — assim os Clusters nascem com dados reais.
                 </p>
                 {projectId ? (
@@ -350,9 +350,9 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
                     autoTrigger
                   />
                 ) : (
-                  <p className="text-sm text-slate-400">Salvando o cadastro…</p>
+                  <p className="text-sm text-(--ag-text-3)">Salvando o cadastro…</p>
                 )}
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-(--ag-text-3)">
                   Pode avançar mesmo enquanto a análise ainda roda — os Clusters são liberados assim que ela terminar.
                 </p>
               </div>
@@ -360,24 +360,24 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
 
             {step === 4 && (
               <div className="space-y-4">
-                <div className="flex items-center gap-2 text-slate-900">
-                  <Check className="w-5 h-5 text-emerald-500" />
+                <div className="flex items-center gap-2 text-(--ag-text)">
+                  <Check className="w-5 h-5 text-(--ag-ok)" />
                   <h3 className="font-display text-lg font-bold">Tudo pronto. Confira o resumo</h3>
                 </div>
                 <ProfileSummary config={buildConfig()} />
-                <p className="text-xs text-slate-400">Você pode editar qualquer etapa antes de avançar. O WordPress é configurado depois, em Integrações.</p>
+                <p className="text-xs text-(--ag-text-3)">Você pode editar qualquer etapa antes de avançar. O WordPress é configurado depois, em Integrações.</p>
               </div>
             )}
           </motion.div>
         </AnimatePresence>
 
-        {error && <div className="mt-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{error}</div>}
+        {error && <div className="mt-4 text-sm text-(--ag-danger) bg-(--ag-danger-soft) border border-(--ag-danger-line) rounded-xl px-3 py-2">{error}</div>}
 
         {/* Footer */}
         <div className="flex items-center justify-between mt-8">
           <button
             onClick={() => (step === 0 ? onCancel?.() : go(step - 1))}
-            className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+            className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-(--ag-text-2) hover:bg-(--ag-fill-2) rounded-xl transition-colors"
           >
             <ChevronLeft className="w-4 h-4" /> {step === 0 ? 'Cancelar' : 'Voltar'}
           </button>
@@ -385,20 +385,20 @@ const OnboardingWizard: React.FC<Props> = ({ uid, existing, onSaved, onCancel })
             <button
               disabled={!canAdvance || savingStep}
               onClick={handleNext}
-              className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-40 rounded-xl shadow-sm transition-colors"
+              className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-(--ag-surface-solid) bg-(--ag-text) hover:brightness-110 disabled:opacity-40 rounded-full transition-colors"
             >
               {savingStep ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ChevronRight className="w-4 h-4" />}
               Próximo
             </button>
           ) : (
             <div className="flex items-center gap-2">
-              <button onClick={() => go(0)} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">
+              <button onClick={() => go(0)} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-(--ag-text-2) bg-(--ag-fill-2) hover:bg-(--ag-fill-2) rounded-xl transition-colors">
                 <Pencil className="w-4 h-4" /> Editar
               </button>
               <button
                 disabled={saving}
                 onClick={handleSave}
-                className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-xl shadow-sm transition-colors"
+                className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-(--ag-surface-solid) bg-(--ag-text) hover:brightness-110 disabled:opacity-60 rounded-full transition-colors"
               >
                 {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ChevronRight className="w-4 h-4" />}
                 {existing ? 'Salvar alterações' : 'Salvar e criar clusters'}

@@ -106,23 +106,23 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
   }
 
   return (
-    <div className="max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-5">
+    <div>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 mb-5">
         <div>
-          <h1 className="font-display text-2xl font-bold text-slate-900">Clusters de Conteúdo</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Temas estratégicos e palavras-chave por intenção de busca.</p>
+          <h1 className="font-display text-[30px] leading-tight font-semibold tracking-tight text-(--ag-text)">Clusters de Conteúdo</h1>
+          <p className="text-[13.5px] text-(--ag-text-2)">Temas estratégicos e palavras-chave por intenção de busca.</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowManualForm((v) => !v)}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+            className="flex items-center gap-2 h-11 px-4 text-[13.5px] font-semibold text-(--ag-text) bg-(--ag-surface-solid) border border-(--ag-hairline) hover:bg-(--ag-fill-2) rounded-full transition-colors"
           >
             <Plus className="w-4 h-4" /> Criar manualmente
           </button>
           <button
             onClick={handleGenerate}
             disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-xl shadow-sm transition-colors"
+            className="flex items-center gap-2 h-11 px-4 text-[13.5px] font-semibold text-(--ag-surface-solid) bg-(--ag-text) hover:brightness-110 disabled:opacity-60 rounded-full transition-colors"
           >
             {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
             {active.length ? 'Gerar novamente' : 'Gerar clusters'}
@@ -131,12 +131,12 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 mb-5 border-b border-slate-200">
+      <div className="flex items-center gap-1 mb-5 border-b border-(--ag-hairline)">
         {([['clusters', `Clusters (${active.length})`], ['orphans', `Sem cluster (${orphanArticles.length})`]] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === key ? 'border-[#FF5B03] text-[#FF5B03]' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === key ? 'border-(--ag-text) text-(--ag-text)' : 'border-transparent text-(--ag-text-2) hover:text-(--ag-text)'}`}
           >
             {label}
           </button>
@@ -144,43 +144,43 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
       </div>
 
       {showManualForm && (
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 mb-5">
-          <h3 className="font-semibold text-slate-900 mb-3 text-sm">Novo cluster manual</h3>
+        <div className="ag-glass rounded-[22px] p-5 mb-5">
+          <h3 className="font-semibold text-(--ag-text) mb-3 text-sm">Novo cluster manual</h3>
           {manualError && (
-            <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{manualError}</div>
+            <div className="mb-3 text-sm text-(--ag-danger) bg-(--ag-danger-soft) border border-(--ag-danger-line) rounded-lg px-3 py-2">{manualError}</div>
           )}
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">Nome</label>
+              <label className="block text-xs font-semibold text-(--ag-text-2) mb-1">Nome</label>
               <input
                 value={manualNome}
                 onChange={(e) => setManualNome(e.target.value)}
                 placeholder="Ex.: Cuidados com o couro"
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
+                className="w-full border border-(--ag-hairline-2) rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-(--ag-accent)"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">Estratégia</label>
+              <label className="block text-xs font-semibold text-(--ag-text-2) mb-1">Estratégia</label>
               <textarea
                 value={manualEstrategia}
                 onChange={(e) => setManualEstrategia(e.target.value)}
                 rows={2}
                 placeholder="Descreva o tema e o objetivo deste cluster"
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
+                className="w-full border border-(--ag-hairline-2) rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-(--ag-accent)"
               />
             </div>
           </div>
           <div className="flex justify-end gap-2 mt-4">
             <button
               onClick={() => setShowManualForm(false)}
-              className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg"
+              className="px-4 py-2 text-sm font-medium text-(--ag-text-2) bg-(--ag-fill-2) hover:bg-(--ag-fill-2) rounded-lg"
             >
               Cancelar
             </button>
             <button
               onClick={handleCreateManual}
               disabled={manualSaving}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-60 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 h-11 px-4 text-[13.5px] font-semibold text-(--ag-surface-solid) bg-(--ag-text) hover:brightness-110 disabled:opacity-60 rounded-full transition-colors"
             >
               {manualSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Criar cluster
             </button>
@@ -188,11 +188,11 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
         </div>
       )}
 
-      {error && <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+      {error && <div className="mb-4 text-sm text-(--ag-danger) bg-(--ag-danger-soft) border border-(--ag-danger-line) rounded-lg px-3 py-2">{error}</div>}
 
       {tab === 'clusters' ? (
         !active.length && !loading ? (
-          <div className="text-center py-16 text-slate-400">
+          <div className="text-center py-16 text-(--ag-text-3)">
             <Layers className="w-10 h-10 mx-auto mb-3" />
             <p className="text-sm">Nenhum cluster ativo. Gere a primeira leva com base no seu negócio e catálogo.</p>
           </div>
@@ -209,7 +209,7 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.97 }}
                     transition={{ duration: 0.18 }}
-                    className={`group bg-white border rounded-xl shadow-sm p-4 transition-colors ${cluster.aprovado ? 'border-[#FF5B03]' : 'border-slate-200'}`}
+                    className={`group bg-(--ag-surface-solid) border rounded-xl shadow-sm p-4 transition-colors ${cluster.aprovado ? 'border-(--ag-accent)' : 'border-(--ag-hairline)'}`}
                   >
                     {/* Title row */}
                     <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -220,19 +220,19 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
                             value={editName}
                             onChange={(e) => setEditName(e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditingId(null); }}
-                            className="flex-1 border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#FF5B03]"
+                            className="flex-1 border border-(--ag-hairline-2) rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-(--ag-accent)"
                           />
-                          <button onClick={saveEdit} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"><Check className="w-4 h-4" /></button>
-                          <button onClick={() => setEditingId(null)} className="p-1 text-slate-400 hover:bg-slate-100 rounded"><X className="w-4 h-4" /></button>
+                          <button onClick={saveEdit} className="p-1 text-(--ag-ok) hover:bg-(--ag-ok-soft) rounded"><Check className="w-4 h-4" /></button>
+                          <button onClick={() => setEditingId(null)} className="p-1 text-(--ag-text-3) hover:bg-(--ag-fill-2) rounded"><X className="w-4 h-4" /></button>
                         </div>
                       ) : (
-                        <h3 className="font-semibold text-slate-900 text-sm truncate">{cluster.nome}</h3>
+                        <h3 className="font-semibold text-(--ag-text) text-sm truncate">{cluster.nome}</h3>
                       )}
                     </div>
 
                     {editingId !== cluster.id && (
                       <>
-                        <p className="text-xs text-slate-500 line-clamp-2 mb-3">{cluster.estrategia}</p>
+                        <p className="text-xs text-(--ag-text-2) line-clamp-2 mb-3">{cluster.estrategia}</p>
 
                         {/* Keyword chips (compact) */}
                         {kws.length > 0 && (
@@ -242,16 +242,16 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
                                 <span className={`w-1.5 h-1.5 rounded-full ${INTENT_META[k.intencao].dot}`} /> {k.termo}
                               </span>
                             ))}
-                            {kws.length > 4 && <span className="text-[11px] text-slate-400 px-1 py-0.5">+{kws.length - 4}</span>}
+                            {kws.length > 4 && <span className="text-[11px] text-(--ag-text-3) px-1 py-0.5">+{kws.length - 4}</span>}
                           </div>
                         )}
 
                         {/* Footer: count + actions */}
-                        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                        <div className="flex items-center justify-between pt-2 border-t border-(--ag-hairline)">
                           <div className="flex items-center gap-2.5">
-                            <span className="inline-flex items-center gap-1 text-[11px] text-slate-400"><FileText className="w-3.5 h-3.5" /> {countFor(cluster.id)} artigos</span>
+                            <span className="inline-flex items-center gap-1 text-[11px] text-(--ag-text-3)"><FileText className="w-3.5 h-3.5" /> {countFor(cluster.id)} artigos</span>
                             {reachOf(kws) > 0 && (
-                              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 font-medium" title="Alcance potencial (soma dos volumes de busca)">
+                              <span className="inline-flex items-center gap-1 text-[11px] text-(--ag-ok) font-medium" title="Alcance potencial (soma dos volumes de busca)">
                                 <TrendingUp className="w-3.5 h-3.5" /> {reachOf(kws).toLocaleString('pt-BR')}/mês
                               </span>
                             )}
@@ -260,13 +260,13 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
                             <button
                               onClick={() => approveCluster(uid, projectId, cluster.id, !cluster.aprovado)}
                               title={cluster.aprovado ? 'Aprovado' : 'Aprovar'}
-                              className={`p-1.5 rounded-lg transition-colors ${cluster.aprovado ? 'text-[#FF5B03] bg-[#FFF3EC]' : 'text-slate-400 hover:text-[#FF5B03] hover:bg-slate-100'}`}
+                              className={`p-1.5 rounded-lg transition-colors ${cluster.aprovado ? 'text-(--ag-accent) bg-(--ag-accent-soft)' : 'text-(--ag-text-3) hover:text-(--ag-accent) hover:bg-(--ag-fill-2)'}`}
                             >
                               <Check className="w-4 h-4" />
                             </button>
-                            <button onClick={() => setSelectedId(cluster.id)} title="Ver mais" className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"><Eye className="w-4 h-4" /></button>
-                            <button onClick={() => startEdit(cluster)} title="Editar tema" className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"><Pencil className="w-4 h-4" /></button>
-                            <button onClick={() => excludeCluster(uid, projectId, cluster.id)} title="Excluir" className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
+                            <button onClick={() => setSelectedId(cluster.id)} title="Ver mais" className="p-1.5 text-(--ag-text-3) hover:text-(--ag-text) hover:bg-(--ag-fill-2) rounded-lg transition-colors"><Eye className="w-4 h-4" /></button>
+                            <button onClick={() => startEdit(cluster)} title="Editar tema" className="p-1.5 text-(--ag-text-3) hover:text-(--ag-text) hover:bg-(--ag-fill-2) rounded-lg transition-colors"><Pencil className="w-4 h-4" /></button>
+                            <button onClick={() => excludeCluster(uid, projectId, cluster.id)} title="Excluir" className="p-1.5 text-(--ag-text-3) hover:text-(--ag-danger) hover:bg-(--ag-danger-soft) rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
                           </div>
                         </div>
                       </>
@@ -280,19 +280,19 @@ const ClustersView: React.FC<Props> = ({ uid, projectId, onGoArticle, initialSel
       ) : (
         // Orphan articles (cluster excluded or missing)
         orphanArticles.length ? (
-          <div className="bg-white border border-slate-200 rounded-xl shadow-sm divide-y divide-slate-100 overflow-hidden">
+          <div className="ag-glass rounded-[18px] [&>*+*]:border-t [&>*+*]:border-(--ag-hairline) overflow-hidden">
             {orphanArticles.map((a) => (
               <div key={a.id} className="flex items-center gap-3 px-4 py-3">
                 <div className="flex-1 min-w-0">
-                  <span className="text-sm font-medium text-slate-900 truncate block">{a.titulo}</span>
-                  <span className="text-[11px] text-slate-400">KW: {a.kwPrincipal} · {a.scheduledDate}</span>
+                  <span className="text-sm font-medium text-(--ag-text) truncate block">{a.titulo}</span>
+                  <span className="text-[11px] text-(--ag-text-3)">KW: {a.kwPrincipal} · {a.scheduledDate}</span>
                 </div>
-                <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 shrink-0">{a.status}</span>
+                <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-(--ag-fill-2) text-(--ag-text-2) shrink-0">{a.status}</span>
               </div>
             ))}
           </div>
         ) : (
-          <div className="text-center py-16 text-slate-400">
+          <div className="text-center py-16 text-(--ag-text-3)">
             <FileText className="w-10 h-10 mx-auto mb-3" />
             <p className="text-sm">Nenhum artigo sem cluster.</p>
           </div>
