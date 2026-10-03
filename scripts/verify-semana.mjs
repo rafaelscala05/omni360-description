@@ -191,5 +191,17 @@ if (failures) {
   check('nada mudou, não grava de novo', [mesmaSemana(g1, semanaParaGuardar(ini, t1)), mesmaSemana(g1, g2), mesmaSemana(null, g1)], [true, false, false]);
 }
 
+// Peça para montar: uma por vez, e nunca por cima de uma missão aberta.
+const peca = { objetivo: 'meli', titulo: 'Mercado Livre', libera: 'títulos, fichas e fotos dos anúncios' };
+const comPeca = montarSemana({ ...base, pecaParaMontar: peca });
+check('peça vira tarefa montar-meli', comPeca.map((t) => [t.id, t.destino, t.montar, t.origem]), [['montar-meli', 'montar', 'meli', 'meli']]);
+check('título da tarefa de montar', comPeca[0]?.titulo, 'Montar Mercado Livre no Alfred');
+check('detalhe diz o que libera', comPeca[0]?.detalhe, 'Libera: títulos, fichas e fotos dos anúncios');
+const comMissao = montarSemana({ ...base, pecaParaMontar: peca, missoes: [{ id: 'produto', titulo: 'Aprimorar seu primeiro produto', meta: 'Agente de Produto', estado: 'agora' }] });
+check('com missão agora, sem peça', comMissao.some((t) => t.id === 'montar-meli'), false);
+const soOpcional = montarSemana({ ...base, pecaParaMontar: peca, missoes: [{ id: 'empresa', titulo: 'x', meta: 'y', estado: 'opcional' }] });
+check('missão só opcional não bloqueia a peça', soOpcional.some((t) => t.id === 'montar-meli'), true);
+check('sem peça, nada', montarSemana({ ...base, pecaParaMontar: null }), []);
+
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');
 process.exit(failures ? 1 : 0);

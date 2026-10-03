@@ -25,7 +25,7 @@ import type { ChaveFonte } from './modules/agent/conectores';
 import type { PedidoAlfred } from './types/agent';
 import AppTabBar from './components/AppTabBar';
 import { COORTE_ATUAL, isCoorteMissao, isCoorteObjetivos } from './modules/onboarding/mission/missionTypes';
-import { temAlfred, type Objetivo } from './modules/agent/capacidades';
+import { montarAlfred, proximaPecaParaMontar, temAlfred, type Objetivo } from './modules/agent/capacidades';
 import type { MissionState } from './modules/onboarding/mission/missionTypes';
 import MissionPicker from './modules/onboarding/mission/MissionPicker';
 import MissaoProduto from './modules/onboarding/mission/MissaoProduto';
@@ -322,8 +322,28 @@ export default function App() {
   const pendentesAlfred = usePendentesAlfred(!!user && temAgente, () => catalogoAlteradoRef.current());
   // Vídeo aprovado no chat: o app aberto o inicia e segura a requisição, como o wizard.
   useVideosDoAlfred(!!user && temAgente);
+  // Adesão ao ML em curso: o snapshot com o módulo novo ainda não chegou, e o
+  // efeito que expulsa da tela do ML sem permissão não pode disparar nesse meio.
+  const meliAderindo = useRef(false);
+  // "Montar" uma peça: adesão livre pelo servidor e a tela da peça em seguida.
+  // O snapshot do usuário traz os módulos novos; a tela não espera por ele.
+  const montarPeca = async (o: Objetivo) => {
+    if (o === 'meli') meliAderindo.current = true;
+    try {
+      await aderirObjetivos([o]);
+    } catch (err) {
+      meliAderindo.current = false;
+      console.error('Erro ao aderir:', err);
+      alert('Não foi possível ativar agora. Tente de novo em instantes.');
+      return;
+    }
+    if (o === 'meli') setMainView('meli');
+    else if (o === 'conteudo') setWorkspace('content');
+    else setMainView('agenteProdutos');
+  };
   // "Abrir" de uma tarefa da semana / de um cartão de Ferramentas.
-  const abrirDestino = (destino: DestinoTarefa, tarefa?: { missao?: ItemId }) => {
+  const abrirDestino = (destino: DestinoTarefa, tarefa?: { missao?: ItemId; montar?: Objetivo }) => {
+    if (destino === 'montar') { if (tarefa?.montar) void montarPeca(tarefa.montar); return; }
     if (destino === 'missao') { if (tarefa?.missao) void acaoDaTrilha(tarefa.missao, 'agora'); return; }
     // Com agente, Produtos abre a tela do agente (F2); a tabela fica a um toque dela.
     if (destino === 'produtos') setMainView(temAgente ? 'agenteProdutos' : 'products');
@@ -529,8 +549,9 @@ export default function App() {
   // usuário estiver no módulo, volta ao catálogo sem manter a tela protegida
   // montada no client.
   useEffect(() => {
-    if (mainView === 'meli' && !hasMeliListingOptimizer) setMainView('products');
+    if (mainView === 'meli' && !hasMeliListingOptimizer && !meliAderindo.current) setMainView('products');
   }, [hasMeliListingOptimizer, mainView]);
+  useEffect(() => { if (hasMeliListingOptimizer) meliAderindo.current = false; }, [hasMeliListingOptimizer]);
 
   // Aterrissagem na trilha: quem é da coorte e já concluiu a primeira missão
   // abre na trilha — uma vez por sessão. `jornadaConcluida` chega de forma
@@ -693,6 +714,14 @@ export default function App() {
   // checagem não conta como conectado.
   const estadoMeliTrilha = useEstadoMeli(isCoorteObjetivos(cohort) && hasMeliListingOptimizer);
   const meliConectadoTrilha = !!estadoMeliTrilha && 'conectado' in estadoMeliTrilha && estadoMeliTrilha.conectado === true;
+  // As peças do Alfred para esta conta (capacidades.ts). O status do ML não é
+  // conhecido aqui; para a Semana basta saber o que está montado ou não.
+  const pecasAlfred = useMemo(() => montarAlfred({
+    objetivos,
+    modules: { produtos: hasProdutosModule, contentAgent: hasContentAgent, operationsAgent: hasOperationsAgent, meliListingOptimizer: hasMeliListingOptimizer, video: hasVideoModule, blog: hasBlogModule },
+    conexoes: { erp: products.some((p) => p._tinyProductId || p._blingProductId || p._idworksProductId), meli: false, site: projetosConteudo > 0 },
+    marcos: { produtos: products.length, produtosComDescricao: products.filter((p) => String(p['Descrição complementar'] ?? '').trim()).length },
+  }), [objetivos, hasProdutosModule, hasContentAgent, hasOperationsAgent, hasMeliListingOptimizer, hasVideoModule, hasBlogModule, products, projetosConteudo]);
   const extrasSemana = useMemo<ExtrasSemana>(() => ({
     categories: existingCategories,
     hasVideo: hasVideoModule,
@@ -719,7 +748,10 @@ export default function App() {
       }).filter((m) => m.estado === 'agora' || m.estado === 'opcional')
         .map((m) => ({ id: m.id, titulo: m.titulo, meta: m.meta, estado: m.estado as 'agora' | 'opcional' }))
       : undefined,
-  }), [existingCategories, hasVideoModule, cohort, todasMissoes, products, companyData?.cnpj, objetivos, meliConectadoTrilha]);
+    pecaParaMontar: temAgente
+      ? (() => { const p = proximaPecaParaMontar(pecasAlfred, objetivos); return p && p.objetivo ? { objetivo: p.objetivo, titulo: p.titulo, libera: p.libera } : null; })()
+      : null,
+  }), [existingCategories, hasVideoModule, cohort, todasMissoes, products, companyData?.cnpj, objetivos, meliConectadoTrilha, pecasAlfred, temAgente]);
 
   // Cost of a given action, resolved against the loaded config (fallbacks inside).
   const getCreditCost = (key: string) => resolveCreditCost(creditCosts, key);
