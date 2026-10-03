@@ -102,6 +102,7 @@ import {
 import type { CompanyData } from './types/onboarding';
 import { registerReferralSignup } from './services/referralService';
 import { openSupportChat } from './services/supportChat';
+import { useEstadoMeli } from './modules/agent/useFontes';
 const OnboardingWizard = lazy(() => import('./modules/onboarding/OnboardingWizard'));
 const CompanyProfile = lazy(() => import('./modules/onboarding/CompanyProfile'));
 const ReferralPage = lazy(() => import('./modules/referral/ReferralPage'));
@@ -687,6 +688,11 @@ export default function App() {
   }, []);
 
   // O que só o App sabe e a semana do Alfred usa (ver ExtrasSemana em useSemana.ts).
+  // Coorte v2: o item "Conectar seu Mercado Livre" da trilha fica feito com o
+  // OAuth ativo. EstadoMeli é `{ conectado, status }` ou `{ erro }`; falha de
+  // checagem não conta como conectado.
+  const estadoMeliTrilha = useEstadoMeli(isCoorteObjetivos(cohort) && hasMeliListingOptimizer);
+  const meliConectadoTrilha = !!estadoMeliTrilha && 'conectado' in estadoMeliTrilha && estadoMeliTrilha.conectado === true;
   const extrasSemana = useMemo<ExtrasSemana>(() => ({
     categories: existingCategories,
     hasVideo: hasVideoModule,
@@ -698,6 +704,7 @@ export default function App() {
           produtos: products.length,
           erpConectado: products.some((p) => p._tinyProductId || p._blingProductId || p._idworksProductId),
           empresaCompleta: !!companyData?.cnpj,
+          ...(isCoorteObjetivos(cohort) ? { objetivos, meliConectado: meliConectadoTrilha } : {}),
         }).filter((m) => m.estado !== 'opcional');
         return { feitas: t.filter((m) => m.estado === 'feito').length, total: t.length };
       })()
@@ -708,10 +715,11 @@ export default function App() {
         produtos: products.length,
         erpConectado: products.some((p) => p._tinyProductId || p._blingProductId || p._idworksProductId),
         empresaCompleta: !!companyData?.cnpj,
+        ...(isCoorteObjetivos(cohort) ? { objetivos, meliConectado: meliConectadoTrilha } : {}),
       }).filter((m) => m.estado === 'agora' || m.estado === 'opcional')
         .map((m) => ({ id: m.id, titulo: m.titulo, meta: m.meta, estado: m.estado as 'agora' | 'opcional' }))
       : undefined,
-  }), [existingCategories, hasVideoModule, cohort, todasMissoes, products, companyData?.cnpj]);
+  }), [existingCategories, hasVideoModule, cohort, todasMissoes, products, companyData?.cnpj, objetivos, meliConectadoTrilha]);
 
   // Cost of a given action, resolved against the loaded config (fallbacks inside).
   const getCreditCost = (key: string) => resolveCreditCost(creditCosts, key);
@@ -2476,12 +2484,14 @@ Retorne APENAS um JSON válido no seguinte formato:
     // Item feito só leva ao resultado — nunca reinicia a missão: iniciarMissao
     // numa missão concluída recria o doc e apaga a conclusão.
     if (estado === 'feito') {
+      if (id === 'meli') { setMainView('meli'); return; }
       if (id === 'produto' || id === 'catalogo') { setMainView('products'); return; }
       if (id === 'conteudo' || id === 'publicar-blog') { setWorkspace('content'); return; }
       if (id === 'erp') { setMainView('integrations'); return; }
       if (id === 'empresa') { setMainView('company'); }
       return;
     }
+    if (id === 'meli') { setMainView('meli'); return; }
     if (id === 'produto' || id === 'conteudo') { setMissao(await iniciarMissao(user.uid, id)); return; }
     if (id === 'catalogo') { setMainView('products'); handleOpenProductUrlImport(); return; }
     if (id === 'erp') { setMainView('integrations'); return; }

@@ -27,5 +27,15 @@ check('missão em andamento não conta como feita', estados({ ...vazio, missoes:
 check('ERP conectado', estados({ ...vazio, erpConectado: true }).erp, 'feito');
 check('empresa completa', estados({ ...vazio, empresaCompleta: true }).empresa, 'feito');
 
+// Coorte v2: a trilha segue os objetivos marcados, na ordem.
+const ids = (s) => montarTrilha(s).map((i) => i.id);
+check('v1 (sem objetivos) não muda', ids(vazio), ['produto', 'conteudo', 'catalogo', 'erp', 'publicar-blog', 'empresa']);
+check('v2 só ML', ids({ ...vazio, objetivos: ['meli'] }), ['meli', 'catalogo', 'erp', 'empresa']);
+check('v2 ML depois produto', ids({ ...vazio, objetivos: ['meli', 'produto'] }), ['meli', 'produto', 'catalogo', 'erp', 'empresa']);
+check('v2 com conteúdo traz publicar blog', ids({ ...vazio, objetivos: ['conteudo'] }), ['conteudo', 'catalogo', 'erp', 'publicar-blog', 'empresa']);
+check('v2 ML conectado fica feito', estados({ ...vazio, objetivos: ['meli'], meliConectado: true }).meli, 'feito');
+check('v2 ML sem conexão é agora', estados({ ...vazio, objetivos: ['meli'] }).meli, 'agora');
+check('título do item ML', montarTrilha({ ...vazio, objetivos: ['meli'] })[0].titulo, 'Conectar seu Mercado Livre');
+
 console.log(failures === 0 ? '\nTudo ok.' : `\n${failures} falha(s).`);
 process.exit(failures === 0 ? 0 : 1);

@@ -22,7 +22,7 @@ export type EstadoTarefa = 'aberta' | 'precisa' | 'feita';
 export type DestinoTarefa = 'produtos' | 'conteudo' | 'meli' | 'integracoes' | 'atividade' | 'missao';
 
 /** As missões de onboarding que viram tarefas da primeira semana (ver trilha.ts). */
-export type MissaoSemana = 'produto' | 'conteudo' | 'catalogo' | 'erp' | 'publicar-blog' | 'empresa';
+export type MissaoSemana = 'produto' | 'conteudo' | 'meli' | 'catalogo' | 'erp' | 'publicar-blog' | 'empresa';
 
 export interface TarefaSemana {
   id: string;
@@ -318,7 +318,9 @@ export function montarSemana(s: SinaisSemana): TarefaSemana[] {
   // de tudo que não precisa do usuário (sem trilha paralela).
   const missoes = (s.missoes ?? []).map<Omit<TarefaSemana, 'dia'>>((m) => ({
     id: `missao-${m.id}`,
-    origem: m.id === 'conteudo' || m.id === 'publicar-blog' ? 'conteudo' : m.id === 'produto' || m.id === 'catalogo' ? 'produto' : 'operacoes',
+    origem: m.id === 'meli' ? 'meli'
+      : m.id === 'conteudo' || m.id === 'publicar-blog' ? 'conteudo'
+        : m.id === 'produto' || m.id === 'catalogo' ? 'produto' : 'operacoes',
     titulo: m.titulo,
     detalhe: m.meta,
     estado: 'aberta',
