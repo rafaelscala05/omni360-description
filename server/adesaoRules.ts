@@ -1,8 +1,8 @@
 // Regras puras da adesão a módulos (sem I/O). A rota POST /api/onboarding/aderir
 // em onboardingAgent.ts só faz a transação em volta disto.
 //
-// Adesão é livre: aceitou o objetivo, o módulo liga. Cada objetivo paga o
-// crédito de missão uma única vez — quem decide "uma vez" é o create() do doc
+// Adesão é livre: aceitou o objetivo, o módulo liga — uma vez. Cada objetivo
+// paga o crédito de missão uma única vez — quem decide "uma vez" é o create() do doc
 // users/{uid}/adesoes/{objetivo}; aqui só se calcula o que pagar.
 
 import { OBJETIVOS, modulosDoObjetivo, type Objetivo } from '../src/modules/agent/capacidades';
@@ -41,6 +41,8 @@ export function planejarAdesao(p: { pedidos: Objetivo[]; jaAderidos: Objetivo[];
 } {
   const novos = p.pedidos.filter((o) => !p.jaAderidos.includes(o));
   const campos: Record<string, true> = {};
-  for (const o of p.pedidos) for (const m of modulosDoObjetivo(o)) campos[`modules.${m}`] = true;
+  // Só o objetivo novo liga módulo. Já aderido e com o módulo desligado quer
+  // dizer que o admin desligou (abuso, suporte) — o cliente não religa sozinho.
+  for (const o of novos) for (const m of modulosDoObjetivo(o)) campos[`modules.${m}`] = true;
   return { novos, creditos: novos.reduce((s, o) => s + bonusDaMissao(p.config, o), 0), campos };
 }

@@ -39,7 +39,11 @@ check('campos de módulo', p1.campos, { 'modules.meliListingOptimizer': true, 'm
 const p2 = planejarAdesao({ pedidos: ['meli'], jaAderidos: ['meli'], config: undefined });
 check('já aderido não paga de novo', p2.creditos, 0);
 check('já aderido não é novo', p2.novos, []);
-check('já aderido religa o módulo', p2.campos, { 'modules.meliListingOptimizer': true });
+// O admin pode desligar um módulo (abuso, suporte): quem já aderiu não religa sozinho.
+check('já aderido não mexe no módulo (respeita revogação do admin)', p2.campos, {});
+const p4 = planejarAdesao({ pedidos: ['meli', 'produto'], jaAderidos: ['meli'], config: undefined });
+check('misto: só o novo liga módulo', p4.campos, { 'modules.produtos': true });
+check('misto: só o novo paga', p4.creditos, 10);
 
 const p3 = planejarAdesao({ pedidos: ['conteudo'], jaAderidos: [], config: { missao: { conteudo: 40 } } });
 check('conteúdo liga dois módulos', p3.campos, { 'modules.contentAgent': true, 'modules.blog': true });

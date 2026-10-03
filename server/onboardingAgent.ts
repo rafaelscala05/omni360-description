@@ -242,9 +242,10 @@ export function registerOnboardingRoutes(app: express.Application, deps: Onboard
   });
 
   // Adesão a módulos (coorte missao-v2 e o "Montar" das peças do Alfred).
-  // Livre: aceitou, liga. O crédito de missão é pago uma vez por objetivo —
-  // o create() de adesoes/{objetivo} dentro da transação é o que garante isso
-  // contra duplo clique e duas abas. Objetivo já aderido só religa o módulo.
+  // Livre: aceitou, liga. Módulo e crédito de missão entram uma vez por
+  // objetivo — o create() de adesoes/{objetivo} dentro da transação é o que
+  // garante isso contra duplo clique e duas abas. Objetivo já aderido não
+  // religa o módulo: se ele está desligado, foi o admin que desligou.
   app.post('/api/onboarding/aderir', async (req, res) => {
     try {
       const decoded = await verifyFirebaseToken(req);

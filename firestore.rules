@@ -79,9 +79,9 @@ service cloud.firestore {
           || (('hasPurchased' in resource.data) && request.resource.data.hasPurchased == resource.data.hasPurchased);
     }
 
-    // O acesso ao otimizador MELI é concedido administrativamente. Outros
-    // módulos continuam podendo ser ligados pelos fluxos atuais do produto,
-    // mas o client nunca pode conceder ou remover esta permissão específica.
+    // O acesso ao otimizador MELI é concedido só pelo servidor: pela adesão
+    // livre (POST /api/onboarding/aderir, uma vez por conta) ou pelo admin.
+    // O client nunca pode conceder ou remover esta permissão específica.
     function meliModulePermissionNotGranted() {
       return request.resource.data.get('modules', {}).get('meliListingOptimizer', false) != true;
     }
