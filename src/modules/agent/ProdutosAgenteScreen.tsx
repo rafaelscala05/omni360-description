@@ -1,5 +1,5 @@
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpRight, ChevronLeft, CloudUpload, FolderTree, Loader2, Search, SlidersHorizontal, Table2, X } from 'lucide-react';
+import { ArrowUpRight, ChevronLeft, FolderTree, Loader2, Search, SlidersHorizontal, Table2, X } from 'lucide-react';
 import AlfredLogo from '../../components/alfredLogo/AlfredLogo';
 import type { Product, ProductModalTab } from '../../types/models';
 import type { PedidoAlfred } from '../../types/agent';
@@ -362,7 +362,6 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
                   )}
                 </div>
                 {atalho('Categorias', FolderTree, 'categories')}
-                {atalho('Envio ERP', CloudUpload, 'integrations')}
                 {atalho('Tabela completa', Table2, 'products', 'A planilha inteira: todas as colunas, variações, filtros, exportar e enviar')}
               </div>
             </div>

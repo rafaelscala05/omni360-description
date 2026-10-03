@@ -12,6 +12,7 @@ import {
   type MeliChecklistId, type MeliConnection, type MeliListing, type MeliListingStatus, type MeliOperationalMetrics, type MeliSyncJob,
 } from '../../services/meliService';
 import ListingPanel from './ListingPanel';
+import { Caixa } from '../agent/produtos/LinhaProduto';
 import type { MeliCreditHelpers } from './MeliVideoStudio';
 
 const STATUS_LABEL: Record<string, string> = { active: 'Ativo', paused: 'Pausado', closed: 'Encerrado' };
@@ -41,8 +42,10 @@ function Score({ value, label }: { value?: number | null; label: string }) {
   </div>;
 }
 
-export default function MeliOptimizer({ credits, abrirItemId, onItemAberto, onPedirAlfred }: {
+export default function MeliOptimizer({ credits, abrirItemId, onItemAberto, onPedirAlfred, migalhas }: {
   credits: MeliCreditHelpers;
+  /** Com agente: o caminho até a tela, no topo (a barra de busca/créditos do app some). */
+  migalhas?: React.ReactNode;
   /** "Abrir o anúncio" vindo do Alfred: busca pelo código e abre o painel dele. */
   abrirItemId?: string | null;
   onItemAberto?: () => void;
@@ -210,39 +213,102 @@ export default function MeliOptimizer({ credits, abrirItemId, onItemAberto, onPe
     { value: 'paused', label: STATUS_LABEL.paused, count: pageInfo.counts.paused || 0 },
     { value: 'closed', label: STATUS_LABEL.closed, count: pageInfo.counts.closed || 0 },
   ];
-  return <div className="max-w-6xl mx-auto space-y-5 animate-in fade-in">
-    <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4"><div className="flex items-start gap-3"><div className="w-11 h-11 rounded-2xl bg-[#FFE600] flex items-center justify-center shadow-sm shrink-0"><Store className="w-5 h-5 text-slate-900" /></div><div><h1 className="font-display text-[26px] sm:text-[30px] font-semibold tracking-tight text-[var(--ag-text)]">Agente MELI</h1><p className="text-sm text-(--ag-text-2) mt-0.5">A IA melhora seus anúncios — ficha técnica, textos, fotos — e você só aprova.</p></div></div>
-      {connection?.connected && <div className="flex items-center gap-2 flex-wrap"><span className="inline-flex items-center gap-1.5 text-xs text-(--ag-ok) bg-(--ag-ok-soft) border border-(--ag-ok-line) rounded-full px-3 py-2"><Check className="w-3.5 h-3.5" /> Seller {connection.sellerId} · {connection.siteId}</span><button onClick={disconnect} disabled={busy} className="inline-flex items-center gap-1.5 text-xs text-(--ag-text-2) hover:text-(--ag-danger) px-2 py-2 disabled:opacity-50"><Unplug className="w-3.5 h-3.5" /> Desconectar</button></div>}
+  const syncRodando = Boolean(job && !terminalJobs.has(job.status));
+  const estiloTopo: React.CSSProperties = { background: 'var(--ag-surface-solid)', border: '1px solid var(--ag-hairline)' };
+  return <div className={`space-y-4 animate-in fade-in ${migalhas ? 'ag-tela-x' : 'max-w-6xl mx-auto'}`}>
+    {migalhas}
+    {/* Título + resumo; à direita, a conta conectada — a mesma estrutura da tela de Produtos do agente. */}
+    <header className="flex flex-col md:flex-row md:items-end gap-3">
+      <div className="flex-1 min-w-0 flex items-center gap-3">
+        <div className="w-11 h-11 rounded-[14px] bg-[#FFE600] grid place-items-center shrink-0"><Store className="w-5 h-5 text-slate-900" /></div>
+        <div className="min-w-0">
+          <h1 className="font-display text-[30px] leading-tight font-semibold tracking-tight text-[var(--ag-text)]">Mercado Livre</h1>
+          <p className="text-[13.5px] text-[var(--ag-text-2)] truncate">
+            {connection?.connected
+              ? <>{(pageInfo.counts.all || 0).toLocaleString('pt-BR')} anúncios{(pageInfo.counts.ready || 0) > 0 && <> · <span style={{ color: 'var(--ag-ok)' }}>{pageInfo.counts.ready} prontos para revisar</span></>}</>
+              : 'A IA melhora seus anúncios — ficha técnica, textos, fotos — e você só aprova.'}
+          </p>
+        </div>
+      </div>
+      {connection?.connected && <div className="flex items-center gap-1 flex-wrap">
+        <span className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full text-[12.5px] font-medium" style={{ background: 'var(--ag-ok-soft)', color: 'var(--ag-ok)' }}><Check className="w-3.5 h-3.5" /> Seller {connection.sellerId} · {connection.siteId}</span>
+        <button onClick={disconnect} disabled={busy} className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full text-[12.5px] font-medium text-[var(--ag-text-2)] hover:text-[var(--ag-danger)] disabled:opacity-50"><Unplug className="w-3.5 h-3.5" /> Desconectar</button>
+      </div>}
     </header>
-    {error && <div className="flex items-start gap-2 text-sm text-(--ag-danger) bg-(--ag-danger-soft) border border-(--ag-danger-line) rounded-xl px-4 py-3"><AlertCircle className="w-4 h-4 mt-0.5 shrink-0" /><span>{error}</span></div>}
-    {!connection?.configured ? <section className="bg-(--ag-surface-solid) border border-(--ag-warn-line) rounded-[24px] p-6 shadow-sm"><h2 className="font-bold text-(--ag-text)">Configuração do servidor pendente</h2><p className="text-sm text-(--ag-text-2) mt-2 max-w-3xl">Configure o App ID, Secret Key, redirect URI e a chave de criptografia nos secrets do ambiente.</p></section>
-      : !connection.connected ? <section className="bg-(--ag-surface-solid) border border-(--ag-hairline) rounded-[24px] p-7 shadow-sm"><ShieldCheck className="w-8 h-8 text-(--ag-blue) mb-3" /><h2 className="text-lg font-bold text-(--ag-text)">Conecte a conta principal do vendedor</h2><p className="text-sm text-(--ag-text-2) mt-2">Os tokens ficam cifrados no backend e nunca são devolvidos para o navegador.</p><button onClick={connect} disabled={busy} className="mt-5 inline-flex items-center gap-2 bg-(--ag-blue) hover:brightness-95 text-white text-sm font-bold px-4 py-2.5 rounded-xl disabled:opacity-50">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />} Conectar Mercado Livre</button></section>
+    {error && <div className="flex items-start gap-2 text-[13.5px] rounded-[16px] px-4 py-3" style={{ background: 'var(--ag-danger-soft)', color: 'var(--ag-danger)' }}><AlertCircle className="w-4 h-4 mt-0.5 shrink-0" /><span>{error}</span></div>}
+    {!connection?.configured ? <section className="ag-glass rounded-[22px] p-6"><h2 className="text-[15px] font-semibold text-[var(--ag-text)]">Configuração do servidor pendente</h2><p className="text-[13.5px] text-[var(--ag-text-2)] mt-2 max-w-3xl">Configure o App ID, Secret Key, redirect URI e a chave de criptografia nos secrets do ambiente.</p></section>
+      : !connection.connected ? <section className="ag-glass rounded-[22px] p-7"><ShieldCheck className="w-8 h-8 text-[var(--ag-blue)] mb-3" /><h2 className="text-[17px] font-semibold text-[var(--ag-text)]">Conecte a conta principal do vendedor</h2><p className="text-[13.5px] text-[var(--ag-text-2)] mt-2">Os tokens ficam cifrados no backend e nunca são devolvidos para o navegador.</p><button onClick={connect} disabled={busy} className="mt-5 inline-flex items-center gap-2 h-11 px-5 rounded-full text-[14px] font-semibold disabled:opacity-50" style={{ background: 'var(--ag-text)', color: 'var(--ag-surface-solid)' }}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />} Conectar Mercado Livre</button></section>
         : <>
-          <section className="bg-(--ag-surface-solid) border border-(--ag-hairline) rounded-[24px] p-4 shadow-sm space-y-4">
-            <div className="flex flex-col md:flex-row md:items-center gap-3 justify-between">
-              <div className="relative flex-1 max-w-lg"><Search className="w-4 h-4 text-(--ag-text-3) absolute left-3 top-1/2 -translate-y-1/2" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por título ou MLB…" className="w-full border border-(--ag-hairline) bg-(--ag-fill) rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-(--ag-blue)" /></div>
-              <div className="flex items-center gap-2">
-                <select value={sort} onChange={(event) => setSort(event.target.value as 'recent' | 'opportunity')} className="border border-(--ag-hairline) bg-(--ag-surface-solid) rounded-xl px-3 py-2 text-sm text-(--ag-text)" aria-label="Ordenar">
-                  <option value="opportunity">Maior oportunidade</option>
-                  <option value="recent">Atualizados recentemente</option>
-                </select>
-                <button onClick={sync} disabled={busy || Boolean(job && !terminalJobs.has(job.status))} className="inline-flex justify-center items-center gap-2 bg-[#FFE600] hover:brightness-95 text-slate-900 text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-50">{job && !terminalJobs.has(job.status) ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Sincronizar</button>
-              </div>
+          {/* Busca, ordem e sincronizar; embaixo, os filtros em pílulas. */}
+          <div className="flex flex-col md:flex-row md:items-center gap-2">
+            <label className="relative flex items-center flex-1 md:max-w-[420px]">
+              <Search className="absolute left-3.5 w-4 h-4 text-[var(--ag-text-3)] pointer-events-none" />
+              {/* 16px no telefone: abaixo disso o Safari do iOS dá zoom ao focar. */}
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por título ou MLB" aria-label="Buscar anúncio por título ou MLB" className="w-full h-11 pl-10 pr-10 rounded-full text-[16px] md:text-[14px] outline-none text-[var(--ag-text)] placeholder:text-[var(--ag-text-3)]" style={estiloTopo} />
+              {search && <button onClick={() => setSearch('')} aria-label="Limpar busca" className="absolute right-2 w-7 h-7 grid place-items-center rounded-full text-[var(--ag-text-3)] hover:text-[var(--ag-text)]"><X className="w-4 h-4" /></button>}
+            </label>
+            <span className="hidden md:block flex-1" />
+            <div className="flex items-center gap-2">
+              <select value={sort} onChange={(event) => setSort(event.target.value as 'recent' | 'opportunity')} className="flex-1 md:flex-none h-11 px-4 rounded-full text-[13.5px] font-semibold text-[var(--ag-text)] outline-none" style={estiloTopo} aria-label="Ordenar">
+                <option value="opportunity">Maior oportunidade</option>
+                <option value="recent">Atualizados recentemente</option>
+              </select>
+              <button onClick={sync} disabled={busy || syncRodando} className="h-11 px-4 rounded-full inline-flex items-center gap-2 text-[13.5px] font-semibold text-slate-900 bg-[#FFE600] hover:brightness-95 disabled:opacity-50">{syncRodando ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Sincronizar</button>
             </div>
-            <div className="flex items-center gap-2 overflow-x-auto">{filters.map((entry) => <button key={entry.value || 'all'} onClick={() => setFilter(entry.value)} className={`text-xs font-semibold px-3 py-1.5 rounded-full border whitespace-nowrap ${filter === entry.value ? 'bg-(--ag-text) border-(--ag-text) text-(--ag-surface-solid)' : entry.value === 'ready' && entry.count ? 'bg-(--ag-ok-soft) border-(--ag-ok-line) text-(--ag-ok)' : 'bg-(--ag-surface-solid) border-(--ag-hairline) text-(--ag-text-2)'}`}>{entry.label} ({entry.count})</button>)}{connection.lastSyncedAt && <span className="ml-auto text-[11px] text-(--ag-text-3) whitespace-nowrap">Última sync: {new Date(connection.lastSyncedAt).toLocaleString('pt-BR')}</span>}</div>
-            {sort === 'opportunity' && <p className="text-[11px] text-(--ag-text-3)">Primeiro os anúncios com mais visitas e mais espaço para melhorar — onde uma melhoria rende mais vendas.</p>}
-            {job && <div className={`rounded-xl border p-3 ${job.status === 'failed' ? 'bg-(--ag-danger-soft) border-(--ag-danger-line)' : 'bg-(--ag-blue-soft) border-(--ag-blue-line)'}`}><div className="flex justify-between text-xs font-semibold text-(--ag-text)"><span>{job.lastStep}</span><span>{job.progress}%</span></div><div className="h-1.5 bg-(--ag-surface-solid) rounded-full overflow-hidden mt-2"><div className="h-full bg-(--ag-blue) rounded-full transition-all" style={{ width: `${job.progress}%` }} /></div>{!terminalJobs.has(job.status) && <p className="text-[11px] text-(--ag-text-2) mt-2">Os anúncios são salvos em lotes e já aparecem na lista. A importação continua no servidor mesmo se você fechar esta página.</p>}{job.status === 'partial' && Boolean(job.failedItemIds?.length) && <p className="text-[11px] text-(--ag-warn) mt-2">Sem sucesso: {job.failedItemIds!.slice(0, 10).join(', ')}{job.failedItemIds!.length > 10 ? '…' : ''}</p>}{job.error && !terminalJobs.has(job.status) && <p className="text-[11px] text-(--ag-warn) mt-2">{job.error}</p>}</div>}
-          </section>
-          {listings.length > 0 && <div className="flex flex-wrap items-center gap-3 bg-(--ag-surface-solid) border border-(--ag-hairline) rounded-2xl px-4 py-2.5 shadow-sm"><label className="inline-flex items-center gap-2 text-xs font-semibold text-(--ag-text) cursor-pointer"><input type="checkbox" checked={allPageChecked} onChange={togglePage} className="w-4 h-4 accent-(--ag-blue)" /> Selecionar página</label>{checkedIds.size > 0 && <span className="text-xs text-(--ag-text-2)">{checkedIds.size} selecionado(s){checkedIds.size > MAX_BULK_ANALYSES ? ` · máximo ${MAX_BULK_ANALYSES} por vez` : ''}</span>}{checkedIds.size > 0 && <button onClick={() => setCheckedIds(new Set())} className="text-xs font-semibold text-(--ag-text-2) hover:text-(--ag-text)">Limpar seleção</button>}<button onClick={bulkAnalyze} disabled={bulkBusy || checkedIds.size === 0 || checkedIds.size > MAX_BULK_ANALYSES} className="ml-auto inline-flex items-center gap-2 bg-(--ag-text) hover:opacity-90 text-(--ag-surface-solid) text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-40">{bulkBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />} Otimizar selecionados{checkedIds.size ? ` (${checkedIds.size})` : ''}</button></div>}
-          {bulkNotice && <div className="flex items-start gap-2 text-xs text-(--ag-blue) bg-(--ag-blue-soft) border border-(--ag-blue-line) rounded-xl px-4 py-2.5"><Sparkles className="w-3.5 h-3.5 mt-0.5 shrink-0" /><span className="flex-1">{bulkNotice} Cada anúncio fica com as melhorias prontas em “Prontas para revisar” ao terminar.</span><button onClick={() => setBulkNotice(null)} aria-label="Fechar aviso"><X className="w-3.5 h-3.5" /></button></div>}
-          <section className="space-y-2">{listings.length === 0 ? <div className="bg-(--ag-surface-solid) border border-dashed border-(--ag-hairline-2) rounded-2xl py-14 text-center text-sm text-(--ag-text-2)">{filter === 'ready' ? 'Nenhum anúncio com melhorias esperando revisão. Otimize alguns anúncios para vê-los aqui.' : 'Nenhum anúncio sincronizado neste filtro.'}</div> : listings.map((listing) => {
-            const ready = listing.proposalSummary && READY_STATUSES.has(listing.proposalSummary.status);
-            const missing = (listing.analysisSummary?.missingChecklist || []).map((id) => MISSING_BADGE[id]).filter(Boolean) as string[];
-            if (!listing.analysisSummary && listing.videoId === null) missing.push('Sem vídeo');
-            return <div key={listing.itemId} className="flex items-center gap-3"><input type="checkbox" checked={checkedIds.has(listing.itemId)} onChange={() => toggleChecked(listing.itemId)} aria-label={`Selecionar ${listing.itemId}`} className="w-4 h-4 accent-(--ag-blue) shrink-0 cursor-pointer" /><button onClick={() => setSelected(listing)} className="flex-1 min-w-0 text-left bg-(--ag-surface-solid) border border-(--ag-hairline) hover:border-(--ag-blue-line) rounded-2xl p-4 shadow-sm transition-colors flex items-center gap-4"><div className="w-16 h-16 rounded-xl bg-(--ag-fill-2) overflow-hidden shrink-0">{listing.thumbnail && <img src={listing.thumbnail} alt="" className="w-full h-full object-contain" />}</div><div className="min-w-0 flex-1"><div className="flex gap-2 items-center flex-wrap"><span className="text-[10px] font-bold uppercase text-(--ag-text-3)">{listing.itemId}</span><span className="text-[10px] font-semibold text-(--ag-text-2) bg-(--ag-fill-2) rounded px-1.5 py-0.5">{STATUS_LABEL[listing.status] || listing.status}</span>{listing.analysisInProgress ? <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-(--ag-blue) bg-(--ag-blue-soft) border border-(--ag-blue-line) rounded px-1.5 py-0.5"><Loader2 className="w-3 h-3 animate-spin" /> Otimizando</span> : ready && <span className="inline-flex items-center gap-1 text-[10px] font-bold text-(--ag-ok) bg-(--ag-ok-soft) border border-(--ag-ok-line) rounded px-1.5 py-0.5"><WandSparkles className="w-3 h-3" /> {listing.proposalSummary!.changeCount} melhoria(s) pronta(s)</span>}</div><h3 className="text-sm font-bold text-(--ag-text) truncate mt-1">{listing.title}</h3><div className="flex items-center gap-1.5 mt-1.5 flex-wrap">{listing.visits30d != null && <span className="inline-flex items-center gap-1 text-[11px] text-(--ag-text-2)"><Eye className="w-3 h-3" /> {listing.visits30d.toLocaleString('pt-BR')} visitas/30d</span>}{missing.slice(0, 3).map((label) => <span key={label} className="text-[10px] text-(--ag-warn) bg-(--ag-warn-soft) border border-(--ag-warn-line) rounded-full px-2 py-0.5">{label}</span>)}</div></div><div className="flex items-center gap-5"><Score value={listing.performance?.score} label="Mercado Livre" /><Score value={listing.analysisSummary?.alfredsScore} label="Alfreds" /></div><ChevronRight className="w-4 h-4 text-(--ag-text-3) shrink-0" /></button></div>;
-          })}</section>
-          {pageInfo.total > 0 && <nav className="flex items-center justify-between gap-3 text-xs text-(--ag-text-2)"><span>{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, pageInfo.total)} de {pageInfo.total} anúncios</span><div className="flex items-center gap-2"><button onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} className="inline-flex items-center gap-1 border border-(--ag-hairline) bg-(--ag-surface-solid) rounded-lg px-3 py-1.5 font-semibold text-(--ag-text) disabled:opacity-40"><ChevronLeft className="w-3.5 h-3.5" /> Anterior</button><span className="font-semibold text-(--ag-text) whitespace-nowrap">Página {page} de {pageInfo.totalPages}</span><button onClick={() => setPage((current) => Math.min(pageInfo.totalPages, current + 1))} disabled={page >= pageInfo.totalPages} className="inline-flex items-center gap-1 border border-(--ag-hairline) bg-(--ag-surface-solid) rounded-lg px-3 py-1.5 font-semibold text-(--ag-text) disabled:opacity-40">Próxima <ChevronRight className="w-3.5 h-3.5" /></button></div></nav>}
-          {metrics && <details className="bg-(--ag-surface-solid) border border-(--ag-hairline) rounded-2xl"><summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-(--ag-text-2)">Painel operacional</summary><div className="grid grid-cols-2 md:grid-cols-6 gap-2 px-4 pb-4">{([['Anúncios', metrics.listings.total], ['Análises concluídas', metrics.analyses.byStatus.completed || 0], ['Propostas', metrics.proposals.total], ['Publicações', metrics.mutations.total], ['Webhooks', metrics.webhooks.total], ['API hoje · 429', `${metrics.apiToday.calls} · ${metrics.apiToday.rateLimited}`]] as const).map(([label, value]) => <div key={label} className="border rounded-xl p-3"><p className="text-[10px] text-(--ag-text-3)">{label}</p><p className="text-lg font-black">{value}</p></div>)}</div></details>}
+          </div>
+          <div className="flex items-center gap-1.5 overflow-x-auto">
+            {filters.map((entry) => {
+              const ativo = filter === entry.value;
+              const destaque = !ativo && entry.value === 'ready' && entry.count > 0;
+              return <button key={entry.value || 'all'} onClick={() => setFilter(entry.value)} className="h-8 px-3 rounded-full text-[12.5px] font-medium whitespace-nowrap tabular-nums" style={ativo ? { background: 'var(--ag-text)', color: 'var(--ag-surface-solid)' } : destaque ? { background: 'var(--ag-ok-soft)', color: 'var(--ag-ok)' } : { background: 'var(--ag-fill-2)', color: 'var(--ag-text-2)' }}>{entry.label} · {entry.count}</button>;
+            })}
+            {connection.lastSyncedAt && <span className="ml-auto pl-2 text-[11.5px] text-[var(--ag-text-3)] whitespace-nowrap">Última sync: {new Date(connection.lastSyncedAt).toLocaleString('pt-BR')}</span>}
+          </div>
+          {sort === 'opportunity' && <p className="text-[12px] text-[var(--ag-text-3)]">Primeiro os anúncios com mais visitas e mais espaço para melhorar — onde uma melhoria rende mais vendas.</p>}
+          {job && <div className="rounded-[16px] p-3" style={{ background: job.status === 'failed' ? 'var(--ag-danger-soft)' : 'var(--ag-blue-soft)' }}><div className="flex justify-between text-[12.5px] font-semibold text-[var(--ag-text)]"><span>{job.lastStep}</span><span>{job.progress}%</span></div><div className="h-1.5 bg-(--ag-surface-solid) rounded-full overflow-hidden mt-2"><div className="h-full bg-(--ag-blue) rounded-full transition-all" style={{ width: `${job.progress}%` }} /></div>{!terminalJobs.has(job.status) && <p className="text-[11.5px] text-[var(--ag-text-2)] mt-2">Os anúncios são salvos em lotes e já aparecem na lista. A importação continua no servidor mesmo se você fechar esta página.</p>}{job.status === 'partial' && Boolean(job.failedItemIds?.length) && <p className="text-[11.5px] text-(--ag-warn) mt-2">Sem sucesso: {job.failedItemIds!.slice(0, 10).join(', ')}{job.failedItemIds!.length > 10 ? '…' : ''}</p>}{job.error && !terminalJobs.has(job.status) && <p className="text-[11.5px] text-(--ag-warn) mt-2">{job.error}</p>}</div>}
+          {bulkNotice && <div className="flex items-start gap-2 text-[12.5px] rounded-[16px] px-4 py-2.5" style={{ background: 'var(--ag-blue-soft)', color: 'var(--ag-blue)' }}><Sparkles className="w-3.5 h-3.5 mt-0.5 shrink-0" /><span className="flex-1">{bulkNotice} Cada anúncio fica com as melhorias prontas em “Prontas para revisar” ao terminar.</span><button onClick={() => setBulkNotice(null)} aria-label="Fechar aviso"><X className="w-3.5 h-3.5" /></button></div>}
+          {listings.length === 0 ? <div className="ag-glass rounded-[22px] px-5 py-10 text-center text-[14px] text-[var(--ag-text-2)]">{filter === 'ready' ? 'Nenhum anúncio com melhorias esperando revisão. Otimize alguns anúncios para vê-los aqui.' : 'Nenhum anúncio sincronizado neste filtro.'}</div>
+            : <section className="ag-glass rounded-[22px] overflow-hidden">
+              {/* Cabeçalho: caixa da página, contagem e o que cada coluna mostra. */}
+              <div className="flex items-center gap-1 pl-1 pr-3 py-1 text-[12.5px] text-[var(--ag-text-2)]" style={{ background: 'var(--ag-fill)' }}>
+                <Caixa marcada={allPageChecked} rotulo="Selecionar os desta página" onClick={togglePage} />
+                <span className="flex-1">
+                  {pageInfo.total.toLocaleString('pt-BR')} {pageInfo.total === 1 ? 'anúncio' : 'anúncios'}
+                  {checkedIds.size > 0 && <> · <span className="font-semibold text-[var(--ag-text)]">{checkedIds.size} selecionado{checkedIds.size === 1 ? '' : 's'}</span>{checkedIds.size > MAX_BULK_ANALYSES ? ` · máximo ${MAX_BULK_ANALYSES} por vez` : ''} · <button onClick={() => setCheckedIds(new Set())} className="font-semibold text-[var(--ag-accent)]">Limpar</button></>}
+                </span>
+                <span className="hidden md:block w-[150px] text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--ag-text-3)]">Nota</span>
+                <span className="hidden md:block w-4" />
+              </div>
+              {listings.map((listing) => {
+                const ready = listing.proposalSummary && READY_STATUSES.has(listing.proposalSummary.status);
+                const missing = (listing.analysisSummary?.missingChecklist || []).map((id) => MISSING_BADGE[id]).filter(Boolean) as string[];
+                if (!listing.analysisSummary && listing.videoId === null) missing.push('Sem vídeo');
+                return <div key={listing.itemId} className="flex items-center gap-1 pl-1 pr-3 py-2" style={{ borderTop: '1px solid var(--ag-hairline)' }}>
+                  <Caixa marcada={checkedIds.has(listing.itemId)} rotulo={`Selecionar ${listing.itemId}`} onClick={() => toggleChecked(listing.itemId)} />
+                  <button onClick={() => setSelected(listing)} className="flex-1 min-w-0 text-left flex items-center gap-3">
+                    <span className="w-12 h-12 rounded-[12px] shrink-0 overflow-hidden grid place-items-center" style={{ background: 'var(--ag-fill)', boxShadow: 'inset 0 0 0 1px var(--ag-hairline)' }}>{listing.thumbnail && <img src={listing.thumbnail} alt="" loading="lazy" className="w-full h-full object-contain" />}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex gap-1.5 items-center flex-wrap text-[11.5px]">
+                        <span className="font-medium text-[var(--ag-text-3)] tabular-nums">{listing.itemId}</span>
+                        <span className="h-5 px-1.5 rounded-full inline-flex items-center font-medium" style={{ background: 'var(--ag-fill-2)', color: 'var(--ag-text-2)' }}>{STATUS_LABEL[listing.status] || listing.status}</span>
+                        {listing.analysisInProgress
+                          ? <span className="h-5 px-1.5 rounded-full inline-flex items-center gap-1 font-medium" style={{ background: 'var(--ag-blue-soft)', color: 'var(--ag-blue)' }}><Loader2 className="w-3 h-3 animate-spin" /> Otimizando</span>
+                          : ready && <span className="h-5 px-1.5 rounded-full inline-flex items-center gap-1 font-semibold" style={{ background: 'var(--ag-ok-soft)', color: 'var(--ag-ok)' }}><WandSparkles className="w-3 h-3" /> {listing.proposalSummary!.changeCount} melhoria(s) pronta(s)</span>}
+                      </span>
+                      <span className="block text-[14.5px] font-semibold text-[var(--ag-text)] truncate mt-0.5">{listing.title}</span>
+                      <span className="flex items-center gap-1.5 mt-1 flex-wrap">
+                        {listing.visits30d != null && <span className="inline-flex items-center gap-1 text-[11.5px] text-[var(--ag-text-2)]"><Eye className="w-3 h-3" /> {listing.visits30d.toLocaleString('pt-BR')} visitas/30d</span>}
+                        {missing.slice(0, 3).map((label) => <span key={label} className="h-5 px-2 rounded-full inline-flex items-center text-[11px] font-medium" style={{ background: 'var(--ag-warn-soft)', color: 'var(--ag-warn)' }}>{label}</span>)}
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-4 md:w-[150px] md:justify-end"><Score value={listing.performance?.score} label="Mercado Livre" /><Score value={listing.analysisSummary?.alfredsScore} label="Alfreds" /></span>
+                    <ChevronRight className="w-4 h-4 text-[var(--ag-text-3)] shrink-0" />
+                  </button>
+                </div>;
+              })}
+            </section>}
+          {pageInfo.total > 0 && <nav className="flex items-center justify-between gap-3 text-[12.5px] text-[var(--ag-text-2)]"><span className="tabular-nums">{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, pageInfo.total)} de {pageInfo.total}</span><div className="flex items-center gap-2"><button onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} aria-label="Página anterior" className="w-10 h-10 rounded-full grid place-items-center text-[var(--ag-text)] disabled:opacity-40" style={estiloTopo}><ChevronLeft className="w-4 h-4" /></button><span className="font-semibold text-[var(--ag-text)] whitespace-nowrap tabular-nums">{page} de {pageInfo.totalPages}</span><button onClick={() => setPage((current) => Math.min(pageInfo.totalPages, current + 1))} disabled={page >= pageInfo.totalPages} aria-label="Próxima página" className="w-10 h-10 rounded-full grid place-items-center text-[var(--ag-text)] disabled:opacity-40" style={estiloTopo}><ChevronRight className="w-4 h-4" /></button></div></nav>}
+          {metrics && <details className="ag-glass rounded-[22px]"><summary className="cursor-pointer px-4 py-3 text-[12.5px] font-semibold text-[var(--ag-text-2)]">Painel operacional</summary><div className="grid grid-cols-2 md:grid-cols-6 gap-2 px-4 pb-4">{([['Anúncios', metrics.listings.total], ['Análises concluídas', metrics.analyses.byStatus.completed || 0], ['Propostas', metrics.proposals.total], ['Publicações', metrics.mutations.total], ['Webhooks', metrics.webhooks.total], ['API hoje · 429', `${metrics.apiToday.calls} · ${metrics.apiToday.rateLimited}`]] as const).map(([label, value]) => <div key={label} className="rounded-[14px] p-3" style={{ background: 'var(--ag-fill)' }}><p className="text-[11px] text-[var(--ag-text-3)]">{label}</p><p className="text-lg font-semibold text-[var(--ag-text)] tabular-nums">{value}</p></div>)}</div></details>}
         </>}
     {/* F2: a mesma barra "Próximo passo · N selecionados" das telas de agente. */}
     {checkedIds.size > 0 && (

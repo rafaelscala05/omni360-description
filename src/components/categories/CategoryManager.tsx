@@ -4,7 +4,11 @@ import { fetchCategories, saveCategory, getEffectiveAttributes, getEffectiveImag
 import { Plus, Edit, Trash2, Tag, Save, ArrowLeft, Loader2, Sparkles, Folder, Image } from 'lucide-react';
 import { auth } from '../../firebase';
 
-export default function CategoryManager({ onClose }: { onClose: () => void }) {
+export default function CategoryManager({ onClose, semVoltar = false }: {
+  onClose: () => void;
+  /** Com agente a tela tem migalhas acima, que já levam de volta. */
+  semVoltar?: boolean;
+}) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
@@ -182,9 +186,11 @@ export default function CategoryManager({ onClose }: { onClose: () => void }) {
     <div className="flex flex-col h-full">
       <header className="px-4 md:px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-(--ag-hairline) gap-3 shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={onClose} className="p-1.5 hover:bg-(--ag-fill-2) rounded-lg text-(--ag-text-2) transition-colors shrink-0">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
+          {!semVoltar && (
+            <button onClick={onClose} className="p-1.5 hover:bg-(--ag-fill-2) rounded-lg text-(--ag-text-2) transition-colors shrink-0">
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          )}
           <div className="min-w-0">
             <h1 className="font-display text-[22px] md:text-[26px] font-semibold tracking-tight text-[var(--ag-text)] truncate">Categorias e atributos</h1>
             <p className="text-xs md:text-sm text-(--ag-text-2) mt-0.5 truncate">Organize sua hierarquia de categorias e atributos padrão</p>

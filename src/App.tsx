@@ -12,6 +12,9 @@ import type { ExtrasSemana } from './modules/agent/useSemana';
 import ConectoresScreen from './modules/agent/ConectoresScreen';
 import FerramentasScreen from './modules/agent/FerramentasScreen';
 import ProximoPassoBar from './modules/agent/ProximoPassoBar';
+import ColunaFerramentas from './modules/agent/ColunaFerramentas';
+import Migalhas from './modules/agent/Migalhas';
+import type { OrigemTarefa } from './modules/agent/semana';
 import { usePendentesAlfred, useVideosDoAlfred } from './modules/agent/useSemana';
 import type { DestinoTarefa } from './modules/agent/semana';
 import ProdutosAgenteScreen from './modules/agent/ProdutosAgenteScreen';
@@ -19,7 +22,7 @@ import TrilhoDesktop, { type DestinoTrilho, type ItemConta } from './components/
 import FolhaConteudo from './components/FolhaConteudo';
 import { ASPECTO, estiloAspecto, type Aspecto } from './modules/agent/aspectos';
 import { aplicarCarimbo, assinaturaLegada, assinaturasDeImportacao, assinaturasDoEnvio, conteudoDoPayload, paraSalvar } from './modules/agent/sincronizacao';
-import { ContaProvider, ContaSheet, AvatarConta, type DadosConta } from './components/ContaMenu';
+import { ContaProvider, ContaSheet, AvatarConta, BotaoConta, type DadosConta } from './components/ContaMenu';
 import { useAgentTheme } from './modules/agent/theme';
 import type { ChaveFonte } from './modules/agent/conectores';
 import type { PedidoAlfred } from './types/agent';
@@ -3249,6 +3252,25 @@ Retorne APENAS um JSON válido no seguinte formato:
   const telaDoAgente = ['home', 'atividade', 'ferramentas', 'agenteProdutos', 'fontes'].includes(mainView);
   // Telas antigas já convertidas para os tokens `--ag-*`: seguem o tema do Alfred.
   const telaComTokens = ['history', 'products', 'categories', 'meli'].includes(mainView);
+  // Com agente, Categorias, Mercado Livre e a tabela completa seguem a estrutura das telas do
+  // agente: sem a barra de busca/créditos nem o Próximo passo, só as migalhas.
+  // A tabela completa também: a busca dela desce para a barra de filtros.
+  const semCabecalho = temAgente && ['categories', 'meli', 'products'].includes(mainView);
+  // Na porta Ferramentas, a coluna dos agentes fica ao lado do trilho (desktop).
+  // Na própria porta Ferramentas a coluna já aparece, com a Visão geral acesa.
+  const ferramentaAberta: OrigemTarefa | 'visao' | null = !temAgente ? null
+    : mainView === 'ferramentas' ? 'visao'
+      : ['agenteProdutos', 'products', 'categories'].includes(mainView) ? 'produto'
+        : mainView === 'meli' ? 'meli' : null;
+  const abrirAgente = (origem: OrigemTarefa) => {
+    // Do workspace de Conteúdo, os outros agentes moram no de Produto.
+    if (origem !== 'conteudo') setWorkspace('product');
+    if (origem === 'produto') abrirDestino('produtos');
+    else if (origem === 'meli') abrirDestino('meli');
+    else if (origem === 'conteudo') abrirDestino('conteudo');
+    else setMainView('fontes');
+  };
+  const irParaFerramentas = () => { setWorkspace('product'); setMainView('ferramentas'); };
   // Tema das telas convertidas que abrem o próprio escopo `.alfreds`: sem
   // agente não há alternador, então ficam no claro.
   const temaTelas = temAgente ? temaAgente : 'claro';
@@ -3328,6 +3350,19 @@ Retorne APENAS um JSON válido no seguinte formato:
               logo={logoAlfreds}
               onNavegar={irParaPorta}
               onConta={contaNoConteudo}
+            />
+          )}
+          {temAgente && (
+            // A aba do trilho encosta nesta coluna, então ela é sólida como a do ContentApp.
+            <ColunaFerramentas
+              className="alfreds"
+              tema={temaTelas}
+              atual="conteudo"
+              hasMeli={hasMeliListingOptimizer}
+              hasContentAgent={hasContentAgent}
+              onAbrir={abrirAgente}
+              onVisaoGeral={irParaFerramentas}
+              style={{ background: 'var(--ag-bg-2)' }}
             />
           )}
           <div className="flex-1 min-w-0">
@@ -3528,7 +3563,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             </button>
           )}
           {/* Chat unificado (Alfreds) — só aparece pra quem tem pelo menos um módulo de agente habilitado (conteúdo ou operações). */}
-          {(hasContentAgent || hasOperationsAgent) && (
+          {temAgente && (
             <button
               onClick={() => { setMainView('home'); setIsSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'home' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
@@ -3537,7 +3572,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               <Sparkles className="w-4 h-4 shrink-0" /> {!sidebarCollapsed && 'Alfred'}
             </button>
           )}
-          {(hasContentAgent || hasOperationsAgent) && (
+          {temAgente && (
             <button
               onClick={() => { setMainView('atividade'); setIsSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${mainView === 'atividade' ? 'bg-[#1e293b] text-white font-medium before:absolute before:left-0 before:h-6 before:w-1 before:bg-[#FF5B03] before:rounded-r-full relative' : 'text-slate-400 font-medium hover:text-white hover:bg-white/5'}`}
@@ -3559,7 +3594,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           {/* As três portas (Alfred · Atividade · Ferramentas) em cima; daqui
               para baixo, as telas de cada ferramenta — o mesmo desenho da
               tab bar do telefone, com o resto à mão no desktop. */}
-          {(hasContentAgent || hasOperationsAgent) && (
+          {temAgente && (
             <div className="my-2 mx-3 h-px bg-white/10" role="separator" />
           )}
           <button
@@ -3726,12 +3761,23 @@ Retorne APENAS um JSON válido no seguinte formato:
         tema={temaColuna}
         style={folhaSolida ? { background: 'var(--ag-bg-2)' } : undefined}
       >
+        <div className="flex-1 min-h-0 flex">
+        {ferramentaAberta && (
+          <ColunaFerramentas
+            atual={ferramentaAberta}
+            hasMeli={hasMeliListingOptimizer}
+            hasContentAgent={hasContentAgent}
+            onAbrir={abrirAgente}
+            onVisaoGeral={irParaFerramentas}
+          />
+        )}
+        <div className="flex-1 min-w-0 flex flex-col">
         {/* Top Bar */}
         {/* As telas do agente têm cabeçalho próprio (com o avatar da Conta no
             telefone), então a barra de topo só sobra nas telas antigas. Com
             agente ela também não abre a gaveta: quem navega é a tab bar, e a
             Conta sai do avatar. */}
-        <header className={cn("h-16 bg-(--ag-surface-solid) border-b border-(--ag-hairline) px-4 md:px-6 flex items-center justify-between flex-shrink-0 z-10 sticky top-0 shadow-sm gap-3", temAgente && telaDoAgente && "hidden")}>
+        <header className={cn("h-16 bg-(--ag-surface-solid) border-b border-(--ag-hairline) px-4 md:px-6 flex items-center justify-between flex-shrink-0 z-10 sticky top-0 shadow-sm gap-3", temAgente && (telaDoAgente || semCabecalho) && "hidden")}>
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <button
               onClick={() => setIsSidebarOpen(true)}
@@ -3820,7 +3866,7 @@ Retorne APENAS um JSON válido no seguinte formato:
         {/* Princípio "um próximo passo sempre visível": no desktop, em toda
             tela menos Ferramentas (que já abre com o mesmo cartão no topo) e o
             Alfred (que o mostra logo acima do campo de digitar). */}
-        {(hasContentAgent || hasOperationsAgent) && mainView !== 'ferramentas' && mainView !== 'agenteProdutos' && mainView !== 'home' && (
+        {temAgente && !['ferramentas', 'agenteProdutos', 'home', 'atividade'].includes(mainView) && !semCabecalho && (
           <ProximoPassoBar
             uid={user.uid}
             products={products}
@@ -3845,7 +3891,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           mainView === 'agenteProdutos' ? (alfredFocado ? "p-3 sm:p-6" : "p-3 pb-24 sm:p-6 md:pb-6") :
           mainView === 'home' ? (alfredFocado ? "p-3 sm:p-6" : "p-3 pb-24 sm:p-6 md:pb-6") :
           // Tabela completa com agente: a mesma margem das telas do agente (com `ag-tela-x` dentro).
-          mainView === 'products' && temAgente ? "p-3 pb-24 sm:p-6 md:pb-6" : "p-6 pb-20 md:pb-6",
+          (mainView === 'products' || semCabecalho) && temAgente ? "p-3 pb-24 sm:p-6 md:pb-6" : "p-6 pb-20 md:pb-6",
         )}>
           {mainView === 'missoes' ? (
             <TrilhaMissoes
@@ -3895,7 +3941,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               uid={user.uid}
               products={products}
               extras={extrasSemana}
-              hasAgente={hasContentAgent || hasOperationsAgent}
+              hasAgente={temAgente}
               hasContentAgent={hasContentAgent}
               hasMeli={hasMeliListingOptimizer}
               onAbrir={abrirDestino}
@@ -3915,7 +3961,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               onAbrirView={(v) => setMainView(v)}
               onPedirAlfred={(pedido) => { setPromptAlfred(pedido); setMainView('home'); }}
               onVoltar={() => setMainView('ferramentas')}
-              hasAgente={hasContentAgent || hasOperationsAgent}
+              hasAgente={temAgente}
               uid={user?.uid ?? ''}
               credits={credits}
               onFocoChange={setAlfredFocado}
@@ -3923,27 +3969,40 @@ Retorne APENAS um JSON válido no seguinte formato:
               erpsConectados={{ tiny: integrationConnections.tiny, wake: integrationConnections.wake }}
               onEnviarErp={(erp) => { void handleSendToIntegration(erp); }}
             />
-          ) : mainView === 'categories' ? (
-            <div
-              className="alfreds animate-in fade-in h-full rounded-[24px] overflow-hidden"
-              data-tema={temaTelas}
-              style={{ background: 'var(--ag-surface-solid)', border: '1px solid var(--ag-hairline)', boxShadow: 'var(--ag-shadow)' }}
-            >
-              <Suspense fallback={<div className="h-full flex items-center justify-center text-(--ag-text-3)"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
-                <CategoryManager onClose={async () => {
-                  setMainView('products');
-                  if (user) {
-                    const cats = await fetchCategories(user.uid);
-                    setExistingCategories(cats);
-                  }
-                }} />
-              </Suspense>
-            </div>
+          ) : mainView === 'categories' ? ((() => {
+            // Volta para a tela de produtos de onde se veio (a do agente, com agente) e relê as categorias.
+            const fecharCategorias = async (destino: 'agenteProdutos' | 'products' | 'ferramentas' = temAgente ? 'agenteProdutos' : 'products') => {
+              setMainView(destino);
+              if (user) {
+                const cats = await fetchCategories(user.uid);
+                setExistingCategories(cats);
+              }
+            };
+            return (
+              <div className={cn("alfreds animate-in fade-in h-full flex flex-col gap-2", temAgente && "ag-tela-x")} data-tema={temaTelas}>
+                {temAgente && (
+                  <Migalhas itens={[
+                    { rotulo: 'Ferramentas', onClick: () => { void fecharCategorias('ferramentas'); } },
+                    { rotulo: 'Produtos', onClick: () => { void fecharCategorias(); } },
+                    { rotulo: 'Categorias e atributos' },
+                  ]} />
+                )}
+                <div
+                  className="flex-1 min-h-0 rounded-[24px] overflow-hidden"
+                  style={{ background: 'var(--ag-surface-solid)', border: '1px solid var(--ag-hairline)', boxShadow: 'var(--ag-shadow)' }}
+                >
+                  <Suspense fallback={<div className="h-full flex items-center justify-center text-(--ag-text-3)"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
+                    <CategoryManager semVoltar={temAgente} onClose={() => { void fecharCategorias(); }} />
+                  </Suspense>
+                </div>
+              </div>
+            );
+          })()
           ) : mainView === 'history' ? (
             renderHistoryView()
           ) : mainView === 'meli' && hasMeliListingOptimizer ? (
             <Suspense fallback={<div className="h-full flex items-center justify-center text-(--ag-text-3)"><RefreshCw className="w-6 h-6 animate-spin" /></div>}>
-              <div className="alfreds" data-tema={temaTelas}><MeliOptimizer credits={{ ensureCredits, consumeCredit }} abrirItemId={meliAbrirItem} onItemAberto={() => setMeliAbrirItem(null)} onPedirAlfred={hasContentAgent || hasOperationsAgent ? (pedido) => { setPromptAlfred(pedido); setMainView('home'); } : undefined} /></div>
+              <div className="alfreds h-full" data-tema={temaTelas}><MeliOptimizer credits={{ ensureCredits, consumeCredit }} migalhas={temAgente ? <Migalhas itens={[{ rotulo: 'Ferramentas', onClick: irParaFerramentas }, { rotulo: 'Mercado Livre' }]} /> : undefined} abrirItemId={meliAbrirItem} onItemAberto={() => setMeliAbrirItem(null)} onPedirAlfred={temAgente ? (pedido) => { setPromptAlfred(pedido); setMainView('home'); } : undefined} /></div>
             </Suspense>
           ) : mainView === 'integrations' ? (
             <IntegrationsView onImport={handleWakeImport} getPushPayload={buildWakePushPayload} onTinyImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getTinyPushPayload={buildTinyPushPayload} tinyPushCandidateCount={tinySelectedProducts(products).length} onBlingImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getBlingPushPayload={buildBlingPushPayload} getBlingPushCandidates={getBlingPushCandidates} onBlingPushed={handleBlingPushed} onIdworksImported={() => { if (!hasUnsavedChanges) loadFromCloud(true); }} getIdworksPushPayload={buildIdworksPushPayload} getIdworksPushCandidates={getIdworksPushCandidates} onIdworksPushed={handleIdworksPushed} />
@@ -4030,13 +4089,17 @@ Retorne APENAS um JSON válido no seguinte formato:
                )}
                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-5 gap-4 flex-shrink-0">
                  {temAgente ? (
-                   <div>
-                     <button
-                       onClick={() => setMainView('agenteProdutos')}
-                       className="min-h-[36px] -ml-1 flex items-center text-[14px] font-medium text-(--ag-text-2) hover:text-(--ag-text)"
-                     >
-                       <ChevronLeft className="w-5 h-5" /> Produtos
-                     </button>
+                   <div className="w-full lg:w-auto">
+                     <div className="flex items-center">
+                       <button
+                         onClick={() => setMainView('agenteProdutos')}
+                         className="min-h-[36px] -ml-1 flex items-center text-[14px] font-medium text-(--ag-text-2) hover:text-(--ag-text)"
+                       >
+                         <ChevronLeft className="w-5 h-5" /> Produtos
+                       </button>
+                       <span className="flex-1" />
+                       <BotaoConta />
+                     </div>
                      <h1 className="font-display text-[30px] leading-tight font-semibold text-(--ag-text) tracking-tight">Tabela completa</h1>
                      <p className="text-[13.5px] text-(--ag-text-2)">Todas as colunas, variações, filtros, exportação e envio.</p>
                    </div>
@@ -4124,34 +4187,53 @@ Retorne APENAS um JSON válido no seguinte formato:
                   {/* Toolbar */}
                   <div className="px-3 md:px-5 py-3 md:py-3.5 flex flex-wrap items-center justify-between border-b border-(--ag-hairline) bg-(--ag-surface-solid) gap-2 md:gap-3 rounded-t-[24px] shrink-0 relative z-30">
                       <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
-                        <select
-                          className="w-[calc(50%-4px)] md:w-auto px-2.5 py-1.5 text-sm rounded-lg border border-(--ag-hairline) text-(--ag-text) font-medium focus:ring-(--ag-accent) outline-none focus:border-(--ag-accent) bg-(--ag-fill) hover:bg-(--ag-fill-2) transition-colors cursor-pointer"
-                          value={filterMarca}
-                          onChange={(e) => setFilterMarca(e.target.value)}
-                        >
-                          <option value="">Todas as Marcas</option>
-                          {marcas.map(m => <option key={m} value={m}>{m}</option>)}
-                        </select>
-                        <select
-                          className="w-[calc(50%-4px)] md:w-auto px-2.5 py-1.5 text-sm rounded-lg border border-(--ag-hairline) text-(--ag-text) font-medium focus:ring-(--ag-accent) outline-none focus:border-(--ag-accent) bg-(--ag-fill) hover:bg-(--ag-fill-2) transition-colors cursor-pointer"
-                          value={filterCategoria}
-                          onChange={(e) => setFilterCategoria(e.target.value)}
-                        >
-                          <option value="">Todas as Categorias</option>
-                          {categorias.map(m => <option key={m} value={m}>{m}</option>)}
-                        </select>
-                        <select
-                          className="w-[calc(50%-4px)] md:w-auto px-2.5 py-1.5 text-sm rounded-lg border border-(--ag-hairline) text-(--ag-text) font-medium focus:ring-(--ag-accent) outline-none focus:border-(--ag-accent) bg-(--ag-fill) hover:bg-(--ag-fill-2) transition-colors cursor-pointer"
-                          value={filterIntegracao}
-                          onChange={(e) => setFilterIntegracao(e.target.value as typeof filterIntegracao)}
-                          title="Filtrar por integração"
-                        >
-                          <option value="">Todas as Integrações</option>
-                          {(Object.keys(INTEGRATION_META) as IntegrationKey[]).map((key) => (
-                            <option key={key} value={key}>{INTEGRATION_META[key].label}</option>
-                          ))}
-                          <option value="nenhuma">Sem integração</option>
-                        </select>
+                        {temAgente && (
+                          // Com agente a barra de topo some; a busca mora aqui, junto dos filtros.
+                          <label className="relative flex items-center w-full md:w-[260px] lg:w-[300px]">
+                            <Search className="absolute left-3.5 w-4 h-4 text-(--ag-text-3) pointer-events-none" />
+                            <input
+                              type="text"
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                              placeholder="Buscar produtos"
+                              aria-label="Buscar produtos"
+                              // 16px no telefone: abaixo disso o Safari do iOS dá zoom ao focar.
+                              className="w-full h-9 pl-10 pr-9 rounded-full text-[16px] md:text-[13.5px] outline-none bg-(--ag-fill) text-(--ag-text) placeholder:text-(--ag-text-3) focus:bg-(--ag-surface-solid) focus:shadow-[inset_0_0_0_1px_var(--ag-hairline-2)] transition-colors"
+                            />
+                            {searchQuery && (
+                              <button onClick={() => setSearchQuery('')} aria-label="Limpar busca" className="absolute right-1.5 w-6 h-6 grid place-items-center rounded-full text-(--ag-text-3) hover:text-(--ag-text)">
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </label>
+                        )}
+                        {temAgente && <span aria-hidden className="hidden md:block w-px h-5 bg-(--ag-hairline-2) mx-1" />}
+                        {([
+                          { valor: filterMarca, mudar: (v: string) => setFilterMarca(v), rotulo: 'Marca', todas: 'Todas as marcas', opcoes: marcas.map((m) => [m, m] as [string, string]) },
+                          { valor: filterCategoria, mudar: (v: string) => setFilterCategoria(v), rotulo: 'Categoria', todas: 'Todas as categorias', opcoes: categorias.map((m) => [m, m] as [string, string]) },
+                          {
+                            valor: filterIntegracao,
+                            mudar: (v: string) => setFilterIntegracao(v as typeof filterIntegracao),
+                            rotulo: 'Integração',
+                            todas: 'Todas as integrações',
+                            opcoes: [...(Object.keys(INTEGRATION_META) as IntegrationKey[]).map((k) => [k, INTEGRATION_META[k].label] as [string, string]), ['nenhuma', 'Sem integração'] as [string, string]],
+                          },
+                        ]).map((f) => (
+                          // Pílula: neutra sem filtro, contornada com o filtro ativo.
+                          <label key={f.rotulo} className="relative flex items-center w-[calc(50%-4px)] md:w-auto">
+                            <select
+                              value={f.valor}
+                              onChange={(e) => f.mudar(e.target.value)}
+                              aria-label={`Filtrar por ${f.rotulo.toLowerCase()}`}
+                              className="appearance-none w-full md:max-w-[200px] h-9 pl-3.5 pr-8 rounded-full text-[13px] font-medium truncate outline-none cursor-pointer transition-colors bg-(--ag-fill) hover:bg-(--ag-fill-2) text-(--ag-text)"
+                              style={f.valor ? { boxShadow: 'inset 0 0 0 1.5px var(--ag-text)', background: 'var(--ag-surface-solid)' } : undefined}
+                            >
+                              <option value="">{f.todas}</option>
+                              {f.opcoes.map(([v, r]) => <option key={v} value={v}>{r}</option>)}
+                            </select>
+                            <ChevronDown className="absolute right-3 w-3.5 h-3.5 text-(--ag-text-3) pointer-events-none" />
+                          </label>
+                        ))}
 
                         {(() => {
                           const activeStatusCount = Object.values(statusFilters).filter(Boolean).length;
@@ -4170,18 +4252,15 @@ Retorne APENAS um JSON válido no seguinte formato:
                                 setIsColumnConfigOpen(false);
                                 setIsExportDropdownOpen(false);
                               }}
-                              className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-(--ag-hairline) text-(--ag-text) font-medium focus:ring-(--ag-accent) focus:border-(--ag-accent) outline-none bg-(--ag-fill) hover:bg-(--ag-fill-2) transition-colors cursor-pointer select-none"
+                              className="flex items-center gap-1.5 h-9 pl-3.5 pr-3 rounded-full text-[13px] font-medium text-(--ag-text) outline-none bg-(--ag-fill) hover:bg-(--ag-fill-2) transition-colors cursor-pointer select-none"
+                              style={activeStatusCount > 0 ? { boxShadow: 'inset 0 0 0 1.5px var(--ag-text)', background: 'var(--ag-surface-solid)' } : undefined}
                             >
-                              <Filter className="w-4 h-4 text-(--ag-text-2)" />
-                              <span>Filtrar por Status</span>
-                              {activeStatusCount > 0 ? (
-                                <span className="inline-flex items-center justify-center bg-(--ag-accent) text-white rounded-md px-1.5 py-0.5 text-[10px] font-bold leading-none ml-1">
-                                  {activeStatusCount}
-                                </span>
-                              ) : (
-                                <span className="text-(--ag-text-3) text-xs ml-1 font-normal">Nenhum</span>
+                              <Filter className="w-3.5 h-3.5 text-(--ag-text-2)" />
+                              <span>Status</span>
+                              {activeStatusCount > 0 && (
+                                <span className="tabular-nums">· {activeStatusCount}</span>
                               )}
-                              <ChevronDown className="w-3.5 h-3.5 text-(--ag-text-3) ml-0.5" />
+                              <ChevronDown className="w-3.5 h-3.5 text-(--ag-text-3)" />
                             </button>
 
                             {isFilterDropdownOpen && (
@@ -4240,8 +4319,19 @@ Retorne APENAS um JSON válido no seguinte formato:
                           );
                         })()}
 
-                        <div className="w-px h-5 bg-(--ag-fill-2) mx-1 sm:mx-2"></div>
-                        <div className="text-xs text-(--ag-text-2) font-medium">{paginatedProducts.length} itens</div>
+                        {(filterMarca || filterCategoria || filterIntegracao || searchQuery || Object.values(statusFilters).some(Boolean)) && (
+                          <button
+                            onClick={() => {
+                              setFilterMarca(''); setFilterCategoria(''); setFilterIntegracao(''); setSearchQuery('');
+                              setStatusFilters({ descricao: false, enriquecido: false, imagens: false, atributos: false });
+                              setStatusFilterMode('esconder');
+                            }}
+                            className="h-9 px-2 text-[13px] font-medium text-(--ag-text-2) hover:text-(--ag-text)"
+                          >
+                            Limpar
+                          </button>
+                        )}
+                        <span className="text-[12.5px] text-(--ag-text-3) tabular-nums ml-1">{filteredProducts.length.toLocaleString('pt-BR')} {filteredProducts.length === 1 ? 'produto' : 'produtos'}</span>
                       </div>
                      <div className="hidden md:flex items-center gap-2 ml-auto relative">
                         {generationLog && (
@@ -4946,6 +5036,8 @@ Retorne APENAS um JSON válido no seguinte formato:
             )}
         </main>
         </AbrirNaFerramentaProvider>
+        </div>
+        </div>
       </FolhaConteudo>
 
       {/* Preview Modal */}

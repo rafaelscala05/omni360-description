@@ -54,7 +54,7 @@ const Linha: React.FC<{ rotulo: string; valor: React.ReactNode; tom?: 'alerta' |
 );
 
 /** Ícone de cada ferramenta — o mesmo no cartão e em qualquer lugar que a nomeie. */
-const ICONE: Record<OrigemTarefa, LucideIcon> = {
+export const ICONE: Record<OrigemTarefa, LucideIcon> = {
   produto: Package,
   conteudo: PenLine,
   meli: Store,
