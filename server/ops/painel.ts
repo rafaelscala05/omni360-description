@@ -37,7 +37,7 @@ export async function painelOps(uid: string, opts: { atualizar?: boolean } = {})
   if (suportado) {
     const fonte = fontes.pedidos as PlataformaOps;
     const estado: EstadoSync = await visitarSync(uid, fonte);
-    // "Atualizar" força um ciclo, mas no máximo um a cada 2 min: cada ciclo gasta até 40 chamadas no Tiny.
+    // "Atualizar" força um ciclo, mas no máximo um a cada 2 min: cada ciclo gasta até 30% do limite por minuto do plano no Tiny.
     if (opts.atualizar && Date.now() - (estado.ultimoCicloEm ?? 0) > 120_000) dispararCiclo(uid, fonte, true);
     const e = estadoDoSync(estado, Date.now());
     sync = { ...e, erro: estado.erro && estado.erro !== 'credencial' ? estado.erro : null };

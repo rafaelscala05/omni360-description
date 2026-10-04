@@ -14,21 +14,39 @@
 
 import { randomUUID } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin';
-import { getV2Token, tinyV2CallRaw } from '../tinyV2';
+import { getV2Token, limiteV2PorToken, tinyV2CallRaw } from '../tinyV2';
 import { logCall } from '../agent/telemetry';
+import type { Firestore } from 'firebase-admin/firestore';
 import type { PlataformaOps } from '../../src/modules/agent/ops/papeis';
 import {
   INATIVO_APOS_MS, INTERVALO_EM_DIA_MS, INTERVALO_PENDENTE_MS, SOBREPOSICAO_MS,
-  dataBr, dataHoraBr, detalheTiny, diaBrt, estadoInicial, idDoc, janelaBackfill, resumoTiny, somaDias,
+  dataBr, dataHoraBr, detalheTiny, diaBrt, estadoInicial, idDoc, janelaBackfill, orcamentoDoCiclo, resumoTiny, somaDias,
   type EstadoSync, type PedidoOps,
 } from '../../src/modules/agent/ops/pedidos';
 
-export const SYNC_REF = (uid: string, fonte: PlataformaOps) =>
-  adminDb.collection('users').doc(uid).collection('ops_sync').doc(fonte);
-export const PEDIDOS_COL = (uid: string) =>
-  adminDb.collection('users').doc(uid).collection('ops_pedidos');
+/**
+ * O que o sync toca fora dele. Substituível só para scripts/verify-ops-sync.mjs,
+ * que roda o ciclo inteiro contra um Tiny falso e um Firestore em memória.
+ */
+export const deps = {
+  db: adminDb as Firestore,
+  tokenTiny: (uid: string) => getV2Token(uid),
+  logFalha: logCall,
+};
 
-const CHAMADAS_POR_CICLO = 40;
+/**
+ * Credencial recusada. `tinyV2CallRaw` marca 401 em qualquer erro com
+ * "inválido" no texto — inclusive "Data inválida" —, então o status sozinho
+ * pausaria o sync por um parâmetro ruim. Só conta se o texto fala do token.
+ */
+export const ehCredencial = (e: any): boolean =>
+  e?.status === 401 && /token|autoriz|acesso negado/i.test(String(e?.message ?? ''));
+
+export const SYNC_REF = (uid: string, fonte: PlataformaOps) =>
+  deps.db.collection('users').doc(uid).collection('ops_sync').doc(fonte);
+export const PEDIDOS_COL = (uid: string) =>
+  deps.db.collection('users').doc(uid).collection('ops_pedidos');
+
 const LEASE_MS = 10 * 60_000;
 const BACKOFF_MAX_MS = 60 * 60_000;
 
@@ -57,7 +75,7 @@ function adaptadorTiny(uid: string, token: string, gastar: () => void): Adaptado
     try {
       return await tinyV2CallRaw(token, endpoint, params);
     } catch (e: any) {
-      void logCall(uid, {
+      void deps.logFalha(uid, {
         provider: 'tiny', tool: 'ops.sync', operacao: endpoint, alvo: 'Centro de Operações',
         requisicao: params, status: typeof e?.status === 'number' ? e.status : null,
         ok: false, erro: e?.message ?? String(e), ms: Date.now() - inicio,
@@ -79,7 +97,8 @@ function adaptadorTiny(uid: string, token: string, gastar: () => void): Adaptado
         return pagina(await chamar('pedidos.pesquisa.php', { dataAtualizacao: dataHoraBr(desde), pagina: String(p) }));
       } catch (e: any) {
         // Erro de validação na primeira página = o filtro não existe nesta conta/versão.
-        if (e?.status === 400 && p === 1) throw new RecusouAtualizacao(e.message);
+        // (O texto pode trazer "inválido", que o tinyV2CallRaw transforma em 401.)
+        if (p === 1 && (e?.status === 400 || e?.status === 401) && !ehCredencial(e)) throw new RecusouAtualizacao(e.message);
         throw e;
       }
     },
@@ -101,8 +120,8 @@ function adaptadorTiny(uid: string, token: string, gastar: () => void): Adaptado
 async function gravarResumos(uid: string, resumos: Resumo[]): Promise<void> {
   if (!resumos.length) return;
   const refs = resumos.map((r) => PEDIDOS_COL(uid).doc(idDoc(r.fonte, r.idExterno)));
-  const snaps = await adminDb.getAll(...refs);
-  const batch = adminDb.batch();
+  const snaps = await deps.db.getAll(...refs);
+  const batch = deps.db.batch();
   let escritas = 0;
   resumos.forEach((r, i) => {
     const atual = snaps[i].exists ? (snaps[i].data() as PedidoOps) : null;
@@ -124,7 +143,7 @@ async function gravarResumos(uid: string, resumos: Resumo[]): Promise<void> {
 async function pegarLease(uid: string, fonte: PlataformaOps, forcar: boolean): Promise<{ leaseId: string; estado: EstadoSync } | null> {
   const ref = SYNC_REF(uid, fonte);
   const leaseId = randomUUID();
-  return adminDb.runTransaction(async (tx) => {
+  return deps.db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists) return null;
     const s = snap.data() as EstadoSync;
@@ -150,10 +169,11 @@ export async function rodarCiclo(uid: string, fonte: PlataformaOps, opts: { forc
   // Ninguém abre o painel há 14 dias: pausa. A próxima visita religa.
   if (agora - (s.ultimaVisita ?? 0) > INATIVO_APOS_MS) return soltar({ proximaEm: null });
 
-  const token = fonte === 'tiny' ? await getV2Token(uid).catch(() => null) : null;
+  const token = fonte === 'tiny' ? await deps.tokenTiny(uid).catch(() => null) : null;
   if (!token) return soltar({ proximaEm: null, erro: 'credencial', ultimoCicloEm: agora });
 
-  let restante = CHAMADAS_POR_CICLO;
+  const limite = limiteV2PorToken.get(token) ?? s.limitePorMinuto ?? null;
+  let restante = orcamentoDoCiclo(limite);
   const gastar = () => { restante--; };
   const fonteApi = adaptadorTiny(uid, token, gastar);
   const inc = { ...s.incremental };
@@ -208,7 +228,7 @@ export async function rodarCiclo(uid: string, fonte: PlataformaOps, opts: { forc
         try {
           d = await fonteApi.obter(p.idExterno);
         } catch (e: any) {
-          if (e?.status === 401) throw e;
+          if (ehCredencial(e)) throw e;
           // Pedido que a fonte não devolve não pode travar a fila: fica sem itens.
         }
         await doc.ref.update({
@@ -229,6 +249,7 @@ export async function rodarCiclo(uid: string, fonte: PlataformaOps, opts: { forc
     await soltar({
       incremental: inc,
       backfill: bf,
+      limitePorMinuto: limiteV2PorToken.get(token) ?? limite,
       erro: null,
       falhas: 0,
       ultimoCicloEm: Date.now(),
@@ -236,7 +257,7 @@ export async function rodarCiclo(uid: string, fonte: PlataformaOps, opts: { forc
     });
   } catch (e: any) {
     const falhas = Number((s as any).falhas ?? 0) + 1;
-    const credencial = e?.status === 401;
+    const credencial = ehCredencial(e);
     console.warn(`[ops-sync] ${uid}/${fonte} falhou:`, e?.message ?? String(e));
     // O progresso feito até o erro é mantido: o próximo ciclo continua dali.
     await soltar({
@@ -306,7 +327,7 @@ export async function varrerOpsSync(): Promise<void> {
   if (varrendo) return;
   varrendo = true;
   try {
-    const snap = await adminDb.collectionGroup('ops_sync').where('proximaEm', '<=', Date.now()).limit(20).get();
+    const snap = await deps.db.collectionGroup('ops_sync').where('proximaEm', '<=', Date.now()).limit(20).get();
     for (const doc of snap.docs) {
       const m = doc.ref.path.match(/^users\/([^/]+)\/ops_sync\/([^/]+)$/);
       if (m) dispararCiclo(m[1], m[2] as PlataformaOps);

@@ -39,22 +39,31 @@ export interface PedidoOps {
 
 const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
+// Tabela "Situações dos Pedidos" do Tiny (api2-tabelas-pedidos). A API aceita
+// o código no filtro, mas devolve a descrição na resposta — e algumas trazem um
+// complemento entre parênteses ("Faturado (atendido)"). Os dois lados entram aqui.
 const MAPA_TINY: Record<string, SituacaoOps> = {
-  'em aberto': 'aberto',
   aberto: 'aberto',
+  'em aberto': 'aberto',
   'dados incompletos': 'aberto',
   aprovado: 'aprovado',
+  preparando_envio: 'aprovado',
   'preparando envio': 'aprovado',
   'em andamento': 'aprovado',
   faturado: 'faturado',
+  pronto_envio: 'faturado',
   'pronto para envio': 'faturado',
   enviado: 'enviado',
   entregue: 'entregue',
   cancelado: 'cancelado',
+  // "Não entregue" é falha de entrega: não é venda perdida nem concluída.
+  nao_entregue: 'outro',
+  'nao entregue': 'outro',
 };
 
 export function normalizarSituacao(original: unknown): SituacaoOps {
-  return MAPA_TINY[semAcento(String(original ?? ''))] ?? 'outro';
+  const chave = semAcento(String(original ?? '')).replace(/\s*\(.*\)\s*$/, '');
+  return MAPA_TINY[chave] ?? 'outro';
 }
 
 /** "1.234,56" | "1234.56" | 12 → número; lixo → 0. */
@@ -124,7 +133,8 @@ export function detalheTiny(p: any): { itens: ItemPedidoOps[]; canal: string; va
     .map((x) => x?.item ?? x)
     .map((i) => ({ sku: String(i?.codigo ?? '').trim(), qtd: numeroBr(i?.quantidade), valor: numeroBr(i?.valor_unitario) }))
     .filter((i) => i.sku && i.qtd > 0);
-  const canal = String(p?.ecommerce?.nomeEcommerce ?? p?.ecommerce?.nome ?? '').trim();
+  // `canalVenda` (ex.: "Mercado Livre") é mais específico que o nome da integração.
+  const canal = String(p?.ecommerce?.canalVenda || p?.ecommerce?.nomeEcommerce || '').trim();
   const out: ReturnType<typeof detalheTiny> = { itens, canal: canal || 'Sem canal' };
   if (p?.total_pedido != null) out.valor = numeroBr(p.total_pedido);
   if (p?.situacao) { out.situacao = normalizarSituacao(p.situacao); out.situacaoOriginal = String(p.situacao); }
@@ -143,6 +153,16 @@ export const INATIVO_APOS_MS = 14 * 86_400_000;
 export const INTERVALO_EM_DIA_MS = 15 * 60_000;
 export const INTERVALO_PENDENTE_MS = 60_000;
 export const SOBREPOSICAO_MS = 10 * 60_000;
+
+/**
+ * Chamadas que um ciclo pode gastar: 30% do limite por minuto do plano (o
+ * limite é da conta inteira — o integrador da loja e o próprio app também
+ * usam), entre 4 e 40. Sem limite conhecido, 6: cabe até no plano antigo de 20/min.
+ */
+export function orcamentoDoCiclo(limitePorMinuto: number | null | undefined): number {
+  if (!limitePorMinuto || limitePorMinuto <= 0) return 6;
+  return Math.max(4, Math.min(40, Math.floor(limitePorMinuto * 0.3)));
+}
 
 export interface EstadoSync {
   fonte: PlataformaOps;
@@ -169,6 +189,8 @@ export interface EstadoSync {
   };
   erro?: string | null;
   ultimoCicloEm?: number | null;
+  /** Limite do plano no Tiny (header `x-limit-api`), quando já visto. */
+  limitePorMinuto?: number | null;
 }
 
 export function estadoInicial(fonte: PlataformaOps, agora: number): EstadoSync {

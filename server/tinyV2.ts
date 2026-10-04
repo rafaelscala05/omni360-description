@@ -9,6 +9,14 @@ import {
 import { logTexto, logLista, push as pushLog, type PushLogEntry } from './pushLog';
 
 const V2_BASE = 'https://api.tiny.com.br/api2';
+
+/**
+ * Chamadas por minuto que o plano da conta permite, lido do header `x-limit-api`
+ * da última resposta (api2-limites-api: 30 no Crescer, 60 no Evoluir, 120 no
+ * Potencializar, 20 nos planos antigos). Por token. Quem roda em segundo plano
+ * (o sync do Centro de Operações) usa para não tomar o limite da conta inteira.
+ */
+export const limiteV2PorToken = new Map<string, number>();
 const PAGE_SIZE = 100; // v2 lists 100 records per page
 
 export const num = (v: unknown): number | undefined => {
@@ -53,6 +61,9 @@ export async function tinyV2CallRaw(token: string, endpoint: string, params: Rec
     await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : Math.min(60000, 5000 * 2 ** attempt));
     return tinyV2CallRaw(token, endpoint, params, attempt + 1, headers);
   }
+
+  const limite = Number(res.headers.get('x-limit-api'));
+  if (Number.isFinite(limite) && limite > 0) limiteV2PorToken.set(token, limite);
 
   const text = await res.text();
   let json: any;

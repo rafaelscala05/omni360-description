@@ -4,7 +4,7 @@
 import { fonteDe, fontesOps, papelDe, temAdaptadorPedidos } from '../src/modules/agent/ops/papeis.ts';
 import {
   dataHoraBr, dataIso, detalheTiny, diaBrt, estadoDoSync, estadoInicial, janelaBackfill,
-  normalizarSituacao, numeroBr, progressoBackfill, resumoTiny, somaDias,
+  normalizarSituacao, numeroBr, orcamentoDoCiclo, progressoBackfill, resumoTiny, somaDias,
 } from '../src/modules/agent/ops/pedidos.ts';
 import { painelEstoque, painelPedidos, variacao } from '../src/modules/agent/ops/indicadores.ts';
 
@@ -27,6 +27,9 @@ check('só o Tiny tem adaptador de pedidos na v1', [temAdaptadorPedidos('tiny'),
 // --- Normalização -----------------------------------------------------------
 check('situações do Tiny', ['Em aberto', 'Preparando envio', 'Pronto para envio', 'Enviado', 'Entregue', 'Cancelado', 'Não Entregue', ''].map(normalizarSituacao),
   ['aberto', 'aprovado', 'faturado', 'enviado', 'entregue', 'cancelado', 'outro', 'outro']);
+check('códigos da tabela e descrição com complemento', ['preparando_envio', 'pronto_envio', 'Faturado (atendido)', 'nao_entregue', 'ENTREGUE'].map(normalizarSituacao),
+  ['aprovado', 'faturado', 'faturado', 'outro', 'entregue']);
+check('canal: canalVenda antes do nome da integração', detalheTiny({ ecommerce: { nomeEcommerce: 'Integração X', canalVenda: 'Mercado Livre' } }).canal, 'Mercado Livre');
 check('números BR e US', [numeroBr('1.234,56'), numeroBr('1234.56'), numeroBr(10), numeroBr('x'), numeroBr(null)], [1234.56, 1234.56, 10, 0, 0]);
 check('data dd/mm/aaaa → ISO', [dataIso('03/10/2026'), dataIso('lixo')], ['2026-10-03', '']);
 const AGORA = Date.parse('2026-10-04T02:30:00Z'); // 03/10 23:30 em Brasília
@@ -47,6 +50,7 @@ check('primeira janela: os 7 dias até hoje', janelaBackfill(est.backfill), { in
 check('última janela é cortada no alvo', janelaBackfill({ ate: '2026-07-08', alvo: '2026-07-05', pagina: 1 }), { inicio: '2026-07-05', fim: '2026-07-07' });
 check('histórico completo → sem janela', janelaBackfill({ ate: '2026-07-05', alvo: '2026-07-05', pagina: 1 }), null);
 check('progresso 0 no início e 1 no fim', [progressoBackfill(est.backfill, AGORA), progressoBackfill({ ...est.backfill, ate: est.backfill.alvo }, AGORA)], [0, 1]);
+check('orçamento por ciclo: 30% do limite do plano, entre 4 e 40', [orcamentoDoCiclo(null), orcamentoDoCiclo(20), orcamentoDoCiclo(30), orcamentoDoCiclo(60), orcamentoDoCiclo(120), orcamentoDoCiclo(1000)], [6, 6, 9, 18, 36, 40]);
 check('estado do sync: importando → em dia → credencial → pausado', [
   estadoDoSync(est, AGORA).estado,
   estadoDoSync({ ...est, backfill: { ...est.backfill, ate: est.backfill.alvo } }, AGORA).estado,

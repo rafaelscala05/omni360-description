@@ -32,7 +32,8 @@ Estoque não tem coleção: vem de `Estoque`/`Estoque mínimo` que a importaçã
 
 ## 3 · Worker (`server/ops/pedidosSync.ts`)
 
-- `startOpsSyncScheduler` (servidor principal, a cada minuto): `collectionGroup('ops_sync').where('proximaEm','<=',agora)`, lease de 5 min em transação, um ciclo limitado (~40 chamadas) — nunca um job longo.
+- `startOpsSyncScheduler` (servidor principal, a cada minuto): `collectionGroup('ops_sync').where('proximaEm','<=',agora)`, lease em transação, um ciclo limitado — nunca um job longo.
+- Orçamento do ciclo: 30% do limite por minuto do plano no Tiny (header `x-limit-api`; api2-limites-api: 20 nos planos antigos, 30 Crescer, 60 Evoluir, 120 Potencializar), entre 4 e 40 chamadas; 6 enquanto o limite não é conhecido. O limite é da conta inteira — o integrador da loja usa o mesmo —, então o sync nunca pode tomá-lo. Consequência: ~350 pedidos em 90 dias levam ~40 min no Crescer.
 - Ciclo, em ordem: (1) incremental por data de alteração (`dataAtualizacao`, sobreposição de 10 min; se o Tiny recusar o parâmetro, cai para reescanear os últimos 7 dias por data do pedido — `modo: 'janela'`); (2) detalhe dos `detalhado == false`; (3) backfill de 7 em 7 dias até 90 dias atrás.
 - `proximaEm`: +15 min quando em dia, +1 min com backfill/detalhe pendente.
 - Liga na primeira visita ao painel (`create()` idempotente); para quando a fonte desconecta ou ninguém abre o painel há 14 dias (`proximaEm` some; a próxima visita religa).
@@ -48,6 +49,13 @@ Estoque não tem coleção: vem de `Estoque`/`Estoque mínimo` que a importaçã
 - Tela `OperacoesScreen.tsx` (`mainView === 'operacoes'`, porta Ferramentas, coluna de agentes acesa em Operações): cabeçalho com fontes e "atualizado há X"/"importando histórico · N%", três seções, cada uma com "Pedir ao Alfred" (prompt com o contexto da seção). Fontes e conectores fica a um toque.
 - Ferramenta `ops.painel.resumo` (leitura, provider da fonte de pedidos): o Alfred responde "quanto vendi" a partir de `ops_pedidos`, sem chamar o Tiny.
 
+## Contrato do Tiny (conferido na documentação em 2026-10-04)
+
+- `pedidos.pesquisa.php` aceita `dataAtualizacao` (dd/mm/yyyy hh:mm:ss); exige ao menos um filtro (datas servem); 100 por página; `dataInicial`/`dataFinal` filtram pela **data de cadastramento**, que o doc guarda como `data_pedido` — normalmente iguais.
+- A situação é filtrada por código (`preparando_envio`, `pronto_envio`, `nao_entregue`…) e pode voltar como descrição ("Faturado (atendido)"); `normalizarSituacao` aceita os dois.
+- `pedido.obter.php` traz `itens[].item.{codigo,quantidade,valor_unitario}`, `ecommerce.{nomeEcommerce,canalVenda}` (canal = `canalVenda`, senão `nomeEcommerce`) e as datas `data_faturamento`/`data_envio`/`data_entrega` — base da fase Entrega.
+- `tinyV2CallRaw` marca 401 em qualquer erro com "inválido" no texto; o sync só trata como credencial se o texto falar de token (`ehCredencial`), senão um "Data inválida" pausaria a conta.
+
 ## Verificação
 
-`npx tsx scripts/verify-ops.mjs` (papéis, normalização, indicadores, estoque). Índice novo: `ops_sync.proximaEm` em escopo COLLECTION_GROUP (`firestore.indexes.json`) — precisa de deploy dos índices antes do worker achar contas.
+`npx tsx scripts/verify-ops.mjs` (papéis, normalização, indicadores, estoque) e `npx tsx scripts/verify-ops-sync.mjs` (ciclo inteiro contra um Tiny falso que segue o contrato acima e um Firestore em memória: importação, orçamento por ciclo, incremental, modo janela, credencial × parâmetro ruim, inatividade). Índice novo: `ops_sync.proximaEm` em escopo COLLECTION_GROUP (`firestore.indexes.json`) — precisa de deploy dos índices antes do worker achar contas.
