@@ -12,3 +12,4 @@ import './discovery';
 import './produtos';
 import './planilha';
 import './meli';
+import './ops';

@@ -32,6 +32,8 @@ import { startMeliScheduler } from "./server/meli/scheduler";
 import { registerLoteRoutes } from "./server/agent/loteRoutes";
 import { registerVideoAlfredRoutes } from "./server/agent/videoAlfred";
 import { startLoteScheduler } from "./server/agent/loteWorker";
+import { registerOpsRoutes } from "./server/ops/painel";
+import { startOpsSyncScheduler } from "./server/ops/pedidosSync";
 import { registerBlogPublic } from "./server/blogPublic";
 import { registerBlogAdminRoutes } from "./server/blogAdmin";
 import { registerMetaEventsRoutes } from "./server/metaEvents";
@@ -180,6 +182,9 @@ async function startServer() {
 
   // Agente Operacional (chat que opera Wake/Tiny com aprovação por ação).
   registerOperationsRoutes(app, { verifyFirebaseToken });
+
+  // Centro de Operações: painel de vendas/funil/estoque sobre o sync de pedidos.
+  registerOpsRoutes(app, { verifyFirebaseToken });
 
   // Agente de Conteúdo conversacional (LangGraph.js nativo via SSE + Firestore,
   // mesmo padrão do Agente Operacional acima — ver server/agent/contentAgentChat.ts).
@@ -548,6 +553,8 @@ async function startServer() {
   // MELI: retoma jobs/análises sem lease válido após restart e mantém a fila limitada.
   startMeliScheduler();
   startLoteScheduler();
+  // Centro de Operações: ciclos curtos do sync de pedidos (ops_sync.proximaEm).
+  startOpsSyncScheduler();
 
   // CRM: reconcilia os marcos da jornada a partir do estado do Firestore.
   startCrmScheduler();

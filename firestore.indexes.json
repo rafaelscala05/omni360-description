@@ -53,6 +53,14 @@
       "collectionGroup": "meli_webhook_events",
       "fieldPath": "status",
       "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }]
+    },
+    {
+      "collectionGroup": "ops_sync",
+      "fieldPath": "proximaEm",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
     }
   ]
 }

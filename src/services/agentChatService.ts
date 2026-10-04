@@ -15,6 +15,7 @@ import type {
   AgentAction, AgentConnections, AgentLog, AgentSettings, AgentToolInfo, ThreadMessage, WorkspaceContext,
 } from '../types/agent';
 import type { LoteJob } from '../modules/agent/lote';
+import type { RespostaPainelOps } from '../modules/agent/ops/indicadores';
 
 const AGENT_THREAD_ID = 'principal';
 
@@ -84,6 +85,10 @@ export const fetchLogs = (opts: { apenasErros?: boolean; limit?: number } = {}) 
 export const fetchNumerosLoja = () => call<{
   pedidosAbertos: number | null; pedidosAbertosMais?: boolean; bannersAtivos: number | null; meliSemVideo: number | null; geradoEm: string;
 }>('/api/agent/numeros');
+
+/** Centro de Operações: vendas e funil (do sync de pedidos) e as fontes de cada domínio. */
+export const fetchPainelOps = (atualizar = false) =>
+  call<RespostaPainelOps>(`/api/ops/painel${atualizar ? '?atualizar=1' : ''}`);
 
 /** Recibo de uma ação executada: o resultado e as chamadas HTTP daquela execução. */
 export const fetchRecibo = (actionId: string) =>

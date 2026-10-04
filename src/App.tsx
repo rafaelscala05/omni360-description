@@ -10,6 +10,7 @@ import { AbrirNaFerramentaProvider } from './modules/agent/AbrirNaFerramentaCont
 import type { DestinoItem } from './modules/agent/abrirNaFerramenta';
 import type { ExtrasSemana } from './modules/agent/useSemana';
 import ConectoresScreen from './modules/agent/ConectoresScreen';
+import OperacoesScreen from './modules/agent/OperacoesScreen';
 import FerramentasScreen from './modules/agent/FerramentasScreen';
 import ProximoPassoBar from './modules/agent/ProximoPassoBar';
 import ColunaFerramentas from './modules/agent/ColunaFerramentas';
@@ -248,7 +249,7 @@ export default function App() {
   useEffect(() => { productsRef.current = products; }, [products]);
   const [originalHeaders, setOriginalHeaders] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [mainView, setMainView] = useState<'home' | 'atividade' | 'ferramentas' | 'agenteProdutos' | 'fontes' | 'products' | 'meli' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company' | 'missoes'>('products');
+  const [mainView, setMainView] = useState<'home' | 'atividade' | 'ferramentas' | 'agenteProdutos' | 'fontes' | 'operacoes' | 'products' | 'meli' | 'categories' | 'history' | 'integrations' | 'tutorial' | 'referral' | 'company' | 'missoes'>('products');
   // Pedido que outra tela (Ferramentas) manda ao Alfred — a tela do agente
   // envia ao montar e limpa, para voltar ao chat não repetir o pedido.
   const [promptAlfred, setPromptAlfred] = useState<PedidoAlfred | null>(null);
@@ -3324,7 +3325,7 @@ Retorne APENAS um JSON válido no seguinte formato:
   // Com agente, o desktop navega pelo trilho de vidro (três portas + Conta);
   // o menu escuro fica só como gaveta do telefone. Telas de ferramenta contam
   // como Ferramentas; as de conta (créditos, empresa…) não acendem porta.
-  const telaDoAgente = ['home', 'atividade', 'ferramentas', 'agenteProdutos', 'fontes'].includes(mainView);
+  const telaDoAgente = ['home', 'atividade', 'ferramentas', 'agenteProdutos', 'fontes', 'operacoes'].includes(mainView);
   // Telas antigas já convertidas para os tokens `--ag-*`: seguem o tema do Alfred.
   const telaComTokens = ['history', 'products', 'categories', 'meli'].includes(mainView);
   // Com agente, Categorias, Mercado Livre e a tabela completa seguem a estrutura das telas do
@@ -3336,14 +3337,15 @@ Retorne APENAS um JSON válido no seguinte formato:
   const ferramentaAberta: OrigemTarefa | 'visao' | null = !temAgente ? null
     : mainView === 'ferramentas' ? 'visao'
       : ['agenteProdutos', 'products', 'categories'].includes(mainView) ? 'produto'
-        : mainView === 'meli' ? 'meli' : null;
+        : mainView === 'meli' ? 'meli'
+          : mainView === 'operacoes' ? 'operacoes' : null;
   const abrirAgente = (origem: OrigemTarefa) => {
     // Do workspace de Conteúdo, os outros agentes moram no de Produto.
     if (origem !== 'conteudo') setWorkspace('product');
     if (origem === 'produto') abrirDestino('produtos');
     else if (origem === 'meli') abrirDestino('meli');
     else if (origem === 'conteudo') abrirDestino('conteudo');
-    else setMainView('fontes');
+    else setMainView('operacoes');
   };
   const irParaFerramentas = () => { setWorkspace('product'); setMainView('ferramentas'); };
   // Tema das telas convertidas que abrem o próprio escopo `.alfreds`: sem
@@ -3366,7 +3368,7 @@ Retorne APENAS um JSON válido no seguinte formato:
   const portaAtual: DestinoTrilho | null =
     mainView === 'home' || mainView === 'fontes' ? 'home'
       : mainView === 'atividade' ? 'atividade'
-        : ['ferramentas', 'agenteProdutos', 'products', 'categories', 'meli'].includes(mainView) ? 'ferramentas'
+        : ['ferramentas', 'agenteProdutos', 'products', 'categories', 'meli', 'operacoes'].includes(mainView) ? 'ferramentas'
           : null;
   const abrirItemConta = (item: ItemConta) => {
     if (item === 'creditos') { setIsCreditPurchaseOpen(true); trackCreditPurchaseOpen(); }
@@ -3980,7 +3982,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           // O chat do agente não tem barra inferior no telefone (o menu foi
           // para o cabeçalho dele), então dispensa a reserva de 5rem embaixo
           // e usa um respiro menor nas laterais — a tela toda é a conversa.
-          mainView === 'atividade' || mainView === 'ferramentas' || mainView === 'fontes' ? "p-3 sm:p-6" :
+          mainView === 'atividade' || mainView === 'ferramentas' || mainView === 'fontes' || mainView === 'operacoes' ? "p-3 sm:p-6" :
           // A barra Próximo passo é o pé da própria tela, então ela termina acima da tab bar.
           mainView === 'agenteProdutos' ? (alfredFocado ? "p-3 sm:p-6" : "p-3 pb-24 sm:p-6 md:pb-6") :
           mainView === 'home' ? (alfredFocado ? "p-3 sm:p-6" : "p-3 pb-24 sm:p-6 md:pb-6") :
@@ -4024,6 +4026,13 @@ Retorne APENAS um JSON válido no seguinte formato:
               revogados={fontesRevogadas}
               onVoltar={() => setMainView('home')}
               onConectar={conectarFonte}
+            />
+          ) : mainView === 'operacoes' ? (
+            <OperacoesScreen
+              products={products}
+              onVoltar={irParaFerramentas}
+              onAbrirFontes={() => setMainView('fontes')}
+              onPedirAlfred={(texto) => { setPromptAlfred({ texto }); setMainView('home'); }}
             />
           ) : mainView === 'atividade' ? (
             <AtividadeScreen
@@ -5807,7 +5816,7 @@ Retorne APENAS um JSON válido no seguinte formato:
 
       {!((mainView === 'home' || mainView === 'agenteProdutos') && alfredFocado) && (
         <AppTabBar
-          atual={mainView === 'agenteProdutos' ? 'ferramentas' : mainView === 'fontes' ? 'home' : mainView}
+          atual={mainView === 'agenteProdutos' || mainView === 'operacoes' ? 'ferramentas' : mainView === 'fontes' ? 'home' : mainView}
           mostrarAgente={temAgente}
           pendentes={pendentesAlfred}
           onNavegar={setMainView}

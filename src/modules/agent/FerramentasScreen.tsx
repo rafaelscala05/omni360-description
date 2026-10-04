@@ -15,7 +15,7 @@ import { BotaoConta } from '../../components/ContaMenu';
 import AlfredLogo from '../../components/alfredLogo/AlfredLogo';
 import type { Objetivo, Peca } from './capacidades';
 
-export type ViewConta = 'categories' | 'history' | 'company' | 'missoes' | 'fontes';
+export type ViewConta = 'categories' | 'history' | 'company' | 'missoes' | 'fontes' | 'operacoes';
 
 interface Props {
   uid: string;
@@ -371,7 +371,7 @@ const FerramentasScreen: React.FC<Props> = ({
                   nome="Operações"
                   sub={opsSub}
                   pendente={alertas + pendentes}
-                  onClick={() => onAbrirView('fontes')}
+                  onClick={() => onAbrirView('operacoes')}
                 />
               </section>
               {paraMontar.length > 0 && <SecaoParaMontar pecas={paraMontar} onMontar={onMontar} />}
@@ -427,7 +427,7 @@ const FerramentasScreen: React.FC<Props> = ({
                   pendencias={alertas + pendentes}
                   kpi={tiny ? n(numeros?.pedidosAbertos, numeros?.pedidosAbertosMais) : ativas}
                   kpiRotulo={tiny ? 'pedidos em aberto no Tiny' : `de ${integracoes.length || 4} integrações conectadas`}
-                  cta="Abrir Operações" onVer={() => onAbrirView('fontes')}
+                  cta="Abrir Operações" onVer={() => onAbrirView('operacoes')}
                 >
                   {integracoes.some((i) => i.chave === 'wake' && i.conectado) && (
                     <Linha primeira rotulo="Banners ativos na Wake" valor={n(numeros?.bannersAtivos)} />
