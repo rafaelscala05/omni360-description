@@ -138,12 +138,23 @@ registerTool({
     type: 'object',
     properties: {
       endpoint: { type: 'string', description: 'Ex.: "nota.fiscal.obter.php" ou "contas.pagar.pesquisa.php".' },
-      parametros: { type: 'object', description: 'Parâmetros do endpoint, como pares chave/valor.' },
+      // String, não objeto: objeto sem properties faz o Vertex recusar o catálogo inteiro (ver registerTool).
+      parametros: { type: 'string', description: 'Parâmetros do endpoint como objeto JSON de pares chave/valor. Ex.: {"id":"123"}.' },
     },
     required: ['endpoint'],
   },
-  read: async (ctx: ToolCtx, a: { endpoint: string; parametros?: Record<string, unknown> }) => {
+  read: async (ctx: ToolCtx, a: { endpoint: string; parametros?: string | Record<string, unknown> }) => {
     const endpoint = String(a.endpoint ?? '').trim();
+    let brutos: Record<string, unknown> = {};
+    if (typeof a.parametros === 'string' && a.parametros.trim()) {
+      try {
+        brutos = JSON.parse(a.parametros);
+      } catch {
+        throw Object.assign(new Error('"parametros" precisa ser um objeto JSON, ex.: {"id":"123"}.'), { status: 400 });
+      }
+    } else if (a.parametros && typeof a.parametros === 'object') {
+      brutos = a.parametros;
+    }
     if (!TINY_READ_ONLY.test(endpoint)) {
       throw Object.assign(
         new Error(`"${endpoint}" não é um endpoint de consulta. Só é possível ler por aqui; alterações precisam de uma ferramenta dedicada, que passa pela sua aprovação.`),
@@ -151,7 +162,7 @@ registerTool({
       );
     }
     const params: Record<string, string> = {};
-    for (const [k, v] of Object.entries(a.parametros ?? {})) {
+    for (const [k, v] of Object.entries(brutos ?? {})) {
       if (v !== undefined && v !== null) params[k] = String(v);
     }
     const token = await ctx.tinyToken();

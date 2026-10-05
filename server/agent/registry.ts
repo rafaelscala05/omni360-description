@@ -32,7 +32,24 @@ export function registerTool<A>(def: ToolDef<A>): void {
   if (!/^[a-zA-Z][a-zA-Z0-9_.:-]{0,63}$/.test(def.name)) {
     throw new Error(`Nome de ferramenta inválido para function calling: ${def.name}`);
   }
+  // Objeto sem `properties` vira um schema que o Vertex AI recusa com HTTP 400
+  // — e o catálogo inteiro é vinculado de uma vez, então uma ferramenta assim
+  // derruba o chat de toda conta que tem o provider dela conectado.
+  const aberto = objetoAberto(def.schema, '');
+  if (aberto) {
+    throw new Error(`Ferramenta "${def.name}": "${aberto}" é um objeto sem properties, que o Vertex AI recusa. Declare as properties ou receba como string (JSON).`);
+  }
   tools.set(def.name, def as ToolDef<any>);
+}
+
+function objetoAberto(s: unknown, caminho: string): string | null {
+  const n = (s ?? {}) as { type?: unknown; properties?: Record<string, unknown>; items?: unknown };
+  if (caminho && n.type === 'object' && !n.properties) return caminho;
+  for (const [k, v] of Object.entries(n.properties ?? {})) {
+    const achou = objetoAberto(v, caminho ? `${caminho}.${k}` : k);
+    if (achou) return achou;
+  }
+  return n.items ? objetoAberto(n.items, `${caminho}[]`) : null;
 }
 
 export function getTool(name: string): ToolDef<any> | undefined {
