@@ -85,7 +85,10 @@ interface Props {
 
 const ContentMapView: React.FC<Props> = ({ clusters, articles, site = 'Site', onSelectCluster, onOpenArticle, altura = 560 }) => {
   const { tema } = useAgentTheme();
-  const caixaRef = useRef<HTMLDivElement>(null);
+  // Ref em estado, não `useRef`: o contêiner só existe depois que os dados
+  // chegam (antes, o aviso de vazio ocupa o lugar), e os efeitos abaixo precisam
+  // rodar de novo quando ele aparece — senão a largura fica 0 e o grafo nunca monta.
+  const [caixa, setCaixa] = useState<HTMLDivElement | null>(null);
   const grafoRef = useRef<ForceGraphMethods<NoGrafo, LinkGrafo> | undefined>(undefined);
   const [largura, setLargura] = useState(0);
   const [paleta, setPaleta] = useState<Paleta>(() => lerPaleta(null));
@@ -93,14 +96,13 @@ const ContentMapView: React.FC<Props> = ({ clusters, articles, site = 'Site', on
   const ajustado = useRef(false);
 
   useEffect(() => {
-    const el = caixaRef.current;
-    if (!el) return;
+    if (!caixa) return;
     const ro = new ResizeObserver(([e]) => setLargura(Math.floor(e.contentRect.width)));
-    ro.observe(el);
+    ro.observe(caixa);
     return () => ro.disconnect();
-  }, []);
+  }, [caixa]);
   // O tema muda os tokens; o canvas precisa reler.
-  useEffect(() => { setPaleta(lerPaleta(caixaRef.current)); }, [tema]);
+  useEffect(() => { setPaleta(lerPaleta(caixa)); }, [caixa, tema]);
 
   const dados = useMemo(() => {
     const nodes: No[] = [];
@@ -270,7 +272,7 @@ const ContentMapView: React.FC<Props> = ({ clusters, articles, site = 'Site', on
   const publicados = articles.filter((a) => a.status === 'publicado').length;
 
   return (
-    <div ref={caixaRef} className="relative w-full overflow-hidden rounded-[18px]" style={{ height: altura, background: 'var(--ag-fill-solid)' }}>
+    <div ref={setCaixa} className="relative w-full overflow-hidden rounded-[18px]" style={{ height: altura, background: 'var(--ag-fill-solid)' }}>
       {largura > 0 && (
         <ForceGraph2D<No, { tipo: 'site' | 'cluster' }>
           ref={grafoRef}
