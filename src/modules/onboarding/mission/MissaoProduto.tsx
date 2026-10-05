@@ -5,8 +5,8 @@
 // ProductUrlImportModal — foto, título e categoria continuam obrigatórios, e
 // um scrape ruim cai no preenchimento manual em vez de virar erro sem saída.
 //
-// A chegada salva no catálogo. Publicar direto no ERP fica para o Plano 2:
-// até lá o botão não promete o que não faz.
+// A chegada salva no catálogo — sempre, inclusive em "Quero ajustar antes", que
+// em seguida abre o produto para edição em vez de voltar para a home.
 
 import React, { useMemo, useState } from 'react';
 import MissionRunner from './MissionRunner';
@@ -38,11 +38,15 @@ interface Props {
   /** saveToCloud(true) — persiste o catálogo já com o produto novo */
   onSalvarNoCatalogo: () => Promise<void>;
   onConcluir: () => void;
+  /** "Quero ajustar antes": conclui a missão e abre o produto para edição. */
+  onAjustar: (id: string) => void;
   /** publicarProdutoNoTiny do App — só chamado quando o produto tem _tinyProductId */
   onPublicarNoTiny: (id: string) => Promise<void>;
   /** true quando a conta ainda não deixou contato (onboarding não concluído) */
   mostrarPedidoWhatsapp: boolean;
   onEnviarWhatsapp: (whatsapp: string) => Promise<void>;
+  /** Número que a conta já informou — o pedido vem preenchido com ele. */
+  whatsappInicial?: string;
 }
 
 const formVazio: ProductFormValue = { title: '', categoryId: '', imageUrl: '', price: '', description: '' };
@@ -59,8 +63,8 @@ function hostDe(url: string): string {
 
 const MissaoProduto: React.FC<Props> = ({
   state, onState, produtos, categorias,
-  onProdutoCriado, onCriarCategoria, onGerarDescricao, onSalvarNoCatalogo, onConcluir,
-  onPublicarNoTiny, mostrarPedidoWhatsapp, onEnviarWhatsapp,
+  onProdutoCriado, onCriarCategoria, onGerarDescricao, onSalvarNoCatalogo, onConcluir, onAjustar,
+  onPublicarNoTiny, mostrarPedidoWhatsapp, onEnviarWhatsapp, whatsappInicial,
 }) => {
   const [url, setUrl] = useState('');
   const candidatos = useMemo(() => produtosSemDescricao(produtos), [produtos]);
@@ -175,14 +179,16 @@ const MissaoProduto: React.FC<Props> = ({
 
   const temTiny = !!produto?._tinyProductId;
 
-  const finalizar = async (modo: 'tiny' | 'catalogo' | 'depois') => {
+  // Todo fim salva no catálogo — inclusive "ajustar": um produto só em memória
+  // ficaria de fora de qualquer geração pelo servidor ("Ainda não salvos").
+  const finalizar = async (modo: 'tiny' | 'catalogo' | 'ajustar') => {
     if (!produto?._id) return;
     setErro(null);
     setOcupado(true);
     try {
-      if (modo !== 'depois') await onSalvarNoCatalogo();
+      await onSalvarNoCatalogo();
       if (modo === 'tiny') await onPublicarNoTiny(produto._id);
-      if (modo !== 'depois') trackMissionArtifactPublished({ missionId: 'produto', destino: modo });
+      if (modo !== 'ajustar') trackMissionArtifactPublished({ missionId: 'produto', destino: modo });
       trackMissionStepCompleted({ missionId: 'produto', step: 'chegada' });
       trackMissionCompleted({ missionId: 'produto' });
       onState({
@@ -190,12 +196,13 @@ const MissaoProduto: React.FC<Props> = ({
         dados: {
           ...state.dados,
           ...(modo === 'tiny' ? { publicado: true } : {}),
-          ...(modo !== 'depois' ? { salvoNoCatalogo: true } : {}),
+          salvoNoCatalogo: true,
         },
         artefato: { tipo: 'produto', id: produto._id, rotulo: String(produto['Descrição'] ?? 'Produto') },
         concluidaEm: new Date().toISOString(),
       });
-      onConcluir();
+      if (modo === 'ajustar') onAjustar(produto._id);
+      else onConcluir();
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não consegui salvar agora. Tenta de novo.');
     } finally {
@@ -296,7 +303,7 @@ const MissaoProduto: React.FC<Props> = ({
     palco = {
       titulo: 'Agente de Produto trabalhando',
       linhas: log.length ? log : [{ estado: 'feito', texto: 'produto no catálogo', destaque: String(produto?.['Descrição'] ?? '') }],
-      children: pedirWhatsapp ? <PedidoWhatsApp onEnviar={onEnviarWhatsapp} /> : undefined,
+      children: pedirWhatsapp ? <PedidoWhatsApp onEnviar={onEnviarWhatsapp} valorInicial={whatsappInicial} /> : undefined,
     };
     acoes.push({ rotulo: ocupado ? 'Escrevendo…' : 'Gerar a descrição', onClick: gerarDescricao, desabilitada: ocupado || !produto });
   }
@@ -327,7 +334,7 @@ const MissaoProduto: React.FC<Props> = ({
       onClick: () => finalizar(temTiny ? 'tiny' : 'catalogo'),
       desabilitada: ocupado,
     });
-    acoes.push({ rotulo: 'Quero ajustar antes', variante: 'secundaria', onClick: () => finalizar('depois'), desabilitada: ocupado });
+    acoes.push({ rotulo: 'Quero ajustar antes', variante: 'secundaria', onClick: () => finalizar('ajustar'), desabilitada: ocupado });
   }
 
   return (

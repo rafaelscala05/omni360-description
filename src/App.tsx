@@ -408,6 +408,8 @@ export default function App() {
   const [projetosConteudo, setProjetosConteudo] = useState(0);
   const [jornadaConcluida, setJornadaConcluida] = useState(false);
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(false);
+  // Número que a conta já deu (cadastro, contato ou empresa): a missão pergunta com ele preenchido.
+  const [telefoneConta, setTelefoneConta] = useState('');
   const [productOnboardingPromptShown, setProductOnboardingPromptShown] = useState<boolean>(false);
   const [companyData, setCompanyData] = useState<CompanyData | null>(null);
   const [isOnboardingWizardOpen, setIsOnboardingWizardOpen] = useState(false);
@@ -677,6 +679,7 @@ export default function App() {
               setProductOnboardingPromptShown(snap.data().productOnboarding?.promptShown === true);
               const company = snap.data().company ?? null;
               setCompanyData(company);
+              setTelefoneConta(String(snap.data().onboarding?.contact?.whatsapp || snap.data().phone || company?.telefone || ''));
               metaSetProfile({ phone: company?.telefone, city: company?.endereco?.cidade });
             }
           });
@@ -749,36 +752,34 @@ export default function App() {
     ...(objetivoRevogado(modulosConta, 'meli') ? ['meli' as const] : []),
     ...(objetivoRevogado(modulosConta, 'conteudo') ? ['content' as const] : []),
   ], [modulosConta]);
+  // A trilha inteira da coorte de onboarding: alimenta o checklist da tela do
+  // Alfred e, filtrada, as missões da semana.
+  const trilhaOnboarding = useMemo(() => isCoorteMissao(cohort)
+    ? montarTrilha({
+      missoes: todasMissoes,
+      produtos: products.length,
+      erpConectado: products.some((p) => p._tinyProductId || p._blingProductId || p._idworksProductId),
+      empresaCompleta: !!companyData?.cnpj,
+      ...(isCoorteObjetivos(cohort) ? { objetivos, meliConectado: meliConectadoTrilha } : {}),
+    })
+    : undefined, [cohort, todasMissoes, products, companyData?.cnpj, objetivos, meliConectadoTrilha]);
   const extrasSemana = useMemo<ExtrasSemana>(() => ({
     categories: existingCategories,
     hasVideo: hasVideoModule,
     // Coorte de onboarding: as missões ainda abertas viram a primeira semana.
-    missoesResumo: isCoorteMissao(cohort)
+    missoesResumo: trilhaOnboarding
       ? (() => {
-        const t = montarTrilha({
-          missoes: todasMissoes,
-          produtos: products.length,
-          erpConectado: products.some((p) => p._tinyProductId || p._blingProductId || p._idworksProductId),
-          empresaCompleta: !!companyData?.cnpj,
-          ...(isCoorteObjetivos(cohort) ? { objetivos, meliConectado: meliConectadoTrilha } : {}),
-        }).filter((m) => m.estado !== 'opcional');
+        const t = trilhaOnboarding.filter((m) => m.estado !== 'opcional');
         return { feitas: t.filter((m) => m.estado === 'feito').length, total: t.length };
       })()
       : undefined,
-    missoes: isCoorteMissao(cohort)
-      ? montarTrilha({
-        missoes: todasMissoes,
-        produtos: products.length,
-        erpConectado: products.some((p) => p._tinyProductId || p._blingProductId || p._idworksProductId),
-        empresaCompleta: !!companyData?.cnpj,
-        ...(isCoorteObjetivos(cohort) ? { objetivos, meliConectado: meliConectadoTrilha } : {}),
-      }).filter((m) => m.estado === 'agora' || m.estado === 'opcional')
-        .map((m) => ({ id: m.id, titulo: m.titulo, meta: m.meta, estado: m.estado as 'agora' | 'opcional' }))
-      : undefined,
+    missoes: trilhaOnboarding
+      ?.filter((m) => m.estado === 'agora' || m.estado === 'opcional')
+        .map((m) => ({ id: m.id, titulo: m.titulo, meta: m.meta, estado: m.estado as 'agora' | 'opcional' })),
     pecaParaMontar: temAgente
       ? (() => { const p = proximaPecaParaMontar(pecasAlfred, objetivos); return p && p.objetivo ? { objetivo: p.objetivo, titulo: p.titulo, libera: p.libera } : null; })()
       : null,
-  }), [existingCategories, hasVideoModule, cohort, todasMissoes, products, companyData?.cnpj, objetivos, meliConectadoTrilha, pecasAlfred, temAgente]);
+  }), [existingCategories, hasVideoModule, trilhaOnboarding, pecasAlfred, temAgente, objetivos]);
 
   // Cost of a given action, resolved against the loaded config (fallbacks inside).
   const getCreditCost = (key: string) => resolveCreditCost(creditCosts, key);
@@ -994,14 +995,14 @@ export default function App() {
     }
   };
 
-  const saveToCloud = async (silent = false) => {
+  const saveToCloud = async (silent = false): Promise<boolean> => {
     if (!user) {
       if (!silent) alert("Faça login para salvar na nuvem.");
-      return;
+      return false;
     }
     if (products.length === 0) {
       if (!silent) alert("Não há produtos para salvar.");
-      return;
+      return false;
     }
 
     setIsSavingToCloud(true);
@@ -1132,9 +1133,11 @@ export default function App() {
       setLastSaved(new Date());
       setHasUnsavedChanges(false);
       if (!silent) alert("Projeto salvo na nuvem com sucesso!");
+      return true;
     } catch (error) {
       console.error("Error saving to cloud:", error);
       if (!silent) alert("Erro ao salvar na nuvem. Verifique o console para mais detalhes.");
+      return false;
     } finally {
       setIsSavingToCloud(false);
     }
@@ -2483,13 +2486,21 @@ Retorne APENAS um JSON válido no seguinte formato:
     startGenerateSingle(id);
   };
 
-  const startGenerateSingle = async (id: string) => {
+  // `lancar`: quem chama trata o erro (onboarding) — sem alert, e sem fingir
+  // que gerou quando falhou ou faltou crédito.
+  const startGenerateSingle = async (id: string, lancar = false) => {
     setShowMassActionConfirm(null);
     const productIndex = products.findIndex(p => p._id === id);
-    if (productIndex === -1) return;
+    if (productIndex === -1) {
+      if (lancar) throw new Error('Não encontrei o produto. Tenta de novo.');
+      return;
+    }
     const product = products[productIndex];
 
-    if (!ensureCredits(CREDIT_ACTIONS.generateSeoSingle)) return;
+    if (!ensureCredits(CREDIT_ACTIONS.generateSeoSingle)) {
+      if (lancar) throw new Error('Créditos insuficientes para gerar a descrição.');
+      return;
+    }
 
     // Set generating state
     const newProducts = [...products];
@@ -2504,7 +2515,7 @@ Retorne APENAS um JSON válido no seguinte formato:
       trackDescriptionGenerated({ mode: 'single', sku: product['Código (SKU)'] as string });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      alert(`Erro ao gerar descrição para ${product['Descrição']}: ${errorMessage}`);
+      if (!lancar) alert(`Erro ao gerar descrição para ${product['Descrição']}: ${errorMessage}`);
       setProducts(prev => {
         const updated = [...prev];
         const idx = updated.findIndex(p => p._id === id);
@@ -2520,6 +2531,7 @@ Retorne APENAS um JSON válido no seguinte formato:
         }
         return updated;
       });
+      if (lancar) throw new Error(`Não deu pra gerar a descrição agora: ${errorMessage} Tenta de novo.`);
     }
   };
 
@@ -2562,7 +2574,7 @@ Retorne APENAS um JSON válido no seguinte formato:
   // a tabela de produtos já usa (startGenerateSingle) — sem duplicar
   // ensureCredits/consumeCredit/tracking.
   const handleGenerateDescriptionForOnboarding = async (id: string) => {
-    await startGenerateSingle(id);
+    await startGenerateSingle(id, true);
   };
 
   // Sugestão de atributos é grátis hoje (não passa por ensureCredits/consumeCredit) —
@@ -3543,11 +3555,22 @@ Retorne APENAS um JSON válido no seguinte formato:
             onProdutoCriado={handleProductCreatedFromOnboarding}
             onCriarCategoria={handleCreateCategoryForOnboarding}
             onGerarDescricao={handleGenerateDescriptionForOnboarding}
-            onSalvarNoCatalogo={() => saveToCloud(true)}
+            onSalvarNoCatalogo={async () => {
+              if (!(await saveToCloud(true))) throw new Error('Não consegui salvar no catálogo agora. Tenta de novo.');
+            }}
             onPublicarNoTiny={publicarProdutoNoTiny}
             mostrarPedidoWhatsapp={!onboardingCompleted}
+            whatsappInicial={telefoneConta}
             onEnviarWhatsapp={enviarWhatsappDaMissao}
             onConcluir={aoConcluir}
+            onAjustar={(id) => {
+              aoConcluir();
+              // A aterrissagem na trilha não pode jogar a pessoa de volta à home por cima do produto.
+              trilhaAterrissou.current = true;
+              setMainView(temAgente ? 'agenteProdutos' : 'products');
+              const p = productsRef.current.find((x) => x._id === id);
+              if (p) openPreview(p, 'geral');
+            }}
           />
           {modalCreditos}
         </>
@@ -3562,6 +3585,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             onState={salvar}
             custoCreditos={custoMissaoConteudo}
             mostrarPedidoWhatsapp={!onboardingCompleted}
+            whatsappInicial={telefoneConta}
             onEnviarWhatsapp={enviarWhatsappDaMissao}
             onHabilitarConteudo={habilitarConteudo}
             onComprarCreditos={() => setIsCreditPurchaseOpen(true)}
@@ -4024,6 +4048,8 @@ Retorne APENAS um JSON válido no seguinte formato:
               onFocoChange={setAlfredFocado}
               promptInicial={promptAlfred}
               onPromptConsumido={() => setPromptAlfred(null)}
+              checklist={trilhaOnboarding}
+              onChecklist={acaoDaTrilha}
             />
           ) : mainView === 'fontes' ? (
             <ConectoresScreen
@@ -4080,6 +4106,7 @@ Retorne APENAS um JSON válido no seguinte formato:
               credits={credits}
               onFocoChange={setAlfredFocado}
               onRecarregar={() => setIsCreditPurchaseOpen(true)}
+              onSalvar={() => saveToCloud(true)}
               erpsConectados={{ tiny: integrationConnections.tiny, wake: integrationConnections.wake }}
               onEnviarErp={(erp) => { void handleSendToIntegration(erp); }}
             />

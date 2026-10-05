@@ -152,8 +152,19 @@ export interface FiltrosProdutos {
 }
 
 export const FILTROS_VAZIOS: FiltrosProdutos = { integracao: [], sync: [], conteudo: [], categoria: [] };
-/** Abre em "Incompletos", como antes: sem descrição OU sem foto. */
+/** "Incompletos": sem descrição OU sem foto. */
 export const FILTROS_PADRAO: FiltrosProdutos = { ...FILTROS_VAZIOS, conteudo: ['semDescricao', 'semFoto'] };
+/** Acima disto de incompletos a tela abre já filtrada neles; até isto, abre em tudo. */
+export const MIN_INCOMPLETOS_FILTRO = 5;
+
+/**
+ * Filtro com que a tela abre: só começa em "Incompletos" quando há mais de
+ * `MIN_INCOMPLETOS_FILTRO` produtos sem informação — com poucos, o filtro só
+ * esconderia o catálogo de quem está começando.
+ */
+export function filtrosIniciais(lista: Product[]): FiltrosProdutos {
+  return lista.filter(incompleto).length > MIN_INCOMPLETOS_FILTRO ? FILTROS_PADRAO : FILTROS_VAZIOS;
+}
 
 export const OPCOES_INTEGRACAO: OpcaoIntegracao[] = ['tiny', 'wake', 'bling', 'idworks', 'nenhuma'];
 export const OPCOES_SYNC: OpcaoSync[] = ['emDia', 'pendente'];

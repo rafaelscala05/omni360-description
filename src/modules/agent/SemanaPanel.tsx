@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { AlertTriangle, ArrowUpRight, Check, ChevronRight, Sparkles } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, Check, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
+import ChecklistOnboarding from './ChecklistOnboarding';
+import { emOnboarding, type EstadoItem, type ItemId, type ItemTrilha } from '../onboarding/mission/trilha';
 import { DIAS_CURTOS, inicioDaSemana, textoEstimativa, type DestinoTarefa, type OrigemTarefa, type TarefaSemana } from './semana';
 
 interface Props {
@@ -12,6 +14,9 @@ interface Props {
   /** Rodapé "N fontes · +M para conectar" (ver `resumoFontes`); sem ele, sem rodapé. */
   fontes?: { ativas: number; paraConectar: number; alerta: number } | null;
   onAbrirFontes?: () => void;
+  /** Coorte de onboarding: a trilha inteira (com o que já foi feito). */
+  checklist?: ItemTrilha[];
+  onChecklist?: (id: ItemId, estado: EstadoItem) => void;
 }
 
 export const ORIGEM: Record<OrigemTarefa, { rotulo: string; cor: string }> = {
@@ -102,21 +107,46 @@ const Tarefa: React.FC<{ t: TarefaSemana } & Pick<Props, 'onFazer' | 'onAbrir'>>
  * "Sua semana": o que o Alfred montou a partir das fontes conectadas, por dia.
  * É o estado inicial da tela do agente — ela nunca abre num campo vazio.
  */
-const SemanaPanel: React.FC<Props> = ({ tarefas, hoje, onFazer, onAbrir, semanaPassada, fontes, onAbrirFontes }) => {
+const SemanaPanel: React.FC<Props> = ({ tarefas, hoje, onFazer, onAbrir, semanaPassada, fontes, onAbrirFontes, checklist, onChecklist }) => {
   const [dia, setDia] = useState(hoje);
+  // No onboarding a semana começa recolhida, embaixo do checklist.
+  const onboarding = !!checklist && !!onChecklist && emOnboarding(checklist);
+  const [semanaAberta, setSemanaAberta] = useState(false);
+  const recolhida = onboarding && !semanaAberta;
   const inicio = inicioDaSemana(new Date());
   const feitas = tarefas.filter((t) => t.estado === 'feita').length;
   const doDia = tarefas.filter((t) => t.dia === dia);
   const pct = tarefas.length ? Math.round((feitas / tarefas.length) * 100) : 0;
 
+  const contagem = tarefas.length > 0 && (
+    <span className="text-[13px] text-[var(--ag-text-2)] tabular-nums pb-1">{feitas} de {tarefas.length} feitas</span>
+  );
+
   return (
+    <div className="w-full flex flex-col gap-6">
+    {onboarding && <ChecklistOnboarding itens={checklist!} onAcao={onChecklist!} />}
     <section className="w-full flex flex-col gap-4 text-left">
-      <div className="flex items-end justify-between gap-3">
-        <h1 className="font-display text-[26px] sm:text-[30px] font-semibold tracking-tight text-[var(--ag-text)]">Sua semana</h1>
-        {tarefas.length > 0 && (
-          <span className="text-[13px] text-[var(--ag-text-2)] tabular-nums pb-1">{feitas} de {tarefas.length} feitas</span>
-        )}
-      </div>
+      {onboarding ? (
+        <button
+          type="button"
+          onClick={() => setSemanaAberta((v) => !v)}
+          aria-expanded={!recolhida}
+          className="flex items-end justify-between gap-3 text-left"
+        >
+          <span className="flex items-center gap-1.5 font-display text-[20px] font-semibold tracking-tight text-[var(--ag-text)]">
+            Sua semana
+            <ChevronDown className={`w-4 h-4 text-[var(--ag-text-2)] transition-transform ${recolhida ? '-rotate-90' : ''}`} />
+          </span>
+          {contagem}
+        </button>
+      ) : (
+        <div className="flex items-end justify-between gap-3">
+          <h1 className="font-display text-[26px] sm:text-[30px] font-semibold tracking-tight text-[var(--ag-text)]">Sua semana</h1>
+          {contagem}
+        </div>
+      )}
+
+      {!recolhida && <>
 
       {semanaPassada && (
         <div className="-mt-3 text-[12px] text-[var(--ag-text-3)] tabular-nums">
@@ -170,6 +200,8 @@ const SemanaPanel: React.FC<Props> = ({ tarefas, hoje, onFazer, onAbrir, semanaP
         )}
       </div>
 
+      </>}
+
       {/* A semana é tão boa quanto o que o Alfred enxerga: o rodapé diz de
           onde as tarefas vêm e quanto ainda dá para ligar. */}
       {fontes && onAbrirFontes && (
@@ -190,6 +222,7 @@ const SemanaPanel: React.FC<Props> = ({ tarefas, hoje, onFazer, onAbrir, semanaP
         </button>
       )}
     </section>
+    </div>
   );
 };
 

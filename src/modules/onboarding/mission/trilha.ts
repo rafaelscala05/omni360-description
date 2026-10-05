@@ -52,3 +52,12 @@ export function montarTrilha(s: SinalTrilha): ItemTrilha[] {
   if (!s.objetivos) return [missao.produto, missao.conteudo, ...resto(true)];
   return [...s.objetivos.map((o) => missao[o]), ...resto(s.objetivos.includes('conteudo'))];
 }
+
+/**
+ * Ainda em onboarding: alguma etapa obrigatória da trilha não foi feita
+ * ("opcional" não segura o checklist na tela). Enquanto for verdade, a tela do
+ * Alfred mostra o checklist e deixa "Sua semana" recolhida.
+ */
+export function emOnboarding(itens: ItemTrilha[]): boolean {
+  return itens.some((i) => i.estado === 'agora' || i.estado === 'bloqueado');
+}

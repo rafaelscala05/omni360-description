@@ -1,5 +1,5 @@
 // Trilha de missões (pura). Rodar com: npx tsx scripts/verify-trilha.mjs
-import { montarTrilha } from '../src/modules/onboarding/mission/trilha.ts';
+import { emOnboarding, montarTrilha } from '../src/modules/onboarding/mission/trilha.ts';
 
 let failures = 0;
 function check(label, actual, expected) {
@@ -36,6 +36,14 @@ check('v2 com conteúdo traz publicar blog', ids({ ...vazio, objetivos: ['conteu
 check('v2 ML conectado fica feito', estados({ ...vazio, objetivos: ['meli'], meliConectado: true }).meli, 'feito');
 check('v2 ML sem conexão é agora', estados({ ...vazio, objetivos: ['meli'] }).meli, 'agora');
 check('título do item ML', montarTrilha({ ...vazio, objetivos: ['meli'] })[0].titulo, 'Conectar seu Mercado Livre');
+
+// Checklist do onboarding: some quando só resta o opcional.
+check('conta nova está em onboarding', emOnboarding(montarTrilha(vazio)), true);
+const tudoFeito = montarTrilha({
+  ...vazio, produtos: 2, erpConectado: true, objetivos: ['meli'], meliConectado: true,
+});
+check('só o opcional aberto encerra o onboarding', emOnboarding(tudoFeito), false);
+check('bloqueado ainda segura o checklist', emOnboarding([{ id: 'publicar-blog', titulo: '', meta: '', estado: 'bloqueado' }]), true);
 
 console.log(failures === 0 ? '\nTudo ok.' : `\n${failures} falha(s).`);
 process.exit(failures === 0 ? 0 : 1);

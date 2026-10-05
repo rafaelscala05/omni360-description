@@ -31,6 +31,8 @@ interface Props {
   custoCreditos: number;
   mostrarPedidoWhatsapp: boolean;
   onEnviarWhatsapp: (whatsapp: string) => Promise<void>;
+  /** Número que a conta já informou — o pedido vem preenchido com ele. */
+  whatsappInicial?: string;
   /** Liga modules.contentAgent e modules.blog para esta conta. */
   onHabilitarConteudo: () => Promise<void>;
   onComprarCreditos: () => void;
@@ -44,7 +46,7 @@ const mensagem = (e: unknown, padrao: string) => (e instanceof Error && e.messag
 const pareceCredito = (m: string | null) => !!m && /cr[ée]dito/i.test(m);
 
 const MissaoConteudo: React.FC<Props> = ({
-  uid, state, onState, custoCreditos, mostrarPedidoWhatsapp, onEnviarWhatsapp,
+  uid, state, onState, custoCreditos, mostrarPedidoWhatsapp, onEnviarWhatsapp, whatsappInicial,
   onHabilitarConteudo, onComprarCreditos, onConcluir,
 }) => {
   const d = state.dados as DadosConteudo;
@@ -348,7 +350,7 @@ const MissaoConteudo: React.FC<Props> = ({
     palco = {
       titulo: 'Agente de Conteúdo trabalhando',
       linhas,
-      children: pedirWhatsapp ? <PedidoWhatsApp onEnviar={onEnviarWhatsapp} /> : undefined,
+      children: pedirWhatsapp ? <PedidoWhatsApp onEnviar={onEnviarWhatsapp} valorInicial={whatsappInicial} /> : undefined,
     };
   }
 

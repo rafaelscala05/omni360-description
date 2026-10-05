@@ -60,7 +60,11 @@ export function parseJsonResponse(text: string): any {
     return JSON.parse(cleaned || '{}');
   } catch {
     const match = cleaned.match(/\{[\s\S]*\}/);
-    if (match) return JSON.parse(match[0]);
+    if (match) {
+      // Resposta cortada no meio também cai aqui: nunca deixa o SyntaxError cru
+      // ("JSON Parse error: Expected '}'") chegar ao usuário.
+      try { return JSON.parse(match[0]); } catch { /* segue para o erro amigável */ }
+    }
     throw new Error('A IA não retornou um JSON válido.');
   }
 }
@@ -97,7 +101,24 @@ export async function generateJson(contents: ContentInput, options: JsonCallOpti
 
   const model = getGenerativeModel(ai, params);
   const result = await withRetry(() => model.generateContent(contents as any));
-  return parseJsonResponse(result.response.text());
+  const cortada = result.response.candidates?.[0]?.finishReason === 'MAX_TOKENS';
+  try {
+    if (!cortada) return parseJsonResponse(result.response.text());
+  } catch { /* JSON inválido: tenta de novo abaixo */ }
+
+  // O raciocínio do modelo gasta o mesmo orçamento de maxOutputTokens: quando
+  // ele come o espaço, o JSON sai cortado. Uma segunda tentativa sem raciocínio
+  // e com o dobro de espaço resolve quase sempre.
+  const retry = getGenerativeModel(ai, {
+    ...params,
+    generationConfig: {
+      ...generationConfig,
+      maxOutputTokens: (options.maxOutputTokens ?? 8192) * 2,
+      thinkingConfig: { thinkingBudget: 0 },
+    },
+  });
+  const segunda = await withRetry(() => retry.generateContent(contents as any));
+  return parseJsonResponse(segunda.response.text());
 }
 
 // Generates grounded text using the Google Search tool. Returns raw text + usage (JSON mode is NOT

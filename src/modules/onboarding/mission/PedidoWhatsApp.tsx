@@ -1,19 +1,27 @@
 // Pedido de WhatsApp durante a espera: o número é pedido como serviço ("te
 // aviso quando ficar pronto"), com o bônus de onboarding como contrapartida.
-// Compartilhado pelas duas missões; aparece dentro do palco.
+// Compartilhado pelas duas missões; aparece dentro do palco. Se a conta já
+// deu um número (no cadastro, por exemplo), ele vem preenchido e a pergunta
+// continua sendo feita — é ela que registra o consentimento.
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { formatarWhatsapp, normalizarWhatsapp, whatsappValido } from './whatsapp';
 import { ONBOARDING_BONUS, WHATSAPP_CONSENT_TEXT } from '../../../types/onboarding';
 
 interface Props {
   onEnviar: (whatsapp: string) => Promise<void>;
+  valorInicial?: string;
 }
 
-const PedidoWhatsApp: React.FC<Props> = ({ onEnviar }) => {
-  const [valor, setValor] = useState('');
+const PedidoWhatsApp: React.FC<Props> = ({ onEnviar, valorInicial }) => {
+  const [valor, setValor] = useState(() => formatarWhatsapp(normalizarWhatsapp(valorInicial ?? '')));
+  const preenchido = whatsappValido(normalizarWhatsapp(valorInicial ?? ''));
   const [estado, setEstado] = useState<'aberto' | 'enviando' | 'feito' | 'recusado'>('aberto');
   const [erro, setErro] = useState<string | null>(null);
+  // O número da conta pode chegar depois do cartão montar; só preenche campo vazio.
+  useEffect(() => {
+    if (valorInicial) setValor((v) => v || formatarWhatsapp(normalizarWhatsapp(valorInicial)));
+  }, [valorInicial]);
   const digitos = normalizarWhatsapp(valor);
 
   if (estado === 'recusado') return null;
@@ -28,7 +36,7 @@ const PedidoWhatsApp: React.FC<Props> = ({ onEnviar }) => {
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-slate-200 border-l-[3px] border-l-[#FF5B03] bg-white p-3">
       <p className="text-xs leading-relaxed">
-        Isso leva uns minutos. Te chamo no WhatsApp quando ficar pronto? Você ganha <b>{ONBOARDING_BONUS} créditos</b>.
+        Isso leva uns minutos. Te chamo no WhatsApp quando ficar pronto?{preenchido ? ' É esse número mesmo?' : ''} Você ganha <b>{ONBOARDING_BONUS} créditos</b>.
       </p>
       <label htmlFor="missao-whatsapp" className="sr-only">Seu WhatsApp</label>
       <input

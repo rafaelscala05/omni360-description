@@ -2,7 +2,7 @@
 // Rodar com: npx tsx scripts/verify-produtos-agente.mjs
 import {
   principais, pilulasDe, contarFiltros, filtrarProdutos, pedidoDaSelecao, FILTROS_DO_SEGMENTO, MAX_SKUS_CONTEXTO,
-  aplicarFiltros, contarOpcoes, FILTROS_PADRAO, FILTROS_VAZIOS, quantosFiltrosAtivos, paginar, paginasVisiveis, estadoSelecao, categoriaDe,
+  aplicarFiltros, contarOpcoes, FILTROS_PADRAO, FILTROS_VAZIOS, filtrosIniciais, quantosFiltrosAtivos, paginar, paginasVisiveis, estadoSelecao, categoriaDe,
 } from '../src/modules/agent/produtosAgente.ts';
 import { resumoConteudo, resumoProdutos, sugestoesAlfred, PROMPT_MONTAR_SEMANA } from '../src/modules/agent/painelFerramentas.ts';
 
@@ -60,6 +60,10 @@ check('seleção grande é cortada mas o total é real', [grande.skus.length, gr
   check('E entre grupos', aplicarFiltros(L, f({ integracao: ['tiny'], sync: ['pendente'] })).map((x) => x._id), ['T2']);
   check('sincronização em dia exige vínculo', aplicarFiltros(L, f({ sync: ['emDia'] })).map((x) => x._id), ['T1', 'W1']);
   check('padrão = incompletos', aplicarFiltros(L, FILTROS_PADRAO).map((x) => x._id), ['W1', 'N1']);
+  const semNada = (n) => Array.from({ length: n }, (_, i) => P(`S${i}`, { 'URL imagem 1': '' }));
+  check('até 5 incompletos abre sem filtro', filtrosIniciais(semNada(5)), FILTROS_VAZIOS);
+  check('mais de 5 incompletos abre em incompletos', filtrosIniciais(semNada(6)), FILTROS_PADRAO);
+  check('catálogo vazio abre sem filtro', filtrosIniciais([]), FILTROS_VAZIOS);
   check('categoria', aplicarFiltros(L, f({ categoria: ['Camisetas'] })).map((x) => x._id), ['T1', 'T2']);
   check('sem categoria tem nome', categoriaDe(L[2]), 'Sem categoria');
   check('busca combina com filtros', aplicarFiltros(L, f({ integracao: ['tiny'] }), 't2').map((x) => x._id), ['T2']);

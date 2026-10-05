@@ -13,7 +13,7 @@ import FolhaAlfred from './produtos/FolhaAlfred';
 import { alvos, montarConfirmacao, type CandidatoMassa, type Confirmacao, type FerramentaMassa } from './confirmacaoMassa';
 import { criarLotesEmMassa, previaMassa } from '../../services/agentChatService';
 import {
-  FILTROS_PADRAO, FILTROS_VAZIOS, ROTULO_OPCAO, aplicarFiltros, contarFiltros, contarOpcoes, estadoSelecao, paginar,
+  FILTROS_VAZIOS, ROTULO_OPCAO, filtrosIniciais, aplicarFiltros, contarFiltros, contarOpcoes, estadoSelecao, paginar,
   MAX_SKUS_CONTEXTO, nomeDe, pedidoDaSelecao, principais, quantosFiltrosAtivos, semDescricao, skuDe, temAmbientada, temFoto,
   type FiltrosProdutos, type OpcaoConteudo, type OpcaoIntegracao, type OpcaoSync,
 } from './produtosAgente';
@@ -48,6 +48,8 @@ interface Props {
   /** Composer do painel focado no telefone — o App esconde a tab bar para o teclado. */
   onFocoChange?: (focado: boolean) => void;
   onRecarregar: () => void;
+  /** saveToCloud(true) — salva o que está pendente antes de mandar o servidor gerar. */
+  onSalvar: () => Promise<boolean>;
   /** Tiny e Wake conectados — "Enviar" leva a seleção a eles. */
   erpsConectados: Record<ErpEnvio, boolean>;
   /** O mesmo envio do "Enviar para" da tabela, sobre a seleção. */
@@ -79,7 +81,7 @@ const estiloBotaoTopo: React.CSSProperties = { background: 'var(--ag-surface-sol
 const ProdutosAgenteScreen: React.FC<Props> = ({
   products, selecionados, onSelecionar, custoPorDescricao, gerando, progresso,
   onGerarDescricoes, onAbrirProduto, onAbrirView, onPedirAlfred, onVoltar, hasAgente,
-  uid, credits, onFocoChange, onRecarregar, erpsConectados, onEnviarErp,
+  uid, credits, onFocoChange, onRecarregar, onSalvar, erpsConectados, onEnviarErp,
 }) => {
   const { tema } = useAgentTheme();
   const telaPequena = useTelaPequena();
@@ -97,7 +99,11 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
   const conversa = useConversaAlfred();
   const [busca, setBusca] = useState('');
   const [buscando, setBuscando] = useState(false);
-  const [filtros, setFiltros] = useState<FiltrosProdutos>(FILTROS_PADRAO);
+  const [filtros, setFiltrosBruto] = useState<FiltrosProdutos>(() => filtrosIniciais(principais(products)));
+  // O filtro inicial depende do catálogo, que pode chegar depois da tela abrir;
+  // só é recalculado até o usuário mexer nos filtros.
+  const filtrosTocados = useRef(false);
+  const setFiltros: typeof setFiltrosBruto = (v) => { filtrosTocados.current = true; setFiltrosBruto(v); };
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
   const [pagina, setPagina] = useState(1);
   const listaRef = useRef<HTMLDivElement>(null);
@@ -124,6 +130,12 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
     }
   }, [selecionados, idsPrincipais, onSelecionar]);
 
+  const catalogoChegou = lista.length > 0;
+  useEffect(() => {
+    if (catalogoChegou && !filtrosTocados.current) setFiltrosBruto(filtrosIniciais(lista));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalogoChegou]);
+
   useEffect(() => { setPagina(1); }, [filtros, buscaAdiada]);
   // scrollTop, nunca scrollIntoView: este rola todos os ancestrais roláveis.
   const irPara = (n: number) => { setPagina(n); if (listaRef.current) listaRef.current.scrollTop = 0; };
@@ -148,21 +160,25 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
     else if (!larga) setPainelAberto(true);
   };
   // O custo vem do servidor (o mesmo `estimateCredits` do débito), nunca da
-  // tabela de preços do navegador; e quem não está salvo — novo ou com edição
-  // pendente, que o servidor geraria da cópia velha — sai com aviso no card.
+  // tabela de preços do navegador. O servidor gera da cópia salva, então o que
+  // está pendente (produto novo ou editado) é salvo antes; só fica de fora, com
+  // aviso no card, o que mesmo assim não chegou ao catálogo.
   const pedirConfirmacao = async (ferramenta: FerramentaMassa) => {
     const pedido = ++pedidoPrevia.current;
     setConfirmando(null);
     setPreparando({ erro: null });
     mostrarPainel();
     try {
+      const pendentes = produtosSelecionados.some((p) => p._isDirty);
+      const salvou = pendentes ? await onSalvar() : true;
+      if (pedido !== pedidoPrevia.current) return;
       const ids = produtosSelecionados.map((p) => p._id);
       const previa = await previaMassa(ferramenta, ids);
       if (pedido !== pedidoPrevia.current) return;
       const fora = new Set(previa.naoEncontrados);
       const candidatos: CandidatoMassa[] = produtosSelecionados.map((p) => ({
         id: p._id, nome: nomeDe(p), temDescricao: !semDescricao(p), temAmbientada: temAmbientada(p), temFoto: temFoto(p),
-        salvo: !p._isDirty && !fora.has(p._id),
+        salvo: (salvou || !p._isDirty) && !fora.has(p._id),
       }));
       setConfirmando(montarConfirmacao(ferramenta, candidatos, previa.custoUnitario));
       setPreparando(null);
@@ -236,7 +252,7 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
         <div className="ag-glass rounded-[20px] px-4 py-3 flex items-center gap-2 text-[13px]" style={{ boxShadow: 'var(--ag-shadow-sm)' }} aria-live="polite">
           {preparando.erro
             ? <span className="flex-1" style={{ color: 'var(--ag-danger)' }}>{preparando.erro}</span>
-            : <><Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--ag-text-3)]" /><span className="flex-1 text-[var(--ag-text-2)]">Conferindo custo e catálogo…</span></>}
+            : <><Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--ag-text-3)]" /><span className="flex-1 text-[var(--ag-text-2)]">Salvando e conferindo o custo…</span></>}
           <button onClick={cancelarConfirmacao} className="min-h-[36px] px-3 rounded-full font-semibold text-[var(--ag-text-2)]">Cancelar</button>
         </div>
       )}

@@ -24,6 +24,7 @@ import { proximoPasso, type DestinoTarefa, type TarefaSemana } from './semana';
 import { FaixaProximoPasso } from './ProximoPassoBar';
 import CabecalhoTarefa from './chat/CabecalhoTarefa';
 import { BotaoConta } from '../../components/ContaMenu';
+import type { EstadoItem, ItemId, ItemTrilha } from '../onboarding/mission/trilha';
 
 interface Props {
   uid: string;
@@ -49,6 +50,9 @@ interface Props {
   /** Pedido vindo de outra tela ("Pedir ao Alfred"): enviado ao montar, com o contexto dela. */
   promptInicial?: PedidoAlfred | null;
   onPromptConsumido?: () => void;
+  /** Coorte de onboarding: o checklist da trilha, que recolhe a semana enquanto houver etapa aberta. */
+  checklist?: ItemTrilha[];
+  onChecklist?: (id: ItemId, estado: EstadoItem) => void;
 }
 
 /** Atalhos curtos abaixo da semana — pedidos que o chat resolve sozinho. */
@@ -59,7 +63,7 @@ const SUGESTOES = [
 
 const AgentHomeScreen: React.FC<Props> = ({
   uid, credits, products, extras, hasContentAgent, hasMeli, revogados, onOpenIntegrations, onAbrirFontes, onAbrirAtividade, onAbrirDestino,
-  onFocoChange, promptInicial, onPromptConsumido,
+  onFocoChange, promptInicial, onPromptConsumido, checklist, onChecklist,
 }) => {
   const { tema } = useAgentTheme();
   const telaPequena = useTelaPequena();
@@ -291,7 +295,7 @@ const AgentHomeScreen: React.FC<Props> = ({
           <div className="ag-tela-x flex-1 min-h-0 flex gap-4 pt-3 pb-4">
             <aside className="ag-scroll w-[320px] shrink-0 overflow-y-auto pr-1">
               {/* Sem o rodapé de fontes: as conexões estão na coluna da direita. */}
-              <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={fazerTarefa} onAbrir={onAbrirDestino} semanaPassada={semanaPassada} />
+              <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={fazerTarefa} onAbrir={onAbrirDestino} semanaPassada={semanaPassada} checklist={checklist} onChecklist={onChecklist} />
             </aside>
 
             <div className="flex-1 min-w-0 flex flex-col">
@@ -400,7 +404,7 @@ const AgentHomeScreen: React.FC<Props> = ({
                   {/* A semana recolhe no modo foco: com o teclado aberto o que
                       importa é o campo, e os atalhos descem para encostar nele. */}
                   <div className="ag-recolhe w-full ag-rise" data-recolhido={emFoco} style={{ maxHeight: 2400 }}>
-                    <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={fazerTarefa} onAbrir={onAbrirDestino} semanaPassada={semanaPassada} fontes={resumoDasFontes} onAbrirFontes={onAbrirFontes} />
+                    <SemanaPanel tarefas={tarefas} hoje={hoje} onFazer={fazerTarefa} onAbrir={onAbrirDestino} semanaPassada={semanaPassada} checklist={checklist} onChecklist={onChecklist} fontes={resumoDasFontes} onAbrirFontes={onAbrirFontes} />
                   </div>
 
                   <div className="ag-scroll-x flex gap-2 w-full overflow-x-auto -mx-1 px-1 pt-1">
