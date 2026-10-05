@@ -120,17 +120,22 @@ registerTool({
   name: 'wake.produto.buscar',
   provider: 'wake',
   mode: 'read',
-  description: 'Busca um produto da Wake pelo SKU e retorna cadastro, preço e estoque atuais. Sem SKU, retorna uma página da lista de produtos.',
+  description: 'Busca um produto da Wake pelo SKU e retorna cadastro, preço e estoque atuais. Sem SKU, retorna 20 produtos da lista; '
+    + 'para a próxima leva, passe em `aposId` o `proximoAposId` da resposta. Para visão geral de catálogo e preços, prefira ops.loja.resumo.',
   schema: {
     type: 'object',
     properties: {
       sku: { type: 'string', description: 'SKU do produto. Omita para listar.' },
-      pagina: { type: 'integer' },
+      aposId: { type: 'integer', description: 'Cursor da lista: produtoVarianteId depois do qual continuar (o proximoAposId da leva anterior).' },
     },
   },
-  read: async (ctx, a: { sku?: string; pagina?: number }) => {
+  read: async (ctx, a: { sku?: string; aposId?: number }) => {
     if (!a.sku) {
-      return wakeCall(ctx, 'GET', `/produtos?pagina=${a.pagina ?? 1}&quantidadeRegistros=20`);
+      // A Wake só pagina por cursor desde 21/09/2026 (`pagina` descontinuado).
+      const lista = await wakeCall<any[]>(ctx, 'GET', `/produtos?quantidadeRegistros=20${a.aposId ? `&produtoVarianteIdDe=${Number(a.aposId)}` : ''}`);
+      const itens = Array.isArray(lista) ? lista : [];
+      const ids = itens.map((p) => Number(p?.produtoVarianteId)).filter((n) => Number.isFinite(n));
+      return { produtos: itens, proximoAposId: itens.length === 20 && ids.length ? Math.max(...ids) : null };
     }
     const id = sku(a.sku);
     const [produto, preco, estoque] = await Promise.all([

@@ -75,15 +75,17 @@ const WakeConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
     setImportProgress({ page: 0, total: 0 });
     try {
       let pagina = 1;
+      let cursor: string | null = null;
       let total = 0;
-      // Pull pages until the API reports no more records.
+      // Pull pages (by cursor — Wake dropped `pagina`) until there are no more records.
       // Each batch is persisted immediately (merge + backup).
       while (true) {
-        const res = await wakeImport(pagina, 50);
+        const res = await wakeImport(cursor, 50);
         total += res.count;
         setImportProgress({ page: pagina, total });
         if (res.produtos.length) await onImport(res.produtos);
-        if (!res.hasMore) break;
+        if (!res.hasMore || !res.proximoCursor || res.proximoCursor === cursor) break;
+        cursor = res.proximoCursor;
         pagina += 1;
       }
     } catch (e) {

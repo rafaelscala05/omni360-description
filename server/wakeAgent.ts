@@ -350,7 +350,7 @@ export function registerWakeRoutes(app: express.Express, { verifyFirebaseToken }
       if (!token) return res.status(400).json({ valid: false, message: 'Token obrigatório.' });
 
       // A single-record GET just to confirm the credentials work.
-      await fbitsFetch(token, 'GET', '/produtos?quantidadeRegistros=1&pagina=1');
+      await fbitsFetch(token, 'GET', '/produtos?quantidadeRegistros=1');
 
       await SECRET_REF(uid).set({ token, updatedAt: FieldValue.serverTimestamp() });
       await STATUS_REF(uid).set({
@@ -395,25 +395,35 @@ export function registerWakeRoutes(app: express.Express, { verifyFirebaseToken }
     }
   });
 
-  // Paginated product import with aggregation of info/categories/images/seo.
+  // Product import with aggregation of info/categories/images/seo, paginated by
+  // cursor: `pagina` was deprecated by Wake on 21/09/2026 ("somente a paginação
+  // via cursor será suportada"). `produtoVarianteIdDe` returns the IDs after the
+  // one given; the next cursor is the page's highest produtoVarianteId (the same
+  // value Wake sends in the X-Ultimo-Produto-Variante-Id header).
   app.post('/api/wake/import', async (req, res) => {
     try {
       const { uid } = await verifyFirebaseToken(req);
       const token = await getUserToken(uid);
       if (!token) return res.status(400).json({ message: 'Wake não conectada.' });
 
-      const pagina = Number(req.body?.pagina ?? 1);
+      const cursor = req.body?.cursor != null && /^\d+$/.test(String(req.body.cursor)) ? String(req.body.cursor) : null;
       const quantidadeRegistros = Math.min(Number(req.body?.quantidadeRegistros ?? 50), 50);
       const lista = await fbitsFetch<any[]>(
         token, 'GET',
-        `/produtos?pagina=${pagina}&quantidadeRegistros=${quantidadeRegistros}&camposAdicionais=Atributo&camposAdicionais=Informacao`,
-      );
+        `/produtos?quantidadeRegistros=${quantidadeRegistros}&camposAdicionais=Atributo&camposAdicionais=Informacao${cursor ? `&produtoVarianteIdDe=${cursor}` : ''}`,
+      ).catch((e: any) => {
+        // A lista vazia depois do último cursor pode vir como 404.
+        if (e?.status === 404) return [];
+        throw e;
+      });
       const arr = Array.isArray(lista) ? lista : [];
+      const ids = arr.map((p) => Number(p?.produtoVarianteId)).filter((n) => Number.isFinite(n));
+      const proximoCursor = ids.length ? String(Math.max(...ids)) : null;
       const produtos: WakeNormalizedProduct[] = [];
       for (const p of arr) {
         produtos.push(await aggregateProduct(token, p));
       }
-      return res.json({ pagina, count: produtos.length, hasMore: arr.length === quantidadeRegistros, produtos });
+      return res.json({ count: produtos.length, hasMore: arr.length === quantidadeRegistros && !!proximoCursor, proximoCursor, produtos });
     } catch (e: any) {
       return res.status(e?.status === 401 ? 401 : 500).json({ message: e?.message ?? 'Falha na importação.' });
     }

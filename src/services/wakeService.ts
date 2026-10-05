@@ -83,12 +83,13 @@ export async function wakeDisconnect(): Promise<void> {
   await fetch('/api/wake/disconnect', { method: 'DELETE', headers: await authHeaders() });
 }
 
+/** Uma página da importação. `cursor` é o `proximoCursor` da página anterior (null na primeira). */
 export async function wakeImport(
-  pagina = 1,
+  cursor: string | null = null,
   quantidadeRegistros = 50,
-): Promise<{ pagina: number; count: number; hasMore: boolean; produtos: WakeNormalizedProduct[] }> {
+): Promise<{ count: number; hasMore: boolean; proximoCursor: string | null; produtos: WakeNormalizedProduct[] }> {
   const resp = await fetch('/api/wake/import', {
-    method: 'POST', headers: await authHeaders(), body: JSON.stringify({ pagina, quantidadeRegistros }),
+    method: 'POST', headers: await authHeaders(), body: JSON.stringify({ cursor, quantidadeRegistros }),
   });
   return handle(resp);
 }
