@@ -88,12 +88,7 @@ function useConversaEstado(uid: string): ConversaInterna {
   const mensagensAoIniciarRef = useRef(0);
 
   useEffect(() => {
-    if (!uid) {
-      setMensagens([]);
-      setAcoes({});
-      setInteragiu(false);
-      return;
-    }
+    if (!uid) return;
     const off1 = listenMessages(setMensagens);
     const off2 = listenActions((list) => {
       setAcoes(Object.fromEntries(list.map((a) => [a.id, a])));
@@ -114,23 +109,30 @@ function useConversaEstado(uid: string): ConversaInterna {
     }
   }, [mensagens]);
 
-  const handlers = useMemo(() => ({
-    onDelta: (t: string) => setParcial((p) => p + t),
-    onLeitura: (l: Leitura) => setLeituras((p) => [...p, l]),
+  // O provider sobrevive a sair e entrar com outra conta: um turno ainda em
+  // voo da conta anterior não pode escrever na conversa da nova.
+  const uidRef = useRef(uid);
+  uidRef.current = uid;
+  const handlers = useMemo(() => {
+    const daConta = <A extends unknown[]>(f: (...a: A) => void) => (...a: A) => { if (uidRef.current === uid) f(...a); };
+    return {
+    onDelta: daConta((t: string) => setParcial((p) => p + t)),
+    onLeitura: daConta((l: Leitura) => setLeituras((p) => [...p, l])),
     // O card em si vem do listener de `agent_actions`; o rascunho de texto
     // (`parcial`) só é limpo quando `mensagens` confirmar que já foi
     // persistido (ver o useEffect de `mensagens` acima) — não aqui.
     onAcao: () => {},
-    onErro: (m: string) => { turnoComErroRef.current = true; setErro(m); },
-    onFim: () => {
+    onErro: daConta((m: string) => { turnoComErroRef.current = true; setErro(m); }),
+    onFim: daConta(() => {
       // Se o turno terminou sem erro, a mensagem foi persistida — mantém o
       // ChatThread visível já a partir de agora, sem esperar o snapshot do
       // Firestore chegar (evita o flash de volta pro estado inicial). Se
       // houve erro e nada foi persistido, deixa `interagiu` como estava pra
       // a tela poder voltar à tela inicial (com o banner de erro nela).
       if (!turnoComErroRef.current) setInteragiu(true);
-    },
-  }), []);
+    }),
+    };
+  }, [uid]);
 
   const enviar = async (texto: string, contextoNovo?: WorkspaceContext) => {
     // O contexto de um "Pedir ao Alfred" vale para a conversa que ele abriu,
@@ -144,12 +146,13 @@ function useConversaEstado(uid: string): ConversaInterna {
     setStreaming(true);
     turnoComErroRef.current = false;
     mensagensAoIniciarRef.current = mensagens.length;
+    const dono = uid;
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
       await enviarMensagem(texto, handlers, ctrl.signal, contextoRef.current);
     } catch (e: any) {
-      if (e?.name !== 'AbortError') setErro(e?.message ?? 'Falha ao falar com o agente.');
+      if (e?.name !== 'AbortError' && uidRef.current === dono) setErro(e?.message ?? 'Falha ao falar com o agente.');
     } finally {
       setStreaming(false);
       abortRef.current = null;
@@ -157,6 +160,7 @@ function useConversaEstado(uid: string): ConversaInterna {
   };
 
   const responder = async (fn: () => Promise<void>) => {
+    const dono = uid;
     setErro(null);
     setParcial('');
     setLeituras([]);
@@ -166,7 +170,7 @@ function useConversaEstado(uid: string): ConversaInterna {
     try {
       await fn();
     } catch (e: any) {
-      setErro(e?.message ?? 'Falha ao processar a ação.');
+      if (uidRef.current === dono) setErro(e?.message ?? 'Falha ao processar a ação.');
     } finally {
       setStreaming(false);
     }
@@ -176,6 +180,21 @@ function useConversaEstado(uid: string): ConversaInterna {
   // proposta pendente, não uma mensagem nova (o grafo está parado no interrupt
   // dela). Vindo da Atividade, o id chega antes das ações carregarem.
   const [ajustandoId, setAjustandoId] = useState<string | null>(null);
+
+  // Troca de conta (ou saída): nada da conversa anterior fica na tela.
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    contextoRef.current = undefined;
+    setMensagens([]);
+    setAcoes({});
+    setParcial('');
+    setLeituras([]);
+    setStreaming(false);
+    setErro(null);
+    setInteragiu(false);
+    setAjustandoId(null);
+  }, [uid]);
   const ajustando = ajustandoId ? acoes[ajustandoId] : undefined;
   useEffect(() => {
     if (ajustando && ajustando.status !== 'pending') setAjustandoId(null);
