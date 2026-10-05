@@ -70,7 +70,10 @@ const AgentHomeScreen: React.FC<Props> = ({
   const [composerFocado, setComposerFocado] = useState(false);
   // A tela abre na semana mesmo com conversa antiga; mandar algo leva ao chat
   // e o botão do cabeçalho alterna entre os dois.
-  const [modo, setModo] = useState<'semana' | 'chat'>('semana');
+  // A conversa sobrevive à troca de aba (ver useConversaAlfred): voltando com um
+  // turno ainda rodando, a tela reabre nele, não na semana.
+  const conversa = useConversaAlfred({ aoEnviar: () => setModo('chat') });
+  const [modo, setModo] = useState<'semana' | 'chat'>(() => (conversa.streaming ? 'chat' : 'semana'));
   // Modo foco: só no telefone, e só enquanto o campo está focado. No desktop
   // não há teclado cobrindo nada e recolher a tela seria gratuito.
   const emFoco = telaPequena && composerFocado;
@@ -80,7 +83,6 @@ const AgentHomeScreen: React.FC<Props> = ({
   const [providers, setProviders] = useState<string[]>([]);
   const [projetosCount, setProjetosCount] = useState<number | null>(null);
   const [logsAberto, setLogsAberto] = useState(false);
-  const conversa = useConversaAlfred(uid, { aoEnviar: () => setModo('chat') });
   const {
     mensagens, acoes, listaAcoes, parcial, leituras, streaming, erro, interagiu,
     enviar, enviarDoComposer, executar, rejeitar, parar, comecarAjuste, etiquetaAjuste,

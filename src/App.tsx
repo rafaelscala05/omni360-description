@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import logoAlfreds from './assets/brand/logo-alfreds-produtos.png';
 import AlfredLogo from './components/alfredLogo/AlfredLogo';
 import AgentHomeScreen from './modules/agent/AgentHomeScreen';
+import { ConversaAlfredProvider } from './modules/agent/useConversaAlfred';
 import AtividadeScreen from './modules/agent/AtividadeScreen';
 import { AbrirNaFerramentaProvider } from './modules/agent/AbrirNaFerramentaContext';
 import type { DestinoItem } from './modules/agent/abrirNaFerramenta';
@@ -3395,6 +3396,11 @@ Retorne APENAS um JSON válido no seguinte formato:
   };
   const abrirConta = () => setContaAberta(true);
 
+  // A conversa do Alfred fica acima das telas e dos dois workspaces: é sempre
+  // o elemento raiz do que o App devolve, para o React manter a mesma instância
+  // (e o turno em andamento) ao trocar de aba ou de workspace.
+  const conversaUid = user && temAgente ? user.uid : '';
+
   if (user && workspace === 'content') {
     // Com agente, o Conteúdo é uma das Ferramentas: abre com o trilho (porta
     // Ferramentas acesa), a tab bar e o avatar da Conta, e qualquer porta leva
@@ -3406,6 +3412,7 @@ Retorne APENAS um JSON válido no seguinte formato:
       abrirItemConta(item);
     };
     return (
+      <ConversaAlfredProvider uid={conversaUid}>
       <ContaProvider value={temAgente ? { dados: dadosConta, abrir: abrirConta } : null}>
         <div className="h-screen flex overflow-hidden relative isolate">
           {fundoAgente}
@@ -3475,6 +3482,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           {isCreditPurchaseOpen && <CreditPurchaseModal onClose={() => setIsCreditPurchaseOpen(false)} />}
         </div>
       </ContaProvider>
+      </ConversaAlfredProvider>
     );
   }
 
@@ -5833,6 +5841,7 @@ Retorne APENAS um JSON válido no seguinte formato:
   );
 
   return (
+    <ConversaAlfredProvider uid={conversaUid}>
     <Routes>
       <Route element={<MarketingLayout />}>
         <Route path="/" element={<HomePage />} />
@@ -5872,5 +5881,6 @@ Retorne APENAS um JSON válido no seguinte formato:
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </ConversaAlfredProvider>
   );
 }

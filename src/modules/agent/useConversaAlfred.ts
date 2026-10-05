@@ -1,9 +1,11 @@
 // A conversa do Alfred — mensagens, ações, o "pensando ao vivo" e os envios —
-// fora de qualquer tela. A aba Alfred (AgentHomeScreen) e o painel lateral da
-// tela de Produtos (PainelAlfred) usam este mesmo hook sobre a mesma thread:
-// o que acontece num lugar aparece no outro.
+// fora de qualquer tela. Mora no `ConversaAlfredProvider`, montado na raiz do
+// App: a aba Alfred (AgentHomeScreen) e o painel lateral da tela de Produtos
+// (PainelAlfred) leem a mesma instância. Se o estado morasse na tela, trocar
+// de aba no meio de um turno desmontava o hook e o "pensando ao vivo" sumia —
+// o servidor seguia trabalhando, mas a tela voltava como se nada rodasse.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, createElement, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AgentAction, ThreadMessage, WorkspaceContext } from '../../types/agent';
 import {
   ajustarAcao, enviarMensagem, executarAcao, listenActions, listenMessages, rejeitarAcao,
@@ -32,11 +34,38 @@ export interface ConversaAlfred {
   definirContexto: (c: WorkspaceContext | undefined) => void;
 }
 
+interface ConversaInterna {
+  conversa: ConversaAlfred;
+  /** Telas montadas que reagem a um envio (a aba Alfred troca para o modo conversa). */
+  ouvintes: Set<() => void>;
+}
+
+const ConversaCtx = createContext<ConversaInterna | null>(null);
+
+/** `uid` vazio = sem usuário ou sem Alfred: nada é escutado. */
+export function ConversaAlfredProvider({ uid, children }: { uid: string; children: ReactNode }) {
+  const valor = useConversaEstado(uid);
+  return createElement(ConversaCtx.Provider, { value: valor }, children);
+}
+
 /** `aoEnviar`: a tela que hospeda reage a um envio (a aba Alfred troca para o modo conversa). */
-export function useConversaAlfred(uid: string, opts?: { aoEnviar?: () => void }): ConversaAlfred {
+export function useConversaAlfred(opts?: { aoEnviar?: () => void }): ConversaAlfred {
+  const ctx = useContext(ConversaCtx);
+  if (!ctx) throw new Error('useConversaAlfred fora do ConversaAlfredProvider.');
   const aoEnviarRef = useRef(opts?.aoEnviar);
   aoEnviarRef.current = opts?.aoEnviar;
-  const aoEnviar = () => aoEnviarRef.current?.();
+  const { ouvintes } = ctx;
+  useEffect(() => {
+    const f = () => aoEnviarRef.current?.();
+    ouvintes.add(f);
+    return () => { ouvintes.delete(f); };
+  }, [ouvintes]);
+  return ctx.conversa;
+}
+
+function useConversaEstado(uid: string): ConversaInterna {
+  const [ouvintes] = useState(() => new Set<() => void>());
+  const aoEnviar = () => ouvintes.forEach((f) => f());
 
   const [mensagens, setMensagens] = useState<ThreadMessage[]>([]);
   const [acoes, setAcoes] = useState<Record<string, AgentAction>>({});
@@ -59,6 +88,12 @@ export function useConversaAlfred(uid: string, opts?: { aoEnviar?: () => void })
   const mensagensAoIniciarRef = useRef(0);
 
   useEffect(() => {
+    if (!uid) {
+      setMensagens([]);
+      setAcoes({});
+      setInteragiu(false);
+      return;
+    }
     const off1 = listenMessages(setMensagens);
     const off2 = listenActions((list) => {
       setAcoes(Object.fromEntries(list.map((a) => [a.id, a])));
@@ -165,8 +200,9 @@ export function useConversaAlfred(uid: string, opts?: { aoEnviar?: () => void })
   const parar = () => { abortRef.current?.abort(); setStreaming(false); };
   const definirContexto = (c: WorkspaceContext | undefined) => { contextoRef.current = c; };
 
-  return {
+  const conversa: ConversaAlfred = {
     mensagens, acoes, listaAcoes, parcial, leituras, streaming, erro, setErro, interagiu,
     enviar, enviarDoComposer, executar, rejeitar, parar, comecarAjuste, iniciarAjuste, etiquetaAjuste, definirContexto,
   };
+  return { conversa, ouvintes };
 }
