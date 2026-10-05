@@ -179,6 +179,8 @@ export interface TinyNormalizedProduct {
   comprimento?: number;
   precoPor?: number;
   precoDe?: number;
+  /** Preço de custo — base da margem no Centro de Operações. */
+  precoCusto?: number;
   categorias: string[];
   imagens: string[];
   // Campos extras — só preenchidos pelo normalizador do webhook (server/tinyWebhook.ts);
@@ -229,6 +231,7 @@ export function normalizeProduct(p: any): TinyNormalizedProduct {
     comprimento: dim?.comprimento,
     precoPor: p?.precos?.preco,
     precoDe: p?.precos?.precoPromocional,
+    precoCusto: p?.precos?.precoCusto,
     categorias,
     imagens: Array.isArray(p?.anexos) ? p.anexos.map((a: any) => a?.url).filter(Boolean) : [],
     raw: p,

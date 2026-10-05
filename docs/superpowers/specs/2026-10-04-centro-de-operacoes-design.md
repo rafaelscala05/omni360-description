@@ -59,3 +59,33 @@ Estoque não tem coleção: vem de `Estoque`/`Estoque mínimo` que a importaçã
 ## Verificação
 
 `npx tsx scripts/verify-ops.mjs` (papéis, normalização, indicadores, estoque) e `npx tsx scripts/verify-ops-sync.mjs` (ciclo inteiro contra um Tiny falso que segue o contrato acima e um Firestore em memória: importação, orçamento por ciclo, incremental, modo janela, credencial × parâmetro ruim, inatividade). Índice novo: `ops_sync.proximaEm` em escopo COLLECTION_GROUP (`firestore.indexes.json`) — precisa de deploy dos índices antes do worker achar contas.
+
+---
+
+# Fase 2 · Entrega, Catálogo ERP × loja e Preços
+
+**Data:** 2026-10-04 · pedido direto do usuário ("crie as áreas que ficaram de fora").
+
+## Entrega (pedidos do Tiny)
+
+O doc de `ops_pedidos` passa a guardar, do `pedido.obter`, `dataFaturamento`, `dataEnvio`, `dataEntrega`, `dataPrevista` e `formaEnvio`. Mudança de situação no incremental pede detalhe de novo (antes só mudança de valor), senão as datas de envio/entrega nunca chegariam. Indicadores (`painelEntrega`, pedidos dos últimos 60 dias): mediana e p90 de pedido→envio e envio→entrega, % entregue até a data prevista, atrasados (não entregue/cancelado e previsão vencida), não entregues e tempo de transporte por forma de envio. Sem migração: nenhum `ops_pedidos` existe em produção.
+
+## Catálogo da loja (Wake)
+
+Novo sync `server/ops/lojaSync.ts`, mesmo desenho do de pedidos (estado em `ops_sync/wake-catalogo`, `tipo: 'catalogo'`, lease, liga na visita, pausa após 14 dias):
+- `GET /produtos?quantidadeRegistros=50&camposAdicionais=Estoque`, paginado pelo cursor `produtoVarianteIdDe` + header `X-Ultimo-Produto-Variante-Id` — o parâmetro `pagina` foi descontinuado em 21/09/2026.
+- Varredura completa a cada 24 h (marca `rodada`; no fim, apaga o que não apareceu = removido da loja); entre elas, incremental por `alteradosPartirDe` (aaaa-mm-dd hh:mm:ss, ≤ 48 h — passou disso, varredura completa).
+- Doc `ops_loja/{produtoVarianteId}`: sku, nome, produtoId, parentId, precoPor, precoDe, precoCusto, estoque (físico − reservado, somado nos CDs), exibirSite, valido.
+- Limite da Wake: 120/min **por grupo de endpoints**, compartilhado com o integrador do ERP, e 5 requisições acima do limite bloqueiam o token por 1 h. O ciclo gasta no máximo 15 chamadas, tem fetch próprio **sem retry em 429** (o `fbitsFetch` repete) e respeita o `Retry-After`.
+- Agendador único (`server/ops/scheduler.ts`) despacha por `tipo`.
+
+## Comparação (`ops/catalogo.ts`, puro; calculado no servidor em `/api/ops/painel`)
+
+Lado ERP = catálogo do OMNI360 vindo do ERP (tem `_tinyProductId`/`_blingProductId`/`_idworksProductId`), só folhas (simples e variações), pela SKU. Preço final do ERP = `Preço promocional` quando > 0 e menor que `Preço`, senão `Preço`; da loja = `precoPor`.
+- Catálogo: no ERP e fora da loja (ordenado por estoque — venda perdida), na loja e fora do ERP, oculto/inválido na loja com estoque, estoque diferente entre os dois.
+- Preços: preço final diferente (> R$ 0,01), sem preço na loja, promoções da loja (`precoDe > precoPor`, desconto médio), abaixo do custo e margem < 15% — custo da Wake (`precoCusto`), senão do ERP (`Preço de custo`, que a importação do Tiny passa a gravar de `preco_custo`).
+- Só Wake: catálogo/preços sem a comparação (promoções, margem, ocultos com estoque). Só ERP: pede para conectar a loja.
+
+## Alfred
+
+`ops.painel.resumo` ganha a entrega; `ops.loja.resumo` (provider `wake`) devolve catálogo e preços. Cada seção do painel tem "Pedir ao Alfred" com os SKUs — o Alfred já tem `wake.produto.preco` e `wake.produto.atualizar` (com aprovação).

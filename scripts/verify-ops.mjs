@@ -6,7 +6,8 @@ import {
   dataHoraBr, dataIso, detalheTiny, diaBrt, estadoDoSync, estadoInicial, janelaBackfill,
   normalizarSituacao, numeroBr, orcamentoDoCiclo, progressoBackfill, resumoTiny, somaDias,
 } from '../src/modules/agent/ops/pedidos.ts';
-import { painelEstoque, painelPedidos, variacao } from '../src/modules/agent/ops/indicadores.ts';
+import { distribuicao, painelEntrega, painelEstoque, painelPedidos, variacao } from '../src/modules/agent/ops/indicadores.ts';
+import { itemLojaWake, itensErp, painelCatalogo, painelPrecos, precoFinalErp } from '../src/modules/agent/ops/catalogo.ts';
 
 let failures = 0;
 function check(label, actual, expected) {
@@ -37,7 +38,7 @@ check('dia em Brasília, não em UTC', diaBrt(AGORA), '2026-10-03');
 check('dataAtualizacao no formato do Tiny', dataHoraBr(AGORA), '03/10/2026 23:30:00');
 
 const resumo = resumoTiny({ id: 77, numero: '1001', data_pedido: '01/10/2026', valor: '199,90', situacao: 'Aprovado' }, 'T');
-check('resumo do pesquisa', resumo, { fonte: 'tiny', idExterno: '77', numero: '1001', data: '2026-10-01', situacao: 'aprovado', situacaoOriginal: 'Aprovado', valor: 199.9, atualizadoEm: 'T' });
+check('resumo do pesquisa', resumo, { fonte: 'tiny', idExterno: '77', numero: '1001', data: '2026-10-01', situacao: 'aprovado', situacaoOriginal: 'Aprovado', valor: 199.9, dataPrevista: null, atualizadoEm: 'T' });
 check('resumo sem data é descartado', resumoTiny({ id: 1 }, 'T'), null);
 const det = detalheTiny({ total_pedido: '50.00', situacao: 'Faturado', ecommerce: { nomeEcommerce: 'Mercado Livre' }, itens: [{ item: { codigo: 'A1', quantidade: '2', valor_unitario: '25' } }, { item: { codigo: '', quantidade: 1 } }] });
 check('detalhe: itens com SKU, canal e situação', [det.itens, det.canal, det.valor, det.situacao], [[{ sku: 'A1', qtd: 2, valor: 25 }], 'Mercado Livre', 50, 'faturado']);
@@ -97,6 +98,59 @@ check('sem estoque informado', pe.semEstoqueInformado, 1);
 check('esgotados e os que vendiam', [pe.esgotados, pe.esgotadosQueVendiam.map((i) => i.sku)], [2, ['PAI-P']]);
 check('abaixo do mínimo', pe.abaixoMinimo.map((i) => i.sku), ['PAI-M']);
 check('cobertura curta (3 un a 1/dia = 3 dias)', pe.coberturaCurta.map((i) => [i.sku, i.diasCobertura]), [['PAI-M', 3]]);
+
+
+// --- Entrega ----------------------------------------------------------------
+const dia = (n) => somaDias(hoje, -n);
+check('detalhe traz as datas do ciclo', detalheTiny({ data_prevista: '05/10/2026', data_faturamento: '01/10/2026', data_envio: '02/10/2026', data_entrega: '', forma_envio: 'PAC' }).datas,
+  { dataPrevista: '2026-10-05', dataFaturamento: '2026-10-01', dataEnvio: '2026-10-02', dataEntrega: null, formaEnvio: 'PAC' });
+check('mediana e p90', distribuicao([1, 2, 3, 4, 10]), { mediana: 3, p90: 10, amostra: 5 });
+check('distribuição vazia → null', distribuicao([]), null);
+const ent = painelEntrega([
+  { ...ped('e1', 10, 100, 'entregue'), dataEnvio: dia(9), dataEntrega: dia(5), dataPrevista: dia(4), formaEnvio: 'PAC' },
+  { ...ped('e2', 10, 100, 'entregue'), dataEnvio: dia(8), dataEntrega: dia(6), dataPrevista: dia(7), formaEnvio: 'SEDEX' },
+  { ...ped('e3', 6, 100, 'enviado'), dataEnvio: dia(5), dataPrevista: dia(1) },
+  { ...ped('e4', 6, 100, 'aprovado'), dataPrevista: dia(3) },
+  { ...ped('e5', 6, 100, 'cancelado'), dataPrevista: dia(3) },
+  { ...ped('e6', 3, 100, 'outro'), situacaoOriginal: 'Não Entregue', dataPrevista: dia(1) },
+  { ...ped('e7', 1, 100, 'aprovado'), dataPrevista: somaDias(hoje, 3) },
+], AGORA);
+check('pedido → envio', ent.ateEnviar, { mediana: 1, p90: 2, amostra: 3 });
+check('transporte', ent.transporte, { mediana: 2, p90: 4, amostra: 2 });
+check('no prazo: 1 de 2 com previsão', ent.noPrazo, { fracao: 0.5, amostra: 2 });
+check('atrasados: previsão vencida, sem cancelado nem não entregue', ent.atrasados.map((a) => [a.numero, a.diasAtraso]), [['e4', 3], ['e3', 1]]);
+check('não entregues à parte', ent.naoEntregues, 1);
+check('por forma de envio', ent.porFormaEnvio.map((f) => f.forma).sort(), ['PAC', 'SEDEX']);
+
+// --- Catálogo e preços ----------------------------------------------------------
+const erp = itensErp([
+  { 'Código (SKU)': 'PAI', _tinyProductId: '1', 'Preço': 99 },
+  { 'Código (SKU)': 'PAI-P', 'Código do pai': 'PAI', _tinyProductId: '2', 'Preço': '100,00', 'Preço promocional': '90', 'Estoque': 5, 'Preço de custo': '80' },
+  { 'Código (SKU)': 'A', _tinyProductId: '3', 'Preço': 50, 'Estoque': 10 },
+  { 'Código (SKU)': 'B', _tinyProductId: '4', 'Preço': 30, 'Estoque': 0 },
+  { 'Código (SKU)': 'SO-APP', 'Preço': 10 },
+]);
+check('lado ERP: só produtos do ERP, sem o pai', erp.map((e) => e.sku), ['PAI-P', 'A', 'B']);
+check('preço final do ERP usa o promocional menor', [precoFinalErp(erp[0]), precoFinalErp(erp[1])], [90, 50]);
+const lojaW = [
+  { produtoVarianteId: 11, produtoId: 1, sku: 'PAI-P', nome: 'Camiseta P', precoPor: 90, precoDe: 120, precoCusto: 0, exibirSite: true, valido: true, estoque: [{ estoqueFisico: 6, estoqueReservado: 1 }] },
+  { produtoVarianteId: 12, produtoId: 2, sku: 'B', nome: 'Boné', precoPor: 35, precoDe: 0, precoCusto: 40, exibirSite: true, valido: true, estoque: [{ estoqueFisico: 3 }] },
+  { produtoVarianteId: 13, produtoId: 3, sku: 'X', nome: 'Extra', precoPor: 0, exibirSite: false, valido: true, estoque: [{ estoqueFisico: 7 }] },
+  { produtoVarianteId: 14, produtoId: 4, sku: 'Z', nome: 'Zero', precoPor: 0, exibirSite: true, valido: true, estoque: [] },
+].map(itemLojaWake);
+check('item da Wake: estoque físico − reservado, sem custo zero', [lojaW[0].estoque, lojaW[0].precoCusto, lojaW[3].estoque], [5, null, null]);
+check('item da Wake sem SKU é descartado', itemLojaWake({ produtoVarianteId: 1 }), null);
+const cat = painelCatalogo(erp, lojaW);
+check('fora da loja, com estoque primeiro', [cat.foraDaLoja.total, cat.foraDaLoja.comEstoque, cat.foraDaLoja.itens[0].sku], [1, 1, 'A']);
+check('fora do ERP', cat.foraDoErp.itens.map((i) => i.sku), ['X', 'Z']);
+check('oculto com estoque', cat.ocultosComEstoque.itens.map((i) => [i.sku, i.estoque]), [['X', 7]]);
+check('estoque diferente entre ERP e loja', cat.estoqueDiferente.itens.map((i) => [i.sku, i.erp, i.loja]), [['B', 0, 3]]);
+const pr = painelPrecos(erp, lojaW);
+check('preço diferente: ERP 30 × loja 35', pr.precoDiferente.itens.map((i) => [i.sku, i.erp, i.loja]), [['B', 30, 35]]);
+check('à venda sem preço', pr.semPrecoNaLoja.itens.map((i) => i.sku), ['Z']);
+check('promoção da loja e desconto', [pr.promocoes.total, pr.promocoes.itens[0].desconto], [1, 0.25]);
+check('custo da Wake na frente do ERP; ERP quando a Wake não tem', [pr.abaixoDoCusto.itens.map((m) => m.sku), pr.margemBaixa.itens.map((m) => [m.sku, m.margem])], [['B'], [['PAI-P', 0.11]]]);
+check('só a loja: sem comparação, promoções seguem', [painelCatalogo(null, lojaW).comparado, painelPrecos(null, lojaW).promocoes.total, painelPrecos(null, lojaW).precoDiferente.total], [false, 1, 0]);
 
 console.log(failures ? `\n${failures} falha(s).` : '\nTudo certo.');
 process.exit(failures ? 1 : 0);

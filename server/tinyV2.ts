@@ -165,6 +165,7 @@ export function normalizeV2Product(p: any): TinyNormalizedProduct {
     comprimento: num(p?.comprimentoEmbalagem ?? p?.comprimento_embalagem),
     precoPor: num(p?.preco),
     precoDe: num(p?.preco_promocional),
+    precoCusto: num(p?.preco_custo),
     categorias: categoria ? [String(categoria)] : [],
     imagens: collectV2Images(p),
     raw: p,

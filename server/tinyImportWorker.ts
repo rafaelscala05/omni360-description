@@ -105,6 +105,7 @@ export async function upsertProduct(uid: string, t: TinyNormalizedProduct, sourc
     'Categoria': t.categorias[0] || undefined,
     'Preço': t.precoPor,
     'Preço promocional': t.precoDe,
+    'Preço de custo': t.precoCusto,
     'GTIN/EAN': t.gtin || undefined,
     'NCM (Classificação fiscal)': t.ncm || undefined,
     'Peso líquido (Kg)': t.pesoLiquido,

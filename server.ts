@@ -33,7 +33,7 @@ import { registerLoteRoutes } from "./server/agent/loteRoutes";
 import { registerVideoAlfredRoutes } from "./server/agent/videoAlfred";
 import { startLoteScheduler } from "./server/agent/loteWorker";
 import { registerOpsRoutes } from "./server/ops/painel";
-import { startOpsSyncScheduler } from "./server/ops/pedidosSync";
+import { startOpsSyncScheduler } from "./server/ops/scheduler";
 import { registerBlogPublic } from "./server/blogPublic";
 import { registerBlogAdminRoutes } from "./server/blogAdmin";
 import { registerMetaEventsRoutes } from "./server/metaEvents";

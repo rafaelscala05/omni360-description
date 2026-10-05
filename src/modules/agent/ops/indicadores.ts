@@ -6,8 +6,10 @@
 
 import { diaBrt, diasEntre, somaDias, type EstadoPainelSync, type PedidoOps, type SituacaoOps } from './pedidos';
 import type { FontesOps } from './papeis';
+import type { EstadoPainelLoja, PainelCatalogo, PainelPrecos } from './catalogo';
 
-export type PedidoCalc = Pick<PedidoOps, 'idExterno' | 'numero' | 'data' | 'situacao' | 'valor' | 'canal' | 'itens' | 'detalhado'>;
+export type PedidoCalc = Pick<PedidoOps, 'idExterno' | 'numero' | 'data' | 'situacao' | 'valor' | 'canal' | 'itens' | 'detalhado'>
+  & Partial<Pick<PedidoOps, 'situacaoOriginal' | 'dataPrevista' | 'dataFaturamento' | 'dataEnvio' | 'dataEntrega' | 'formaEnvio'>>;
 
 export interface Totais { receita: number; pedidos: number; ticket: number }
 export interface Periodo extends Totais { anterior: Totais }
@@ -36,6 +38,11 @@ export interface RespostaPainelOps {
   pedidosSuportados: boolean;
   sync: { estado: EstadoPainelSync; progresso: number; atualizadoEm: number | null; erro: string | null } | null;
   pedidos: PainelPedidos | null;
+  entrega: PainelEntrega | null;
+  /** Sync do catálogo da loja (Wake). */
+  loja: { estado: EstadoPainelLoja; lidos: number; atualizadoEm: number | null } | null;
+  catalogo: PainelCatalogo | null;
+  precos: PainelPrecos | null;
   geradoEm: string;
 }
 
@@ -115,6 +122,95 @@ export function painelPedidos(pedidos: PedidoCalc[], agora: number): PainelPedid
     parados: parados.slice(0, 10),
     totalParados: parados.length,
     vendidos30d,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Entrega (servidor, sobre ops_pedidos com as datas do pedido.obter)
+// ---------------------------------------------------------------------------
+
+/** Mediana e p90 de uma lista de dias; null sem amostra. */
+export interface Distribuicao { mediana: number; p90: number; amostra: number }
+
+export function distribuicao(valores: number[]): Distribuicao | null {
+  const v = valores.filter((x) => Number.isFinite(x) && x >= 0).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const q = (p: number) => v[Math.min(v.length - 1, Math.ceil(p * v.length) - 1)];
+  return { mediana: q(0.5), p90: q(0.9), amostra: v.length };
+}
+
+export interface PedidoAtrasado { idExterno: string; numero: string; situacao: SituacaoOps; diasAtraso: number; valor: number; dataPrevista: string }
+
+export interface PainelEntrega {
+  /** Pedido → envio (preparação). */
+  ateEnviar: Distribuicao | null;
+  /** Envio → entrega (transporte). */
+  transporte: Distribuicao | null;
+  /** Pedido → entrega (o que o cliente sente). */
+  total: Distribuicao | null;
+  /** Entregues com previsão: fração entregue até a data prevista; null sem amostra. */
+  noPrazo: { fracao: number; amostra: number } | null;
+  atrasados: PedidoAtrasado[];
+  totalAtrasados: number;
+  naoEntregues: number;
+  porFormaEnvio: { forma: string; entregues: number; transporte: Distribuicao | null }[];
+  /** Fração dos pedidos enviados que já têm a data de envio (o detalhe ainda pode estar chegando). */
+  comDatas: number;
+}
+
+const ENCERRADOS: SituacaoOps[] = ['entregue', 'cancelado'];
+
+export function painelEntrega(pedidos: PedidoCalc[], agora: number): PainelEntrega {
+  const hoje = diaBrt(agora);
+  const validos = pedidos.filter((p) => p.situacao !== 'cancelado');
+  const ateEnviar: number[] = [];
+  const transporte: number[] = [];
+  const total: number[] = [];
+  let noPrazo = 0;
+  let comPrevisao = 0;
+  const porForma = new Map<string, number[]>();
+  const contForma = new Map<string, number>();
+
+  for (const p of validos) {
+    if (p.dataEnvio) ateEnviar.push(diasEntre(p.data, p.dataEnvio));
+    if (p.dataEnvio && p.dataEntrega) {
+      const t = diasEntre(p.dataEnvio, p.dataEntrega);
+      transporte.push(t);
+      const forma = p.formaEnvio || 'Sem forma de envio';
+      porForma.set(forma, [...(porForma.get(forma) ?? []), t]);
+    }
+    if (p.dataEntrega) {
+      total.push(diasEntre(p.data, p.dataEntrega));
+      const forma = p.formaEnvio || 'Sem forma de envio';
+      contForma.set(forma, (contForma.get(forma) ?? 0) + 1);
+      if (p.dataPrevista) { comPrevisao++; if (p.dataEntrega <= p.dataPrevista) noPrazo++; }
+    }
+  }
+
+  const atrasados: PedidoAtrasado[] = [];
+  for (const p of pedidos) {
+    if (ENCERRADOS.includes(p.situacao) || !p.dataPrevista || p.dataPrevista >= hoje) continue;
+    // "Não entregue" conta à parte: o pedido já voltou, não está a caminho.
+    if (p.situacao === 'outro') continue;
+    atrasados.push({ idExterno: p.idExterno, numero: p.numero, situacao: p.situacao, diasAtraso: diasEntre(p.dataPrevista, hoje), valor: p.valor, dataPrevista: p.dataPrevista });
+  }
+  atrasados.sort((a, b) => b.diasAtraso - a.diasAtraso || b.valor - a.valor);
+
+  const enviados = validos.filter((p) => p.situacao === 'enviado' || p.situacao === 'entregue');
+  const naoEntregues = pedidos.filter((p) => /entregue/i.test(p.situacaoOriginal ?? '') && /n[aã]o/i.test(p.situacaoOriginal ?? '')).length;
+
+  return {
+    ateEnviar: distribuicao(ateEnviar),
+    transporte: distribuicao(transporte),
+    total: distribuicao(total),
+    noPrazo: comPrevisao ? { fracao: noPrazo / comPrevisao, amostra: comPrevisao } : null,
+    atrasados: atrasados.slice(0, 10),
+    totalAtrasados: atrasados.length,
+    naoEntregues,
+    porFormaEnvio: [...contForma.entries()]
+      .map(([forma, entregues]) => ({ forma, entregues, transporte: distribuicao(porForma.get(forma) ?? []) }))
+      .sort((a, b) => b.entregues - a.entregues),
+    comDatas: enviados.length ? enviados.filter((p) => p.dataEnvio).length / enviados.length : 1,
   };
 }
 

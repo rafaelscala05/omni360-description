@@ -33,8 +33,22 @@ export interface PedidoOps {
   /** Nome do canal de venda (e-commerce/marketplace); só depois do detalhe. */
   canal?: string;
   itens?: ItemPedidoOps[];
+  /** Datas YYYY-MM-DD do ciclo do pedido (null = ainda não aconteceu). Do detalhe, salvo `dataPrevista`, que já vem no resumo. */
+  dataPrevista?: string | null;
+  dataFaturamento?: string | null;
+  dataEnvio?: string | null;
+  dataEntrega?: string | null;
+  formaEnvio?: string | null;
   detalhado: boolean;
   atualizadoEm: string;
+}
+
+export interface DatasPedido {
+  dataPrevista: string | null;
+  dataFaturamento: string | null;
+  dataEnvio: string | null;
+  dataEntrega: string | null;
+  formaEnvio: string | null;
 }
 
 const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -109,7 +123,7 @@ export const diasEntre = (a: string, b: string): number =>
   Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86_400_000);
 
 /** Resumo de `pedidos.pesquisa.php` (item já desembrulhado) → campos do doc. Sem id ou data → null. */
-export function resumoTiny(p: any, agoraIso: string): Omit<PedidoOps, 'detalhado' | 'canal' | 'itens'> | null {
+export function resumoTiny(p: any, agoraIso: string): Omit<PedidoOps, 'detalhado' | 'canal' | 'itens' | 'dataFaturamento' | 'dataEnvio' | 'dataEntrega' | 'formaEnvio'> | null {
   const id = String(p?.id ?? '').trim();
   const data = dataIso(p?.data_pedido);
   if (!id || !data) return null;
@@ -122,12 +136,13 @@ export function resumoTiny(p: any, agoraIso: string): Omit<PedidoOps, 'detalhado
     situacao: normalizarSituacao(original),
     situacaoOriginal: original,
     valor: numeroBr(p?.valor ?? p?.total_pedido),
+    dataPrevista: dataIso(p?.data_prevista) || null,
     atualizadoEm: agoraIso,
   };
 }
 
 /** `pedido.obter.php` (`retorno.pedido`) → itens e canal. */
-export function detalheTiny(p: any): { itens: ItemPedidoOps[]; canal: string; valor?: number; situacao?: SituacaoOps; situacaoOriginal?: string } {
+export function detalheTiny(p: any): { itens: ItemPedidoOps[]; canal: string; datas: DatasPedido; valor?: number; situacao?: SituacaoOps; situacaoOriginal?: string } {
   const brutos: any[] = Array.isArray(p?.itens) ? p.itens : [];
   const itens = brutos
     .map((x) => x?.item ?? x)
@@ -135,7 +150,14 @@ export function detalheTiny(p: any): { itens: ItemPedidoOps[]; canal: string; va
     .filter((i) => i.sku && i.qtd > 0);
   // `canalVenda` (ex.: "Mercado Livre") é mais específico que o nome da integração.
   const canal = String(p?.ecommerce?.canalVenda || p?.ecommerce?.nomeEcommerce || '').trim();
-  const out: ReturnType<typeof detalheTiny> = { itens, canal: canal || 'Sem canal' };
+  const datas: DatasPedido = {
+    dataPrevista: dataIso(p?.data_prevista) || null,
+    dataFaturamento: dataIso(p?.data_faturamento) || null,
+    dataEnvio: dataIso(p?.data_envio) || null,
+    dataEntrega: dataIso(p?.data_entrega) || null,
+    formaEnvio: String(p?.forma_envio ?? '').trim() || null,
+  };
+  const out: ReturnType<typeof detalheTiny> = { itens, canal: canal || 'Sem canal', datas };
   if (p?.total_pedido != null) out.valor = numeroBr(p.total_pedido);
   if (p?.situacao) { out.situacao = normalizarSituacao(p.situacao); out.situacaoOriginal = String(p.situacao); }
   return out;

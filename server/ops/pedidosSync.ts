@@ -15,6 +15,7 @@
 import { randomUUID } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin';
 import { getV2Token, limiteV2PorToken, tinyV2CallRaw } from '../tinyV2';
+import { getUserToken } from '../wakeAgent';
 import { logCall } from '../agent/telemetry';
 import type { Firestore } from 'firebase-admin/firestore';
 import type { PlataformaOps } from '../../src/modules/agent/ops/papeis';
@@ -31,6 +32,7 @@ import {
 export const deps = {
   db: adminDb as Firestore,
   tokenTiny: (uid: string) => getV2Token(uid),
+  tokenWake: (uid: string) => getUserToken(uid),
   logFalha: logCall,
 };
 
@@ -42,7 +44,7 @@ export const deps = {
 export const ehCredencial = (e: any): boolean =>
   e?.status === 401 && /token|autoriz|acesso negado/i.test(String(e?.message ?? ''));
 
-export const SYNC_REF = (uid: string, fonte: PlataformaOps) =>
+export const SYNC_REF = (uid: string, fonte: PlataformaOps | 'wake-catalogo') =>
   deps.db.collection('users').doc(uid).collection('ops_sync').doc(fonte);
 export const PEDIDOS_COL = (uid: string) =>
   deps.db.collection('users').doc(uid).collection('ops_pedidos');
@@ -116,7 +118,7 @@ function adaptadorTiny(uid: string, token: string, gastar: () => void): Adaptado
 // Gravação
 // ---------------------------------------------------------------------------
 
-/** Grava os resumos; só escreve o que mudou. Valor diferente pede detalhe de novo. */
+/** Grava os resumos; só escreve o que mudou. Valor ou situação diferente pede detalhe de novo. */
 async function gravarResumos(uid: string, resumos: Resumo[]): Promise<void> {
   if (!resumos.length) return;
   const refs = resumos.map((r) => PEDIDOS_COL(uid).doc(idDoc(r.fonte, r.idExterno)));
@@ -128,8 +130,10 @@ async function gravarResumos(uid: string, resumos: Resumo[]): Promise<void> {
     if (!atual) {
       batch.set(refs[i], { ...r, detalhado: false });
       escritas++;
-    } else if (atual.situacao !== r.situacao || atual.valor !== r.valor || atual.data !== r.data || atual.numero !== r.numero) {
-      batch.set(refs[i], { ...r, ...(atual.valor !== r.valor ? { detalhado: false } : {}) }, { merge: true });
+    } else if (atual.situacao !== r.situacao || atual.valor !== r.valor || atual.data !== r.data || atual.numero !== r.numero || (atual.dataPrevista ?? null) !== r.dataPrevista) {
+      // Situação nova pede detalhe de novo: é no detalhe que chegam as datas de envio e entrega.
+      const redetalhar = atual.valor !== r.valor || atual.situacao !== r.situacao;
+      batch.set(refs[i], { ...r, ...(redetalhar ? { detalhado: false } : {}) }, { merge: true });
       escritas++;
     }
   });
@@ -237,7 +241,7 @@ export async function rodarCiclo(uid: string, fonte: PlataformaOps, opts: { forc
           itens: d?.itens ?? [],
           ...(d?.valor != null ? { valor: d.valor } : {}),
           ...(d?.situacao ? { situacao: d.situacao, situacaoOriginal: d.situacaoOriginal } : {}),
-          ...(d ? {} : { detalheFalhou: true }),
+          ...(d ? d.datas : { detalheFalhou: true }),
         });
       }
     }
@@ -318,30 +322,4 @@ export async function visitarSync(uid: string, fonte: PlataformaOps): Promise<Es
     if (campos.proximaEm != null) dispararCiclo(uid, fonte);
   }
   return { ...s, ...campos } as EstadoSync;
-}
-
-let timer: NodeJS.Timeout | null = null;
-let varrendo = false;
-
-export async function varrerOpsSync(): Promise<void> {
-  if (varrendo) return;
-  varrendo = true;
-  try {
-    const snap = await deps.db.collectionGroup('ops_sync').where('proximaEm', '<=', Date.now()).limit(20).get();
-    for (const doc of snap.docs) {
-      const m = doc.ref.path.match(/^users\/([^/]+)\/ops_sync\/([^/]+)$/);
-      if (m) dispararCiclo(m[1], m[2] as PlataformaOps);
-    }
-  } catch (e) {
-    console.warn('[ops-sync] varredura falhou', e instanceof Error ? e.message : String(e));
-  } finally {
-    varrendo = false;
-  }
-}
-
-export function startOpsSyncScheduler(): void {
-  if (timer) return;
-  void varrerOpsSync();
-  timer = setInterval(() => void varrerOpsSync(), 60_000);
-  timer.unref?.();
 }

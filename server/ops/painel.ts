@@ -3,14 +3,27 @@
 // calculados sobre `ops_pedidos` (indicadores.ts). O cálculo é no servidor:
 // 60 dias podem ser milhares de docs, e assim `ops_pedidos` não precisa de
 // regra de leitura no cliente. O estoque é calculado no cliente, sobre o
-// catálogo que ele já tem, com o `vendidos30d` daqui.
+// catálogo que ele já tem, com o `vendidos30d` daqui. Catálogo e preços
+// comparam o catálogo do ERP (`products`) com a cópia da loja (`ops_loja`).
 
 import type express from 'express';
+import { FieldPath } from 'firebase-admin/firestore';
 import { resolveConnections, requireAnyModule } from '../agent/connections';
 import { fontesOps, temAdaptadorPedidos, type PlataformaOps } from '../../src/modules/agent/ops/papeis';
 import { diaBrt, estadoDoSync, somaDias, type EstadoSync, type PedidoOps } from '../../src/modules/agent/ops/pedidos';
-import { painelPedidos, type PainelPedidos, type RespostaPainelOps } from '../../src/modules/agent/ops/indicadores';
-import { PEDIDOS_COL, SYNC_REF, dispararCiclo, visitarSync } from './pedidosSync';
+import { painelEntrega, painelPedidos, type PainelEntrega, type PainelPedidos, type RespostaPainelOps } from '../../src/modules/agent/ops/indicadores';
+import { estadoDoLoja, itensErp, painelCatalogo, painelPrecos, type ProdutoCatalogo } from '../../src/modules/agent/ops/catalogo';
+import { PEDIDOS_COL, SYNC_REF, deps, dispararCiclo, visitarSync } from './pedidosSync';
+import { dispararCicloLoja, lerLoja, visitarLoja } from './lojaSync';
+
+const CAMPOS_ERP = ['Código (SKU)', 'Descrição', 'Código do pai', 'Preço', 'Preço promocional', 'Preço de custo', 'Estoque', '_tinyProductId', '_blingProductId', '_idworksProductId'];
+
+/** Catálogo do OMNI360 só com os campos da comparação. */
+export async function lerProdutosErp(uid: string): Promise<ProdutoCatalogo[]> {
+  const snap = await deps.db.collection('users').doc(uid).collection('products')
+    .select(...CAMPOS_ERP.map((c) => new FieldPath(c))).get();
+  return snap.docs.map((d) => d.data() as ProdutoCatalogo);
+}
 
 /** Janela lida para o painel: 30 dias + os 30 anteriores, para comparar. */
 export const DIAS_PAINEL = 60;
@@ -34,6 +47,7 @@ export async function painelOps(uid: string, opts: { atualizar?: boolean } = {})
 
   let sync: RespostaPainelOps['sync'] = null;
   let pedidos: PainelPedidos | null = null;
+  let entrega: PainelEntrega | null = null;
   if (suportado) {
     const fonte = fontes.pedidos as PlataformaOps;
     const estado: EstadoSync = await visitarSync(uid, fonte);
@@ -41,10 +55,29 @@ export async function painelOps(uid: string, opts: { atualizar?: boolean } = {})
     if (opts.atualizar && Date.now() - (estado.ultimoCicloEm ?? 0) > 120_000) dispararCiclo(uid, fonte, true);
     const e = estadoDoSync(estado, Date.now());
     sync = { ...e, erro: estado.erro && estado.erro !== 'credencial' ? estado.erro : null };
-    pedidos = painelPedidos(await lerPedidos(uid), Date.now());
+    const lista = await lerPedidos(uid);
+    pedidos = painelPedidos(lista, Date.now());
+    entrega = painelEntrega(lista, Date.now());
   }
 
-  const v: RespostaPainelOps = { fontes, pedidosSuportados: suportado, sync, pedidos, geradoEm: new Date().toISOString() };
+  // Catálogo e preços: a loja é sempre a Wake; o lado ERP entra quando há um ERP conectado.
+  let loja: RespostaPainelOps['loja'] = null;
+  let catalogo: RespostaPainelOps['catalogo'] = null;
+  let precos: RespostaPainelOps['precos'] = null;
+  if (fontes.catalogoLoja === 'wake') {
+    const estadoLoja = await visitarLoja(uid);
+    if (opts.atualizar && Date.now() - (estadoLoja.ultimoCicloEm ?? 0) > 120_000) dispararCicloLoja(uid, true);
+    loja = estadoDoLoja(estadoLoja);
+    const temErp = conns.tiny || conns.bling || conns.idworks;
+    const [itensLoja, produtos] = await Promise.all([lerLoja(uid), temErp ? lerProdutosErp(uid) : Promise.resolve(null)]);
+    const erp = produtos ? itensErp(produtos) : null;
+    catalogo = painelCatalogo(erp, itensLoja);
+    precos = painelPrecos(erp, itensLoja);
+  }
+
+  const v: RespostaPainelOps = {
+    fontes, pedidosSuportados: suportado, sync, pedidos, entrega, loja, catalogo, precos, geradoEm: new Date().toISOString(),
+  };
   cache.set(uid, { at: Date.now(), v });
   return v;
 }

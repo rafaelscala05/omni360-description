@@ -5,6 +5,8 @@
 // como descrição) e um Firestore em memória com o pedaço da API que o sync usa.
 // Rodar com: npx tsx scripts/verify-ops-sync.mjs
 import { deps, ehCredencial, rodarCiclo, visitarSync, PEDIDOS_COL, SYNC_REF } from '../server/ops/pedidosSync.ts';
+import { ID_SYNC_LOJA, LOJA_COL, rodarCicloLoja, visitarLoja } from '../server/ops/lojaSync.ts';
+import { CHAMADAS_LOJA_POR_CICLO, estadoDoLoja, estadoInicialLoja } from '../src/modules/agent/ops/catalogo.ts';
 import { diaBrt, estadoDoSync, estadoInicial, normalizarSituacao, somaDias } from '../src/modules/agent/ops/pedidos.ts';
 import { painelPedidos } from '../src/modules/agent/ops/indicadores.ts';
 
@@ -36,7 +38,8 @@ function docRef(path) {
   };
 }
 function query(casa, filtros = [], lim = Infinity) {
-  const passa = (d) => filtros.every(([f, op, v]) => (op === '==' ? d[f] === v : op === '>=' ? d[f] >= v : op === '<=' ? d[f] != null && d[f] <= v : false));
+  // Como no Firestore, `!=` não devolve doc sem o campo.
+  const passa = (d) => filtros.every(([f, op, v]) => (op === '==' ? d[f] === v : op === '!=' ? d[f] !== undefined && d[f] !== v : op === '>=' ? d[f] >= v : op === '<=' ? d[f] != null && d[f] <= v : false));
   return {
     where: (f, op, v) => query(casa, [...filtros, [f, op, v]], lim),
     limit: (n) => query(casa, filtros, n),
@@ -56,7 +59,11 @@ const fakeDb = {
   getAll: async (...refs) => refs.map(snapDe),
   batch: () => {
     const ops = [];
-    return { set: (ref, data, o) => ops.push(() => ref.set(data, o)), commit: async () => { for (const op of ops) await op(); } };
+    return {
+      set: (ref, data, o) => ops.push(() => ref.set(data, o)),
+      delete: (ref) => ops.push(async () => { store.delete(ref.path); }),
+      commit: async () => { for (const op of ops) await op(); },
+    };
   },
   runTransaction: async (fn) => {
     const ops = [];
@@ -105,7 +112,38 @@ const respostaJson = (retorno) => new Response(JSON.stringify({ retorno }), { st
 const erro = (codigo_erro, msg) => respostaJson({ status_processamento: 2, status: 'Erro', codigo_erro, erros: [{ erro: msg }] });
 const isoDeBr = (s) => `${s.slice(6, 10)}-${s.slice(3, 5)}-${s.slice(0, 2)}`;
 
+// ---------------------------------------------------------------------------
+// Wake falsa (GET /produtos: 50 por página, cursor produtoVarianteIdDe exclusivo,
+// header X-Ultimo-Produto-Variante-Id, alteradosPartirDe em aaaa-mm-dd hh:mm:ss)
+// ---------------------------------------------------------------------------
+const wake = { produtos: [], chamadas: 0, limite: false, tokenInvalido: false, vazioComo404: true };
+for (let id = 1; id <= 230; id++) {
+  wake.produtos.push({ produtoVarianteId: id, produtoId: id, sku: `W-${id}`, nome: `Produto ${id}`, precoPor: 100, precoDe: id % 10 === 0 ? 130 : 0, precoCusto: id % 7 === 0 ? 60 : 0, exibirSite: id % 25 !== 0, valido: true, estoque: [{ estoqueFisico: id % 5, estoqueReservado: 0 }, { estoqueFisico: 1, estoqueReservado: 1 }], atualizadoMs: AGORA - 5 * 86_400_000 });
+}
+function respostaWake(url) {
+  wake.chamadas++;
+  if (wake.limite) return new Response('{"mensagem":"limite"}', { status: 429, headers: { 'retry-after': '30' } });
+  if (wake.tokenInvalido) return new Response('{}', { status: 401 });
+  const u = new URL(url);
+  const cursor = Number(u.searchParams.get('produtoVarianteIdDe') ?? 0);
+  const alt = u.searchParams.get('alteradosPartirDe');
+  if (u.searchParams.get('pagina')) return new Response('{"mensagem":"pagina descontinuado"}', { status: 400 });
+  if (u.searchParams.get('camposAdicionais') !== 'Estoque') return new Response('{"mensagem":"sem estoque"}', { status: 400 });
+  let lista = wake.produtos.filter((p) => p.produtoVarianteId > cursor).sort((a, b) => a.produtoVarianteId - b.produtoVarianteId);
+  if (alt) {
+    const desde = Date.parse(`${alt.replace(' ', 'T')}Z`) + BRT_MS;
+    if (AGORA - desde > 48 * 3600_000 + 60_000) return new Response('{"mensagem":"máximo 48 horas"}', { status: 400 });
+    lista = lista.filter((p) => p.atualizadoMs >= desde);
+  }
+  const pagina = lista.slice(0, Number(u.searchParams.get('quantidadeRegistros') ?? 50));
+  if (!pagina.length && wake.vazioComo404) return new Response('', { status: 404 });
+  const headers = { 'content-type': 'application/json' };
+  if (pagina.length) headers['X-Ultimo-Produto-Variante-Id'] = String(pagina[pagina.length - 1].produtoVarianteId);
+  return new Response(JSON.stringify(pagina.map(({ atualizadoMs, ...p }) => p)), { status: 200, headers });
+}
+
 globalThis.fetch = async (url, init) => {
+  if (String(url).includes('api.fbits.net')) return respostaWake(String(url));
   tiny.chamadas++;
   const endpoint = String(url).split('/').pop();
   const p = Object.fromEntries(new URLSearchParams(String(init.body)));
@@ -140,6 +178,7 @@ globalThis.fetch = async (url, init) => {
       status_processamento: 3, status: 'OK',
       pedido: {
         id: x.id, numero: x.numero, data_pedido: br(x.data), total_pedido: x.total.toFixed(2), situacao: x.situacao,
+        data_envio: x.dataEnvio ?? '', data_entrega: x.dataEntrega ?? '', forma_envio: x.formaEnvio ?? '',
         itens: x.itens.map((item) => ({ item })),
         ...(x.ecommerce ? { ecommerce: { id: 1, numeroPedidoEcommerce: `EC-${x.id}`, ...x.ecommerce } } : {}),
       },
@@ -154,6 +193,7 @@ globalThis.fetch = async (url, init) => {
 const falhasLogadas = [];
 deps.db = fakeDb;
 deps.tokenTiny = async (uid) => (uid === 'sem-token' ? null : 'tok');
+deps.tokenWake = async (uid) => (uid === 'sem-token' ? null : 'tok-wake');
 deps.logFalha = async (uid, e) => { falhasLogadas.push([uid, e.erro]); };
 console.error = () => {}; // tinyV2CallRaw loga cada "Erro" do Tiny; aqui são esperados.
 
@@ -263,6 +303,85 @@ check('visita religa conta pausada por credencial', c1.proximaEm != null, true);
 await visitarSync('novo', 'tiny').catch(() => {});
 const criado = await estado('novo');
 check('primeira visita cria o estado', [criado?.fonte, criado?.backfill.alvo], ['tiny', alvo]);
+
+
+// --- 6 · Entrega: datas do pedido.obter ----------------------------------------
+// A visita acima disparou um ciclo em segundo plano: espera ele soltar o lease.
+for (let i = 0; i < 100 && (await estado('u1')).leaseUntil; i++) await new Promise((r) => setTimeout(r, 50));
+const comDatas = (await pedidosDe('u1')).find((p) => p.situacao === 'entregue');
+check('pedido detalhado guarda as datas (null quando não há)', [comDatas.dataEnvio, comDatas.dataEntrega, comDatas.formaEnvio], [null, null, null]);
+const vaiSair = tiny.pedidos.find((x) => x.data === somaDias(hoje, -1));
+vaiSair.situacao = 'Entregue';
+vaiSair.dataEnvio = br(hoje);
+vaiSair.dataEntrega = br(hoje);
+vaiSair.formaEnvio = 'SEDEX';
+vaiSair.atualizadoMs = Date.now();
+await SYNC_REF('u1', 'tiny').update({ ultimaVisita: Date.now() });
+await rodarCiclo('u1', 'tiny', { forcar: true });
+const saiu = (await pedidosDe('u1')).find((p) => p.idExterno === String(vaiSair.id));
+check('mudar de situação pede o detalhe de novo e traz envio/entrega', [saiu.situacao, saiu.dataEnvio, saiu.dataEntrega, saiu.formaEnvio], ['entregue', hoje, hoje, 'SEDEX']);
+
+// --- 7 · Catálogo da loja (Wake) --------------------------------------------------
+const estadoL = async (uid) => (await SYNC_REF(uid, ID_SYNC_LOJA).get()).data();
+const lojaDe = async (uid) => (await LOJA_COL(uid).get()).docs.map((d) => d.data());
+await SYNC_REF('w1', ID_SYNC_LOJA).set(estadoInicialLoja(Date.now()));
+const ciclosL = [];
+for (let i = 0; i < 20; i++) {
+  wake.chamadas = 0;
+  await rodarCicloLoja('w1', { forcar: true });
+  ciclosL.push(wake.chamadas);
+  if ((await estadoL('w1')).varredura.ultimaConcluidaEm) break;
+}
+const l1 = await estadoL('w1');
+check(`nenhum ciclo da loja passa de ${CHAMADAS_LOJA_POR_CICLO} chamadas`, ciclosL.every((n) => n <= CHAMADAS_LOJA_POR_CICLO), true);
+console.log(`        (${ciclosL.length} ciclos: ${ciclosL.join(', ')} chamadas)`);
+check('varredura completa: todas as 230 variantes', (await lojaDe('w1')).length, 230);
+check('loja em dia, incremental armado', [estadoDoLoja(l1).estado, l1.varredura.rodada, l1.incremental.desde != null], ['em-dia', null, true]);
+const w7 = (await lojaDe('w1')).find((x) => x.sku === 'W-7');
+check('estoque somado nos CDs (físico − reservado) e custo da Wake', [w7.estoque, w7.precoCusto, w7.exibirSite], [2, 60, true]);
+
+// Incremental: preço alterado e produto novo; Wake responde 404 quando não há nada.
+wake.produtos[0].precoPor = 79.9;
+wake.produtos[0].atualizadoMs = Date.now();
+wake.produtos.push({ ...wake.produtos[1], produtoVarianteId: 231, produtoId: 231, sku: 'W-231', atualizadoMs: Date.now() });
+wake.chamadas = 0;
+await rodarCicloLoja('w1', { forcar: true });
+const l2 = await lojaDe('w1');
+check('incremental: preço novo e produto novo, numa chamada', [l2.find((x) => x.sku === 'W-1').precoPor, l2.some((x) => x.sku === 'W-231'), wake.chamadas], [79.9, true, 1]);
+check('produto que entrou pelo incremental tem rodada (a limpeza o enxerga)', l2.find((x) => x.sku === 'W-231').rodada, 'inc');
+wake.chamadas = 0;
+await rodarCicloLoja('w1', { forcar: true });
+check('incremental sem alteração: 404 vira lista vazia', [wake.chamadas, (await estadoL('w1')).erro], [1, null]);
+
+// Varredura seguinte apaga o que saiu da loja (inclusive o que veio pelo incremental).
+wake.produtos = wake.produtos.filter((p) => p.produtoVarianteId !== 5 && p.produtoVarianteId !== 231);
+await SYNC_REF('w1', ID_SYNC_LOJA).update({ 'varredura': { ...(await estadoL('w1')).varredura, ultimaConcluidaEm: Date.now() - 25 * 3600_000 } });
+for (let i = 0; i < 20; i++) { await rodarCicloLoja('w1', { forcar: true }); if (!(await estadoL('w1')).varredura.rodada) break; }
+const l3 = await lojaDe('w1');
+check('varredura de 24 h remove o que saiu da loja', [l3.length, l3.some((x) => x.sku === 'W-5'), l3.some((x) => x.sku === 'W-231')], [229, false, false]);
+
+// 429: nenhuma repetição, espera o Retry-After, retoma do cursor.
+await SYNC_REF('w2', ID_SYNC_LOJA).set(estadoInicialLoja(Date.now()));
+await rodarCicloLoja('w2', { forcar: true });
+const cursorAntes = (await estadoL('w2')).varredura.cursor;
+wake.limite = true;
+wake.chamadas = 0;
+await rodarCicloLoja('w2', { forcar: true });
+const l429 = await estadoL('w2');
+check('429: uma chamada só, sem retry (5 acima do limite bloqueiam o token)', wake.chamadas, 1);
+check('429: espera o Retry-After e não conta como falha', [Math.round((l429.proximaEm - Date.now()) / 1000), l429.erro ?? null, l429.varredura.cursor], [35, null, cursorAntes]);
+wake.limite = false;
+
+wake.tokenInvalido = true;
+await SYNC_REF('w3', ID_SYNC_LOJA).set(estadoInicialLoja(Date.now()));
+await rodarCicloLoja('w3', { forcar: true });
+check('token da Wake recusado: pausa como credencial', [(await estadoL('w3')).erro, (await estadoL('w3')).proximaEm], ['credencial', null]);
+wake.tokenInvalido = false;
+await SYNC_REF('sem-token', ID_SYNC_LOJA).set(estadoInicialLoja(Date.now()));
+await rodarCicloLoja('sem-token', { forcar: true });
+check('sem token da Wake: pausa como credencial', (await estadoL('sem-token')).erro, 'credencial');
+const vl = await visitarLoja('w3');
+check('visita religa o catálogo pausado', [vl.proximaEm != null, vl.erro], [true, null]);
 
 // Deixa os ciclos disparados em segundo plano pela visita terminarem.
 await new Promise((r) => setTimeout(r, 200));
