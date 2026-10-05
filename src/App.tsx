@@ -3168,7 +3168,6 @@ Retorne APENAS um JSON válido no seguinte formato:
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
         <AlfredLogo size={168} ativo marca="malha" rotulo="Carregando Alfreds" className="mb-5" />
-        <img src={logoAlfreds} alt="Alfreds" className="h-9 w-auto mb-4" />
         <div className="flex flex-col items-center gap-4">
             <span className="text-gray-500 text-sm font-semibold tracking-tight">Carregando Alfreds...</span>
             {isFirebaseUnavailable && (
