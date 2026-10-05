@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Check, RefreshCw, Upload, CloudUpload, X, Loader2, AlertCircle, ShieldCheck, KeyRound } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Check, RefreshCw, Upload, CloudUpload, X, Loader2, AlertCircle, ShieldCheck, KeyRound, Square, Play } from 'lucide-react';
 import {
   wakeValidate, wakeStatus, wakeImport, wakePush, wakeDisconnect,
   type WakeStatus, type WakeNormalizedProduct, type WakePushProduct, type WakePushResult,
@@ -21,6 +21,28 @@ const FIELD_LABELS: { key: keyof WakePushFields; label: string }[] = [
   { key: 'imagens', label: 'Imagens ambientadas' },
 ];
 
+export interface ProgressoImportacao {
+  estado: 'rodando' | 'parando' | 'concluida' | 'parada' | 'erro';
+  inicio: number;
+  fim: number | null;
+  lotes: number;
+  produtos: number;
+  chamadas: number;
+  ultimo: string | null;
+  /** Pausa total pedida pela Wake (429). */
+  esperaLimiteMs: number;
+  chamadasPorMinuto: number | null;
+  /** De onde continuar se parar ou falhar. */
+  cursor: string | null;
+}
+
+const duracao = (ms: number) => {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return m < 60 ? `${m} min ${s % 60}s` : `${Math.floor(m / 60)} h ${m % 60} min`;
+};
+
 const WakeConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
   const [status, setStatus] = useState<WakeStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
@@ -29,7 +51,15 @@ const WakeConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
   const [error, setError] = useState<string | null>(null);
 
   const [importing, setImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState<{ page: number; total: number } | null>(null);
+  const [importProgress, setImportProgress] = useState<ProgressoImportacao | null>(null);
+  // Parar é pedido aqui e atendido entre um lote e outro (um lote leva até ~1 min).
+  const pararRef = useRef(false);
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!importing) return;
+    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [importing]);
 
   const [pushing, setPushing] = useState(false);
   const [campos, setCampos] = useState<WakePushFields>({ descricao: true, seo: true, atributos: true, imagens: true });
@@ -69,30 +99,49 @@ const WakeConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
     await refreshStatus();
   };
 
-  const handleImport = async () => {
+  // `continuar`: retoma do cursor onde a importação parou ou falhou, somando ao progresso.
+  const handleImport = async (continuar = false) => {
+    const anterior = continuar ? importProgress : null;
     setImporting(true);
     setError(null);
-    setImportProgress({ page: 0, total: 0 });
+    pararRef.current = false;
+    let p: ProgressoImportacao = anterior
+      ? { ...anterior, estado: 'rodando', fim: null }
+      : { estado: 'rodando', inicio: Date.now(), fim: null, lotes: 0, produtos: 0, chamadas: 0, ultimo: null, esperaLimiteMs: 0, chamadasPorMinuto: null, cursor: null };
+    setImportProgress(p);
     try {
-      let pagina = 1;
-      let cursor: string | null = null;
-      let total = 0;
-      // Pull pages (by cursor — Wake dropped `pagina`) until there are no more records.
-      // Each batch is persisted immediately (merge + backup).
+      // Lotes de 10 pelo cursor (a Wake descontinuou `pagina`), no ritmo que o
+      // servidor segura. Cada lote é gravado na hora (merge + backup).
       while (true) {
-        const res = await wakeImport(cursor, 50);
-        total += res.count;
-        setImportProgress({ page: pagina, total });
+        const res = await wakeImport(p.cursor, 10);
         if (res.produtos.length) await onImport(res.produtos);
-        if (!res.hasMore || !res.proximoCursor || res.proximoCursor === cursor) break;
-        cursor = res.proximoCursor;
-        pagina += 1;
+        const fim = !res.hasMore || !res.proximoCursor || res.proximoCursor === p.cursor;
+        p = {
+          ...p,
+          lotes: p.lotes + 1,
+          produtos: p.produtos + res.count,
+          chamadas: p.chamadas + (res.ritmo?.chamadas ?? 0),
+          esperaLimiteMs: p.esperaLimiteMs + (res.ritmo?.esperaLimiteMs ?? 0),
+          chamadasPorMinuto: res.ritmo?.chamadasPorMinuto ?? p.chamadasPorMinuto,
+          ultimo: res.produtos[res.produtos.length - 1]?.nome || p.ultimo,
+          cursor: fim ? null : res.proximoCursor,
+        };
+        if (fim) { p = { ...p, estado: 'concluida', fim: Date.now() }; break; }
+        if (pararRef.current) { p = { ...p, estado: 'parada', fim: Date.now() }; break; }
+        setImportProgress(p);
       }
     } catch (e) {
+      p = { ...p, estado: 'erro', fim: Date.now() };
       setError(e instanceof Error ? e.message : 'Falha na importação.');
     } finally {
+      setImportProgress(p);
       setImporting(false);
     }
+  };
+
+  const pararImportacao = () => {
+    pararRef.current = true;
+    setImportProgress((p) => (p ? { ...p, estado: 'parando' } : p));
   };
 
   const handlePush = async () => {
@@ -192,7 +241,7 @@ const WakeConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
                 </p>
               </div>
               <button
-                onClick={handleImport}
+                onClick={() => handleImport(false)}
                 disabled={importing}
                 className="inline-flex items-center gap-2 bg-slate-800 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-slate-900 disabled:opacity-50 transition-colors shrink-0"
               >
@@ -200,14 +249,7 @@ const WakeConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
                 Importar produtos
               </button>
             </div>
-            {importProgress && (
-              <p className="text-xs text-slate-500 inline-flex items-center gap-1.5">
-                <RefreshCw className={`w-3.5 h-3.5 ${importing ? 'animate-spin' : ''}`} />
-                {importing
-                  ? `Importando página ${importProgress.page}… ${importProgress.total} produtos`
-                  : `Importação concluída: ${importProgress.total} produtos`}
-              </p>
-            )}
+            {importProgress && <ProgressoImportacaoPainel p={importProgress} onParar={pararImportacao} onContinuar={() => handleImport(true)} />}
           </div>
 
           {/* Push */}
@@ -261,6 +303,62 @@ const WakeConnector: React.FC<Props> = ({ onImport, getPushPayload }) => {
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+/**
+ * Progresso da importação: a Wake não informa o total de produtos, então o
+ * painel mostra o que já chegou, o ritmo e o porquê de ser devagar — o limite
+ * de chamadas é da loja inteira, dividido com o integrador do ERP.
+ */
+export const ProgressoImportacaoPainel: React.FC<{ p: ProgressoImportacao; onParar: () => void; onContinuar: () => void }> = ({ p, onParar, onContinuar }) => {
+  const decorrido = (p.fim ?? Date.now()) - p.inicio;
+  const porMinuto = decorrido > 30_000 ? Math.round(p.produtos / (decorrido / 60_000)) : null;
+  const ativo = p.estado === 'rodando' || p.estado === 'parando';
+  const titulo = {
+    rodando: 'Importando…',
+    parando: 'Parando ao fim deste lote…',
+    concluida: 'Importação concluída',
+    parada: 'Importação parada',
+    erro: 'Importação interrompida por um erro',
+  }[p.estado];
+  return (
+    <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 space-y-2" aria-live="polite">
+      <div className="flex items-center gap-2">
+        {ativo
+          ? <RefreshCw className="w-4 h-4 text-slate-500 animate-spin shrink-0" />
+          : p.estado === 'concluida'
+            ? <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+            : <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />}
+        <span className="text-sm font-semibold text-slate-800 flex-1">{titulo}</span>
+        {p.estado === 'rodando' && (
+          <button onClick={onParar} className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 px-2 py-1 rounded-md hover:bg-slate-200">
+            <Square className="w-3 h-3" /> Parar
+          </button>
+        )}
+        {(p.estado === 'parada' || p.estado === 'erro') && p.cursor && (
+          <button onClick={onContinuar} className="inline-flex items-center gap-1 text-xs font-medium text-white bg-slate-800 hover:bg-slate-900 px-2.5 py-1 rounded-md">
+            <Play className="w-3 h-3" /> Continuar de onde parou
+          </button>
+        )}
+      </div>
+      <dl className="grid grid-cols-3 gap-2 text-xs">
+        <div><dt className="text-slate-500">Produtos</dt><dd className="text-base font-semibold text-slate-800 tabular-nums">{p.produtos.toLocaleString('pt-BR')}</dd></div>
+        <div><dt className="text-slate-500">Tempo</dt><dd className="text-base font-semibold text-slate-800 tabular-nums">{duracao(decorrido)}</dd></div>
+        <div><dt className="text-slate-500">Ritmo</dt><dd className="text-base font-semibold text-slate-800 tabular-nums">{porMinuto !== null ? `${porMinuto}/min` : '—'}</dd></div>
+      </dl>
+      {p.ultimo && <p className="text-xs text-slate-500 truncate">Último: {p.ultimo}</p>}
+      {p.esperaLimiteMs > 0 && (
+        <p className="text-xs text-amber-700">A Wake pediu uma pausa de {duracao(p.esperaLimiteMs)} no total — a importação esperou e seguiu.</p>
+      )}
+      {ativo && (
+        <p className="text-xs text-slate-500">
+          Ritmo limitado a {p.chamadasPorMinuto ?? 36} chamadas por minuto (30% do limite da Wake), para não travar a integração
+          do ERP — estourar o limite bloqueia o token por 1 hora. Mantenha esta tela aberta; cada lote de 10 já fica salvo.
+        </p>
+      )}
+      {p.estado === 'parada' && <p className="text-xs text-slate-500">Os {p.produtos.toLocaleString('pt-BR')} produtos já importados estão salvos.</p>}
     </div>
   );
 };

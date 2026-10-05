@@ -83,11 +83,22 @@ export async function wakeDisconnect(): Promise<void> {
   await fetch('/api/wake/disconnect', { method: 'DELETE', headers: await authHeaders() });
 }
 
-/** Uma página da importação. `cursor` é o `proximoCursor` da página anterior (null na primeira). */
+/** Medidas de um lote da importação: o servidor segura o ritmo para não estourar o limite da Wake. */
+export interface WakeImportRitmo {
+  chamadas: number;
+  ms: number;
+  /** Tempo esperando vaga no ritmo próprio (wakeRitmo.ts). */
+  esperaRitmoMs: number;
+  /** Pausa pedida pela Wake (429 + Retry-After). */
+  esperaLimiteMs: number;
+  chamadasPorMinuto: number;
+}
+
+/** Um lote da importação. `cursor` é o `proximoCursor` do lote anterior (null no primeiro). */
 export async function wakeImport(
   cursor: string | null = null,
-  quantidadeRegistros = 50,
-): Promise<{ count: number; hasMore: boolean; proximoCursor: string | null; produtos: WakeNormalizedProduct[] }> {
+  quantidadeRegistros = 10,
+): Promise<{ count: number; hasMore: boolean; proximoCursor: string | null; produtos: WakeNormalizedProduct[]; ritmo?: WakeImportRitmo }> {
   const resp = await fetch('/api/wake/import', {
     method: 'POST', headers: await authHeaders(), body: JSON.stringify({ cursor, quantidadeRegistros }),
   });

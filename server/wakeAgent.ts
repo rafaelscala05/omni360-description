@@ -6,6 +6,7 @@ import { adminDb } from './firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logTexto, push as pushLog, type PushLogEntry } from './pushLog';
 import { carimbarEnvio, conteudoDoPushWake } from './syncStamp';
+import { aguardarVaga, CHAMADAS_POR_MINUTO } from './wakeRitmo';
 
 const WAKE_BASE = 'https://api.fbits.net';
 const SECRET_REF = (uid: string) =>
@@ -15,7 +16,10 @@ const STATUS_REF = (uid: string) =>
 
 interface WakeError { resultadoOperacao?: boolean; codigo?: number; mensagem?: string; }
 
-// HTTP client for the Wake API with exponential backoff on 429/5xx. The
+/** Tempo total (ms) que o fbitsFetch já esperou por 429 com cada token — o progresso da importação mostra a pausa. */
+export const esperasLimitePorToken = new Map<string, number>();
+
+// HTTP client for the Wake API: exponential backoff on 5xx, Retry-After on 429. The
 // Authorization header carries the raw token — Wake (fbits) accepts the token
 // directly in that header.
 export async function fbitsFetch<T = any>(
@@ -35,7 +39,17 @@ export async function fbitsFetch<T = any>(
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
-  if ((res.status === 429 || res.status >= 500) && attempt < 3) {
+  // 429: a Wake diz em `Retry-After` quanto esperar, e 5 requisições acima do
+  // limite bloqueiam o token por 1 h — repetir em meio segundo (como no 5xx)
+  // era justamente o que levava ao bloqueio. Espera o pedido e tenta uma vez.
+  if (res.status === 429 && attempt < 1) {
+    const pedido = Number(res.headers.get('retry-after'));
+    const esperaMs = (Number.isFinite(pedido) && pedido > 0 ? pedido : 60) * 1000 + 1000;
+    esperasLimitePorToken.set(token, (esperasLimitePorToken.get(token) ?? 0) + esperaMs);
+    await new Promise((r) => setTimeout(r, esperaMs));
+    return fbitsFetch<T>(token, method, path, body, attempt + 1);
+  }
+  if (res.status >= 500 && attempt < 3) {
     await new Promise((r) => setTimeout(r, 2 ** attempt * 500));
     return fbitsFetch<T>(token, method, path, body, attempt + 1);
   }
@@ -83,19 +97,28 @@ export interface WakeNormalizedProduct {
   raw: unknown; // aggregated raw payload — used for backup/versioning
 }
 
-async function aggregateProduct(token: string, p: any): Promise<WakeNormalizedProduct> {
+/** GET na Wake; a importação passa uma versão com ritmo (wakeRitmo.ts). */
+type WakeGet = <T = any>(path: string) => Promise<T>;
+
+export async function aggregateProduct(token: string, p: any, get: WakeGet = (path) => fbitsFetch(token, 'GET', path)): Promise<WakeNormalizedProduct> {
   const id = String(p.produtoId ?? p.produtoVarianteId);
   const q = `?tipoIdentificador=ProdutoId`;
   // The images endpoint rejects ProdutoId (422); it requires Sku or
   // ProdutoVarianteId. We key it by produtoVarianteId, always present here.
   const varianteId = String(p.produtoVarianteId ?? id);
-  const [informacoes, categorias, imagens, seo, metaTag] = await Promise.all([
-    fbitsFetch<any[]>(token, 'GET', `/produtos/${id}/informacoes${q}`).catch(() => []),
-    fbitsFetch<any[]>(token, 'GET', `/produtos/${id}/categorias${q}`).catch(() => []),
-    fbitsFetch<any[]>(token, 'GET', `/produtos/${varianteId}/imagens?tipoIdentificador=ProdutoVarianteId`).catch(() => []),
-    fbitsFetch<any>(token, 'GET', `/produtos/${id}/seo${q}`).catch(() => null),
-    fbitsFetch<any[]>(token, 'GET', `/produtos/${id}/seo/metaTag${q}`).catch(() => []),
+  // A lista já é pedida com `camposAdicionais=Informacao`: com as informações
+  // no item, a chamada /informacoes é dispensável (economiza o limite da Wake).
+  const informacoesDaLista = Array.isArray(p.informacoes) && p.informacoes.length ? p.informacoes : null;
+  const [informacoes, categorias, imagens, seo] = await Promise.all([
+    informacoesDaLista ?? get<any[]>(`/produtos/${id}/informacoes${q}`).catch(() => []),
+    get<any[]>(`/produtos/${id}/categorias${q}`).catch(() => []),
+    get<any[]>(`/produtos/${varianteId}/imagens?tipoIdentificador=ProdutoVarianteId`).catch(() => []),
+    get<any>(`/produtos/${id}/seo${q}`).catch(() => null),
   ]);
+  // O GET de SEO já traz as metatags; o endpoint próprio só quando ele não trouxer.
+  const metaTag: any[] = Array.isArray(seo?.metatags) && seo.metatags.length
+    ? seo.metatags
+    : await get<any[]>(`/produtos/${id}/seo/metaTag${q}`).catch(() => []);
   const infoBloco = Array.isArray(informacoes)
     ? (informacoes.find((i) => i?.tipoInformacao === 'Informacoes') ?? informacoes[0])
     : undefined;
@@ -407,9 +430,20 @@ export function registerWakeRoutes(app: express.Express, { verifyFirebaseToken }
       if (!token) return res.status(400).json({ message: 'Wake não conectada.' });
 
       const cursor = req.body?.cursor != null && /^\d+$/.test(String(req.body.cursor)) ? String(req.body.cursor) : null;
-      const quantidadeRegistros = Math.min(Number(req.body?.quantidadeRegistros ?? 50), 50);
-      const lista = await fbitsFetch<any[]>(
-        token, 'GET',
+      // Lotes pequenos: cada produto custa 3–5 chamadas e o ritmo é de
+      // CHAMADAS_POR_MINUTO, então 10 produtos ≈ 1 min — a tela atualiza a cada lote.
+      const quantidadeRegistros = Math.max(1, Math.min(Number(req.body?.quantidadeRegistros ?? 10), 50));
+      const inicio = Date.now();
+      const limiteAntes = esperasLimitePorToken.get(token) ?? 0;
+      let chamadas = 0;
+      let esperaRitmoMs = 0;
+      // Toda chamada desta importação passa pelo ritmo (wakeRitmo.ts).
+      const get: WakeGet = async (path) => {
+        esperaRitmoMs += await aguardarVaga(token);
+        chamadas++;
+        return fbitsFetch(token, 'GET', path);
+      };
+      const lista = await get<any[]>(
         `/produtos?quantidadeRegistros=${quantidadeRegistros}&camposAdicionais=Atributo&camposAdicionais=Informacao${cursor ? `&produtoVarianteIdDe=${cursor}` : ''}`,
       ).catch((e: any) => {
         // A lista vazia depois do último cursor pode vir como 404.
@@ -421,9 +455,22 @@ export function registerWakeRoutes(app: express.Express, { verifyFirebaseToken }
       const proximoCursor = ids.length ? String(Math.max(...ids)) : null;
       const produtos: WakeNormalizedProduct[] = [];
       for (const p of arr) {
-        produtos.push(await aggregateProduct(token, p));
+        produtos.push(await aggregateProduct(token, p, get));
       }
-      return res.json({ count: produtos.length, hasMore: arr.length === quantidadeRegistros && !!proximoCursor, proximoCursor, produtos });
+      return res.json({
+        count: produtos.length,
+        hasMore: arr.length === quantidadeRegistros && !!proximoCursor,
+        proximoCursor,
+        produtos,
+        ritmo: {
+          chamadas,
+          ms: Date.now() - inicio,
+          esperaRitmoMs,
+          // Pausa pedida pela própria Wake (429 + Retry-After) durante este lote.
+          esperaLimiteMs: (esperasLimitePorToken.get(token) ?? 0) - limiteAntes,
+          chamadasPorMinuto: CHAMADAS_POR_MINUTO,
+        },
+      });
     } catch (e: any) {
       return res.status(e?.status === 401 ? 401 : 500).json({ message: e?.message ?? 'Falha na importação.' });
     }
