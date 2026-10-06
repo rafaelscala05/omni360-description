@@ -1,137 +1,146 @@
-import { useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Check, Minus, Plus } from 'lucide-react';
 import Hero from '../components/Hero';
-import Section from '../components/Section';
 import FAQ from '../components/FAQ';
 import FinalCTA from '../components/FinalCTA';
+import { Cabecalho, Cta, Section } from '../components/ui';
 import { FaqItem } from '../content';
+import { linkCadastro } from '../objetivoSite';
 import { usePageMeta } from '../usePageMeta';
-import { trackPricingViewed, trackMarketingCtaClick } from '../../analytics';
+import { trackPricingViewed } from '../../analytics';
 
-interface CreditRow {
-  action: string;
-  credits: number;
-}
+/** Mesmo preço e mínimo da compra no app (`CreditPurchaseModal`). */
+const PRECO_CREDITO = 0.5;
+const MINIMO = 10;
 
-const creditTable: CreditRow[] = [
-  { action: 'Geração SEO (individual ou em massa)', credits: 1 },
-  { action: 'Enriquecimento de dados (individual ou em massa)', credits: 1 },
-  { action: 'Geração de Ambientação de imagem', credits: 1 },
-  { action: 'Geração de Vídeo de Produto', credits: 5 },
-  { action: 'Clusters de Conteúdo', credits: 2 },
-  { action: 'Calendário Editorial', credits: 2 },
-  { action: 'Produção de Artigo', credits: 5 },
-  { action: 'Imagem de Capa de Conteúdo', credits: 1 },
+const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const INCLUSO = [
+  'Os mesmos créditos valem em todos os agentes',
+  'Integrações com Tiny, Bling, IdWorks, Wake e Mercado Livre sem custo extra',
+  'Conversar e consultar é grátis: só gasta quando o Alfred gera ou grava',
+  'Créditos que não vencem',
 ];
 
 const pricingFaq: FaqItem[] = [
   {
     q: 'Como funciona a cobrança por créditos?',
-    a: 'Cada operação de IA (geração de SEO, enriquecimento, imagens, vídeos, conteúdo) consome uma quantidade fixa de créditos. Você compra pacotes de créditos e usa como quiser, sem mensalidade obrigatória.',
+    a: 'Cada ação do Alfred que usa IA (escrever uma descrição, gerar uma foto ou um vídeo, produzir um artigo) consome créditos. Você compra créditos quando precisar e usa como quiser, sem mensalidade.',
   },
   {
-    q: 'Os créditos expiram?',
-    a: 'Não. Os créditos ficam disponíveis na sua conta até serem usados — não há vencimento por período.',
+    q: 'Como sei quanto uma ação vai custar?',
+    a: 'O custo aparece antes de você confirmar: no botão, no card de aprovação do Alfred e no resumo de cada lote. O histórico de uso fica na sua conta.',
   },
+  { q: 'Os créditos expiram?', a: 'Não. Ficam na sua conta até você usar.' },
+  { q: 'Preciso de cartão para testar?', a: 'Não. A conta nova começa com 10 créditos grátis.' },
   {
-    q: 'Preciso de cartão de crédito para testar?',
-    a: 'Não. Novos usuários começam com 10 créditos grátis para testar os agentes antes de comprar qualquer pacote.',
-  },
-  {
-    q: 'Como sei quantos créditos vou gastar?',
-    a: 'Cada tela mostra o custo em créditos antes de você confirmar a ação, e o histórico de uso fica disponível na sua conta.',
+    q: 'Como pago?',
+    a: 'Por Pix, boleto ou cartão. Os créditos entram na conta assim que o pagamento é confirmado.',
   },
 ];
 
 export default function PricingPage() {
   usePageMeta({
     title: 'Preços | Alfreds',
-    description: 'Preço transparente por créditos. Comece com 10 créditos grátis.'
+    description: 'Créditos a R$ 0,50, sem mensalidade e sem fidelidade. Comece com 10 créditos grátis.',
   });
 
   useEffect(() => {
     trackPricingViewed();
   }, []);
 
+  const [creditos, setCreditos] = useState(100);
+  const mudar = (d: number) => setCreditos((c) => Math.max(MINIMO, c + d));
+
   return (
     <>
       <Hero
-        theme="brand"
-        eyebrow="Preços"
-        titleLead="Pague só pelo"
-        titleAccent="trabalho que os agentes fazem"
-        titleTail="por você."
-        subtitle="Sem mensalidade fixa: você compra créditos e usa nos agentes de Produto e de Conteúdo conforme a sua necessidade."
-        primaryCta={{ label: 'Começar grátis', to: '/entrar' }}
-        secondaryCta={{ label: 'Falar com especialista', to: '/contato' }}
-        microcopy="Novos usuários começam com 10 créditos grátis"
+        titulo="Pague pelo que o Alfred faz. Só isso."
+        subtitulo="Sem mensalidade, sem plano por usuário e sem fidelidade. Você compra créditos, usa em qualquer agente e vê o custo de cada ação antes de confirmar."
+        primario={{ label: 'Começar com 10 créditos grátis', to: linkCadastro() }}
+        secundario={{ label: 'Falar com a gente', to: '/contato' }}
+        microcopy="Sem cartão para começar."
       />
 
-      <Section tone="light">
-        <div className="max-w-3xl mx-auto text-center mb-12">
-          <h2 className="font-display text-3xl md:text-4xl font-extrabold mb-4">
-            Um modelo de <span className="text-orange">créditos</span>, simples de entender.
-          </h2>
-          <p className="text-ink/60 text-lg">
-            Cada vez que um agente executa uma tarefa de IA — gerar uma descrição, enriquecer um produto, criar uma
-            imagem ou escrever um artigo — a operação consome uma quantidade fixa de créditos. Você compra pacotes
-            de créditos e decide quando e quanto usar, sem contrato de fidelidade.
-          </p>
-        </div>
+      <Section colado>
+        <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="ag-glass-strong ag-sheen rounded-[30px] p-6 sm:p-10">
+            <p className="text-[15px] text-[var(--ag-text-2)]">Preço por crédito</p>
+            <p className="mt-1 font-display text-[64px] md:text-[80px] font-semibold leading-none tracking-[-0.04em] text-[var(--ag-text)] tabular-nums">
+              R$ 0,50
+            </p>
+            <p className="mt-3 text-[15px] text-[var(--ag-text-2)]">Compra mínima de {MINIMO} créditos.</p>
 
-        <div className="overflow-x-auto">
-          <table className="w-full max-w-3xl mx-auto border-collapse rounded-2xl overflow-hidden border border-ink/10">
-            <thead>
-              <tr className="bg-ink text-porcelain">
-                <th className="text-left font-display font-bold px-6 py-4">Operação de IA</th>
-                <th className="text-right font-display font-bold px-6 py-4">Créditos</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white">
-              {creditTable.map((row, i) => (
-                <tr key={row.action} className={i % 2 === 1 ? 'bg-orange/5' : ''}>
-                  <td className="px-6 py-4 border-t border-ink/10">{row.action}</td>
-                  <td className="px-6 py-4 border-t border-ink/10 text-right font-bold text-orange">{row.credits}</td>
-                </tr>
+            <div className="mt-10 rounded-[22px] p-5" style={{ background: 'var(--ag-fill)' }}>
+              <p className="text-[14px] font-medium text-[var(--ag-text-2)]">Simule uma compra</p>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => mudar(-10)}
+                    disabled={creditos <= MINIMO}
+                    aria-label="Menos 10 créditos"
+                    className="w-11 h-11 rounded-full grid place-items-center disabled:opacity-30"
+                    style={{ background: 'var(--ag-fill-2)', color: 'var(--ag-text)' }}
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <output className="w-24 text-center font-display text-[28px] font-semibold tabular-nums text-[var(--ag-text)]" aria-live="polite">
+                    {creditos}
+                  </output>
+                  <button
+                    type="button"
+                    onClick={() => mudar(10)}
+                    aria-label="Mais 10 créditos"
+                    className="w-11 h-11 rounded-full grid place-items-center"
+                    style={{ background: 'var(--ag-fill-2)', color: 'var(--ag-text)' }}
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                  <span className="text-[14px] text-[var(--ag-text-2)]">créditos</span>
+                </div>
+                <p className="font-display text-[28px] font-semibold tabular-nums text-[var(--ag-text)]">{brl(creditos * PRECO_CREDITO)}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="ag-glass rounded-[30px] p-6 sm:p-10 flex flex-col">
+            <h2 className="font-display text-[26px] font-semibold tracking-tight text-[var(--ag-text)]">Incluso em qualquer compra</h2>
+            <ul className="mt-6 flex flex-col gap-4">
+              {INCLUSO.map((i) => (
+                <li key={i} className="flex items-start gap-3 text-[16px] text-[var(--ag-text)]">
+                  <span className="mt-0.5 w-6 h-6 rounded-full grid place-items-center shrink-0" style={{ background: 'var(--ag-ok-soft)', color: 'var(--ag-ok)' }}>
+                    <Check className="w-3.5 h-3.5" />
+                  </span>
+                  {i}
+                </li>
               ))}
-            </tbody>
-          </table>
+            </ul>
+            <div className="mt-auto pt-10">
+              <Cta to={linkCadastro()} grande className="w-full" rotulo="Começar grátis (preços)">Começar grátis</Cta>
+            </div>
+          </div>
         </div>
       </Section>
 
       <Section tone="dark">
-        <div className="max-w-2xl mx-auto text-center">
-          <h2 className="font-display text-2xl md:text-3xl font-extrabold mb-4">
-            Volume grande? <span className="text-orange">Fale com um especialista.</span>
-          </h2>
-          <p className="text-porcelain/70 mb-8">
-            Para catálogos grandes ou operações de conteúdo intensas, montamos um pacote de créditos sob medida para
-            o seu volume.
-          </p>
-          <Link
-            to="/contato"
-            onClick={() => trackMarketingCtaClick({ label: 'Falar com especialista', destination: '/contato' })}
-            className="inline-block px-8 py-4 rounded-xl font-bold text-lg bg-orange text-white hover:brightness-95 transition"
-          >
-            Falar com especialista
-          </Link>
+        <div className="grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
+          <Cabecalho
+            className="!mb-0"
+            titulo="Catálogo grande ou muito conteúdo por mês?"
+            texto="Para operações de volume, montamos um pacote de créditos sob medida e ajudamos a configurar as integrações."
+          />
+          <Cta to="/contato" grande>Falar com a gente</Cta>
         </div>
       </Section>
 
-      <Section tone="light">
-        <div className="text-center mb-12">
-          <h2 className="font-display text-3xl md:text-4xl font-extrabold">Perguntas sobre cobrança</h2>
-        </div>
+      <Section>
+        <Cabecalho titulo="Perguntas sobre cobrança" centro />
         <FAQ items={pricingFaq} />
       </Section>
 
-      <Section tone="light">
-        <FinalCTA
-          theme="brand"
-          title="Comece com 10 créditos grátis e teste os agentes hoje."
-          ctaLabel="Começar grátis"
-          ctaTo="/entrar"
-        />
+      <Section colado>
+        <FinalCTA title="Teste o Alfred com 10 créditos por nossa conta." ctaLabel="Começar grátis" ctaTo={linkCadastro()} microcopy="Sem cartão. Leva dois minutos." />
       </Section>
     </>
   );

@@ -5,6 +5,8 @@ import SegmentGrid from '../components/SegmentGrid';
 import FinalCTA from '../components/FinalCTA';
 import { cases, segments } from '../content';
 import { usePageMeta } from '../usePageMeta';
+import { linkCadastro } from '../objetivoSite';
+import { Cabecalho } from '../components/ui';
 
 export default function CasesPage() {
   usePageMeta({
@@ -15,24 +17,14 @@ export default function CasesPage() {
   return (
     <>
       <Hero
-        theme="brand"
-        eyebrow="Casos"
-        titleLead="Agentes de IA que"
-        titleAccent="trabalham por"
-        titleTail="cada tipo de operação."
-        subtitle="Do catálogo à publicação de conteúdo, veja como o Alfreds se encaixa no dia a dia de diferentes negócios."
-        primaryCta={{ label: 'Começar grátis', to: '/entrar' }}
-        secondaryCta={{ label: 'Falar com especialista', to: '/contato' }}
+        titulo="Do catálogo ao blog, o Alfred se encaixa na sua operação."
+        subtitulo="Loja própria, seller de marketplace ou indústria: veja o tipo de trabalho que o Alfred tira da sua equipe."
+        primario={{ label: 'Começar grátis', to: linkCadastro() }}
+        secundario={{ label: 'Falar com a gente', to: '/contato' }}
       />
 
       <Section tone="light">
-        <div className="text-center mb-12">
-          <h2 className="font-display text-3xl md:text-4xl font-extrabold">Resultados</h2>
-          <p className="text-ink/60 mt-3">
-            Exemplos ilustrativos do tipo de ganho que os agentes entregam — substituiremos por casos reais conforme
-            os primeiros clientes forem publicados.
-          </p>
-        </div>
+        <Cabecalho titulo="O que muda no dia a dia" texto="Exemplos ilustrativos do ganho que o Alfred entrega. Vamos trocar por casos reais conforme os clientes publicarem os deles." />
         <div className="grid gap-6 md:grid-cols-3">
           {cases.map((c) => (
             <CaseCard key={c.label} item={c} />
@@ -41,19 +33,12 @@ export default function CasesPage() {
       </Section>
 
       <Section tone="dark">
-        <div className="text-center mb-12">
-          <h2 className="font-display text-3xl md:text-4xl font-extrabold">Feito para o seu tipo de operação</h2>
-        </div>
+        <Cabecalho titulo="Feito para o seu tipo de operação" />
         <SegmentGrid segments={segments} />
       </Section>
 
-      <Section tone="light">
-        <FinalCTA
-          theme="brand"
-          title="Coloque os agentes do Alfreds para trabalhar no seu catálogo."
-          ctaLabel="Começar grátis"
-          ctaTo="/entrar"
-        />
+      <Section colado>
+        <FinalCTA title="Coloque o Alfred para trabalhar no seu catálogo." ctaLabel="Começar grátis" ctaTo={linkCadastro()} />
       </Section>
     </>
   );

@@ -1,137 +1,211 @@
-import { ArrowRight, TrendingUp, Boxes } from 'lucide-react';
+import { Check, FileText, PenLine, ShoppingBag, type LucideIcon } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import type { Objetivo } from '../../modules/agent/capacidades';
+import { OBJETIVO_INFO } from '../../modules/onboarding/mission/objetivos';
 import Hero from '../components/Hero';
-import Section from '../components/Section';
-import AgentCard from '../components/AgentCard';
-import HowItWorks from '../components/HowItWorks';
-import FeatureShowcase from '../components/FeatureShowcase';
-import SegmentGrid from '../components/SegmentGrid';
-import CaseCard from '../components/CaseCard';
+import SemanaDemo from '../components/SemanaDemo';
+import PlanoDemo from '../components/PlanoDemo';
+import OperacoesDemo from '../components/OperacoesDemo';
 import IntegrationsGrid from '../components/IntegrationsGrid';
-import PricingSummary from '../components/PricingSummary';
-import TrustSection from '../components/TrustSection';
 import FAQ from '../components/FAQ';
 import FinalCTA from '../components/FinalCTA';
-import { productFeatures, contentFeatures, segments, cases, homeFaq } from '../content';
+import { Cabecalho, Cta, Section } from '../components/ui';
+import { PAGINAS, homeFaq } from '../content';
+import { linkCadastro } from '../objetivoSite';
 import { usePageMeta } from '../usePageMeta';
+
+const PORTAS: { objetivo: Objetivo; to: string; Icone: LucideIcon; promessa: string }[] = [
+  { objetivo: 'produto', to: '/descricoes-de-produto', Icone: FileText, promessa: 'Descrição, SEO, atributos e fotos ambientadas para o catálogo inteiro, enviados ao seu ERP.' },
+  { objetivo: 'meli', to: '/mercado-livre', Icone: ShoppingBag, promessa: 'Título, ficha técnica, fotos e vídeo de cada anúncio. Você aprova antes de publicar.' },
+  { objetivo: 'conteudo', to: '/blog-com-ia', Icone: PenLine, promessa: 'Temas, calendário e artigos na voz da sua marca, publicados no seu blog.' },
+];
+
+const FRENTES: { nome: string; cor: string; to?: string; itens: string[] }[] = [
+  {
+    nome: 'Produto',
+    cor: 'var(--ag-orig-produto)',
+    to: '/descricoes-de-produto',
+    itens: ['Descrição e SEO de cada produto', 'Atributos que a categoria pede', 'Fotos ambientadas', 'Vídeo do produto e vídeo com apresentador', 'Envio ao Tiny, Bling, IdWorks ou Wake'],
+  },
+  {
+    nome: 'Mercado Livre',
+    cor: 'var(--ag-orig-meli)',
+    to: '/mercado-livre',
+    itens: ['Nota de cada anúncio', 'Título que o comprador busca', 'Ficha técnica completa', 'Capa, fotos e vídeo do anúncio', 'Publicação só com o seu ok'],
+  },
+  {
+    nome: 'Conteúdo',
+    cor: 'var(--ag-orig-conteudo)',
+    to: '/blog-com-ia',
+    itens: ['Perfil e tom da sua marca', 'Mapa de temas para o Google', 'Calendário editorial', 'Artigos com link para produtos', 'Blog publicado no seu domínio'],
+  },
+  {
+    nome: 'Operações',
+    cor: 'var(--ag-orig-operacoes)',
+    itens: ['Vendas do dia, da semana e do mês', 'Pedidos parados no funil', 'Estoque acabando ou esgotado', 'Preço abaixo do custo', 'Entregas fora do prazo'],
+  },
+];
+
+const GARANTIAS = [
+  'Antes e depois de cada item, um por vez ou em lote',
+  'O custo em créditos aparece antes de você confirmar',
+  'Um lote em massa pode ser desfeito com um clique',
+  'Você decide o que pode rodar no automático',
+];
 
 export default function HomePage() {
   usePageMeta({
-    title: 'Alfreds — Agentes de IA para E-commerce',
-    description: 'Uma equipe de Agentes de IA que cuidam do cadastro, SEO, imagens e conteúdo do seu e-commerce.'
+    title: 'Alfreds | O agente de IA que cuida da sua loja',
+    description:
+      'O Alfred escreve descrições, otimiza anúncios do Mercado Livre e mantém o seu blog no ar. Lê seu ERP, monta a semana da loja e só grava o que você aprovar. Comece com 10 créditos grátis.',
   });
 
   return (
     <>
       <Hero
-        eyebrow="Agentes de IA para e-commerce"
-        titleLead="Uma equipe de"
-        titleAccent="Agentes de IA"
-        titleTail="para cuidar do seu e-commerce."
-        subtitle="Enquanto você foca em vender, os agentes do Alfreds cuidam do cadastro, do SEO, das imagens e do conteúdo da sua loja."
-        primaryCta={{ label: 'Começar grátis', to: '/entrar' }}
-        secondaryCta={{ label: 'Ver os agentes em ação', to: '/agente-de-produto' }}
-        microcopy="10 créditos grátis · sem cartão"
+        titulo={"Sua loja tem uma lista de tarefas. O\u00a0Alfred dá conta dela."}
+        subtitulo="O Alfred é um agente de IA que lê seu catálogo, seu ERP e seus anúncios, monta a semana da loja e faz o trabalho: descrições, fotos, Mercado Livre e blog. Nada é gravado sem o seu ok."
+        primario={{ label: 'Começar grátis', to: linkCadastro() }}
+        secundario={{ label: 'Escolher por onde começar', to: '#objetivos' }}
+        microcopy="10 créditos grátis para testar. Sem cartão."
+        alinhar="topo"
+        lado={
+          <div>
+            <SemanaDemo />
+            <p className="mt-3 text-center text-[13px] text-[var(--ag-text-3)]">Experimente: aperte “Fazer com Alfred”.</p>
+          </div>
+        }
       />
 
-      {/* Resultados — foco em redução de tempo */}
-      <Section tone="light">
-        <div className="max-w-3xl mx-auto text-center mb-10">
-          <span className="text-xs font-bold uppercase tracking-widest text-orange">Resultados</span>
-          <h2 className="font-display text-3xl md:text-5xl font-extrabold mt-3 leading-[1.05]">
-            De <span className="text-ink/35 line-through decoration-orange/50 decoration-[3px]">dias</span> para <span className="text-orange">horas</span>.
-          </h2>
-          <p className="text-ink/60 text-lg mt-4">
-            Cadastrar um produto completo — dados técnicos, descrição com SEO, imagens e vídeo — levava uma tarde inteira por item. Com o Agente de Produto, são minutos.
-          </p>
-        </div>
+      <Section id="objetivos">
+        <Cabecalho
+          titulo="Por onde você quer começar?"
+          texto="É a primeira pergunta que o Alfred faz quando você entra. Escolha um caminho; os outros entram na sua semana depois."
+        />
+        <ul className="flex flex-col gap-3">
+          {PORTAS.map(({ objetivo, to, Icone, promessa }) => {
+            const p = PAGINAS[objetivo];
+            return (
+              <li key={objetivo} className="ag-glass ag-sheen rounded-[28px] p-5 sm:p-6 grid gap-5 md:grid-cols-[auto_1fr_auto] md:items-center">
+                <span className="w-14 h-14 rounded-[18px] grid place-items-center" style={{ background: `color-mix(in srgb, ${p.cor} 16%, transparent)`, color: p.cor }}>
+                  <Icone className="w-6 h-6" strokeWidth={1.75} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium text-[var(--ag-text-3)]">{OBJETIVO_INFO[objetivo].agente}</p>
+                  <h3 className="mt-0.5 font-display text-[24px] md:text-[26px] font-semibold tracking-tight leading-tight text-[var(--ag-text)]">
+                    {OBJETIVO_INFO[objetivo].titulo}
+                  </h3>
+                  <p className="mt-1.5 max-w-xl leading-relaxed text-[var(--ag-text-2)]">{promessa}</p>
+                </div>
+                <div className="flex flex-wrap gap-2 md:justify-end">
+                  <Cta to={to} variante="vidro">Ver como funciona</Cta>
+                  <Cta to={linkCadastro(objetivo)} variante="escuro" rotulo={`Começar por ${objetivo}`}>Começar por aqui</Cta>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </Section>
 
-        <div className="max-w-4xl mx-auto mb-10 rounded-3xl bg-ink text-porcelain p-8 md:p-12 flex flex-col sm:flex-row items-center justify-center gap-6 sm:gap-12">
-          <div className="text-center">
-            <p className="text-[11px] uppercase tracking-widest text-porcelain/40 mb-1">Antes</p>
-            <p className="font-display text-4xl md:text-5xl font-extrabold text-porcelain/60">Dias</p>
-            <p className="text-porcelain/45 text-sm mt-1">cadastro manual, item a item</p>
+      <Section>
+        <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
+          <div>
+            <Cabecalho
+              className="!mb-8"
+              titulo="Você aprova. O Alfred grava."
+              texto="Você pede em português, como pediria a alguém da equipe. O Alfred lê o que precisa, monta um plano e espera a sua revisão antes de mexer em qualquer coisa."
+            />
+            <ul className="flex flex-col gap-3">
+              {GARANTIAS.map((g) => (
+                <li key={g} className="flex items-start gap-3 text-[16px] text-[var(--ag-text)]">
+                  <span className="mt-0.5 w-6 h-6 rounded-full grid place-items-center shrink-0" style={{ background: 'var(--ag-ok-soft)', color: 'var(--ag-ok)' }}>
+                    <Check className="w-3.5 h-3.5" />
+                  </span>
+                  {g}
+                </li>
+              ))}
+            </ul>
           </div>
-          <ArrowRight className="w-9 h-9 text-orange shrink-0 rotate-90 sm:rotate-0" strokeWidth={2.25} />
-          <div className="text-center">
-            <p className="text-[11px] uppercase tracking-widest text-orange mb-1">Depois</p>
-            <p className="font-display text-5xl md:text-6xl font-extrabold text-orange">Horas</p>
-            <p className="text-porcelain/45 text-sm mt-1">o esquadrão trabalhando por você</p>
+          <PlanoDemo />
+        </div>
+      </Section>
+
+      <Section colado>
+        <Cabecalho titulo="Um agente, quatro frentes da sua loja." texto="O mesmo Alfred, a mesma conversa e os mesmos créditos para tudo." />
+        <div className="grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
+          {FRENTES.map((f) => (
+            <div key={f.nome}>
+              <p className="flex items-center gap-2 pb-3 text-[17px] font-semibold text-[var(--ag-text)]" style={{ borderBottom: `2px solid ${f.cor}` }}>
+                <span className="w-2.5 h-2.5 rounded-full" style={{ background: f.cor }} />
+                {f.nome}
+              </p>
+              <ul className="mt-4 flex flex-col gap-2.5">
+                {f.itens.map((i) => (
+                  <li key={i} className="text-[15px] leading-snug text-[var(--ag-text-2)]">{i}</li>
+                ))}
+              </ul>
+              {f.to && (
+                <Link to={f.to} className="mt-4 inline-block text-[14.5px] font-semibold text-[var(--ag-text)] underline decoration-[var(--ag-hairline-2)] underline-offset-4 hover:decoration-[var(--ag-text)]">
+                  Saiba mais sobre {f.nome === 'Produto' ? 'descrições' : f.nome === 'Conteúdo' ? 'o blog' : 'o Mercado Livre'}
+                </Link>
+              )}
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section tone="dark" id="operacoes">
+        <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
+          <div>
+            <Cabecalho
+              className="!mb-6"
+              titulo="Pedido parado e estoque acabando aparecem antes de virar prejuízo."
+              texto="O Centro de Operações junta vendas, pedidos, estoque e preços do seu ERP e da sua loja num painel só. O Alfred lê o mesmo painel e põe o que é urgente na sua semana."
+            />
+            <p className="text-[13px] text-[var(--ag-text-3)]">Ao lado, um exemplo com dados fictícios.</p>
+          </div>
+          <OperacoesDemo />
+        </div>
+
+        <div className="mt-24">
+          <Cabecalho
+            titulo="Conecta no que a sua loja já usa."
+            texto="O Alfred lê e grava direto no ERP, na loja e no marketplace. No envio do catálogo vão só título, descrição, SEO e imagens: NCM, GTIN e medidas ficam como estão."
+          />
+          <IntegrationsGrid />
+        </div>
+      </Section>
+
+      <Section>
+        <div className="ag-glass-strong ag-sheen rounded-[30px] p-6 sm:p-10 grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
+          <div>
+            <h2 className="font-display text-[30px] md:text-[38px] font-semibold leading-[1.08] tracking-[-0.03em] text-[var(--ag-text)]">
+              Pague pelo trabalho feito, não por usuário.
+            </h2>
+            <p className="mt-3 max-w-xl text-[17px] leading-relaxed text-[var(--ag-text-2)]">
+              Créditos a R$ 0,50, sem mensalidade e sem fidelidade. Toda ação mostra o custo antes de você confirmar.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Cta to="/precos" variante="vidro">Ver preços</Cta>
+            <Cta to={linkCadastro()} rotulo="Começar grátis (preço)">Começar grátis</Cta>
           </div>
         </div>
-
-        <div className="grid gap-6 md:grid-cols-3">{cases.map((c) => <CaseCard key={c.label} item={c} />)}</div>
       </Section>
 
-      {/* Problema 
-      <Section tone="light">
-        <div className="max-w-3xl mx-auto text-center">
-          <h2 className="font-display text-3xl md:text-4xl font-extrabold mb-4">Cadastro manual e conteúdo parado <span className="text-orange">travam suas vendas</span>.</h2>
-          <p className="text-ink/60 text-lg">Planilhas infinitas, descrições pobres e um blog que ninguém atualiza. O Alfreds coloca um esquadrão de agentes para resolver isso por você.</p>
-        </div>
-      </Section> */}
-
-      {/* Conheça os agentes */}
-      <Section tone="light">
-        <div className="text-center mb-12">
-          <h2 className="font-display text-3xl md:text-4xl font-extrabold">Conheça o esquadrão</h2>
-          <p className="text-ink/60 mt-3">Dois agentes trabalhando hoje. Outros dois a caminho.</p>
-        </div>
-        <div className="grid gap-6 md:grid-cols-2">
-          <AgentCard variant="product" title="Agente de Produto" description="Cadastra, enriquece, gera SEO, imagens e vídeos do seu catálogo." to="/agente-de-produto" />
-          <AgentCard variant="content" title="Agente de Conteúdo" description="Planeja, escreve e otimiza o conteúdo que faz sua marca ranquear." to="/agente-de-conteudo" />
-          <AgentCard variant="sales" title="Agente de Força de Vendas" description="Prioriza oportunidades, acompanha metas e apoia seu time a vender mais." Icon={TrendingUp} comingSoon />
-          <AgentCard variant="ops" title="Agente Operacional" description="Cuida de estoque, pedidos e rotinas para a operação rodar sem atrito." Icon={Boxes} comingSoon />
-        </div>
-      </Section>
-
-      {/* Como funciona */}
-      <Section tone="dark">
-        <div className="text-center mb-12"><h2 className="font-display text-3xl md:text-4xl font-extrabold">Como funciona</h2></div>
-        <HowItWorks />
-      </Section>
-
-      {/* Agente de Produto em detalhe */}
-      <Section tone="light">
-        <FeatureShowcase theme="product" eyebrow="Agente de Produto" title="Seu catálogo pronto para performar." features={productFeatures} />
-      </Section>
-
-      {/* Agente de Conteúdo em detalhe */}
-      <Section tone="dark">
-        <FeatureShowcase theme="content" eyebrow="Agente de Conteúdo" title="Conteúdo que ranqueia, na voz da sua marca." features={contentFeatures} />
-      </Section>
-
-      {/* Segmentos */}
-      <Section tone="light">
-        <div className="text-center mb-12"><h2 className="font-display text-3xl md:text-4xl font-extrabold">Feito para o seu tipo de operação</h2></div>
-        <SegmentGrid segments={segments} />
-      </Section>
-
-      {/* Integrações */}
-      <Section tone="dark">
-        <div className="text-center mb-12">
-          <h2 className="font-display text-3xl md:text-4xl font-extrabold">Integrações</h2>
-          <p className="text-porcelain/60 mt-3">Conecte com as ferramentas que você já usa.</p>
-        </div>
-        <IntegrationsGrid />
-      </Section>
-
-      {/* Preços */}
-      <Section tone="light"><PricingSummary /></Section>
-
-      {/* Confiança */}
-      <Section tone="dark">
-        <div className="text-center mb-12"><h2 className="font-display text-3xl md:text-4xl font-extrabold">Segurança e confiança</h2></div>
-        <TrustSection />
-      </Section>
-
-      {/* FAQ */}
-      <Section tone="light">
-        <div className="text-center mb-12"><h2 className="font-display text-3xl md:text-4xl font-extrabold">Perguntas frequentes</h2></div>
+      <Section colado>
+        <Cabecalho titulo="Perguntas frequentes" centro />
         <FAQ items={homeFaq} />
       </Section>
 
-      {/* CTA final */}
-      <Section tone="light"><FinalCTA title="Comece com 10 créditos grátis e coloque os agentes para trabalhar." ctaLabel="Começar grátis" ctaTo="/entrar" /></Section>
+      <Section colado>
+        <FinalCTA
+          title="Sua semana já tem tarefa. Deixe o Alfred começar."
+          texto="Crie a conta, escolha por onde começar e veja o primeiro resultado em minutos."
+          ctaLabel="Começar grátis"
+          ctaTo={linkCadastro()}
+        />
+      </Section>
     </>
   );
 }

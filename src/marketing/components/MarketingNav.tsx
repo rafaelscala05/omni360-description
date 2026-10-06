@@ -1,76 +1,81 @@
-import { Link, NavLink } from 'react-router-dom';
-import { ChevronDown } from 'lucide-react';
-import { getTheme } from '../theme';
-import { trackMarketingCtaClick } from '../../analytics';
+import { useEffect, useState } from 'react';
+import { Link, NavLink, useLocation } from 'react-router-dom';
+import { Menu, X } from 'lucide-react';
+import logo from '../../assets/brand/logo-alfreds-produtos.png';
+import { Cta } from './ui';
+import { linkCadastro } from '../objetivoSite';
 
-const agentLinks = [
-  { to: '/agente-de-produto', label: 'Agente de Produto', desc: 'Cadastro, SEO, imagens e vídeo' },
-  { to: '/agente-de-conteudo', label: 'Agente de Conteúdo', desc: 'Conteúdo que ranqueia' },
+/** As três portas de entrada do onboarding, com a cor de origem de cada uma no app. */
+export const PAGINAS_OBJETIVO = [
+  { to: '/descricoes-de-produto', label: 'Descrições', cor: 'var(--ag-orig-produto)' },
+  { to: '/mercado-livre', label: 'Mercado Livre', cor: 'var(--ag-orig-meli)' },
+  { to: '/blog-com-ia', label: 'Blog', cor: 'var(--ag-orig-conteudo)' },
 ];
 
-const pageLinks = [
-  { to: '/precos', label: 'Preços' },
-  { to: '/casos', label: 'Casos' },
-];
+const links = [...PAGINAS_OBJETIVO, { to: '/precos', label: 'Preços', cor: '' }];
 
 export default function MarketingNav() {
-  const brand = getTheme('brand');
+  const [aberto, setAberto] = useState(false);
+  const { pathname } = useLocation();
+  useEffect(() => setAberto(false), [pathname]);
+
   return (
-    <header className="sticky top-0 z-40 bg-porcelain/90 backdrop-blur border-b border-ink/10">
-      <nav className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-6">
-        <Link to="/" className="flex items-center">
-          <img src={brand.logo} alt="Alfreds" className="h-7 w-auto" />
+    <header className="sticky top-0 z-40 px-3 pt-3">
+      <nav
+        aria-label="Principal"
+        className="ag-glass-strong ag-sheen mx-auto max-w-6xl rounded-[22px] h-14 pl-4 pr-2 flex items-center justify-between gap-4"
+      >
+        <Link to="/" className="flex items-center shrink-0" aria-label="Alfreds, página inicial">
+          <img src={logo} alt="Alfreds" className="h-7 w-auto" />
         </Link>
 
-        <ul className="hidden md:flex items-center gap-6 text-sm font-medium">
-          {/* Submenu Agentes */}
-          <li className="relative group">
-            <button
-              type="button"
-              className="flex items-center gap-1 text-ink/70 group-hover:text-orange group-focus-within:text-orange transition-colors"
-            >
-              Agentes
-              <ChevronDown className="w-4 h-4 transition-transform group-hover:rotate-180 group-focus-within:rotate-180" />
-            </button>
-            <div className="absolute left-1/2 -translate-x-1/2 top-full pt-3 w-72 invisible opacity-0 translate-y-1 group-hover:visible group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:visible group-focus-within:opacity-100 group-focus-within:translate-y-0 transition-all duration-200">
-              <div className="rounded-2xl border border-ink/10 bg-white shadow-xl p-2">
-                {agentLinks.map((l) => (
-                  <NavLink
-                    key={l.to}
-                    to={l.to}
-                    className={({ isActive }) =>
-                      `block rounded-xl px-4 py-3 transition-colors ${isActive ? 'bg-orange/5' : 'hover:bg-ink/5'}`
-                    }
-                  >
-                    <span className="block font-bold text-ink">{l.label}</span>
-                    <span className="block text-xs text-ink/50">{l.desc}</span>
-                  </NavLink>
-                ))}
-              </div>
-            </div>
-          </li>
-
-          {pageLinks.map((l) => (
+        <ul className="hidden md:flex items-center gap-1 text-[14.5px] font-medium">
+          {links.map((l) => (
             <li key={l.to}>
               <NavLink
                 to={l.to}
-                className={({ isActive }) => `hover:text-orange transition-colors ${isActive ? 'text-orange' : 'text-ink/70'}`}
+                className="flex items-center gap-2 rounded-full px-3.5 py-2 transition-colors hover:bg-[var(--ag-fill)]"
+                style={({ isActive }) => ({ color: isActive ? 'var(--ag-text)' : 'var(--ag-text-2)', background: isActive ? 'var(--ag-fill-2)' : undefined })}
               >
+                {l.cor && <span className="w-1.5 h-1.5 rounded-full" style={{ background: l.cor }} />}
                 {l.label}
               </NavLink>
             </li>
           ))}
         </ul>
 
-        <div className="flex items-center gap-3">
-          <Link to="/entrar" className="text-sm font-semibold text-ink/80 hover:text-ink">Entrar</Link>
-          <Link
-            to="/entrar"
-            onClick={() => trackMarketingCtaClick({ label: 'Começar grátis', destination: '/entrar' })}
-            className="text-sm font-bold px-4 py-2 rounded-xl bg-orange text-white hover:brightness-95 transition"
-          >Começar grátis</Link>
+        <div className="flex items-center gap-1.5">
+          <Link to="/entrar" className="hidden sm:inline-flex rounded-full px-4 py-2 text-[14.5px] font-semibold text-[var(--ag-text)] hover:bg-[var(--ag-fill)]">
+            Entrar
+          </Link>
+          <Cta to={linkCadastro()} rotulo="Começar grátis (nav)" className="!min-h-[40px] !px-4">Começar grátis</Cta>
+          <button
+            type="button"
+            className="md:hidden w-10 h-10 grid place-items-center rounded-full text-[var(--ag-text)] hover:bg-[var(--ag-fill)]"
+            aria-expanded={aberto}
+            aria-controls="menu-site"
+            aria-label={aberto ? 'Fechar menu' : 'Abrir menu'}
+            onClick={() => setAberto((v) => !v)}
+          >
+            {aberto ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
         </div>
       </nav>
+
+      {aberto && (
+        <div id="menu-site" className="md:hidden ag-glass-strong ag-sheen ag-rise mx-auto mt-2 max-w-6xl rounded-[22px] p-2">
+          {links.map((l) => (
+            <NavLink key={l.to} to={l.to} className="flex items-center gap-3 rounded-[16px] px-4 min-h-[48px] text-[16px] font-medium text-[var(--ag-text)] hover:bg-[var(--ag-fill)]">
+              <span className="w-2 h-2 rounded-full" style={{ background: l.cor || 'transparent' }} />
+              {l.label}
+            </NavLink>
+          ))}
+          <NavLink to="/entrar" className="flex items-center gap-3 rounded-[16px] px-4 min-h-[48px] text-[16px] font-medium text-[var(--ag-text)] hover:bg-[var(--ag-fill)]">
+            <span className="w-2 h-2" />
+            Entrar
+          </NavLink>
+        </div>
+      )}
     </header>
   );
 }

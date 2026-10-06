@@ -9,19 +9,16 @@ const icons: Record<string, LucideIcon> = {
 
 export default function SegmentGrid({ segments }: { segments: SegmentItem[] }) {
   return (
-    <div className="grid gap-6 md:grid-cols-3">
+    <div className="grid gap-4 md:grid-cols-3">
       {segments.map((s) => {
         const Icon = icons[s.title] ?? Store;
         return (
-          <div
-            key={s.title}
-            className="rounded-2xl border border-ink/10 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg hover:border-orange/30"
-          >
-            <div className="w-12 h-12 rounded-xl bg-orange/10 text-orange flex items-center justify-center mb-4">
-              <Icon className="w-6 h-6" strokeWidth={1.75} />
+          <div key={s.title} className="ag-glass rounded-[24px] p-6">
+            <div className="w-11 h-11 rounded-[14px] grid place-items-center mb-5" style={{ background: 'var(--ag-accent-soft)', color: 'var(--ag-accent)' }}>
+              <Icon className="w-5 h-5" strokeWidth={1.75} />
             </div>
-            <h3 className="font-display text-xl font-bold mb-2 text-ink">{s.title}</h3>
-            <p className="text-ink/60 leading-relaxed">{s.pain}</p>
+            <h3 className="font-display text-[20px] font-semibold mb-1.5 text-[var(--ag-text)]">{s.title}</h3>
+            <p className="leading-relaxed text-[var(--ag-text-2)]">{s.pain}</p>
           </div>
         );
       })}

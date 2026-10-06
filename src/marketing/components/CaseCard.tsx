@@ -1,18 +1,12 @@
 import React from 'react';
 import { CaseItem } from '../content';
 
-interface CaseCardProps {
-  item: CaseItem;
-}
-
-const CaseCard: React.FC<CaseCardProps> = ({ item }) => {
-  return (
-    <div className="rounded-2xl border border-ink/10 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg hover:border-orange/30">
-      <p className="font-display text-4xl font-extrabold text-orange">{item.metric}</p>
-      <p className="font-bold mt-1 text-ink">{item.label}</p>
-      <p className="text-ink/50 text-sm mt-2">{item.description}</p>
-    </div>
-  );
-};
+const CaseCard: React.FC<{ item: CaseItem }> = ({ item }) => (
+  <div className="ag-glass ag-sheen rounded-[24px] p-6">
+    <p className="font-display text-[44px] font-semibold leading-none tracking-[-0.04em] text-[var(--ag-text)]">{item.metric}</p>
+    <p className="mt-3 font-semibold text-[var(--ag-text)]">{item.label}</p>
+    <p className="mt-1.5 text-[14px] leading-relaxed text-[var(--ag-text-2)]">{item.description}</p>
+  </div>
+);
 
 export default CaseCard;

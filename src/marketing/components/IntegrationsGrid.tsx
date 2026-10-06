@@ -1,65 +1,50 @@
 import type { ReactNode } from 'react';
 import { FileSpreadsheet } from 'lucide-react';
 import wakeLogo from '../../assets/integrations/wake.png';
-import shopifyLogo from '../../assets/integrations/shopify.webp';
 import tinyLogo from '../../assets/integrations/tiny.svg';
+import idworksLogo from '../../assets/integrations/idworks.svg';
 
-interface Integration {
-  name: string;
-  render: () => ReactNode;
-  comingSoon?: boolean;
+// Vive numa faixa escura: o logo da Wake é branco e o do Tiny é invertido.
+interface Integracao {
+  nome: string;
+  papel: string;
+  logo: ReactNode;
 }
 
-const integrations: Integration[] = [
+const integracoes: Integracao[] = [
+  { nome: 'Tiny', papel: 'ERP', logo: <img src={tinyLogo} alt="Tiny" className="h-7 w-auto" style={{ filter: 'brightness(0) invert(1)' }} /> },
+  { nome: 'Bling', papel: 'ERP', logo: <span className="font-display text-[24px] font-bold tracking-tight text-[var(--ag-text)]">bling</span> },
   {
-    name: 'Planilha / Excel',
-    render: () => <FileSpreadsheet className="w-8 h-8 text-porcelain" strokeWidth={1.5} />,
-  },
-  {
-    name: 'Wake Commerce',
-    render: () => <img src={wakeLogo} alt="Wake Commerce" className="max-h-7 w-auto object-contain" />,
-  },
-  {
-    name: 'Shopify',
-    render: () => <img src={shopifyLogo} alt="Shopify" className="max-h-8 w-auto object-contain" />,
-    comingSoon: true,
-  },
-  {
-    name: 'ERP Tiny',
-    // Logo original é azul; invertemos para branco para legibilidade no fundo escuro.
-    render: () => (
-      <img src={tinyLogo} alt="ERP Tiny" className="max-h-7 w-auto object-contain" style={{ filter: 'brightness(0) invert(1)' }} />
+    nome: 'IdWorks',
+    papel: 'ERP',
+    logo: (
+      <span className="flex items-center gap-2">
+        <img src={idworksLogo} alt="" className="h-7 w-7 rounded-[7px] ring-1 ring-white/25" />
+        <span className="font-display text-[20px] font-semibold text-[var(--ag-text)]">IdWorks</span>
+      </span>
     ),
-    comingSoon: true,
   },
+  { nome: 'Wake', papel: 'Loja', logo: <img src={wakeLogo} alt="Wake Commerce" className="h-8 w-auto" /> },
   {
-    name: 'ERP Bling',
-    render: () => <span className="text-porcelain font-semibold text-lg">Bling</span>,
+    nome: 'Mercado Livre',
+    papel: 'Marketplace',
+    logo: <span className="rounded-full px-3 py-1 text-[15px] font-bold" style={{ background: '#ffe600', color: '#2d3277' }}>Mercado Livre</span>,
   },
-  {
-    name: 'ERP IdWorks',
-    render: () => <span className="text-porcelain font-semibold text-lg">IdWorks</span>,
-    comingSoon: true,
-  },
+  { nome: 'Planilha ou link', papel: 'Qualquer loja', logo: <FileSpreadsheet className="w-8 h-8 text-[var(--ag-text)]" strokeWidth={1.5} /> },
 ];
 
 export default function IntegrationsGrid() {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
-      {integrations.map((it) => (
-        <div
-          key={it.name}
-          className="relative flex flex-col items-center justify-center gap-4 rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-9 text-center transition hover:-translate-y-1 hover:bg-white/[0.07] hover:border-white/20"
-        >
-          {it.comingSoon && (
-            <span className="absolute top-3 right-3 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-white/10 text-porcelain/60">
-              Em breve
-            </span>
-          )}
-          <div className={`h-9 flex items-center justify-center ${it.comingSoon ? 'opacity-80' : ''}`}>{it.render()}</div>
-          <span className="text-sm font-semibold text-porcelain/70">{it.name}</span>
-        </div>
+    <ul className="grid gap-3 grid-cols-2 md:grid-cols-3">
+      {integracoes.map((it) => (
+        <li key={it.nome} className="ag-glass rounded-[22px] px-5 py-7 flex flex-col items-center justify-center gap-4 text-center">
+          <div className="h-9 flex items-center justify-center">{it.logo}</div>
+          <div>
+            <p className="text-[14.5px] font-semibold text-[var(--ag-text)]">{it.nome}</p>
+            <p className="text-[12.5px] text-[var(--ag-text-3)]">{it.papel}</p>
+          </div>
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }

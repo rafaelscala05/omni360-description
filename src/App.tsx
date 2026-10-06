@@ -45,14 +45,14 @@ import { listenProjects } from './services/contentService';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import MarketingLayout from './marketing/MarketingLayout';
 import HomePage from './marketing/pages/HomePage';
-import ProductAgentPage from './marketing/pages/ProductAgentPage';
-import ContentAgentPage from './marketing/pages/ContentAgentPage';
 import PricingPage from './marketing/pages/PricingPage';
 import CasesPage from './marketing/pages/CasesPage';
 import ContactPage from './marketing/pages/ContactPage';
 import TermsPage from './marketing/pages/TermsPage';
 import PrivacyPage from './marketing/pages/PrivacyPage';
 import AuthPage from './marketing/pages/AuthPage';
+import ObjetivoPage from './marketing/pages/ObjetivoPage';
+import { lerObjetivoDoSite } from './marketing/objetivoSite';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import 'react-quill-new/dist/quill.bubble.css';
@@ -3517,6 +3517,7 @@ Retorne APENAS um JSON válido no seguinte formato:
     if (isCoorteObjetivos(cohort) && !emCurso && !jornadaConcluida && objetivos.length === 0) {
       return (
         <ObjetivosPicker
+          inicial={lerObjetivoDoSite()}
           onComecar={async (sel) => {
             await aderirObjetivos(sel);
             const primeiro = sel[0];
@@ -5872,8 +5873,11 @@ Retorne APENAS um JSON válido no seguinte formato:
     <Routes>
       <Route element={<MarketingLayout />}>
         <Route path="/" element={<HomePage />} />
-        <Route path="/agente-de-produto" element={<ProductAgentPage />} />
-        <Route path="/agente-de-conteudo" element={<ContentAgentPage />} />
+        <Route path="/descricoes-de-produto" element={<ObjetivoPage objetivo="produto" />} />
+        <Route path="/mercado-livre" element={<ObjetivoPage objetivo="meli" />} />
+        <Route path="/blog-com-ia" element={<ObjetivoPage objetivo="conteudo" />} />
+        <Route path="/agente-de-produto" element={<Navigate to="/descricoes-de-produto" replace />} />
+        <Route path="/agente-de-conteudo" element={<Navigate to="/blog-com-ia" replace />} />
         <Route path="/precos" element={<PricingPage />} />
         <Route path="/casos" element={<CasesPage />} />
         <Route path="/contato" element={<ContactPage />} />

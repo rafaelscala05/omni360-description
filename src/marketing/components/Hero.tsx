@@ -1,67 +1,42 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { AgentTheme, getTheme } from '../theme';
-import { trackMarketingCtaClick } from '../../analytics';
+import React from 'react';
+import { Cta, Selo } from './ui';
 
 interface HeroProps {
-  theme?: AgentTheme;
-  eyebrow?: string;
-  titleLead: string;
-  titleAccent: string;
-  titleTail?: string;
-  subtitle: string;
-  primaryCta: { label: string; to: string };
-  secondaryCta?: { label: string; to: string };
+  selo?: { cor: string; texto: string };
+  titulo: React.ReactNode;
+  subtitulo: React.ReactNode;
+  primario: { label: string; to: string };
+  secundario?: { label: string; to: string };
   microcopy?: string;
+  /** Demonstração ao lado do texto (vira coluna a partir de lg). */
+  lado?: React.ReactNode;
+  /** 'topo' quando a peça ao lado muda de altura (a demo da semana), para o texto não pular. */
+  alinhar?: 'centro' | 'topo';
 }
 
-export default function Hero({ theme = 'brand', eyebrow, titleLead, titleAccent, titleTail, subtitle, primaryCta, secondaryCta, microcopy }: HeroProps) {
-  const t = getTheme(theme);
-  const dark = theme === 'content';
-  // On the dark (content) hero, the ink accent/button would be invisible on the ink
-  // background — use orange as the accent and the primary action color instead.
-  const accentText = dark ? 'text-orange' : t.accentTextClass;
-  const ctaBgClass = dark ? 'bg-orange' : t.accentBgClass;
-  const ctaOnClass = dark ? 'text-white' : t.onAccentClass;
-  const [revealed, setRevealed] = useState(false);
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setRevealed(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
+/** Abertura das páginas: texto à esquerda, a peça do produto à direita. */
+export default function Hero({ selo, titulo, subtitulo, primario, secundario, microcopy, lado, alinhar = 'centro' }: HeroProps) {
   return (
-    <section className={`relative overflow-hidden ${dark ? 'bg-ink text-porcelain' : 'bg-porcelain text-ink'}`}>
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundImage: `radial-gradient(circle at 50% 0%, ${dark ? 'rgba(255,91,3,0.12)' : 'rgba(255,91,3,0.16)'}, transparent 55%)`,
-        }}
-      />
-      <div
-        className={`max-w-5xl mx-auto px-6 py-24 md:py-32 text-center relative transition-all duration-700 ease-out ${
-          revealed ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
-        }`}
-      >
-        {eyebrow && <span className={`inline-block mb-5 text-xs font-bold uppercase tracking-widest ${accentText}`}>{eyebrow}</span>}
-        <h1 className="font-display font-extrabold tracking-tight text-4xl md:text-6xl leading-[1.05]">
-          {titleLead} <span className={accentText}>{titleAccent}</span>{titleTail ? ` ${titleTail}` : ''}
-        </h1>
-        <p className={`mt-6 text-lg md:text-xl max-w-2xl mx-auto ${dark ? 'text-porcelain/70' : 'text-ink/70'}`}>{subtitle}</p>
-        <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
-          <Link
-            to={primaryCta.to}
-            onClick={() => trackMarketingCtaClick({ label: primaryCta.label, destination: primaryCta.to })}
-            className={`px-6 py-3.5 rounded-xl font-bold ${ctaBgClass} ${ctaOnClass} hover:brightness-95 hover:-translate-y-0.5 transition`}
-          >{primaryCta.label}</Link>
-          {secondaryCta && (
-            <Link
-              to={secondaryCta.to}
-              onClick={() => trackMarketingCtaClick({ label: secondaryCta.label, destination: secondaryCta.to })}
-              className={`px-6 py-3.5 rounded-xl font-bold border ${dark ? 'border-porcelain/30 text-porcelain hover:bg-porcelain/10' : 'border-ink/20 text-ink hover:bg-ink/5'} hover:-translate-y-0.5 transition`}
-            >{secondaryCta.label}</Link>
-          )}
+    <section className="relative">
+      <div className={`max-w-6xl mx-auto px-4 sm:px-6 pt-14 pb-16 md:pt-24 md:pb-24 grid gap-12 ${lado ? `lg:grid-cols-[1.2fr_1fr] ${alinhar === 'topo' ? 'lg:items-start' : 'lg:items-center'}` : ''}`}>
+        <div className={lado ? (alinhar === 'topo' ? 'lg:pt-16' : '') : 'max-w-3xl'}>
+          {selo && <div className="ag-rise mb-6"><Selo cor={selo.cor}>{selo.texto}</Selo></div>}
+          <h1
+            className="ag-rise font-display font-semibold text-[var(--ag-text)] text-[40px] sm:text-[52px] lg:text-[58px] leading-[0.98] tracking-[-0.04em] text-balance"
+            style={{ animationDelay: '60ms' }}
+          >
+            {titulo}
+          </h1>
+          <p className="ag-rise mt-6 max-w-xl text-[18px] md:text-[19px] leading-relaxed text-[var(--ag-text-2)] text-pretty" style={{ animationDelay: '120ms' }}>
+            {subtitulo}
+          </p>
+          <div className="ag-rise mt-9 flex flex-wrap items-center gap-3" style={{ animationDelay: '180ms' }}>
+            <Cta to={primario.to} grande>{primario.label}</Cta>
+            {secundario && <Cta to={secundario.to} variante="vidro" grande>{secundario.label}</Cta>}
+          </div>
+          {microcopy && <p className="ag-rise mt-4 text-[14px] text-[var(--ag-text-3)]" style={{ animationDelay: '220ms' }}>{microcopy}</p>}
         </div>
-        {microcopy && <p className={`mt-4 text-sm ${dark ? 'text-porcelain/50' : 'text-ink/50'}`}>{microcopy}</p>}
+        {lado && <div className="ag-rise min-w-0" style={{ animationDelay: '240ms' }}>{lado}</div>}
       </div>
     </section>
   );

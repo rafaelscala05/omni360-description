@@ -8,10 +8,12 @@ import { OBJETIVO_INFO, alternarObjetivo, rotuloComecar } from './objetivos';
 
 interface Props {
   onComecar: (objetivos: Objetivo[]) => Promise<void>;
+  /** Objetivo da página do site por onde a pessoa chegou: já vem marcado. */
+  inicial?: Objetivo | null;
 }
 
-const ObjetivosPicker: React.FC<Props> = ({ onComecar }) => {
-  const [sel, setSel] = useState<Objetivo[]>([]);
+const ObjetivosPicker: React.FC<Props> = ({ onComecar, inicial }) => {
+  const [sel, setSel] = useState<Objetivo[]>(inicial ? [inicial] : []);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 

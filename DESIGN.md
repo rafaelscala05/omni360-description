@@ -91,34 +91,29 @@ Ex.: "Uma equipe de **Agentes de IA**…", "Conteúdo que **ranqueia**…", "De 
 
 ---
 
-## 6. Layout & ritmo de seções
+## 6. Layout & ritmo de seções (site)
 
-- Container: `max-w-6xl mx-auto px-6`; seções com `py-20 md:py-28`.
-- **Alternância claro/escuro**: seções alternam `porcelana` (claro) e `ink` (escuro) para criar ritmo e profundidade. Foge do "tudo branco" (IndexaAI) e "tudo escuro" (Niara).
-- Wrapper padrão: componente `Section` com `tone="light" | "dark"`.
-  - `light` → `bg-porcelain text-ink`
-  - `dark` → `bg-ink text-porcelain`
-- Cantos generosos: cards `rounded-2xl`/`rounded-3xl`; botões `rounded-xl`.
-- Sombras suaves (`shadow-sm`/`shadow-lg` no hover), nunca sombras duras.
+> Desde 2026-10-05 o site de marketing (`src/marketing/*`) e a tela de login usam o **mesmo design system do Alfred** (tokens `--ag-*`, vidro, aurora — ver `src/index.css`), não mais o porcelana/ink. Quem cria a conta encontra do outro lado a mesma tela que viu no site.
 
----
+- O layout inteiro é escopo `.alfreds` com `data-tema="claro"` fixo e a aurora presa à janela (`MarketingLayout.tsx`). `.ag-aurora` define `position: relative` fora das camadas do Tailwind — para fixá-la, use estilo inline (`position: fixed`), a classe `fixed` perde.
+- `Section` (`components/ui.tsx`): `tone="light"` é transparente (a aurora aparece); `tone="dark"` reabre `.alfreds[data-tema="escuro"]`, então o conteúdo segue os mesmos tokens. `colado` tira o respiro do topo.
+- Cores de origem do app como identidade de cada frente: Produto `--ag-orig-produto`, Mercado Livre `--ag-orig-meli`, Conteúdo `--ag-orig-conteudo`, Operações `--ag-orig-operacoes`; aspectos (`--ag-asp-*`) nas listas de recursos.
+- Container `max-w-6xl px-4 sm:px-6`; cartões `ag-glass`/`ag-glass-strong ag-sheen` com raio 22–30px; botões em pílula (`Cta`).
 
-## 7. Componentes & padrões
+## 7. Componentes & padrões (site)
 
 Todos em `src/marketing/components/`.
 
-- **Hero** — eyebrow + headline com frase-chave colorida + subtítulo + **dual-CTA** (`Começar grátis` laranja preenchido + secundário outline) + microcopy `10 créditos grátis · sem cartão`. Fundo com **glow radial laranja** e **reveal** na montagem.
-- **AgentCard** — variantes `product | content | sales | ops`; suporta estado `comingSoon`. Card claro (branco) ou escuro (ink); logo (agentes ativos) ou ícone em tile (agentes futuros).
-- **FeatureShowcase** — **lista numerada à esquerda + screenshot sincronizado à direita** (troca ao clicar no item). Screenshots reais do app em `src/assets/marketing/`; fallback elegante "Prévia em breve" (painel pontilhado).
-- **SegmentGrid** — cards com **ícone** em tile `bg-orange/10 text-orange` + título + dor.
-- **CaseCard** — métrica grande em laranja + label + descrição. Métricas ilustrativas devem dizer "exemplo ilustrativo" até haver dados reais.
-- **IntegrationsGrid** — em **seção escura**; logos reais em branco sobre tiles `bg-white/[0.04] border-white/10`; selo "Em breve" onde aplicável. Logos coloridos/escuros (ex.: Tiny) são invertidos para branco (`filter: brightness(0) invert(1)`).
-- **MarketingNav** — sticky, logo à esquerda; agentes agrupados em **submenu "Agentes"** (dropdown); `Entrar` + CTA `Começar grátis` laranja.
-- **FAQ** — acordeão; **FinalCTA** — headline + botão laranja; **TrustSection** — ícones + texto em seção escura; **MarketingFooter** — logo preto + colunas.
+- **Hero** — selo de origem opcional, título display em caixa de sentença (sem palavra colorida), apoio, CTA laranja + secundário de vidro, microcopy. `lado` vira coluna; `alinhar="topo"` quando a peça ao lado muda de altura.
+- **SemanaDemo** — o hero da home: a "Sua semana" do app jogável ("Fazer com Alfred" → etapas → antes/depois → "Aprovar e gravar"). É o elemento-assinatura; o resto da página fica quieto.
+- **DemoObjetivo / HeroObjetivo** — antes e depois de cada objetivo (fotos ambientadas reais em `src/assets/marketing/demo-tenis-*`).
+- **PlanoDemo**, **OperacoesDemo** — o card de Plano do chat e um recorte do Centro de Operações, sempre com "dados fictícios" à vista.
+- **IntegrationsGrid** — vive numa faixa escura (o logo da Wake é branco).
+- **FAQ**, **FinalCTA** (com a esfera `AlfredLogo`), **MarketingNav** (vidro flutuante + menu no telefone), **MarketingFooter**.
 
-**App interno** — sidebar `ink` com logo laranja; ações/estados ativos em laranja; mesma marca do site.
+**Páginas de conversão = objetivos do onboarding.** `/descricoes-de-produto`, `/mercado-livre` e `/blog-com-ia` (`ObjetivoPage.tsx`, copy em `content.ts`) seguem os três objetivos da Tela 0. O CTA leva a `/entrar?modo=criar&objetivo=X`; a tela de login guarda o X (`objetivoSite.ts`) e o `ObjetivosPicker` abre com ele marcado. `/blog` não serve: é o prefixo do proxy dos blogs dos clientes (`server/blogPublic.ts`).
 
----
+**Honestidade nas peças:** nenhum número de custo por ação fixo no site (o custo real vive em `config/credits` e muda sem deploy) — só o preço do crédito (R$ 0,50, mínimo 10, `CreditPurchaseModal`) e "o custo aparece antes de confirmar".
 
 ## 8. Botões & CTAs
 
