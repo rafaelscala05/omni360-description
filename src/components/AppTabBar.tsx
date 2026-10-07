@@ -17,6 +17,8 @@
 // sobre o vidro escuro.
 
 import React from 'react';
+import { motion } from 'motion/react';
+import { MOLA } from '../modules/agent/movimento';
 import { Bell, Columns3, Layout, Menu, Plug, Plus } from 'lucide-react';
 import { useAgentTheme } from '../modules/agent/theme';
 import AlfredLogo from './alfredLogo/AlfredLogo';
@@ -50,7 +52,14 @@ const Item: React.FC<{
     style={{ color: ativo ? 'var(--ag-text)' : 'var(--ag-text-2)' }}
   >
     {ativo && (
-      <span className="absolute inset-x-1.5 -inset-y-0.5 rounded-[18px]" style={{ background: 'var(--ag-fill-2)' }} />
+      // Uma pílula só, compartilhada (layoutId): ao trocar de aba ela desliza
+      // até a nova em vez de sumir de uma e aparecer na outra.
+      <motion.span
+        layoutId="aba-ativa-telefone"
+        className="absolute inset-x-1.5 -inset-y-0.5 rounded-[18px]"
+        style={{ background: 'var(--ag-fill-2)' }}
+        transition={MOLA}
+      />
     )}
     <span className="relative">
       {icone}
@@ -59,7 +68,7 @@ const Item: React.FC<{
           className="absolute -top-1.5 -right-2.5 min-w-[17px] h-[17px] px-1 rounded-full text-[10px] font-semibold leading-[17px] text-center"
           style={{ background: 'var(--ag-accent)', color: 'var(--ag-accent-ink)' }}
         >
-          {selo > 99 ? '99+' : selo}
+          <span key={selo} className="ag-bump inline-block">{selo > 99 ? '99+' : selo}</span>
         </span>
       )}
     </span>

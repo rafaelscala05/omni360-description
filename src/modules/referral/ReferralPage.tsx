@@ -110,7 +110,7 @@ const ReferralPage: React.FC<Props> = ({ user }) => {
             disabled={!link}
             className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-white bg-[#FF5B03] hover:bg-[#E14E00] disabled:opacity-50 rounded-xl shadow-sm transition-colors whitespace-nowrap"
           >
-            {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            <span key={String(copied)} className="inline-flex ag-vira">{copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}</span>
             {copied ? 'Copiado!' : 'Copiar link'}
           </button>
         </div>

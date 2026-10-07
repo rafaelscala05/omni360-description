@@ -354,6 +354,11 @@ export class MotorLogo {
     if (!this.visivel || this.reduzido) this.desenhar();
   }
 
+  /** Algo deu certo: a malha expande e volta, uma vez. */
+  comemorar() {
+    this.disparar('expansao');
+  }
+
   definirAtivo(ativo: boolean) {
     if (ativo && !this.ativo) this.disparar('pulso');
     this.ativo = ativo;

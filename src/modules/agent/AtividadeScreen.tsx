@@ -7,6 +7,8 @@ import type { ItemRodando } from './rodando';
 import { executarAcao, listenActions, rejeitarAcao } from '../../services/agentChatService';
 import { useAgentTheme } from './theme';
 import ActionCard from './chat/ActionCard';
+import { AnimatePresence, motion } from 'motion/react';
+import { MOLA, itemLista, itemResolvido } from './movimento';
 import { BotaoConta } from '../../components/ContaMenu';
 import { useLarguraDe } from './useViewport';
 
@@ -126,17 +128,29 @@ const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirAlfred, products = [], o
         </div>
       );
     }
-    if (qual === 'rodando') return rodando.map((item) => <LinhaRodando key={item.id} item={item} />);
-    return lista.map((a) => (
-      <ActionCard
-        key={a.id}
-        uid={uid}
-        action={a}
-        onExecutar={resolver(executarAcao)}
-        onRejeitar={resolver(rejeitarAcao)}
-        onAjustar={onAjustarNoChat ? (ac) => onAjustarNoChat(ac.id) : undefined}
-      />
-    ));
+    if (qual === 'rodando') {
+      return rodando.map((item) => (
+        <motion.div key={item.id} layout {...itemLista}><LinhaRodando item={item} /></motion.div>
+      ));
+    }
+    // Resolvida em "Para você", a aprovação sai para a direita (rumo ao Feito)
+    // e as de baixo sobem para ocupar o lugar, em vez de pular.
+    const animacao = qual === 'voce' ? itemResolvido : itemLista;
+    return (
+      <AnimatePresence initial={false} mode="popLayout">
+        {lista.map((a) => (
+          <motion.div key={a.id} layout {...animacao}>
+            <ActionCard
+              uid={uid}
+              action={a}
+              onExecutar={resolver(executarAcao)}
+              onRejeitar={resolver(rejeitarAcao)}
+              onAjustar={onAjustarNoChat ? (ac) => onAjustarNoChat(ac.id) : undefined}
+            />
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    );
   };
 
   const avisoErro = erro && (
@@ -166,12 +180,19 @@ const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirAlfred, products = [], o
                   role="tab"
                   aria-selected={aba === id}
                   onClick={() => setAba(id)}
-                  className="min-h-[38px] rounded-[11px] text-[13px] font-semibold transition-colors"
-                  style={aba === id
-                    ? { background: 'var(--ag-surface-solid)', color: 'var(--ag-text)', boxShadow: 'var(--ag-shadow-sm)' }
-                    : { color: 'var(--ag-text-2)' }}
+                  className="relative min-h-[38px] rounded-[11px] text-[13px] font-semibold transition-colors"
+                  style={{ color: aba === id ? 'var(--ag-text)' : 'var(--ag-text-2)' }}
                 >
-                  {rotulo}{n ? ` · ${n}` : ''}
+                  {/* Segmento ativo deslizante (uma peça só, layoutId). */}
+                  {aba === id && (
+                    <motion.span
+                      layoutId="atividade-aba"
+                      className="absolute inset-0 rounded-[11px]"
+                      style={{ background: 'var(--ag-surface-solid)', boxShadow: 'var(--ag-shadow-sm)' }}
+                      transition={MOLA}
+                    />
+                  )}
+                  <span className="relative">{rotulo}{n ? <> · <span key={n} className="ag-bump inline-block">{n}</span></> : ''}</span>
                 </button>
               ))}
             </div>
@@ -203,7 +224,7 @@ const AtividadeScreen: React.FC<Props> = ({ uid, onAbrirAlfred, products = [], o
           <div className="ag-tela-x ag-scroll flex-1 overflow-y-auto pb-28 md:pb-6">
             <div className="max-w-2xl flex flex-col gap-3">
               {avisoErro}
-              {conteudo(aba)}
+              <div key={aba} className="flex flex-col gap-3 ag-cascata">{conteudo(aba)}</div>
             </div>
           </div>
         )}

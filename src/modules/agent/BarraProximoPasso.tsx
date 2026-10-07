@@ -8,6 +8,7 @@
 import React from 'react';
 import { RefreshCw, Sparkles } from 'lucide-react';
 import { useAgentTheme } from './theme';
+import { useMudou } from './movimento';
 
 export interface AcaoBarra {
   rotulo: string;
@@ -32,20 +33,33 @@ interface Props {
   className?: string;
 }
 
-const Conteudo: React.FC<Omit<Props, 'escopo' | 'className'>> = ({ n, acao, acaoSecundaria, onPedirAlfred, extra }) => (
+const Conteudo: React.FC<Omit<Props, 'escopo' | 'className'>> = ({ n, acao, acaoSecundaria, onPedirAlfred, extra }) => {
+  // O número "pula" a cada item marcado, e a ação principal acende quando a
+  // seleção começa (0 → 1): o olho vai para onde o próximo toque deve ir.
+  const mudouN = useMudou(n);
+  const temSelecao = useMudou(n > 0);
+  return (
   <div className="ag-glass-strong px-4 sm:px-6 pt-3 pb-3" style={{ borderTop: '1px solid var(--ag-hairline)' }}>
     <div className="max-w-3xl mx-auto flex flex-col gap-2">
       <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--ag-text-2)] tabular-nums">
-        Próximo passo{n > 0 ? ` · ${n} selecionado${n === 1 ? '' : 's'}` : ''}
+        Próximo passo
+        {n > 0 && (
+          <>
+            {' · '}
+            <span key={mudouN} className={`inline-block ${mudouN ? 'ag-bump' : ''}`}>{n}</span>
+            {` selecionado${n === 1 ? '' : 's'}`}
+          </>
+        )}
       </span>
       <div className="flex gap-2">
         {(acao || acaoSecundaria) && (
         <div className={`flex-1 min-w-0 ${acao && acaoSecundaria ? 'grid grid-cols-2 gap-2' : 'flex'}`}>
           {acao && (
             <button
+              key={temSelecao}
               onClick={acao.onClick}
               disabled={acao.desabilitada}
-              className="flex-1 min-w-0 min-h-[48px] px-4 rounded-full flex items-center justify-center gap-2 text-[15px] font-semibold disabled:opacity-70"
+              className={`flex-1 min-w-0 min-h-[48px] px-4 rounded-full flex items-center justify-center gap-2 text-[15px] font-semibold disabled:opacity-70 ${temSelecao && n > 0 ? 'ag-acende' : ''}`}
               style={{ background: 'var(--ag-text)', color: 'var(--ag-bg-2)' }}
             >
               {acao.ocupada ? <RefreshCw className="w-4 h-4 animate-spin shrink-0" /> : n > 0 ? <Sparkles className="w-4 h-4 shrink-0" /> : null}
@@ -86,14 +100,15 @@ const Conteudo: React.FC<Omit<Props, 'escopo' | 'className'>> = ({ n, acao, acao
       </div>
     </div>
   </div>
-);
+  );
+};
 
 const BarraProximoPasso: React.FC<Props> = ({ escopo, className, ...resto }) => {
   const { tema } = useAgentTheme();
   if (!resto.acao && !resto.acaoSecundaria && !resto.onPedirAlfred) return null;
-  if (!escopo) return <div className={`shrink-0 ${className ?? ''}`}><Conteudo {...resto} /></div>;
+  if (!escopo) return <div className={`ag-barra-sobe shrink-0 ${className ?? ''}`}><Conteudo {...resto} /></div>;
   return (
-    <div className={`alfreds shrink-0 ${className ?? ''}`} data-tema={tema}>
+    <div className={`ag-barra-sobe alfreds shrink-0 ${className ?? ''}`} data-tema={tema}>
       <Conteudo {...resto} />
     </div>
   );

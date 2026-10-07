@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { confirmar } from '../../../services/confirmar';
 import { Plus, Trash2, RefreshCw, Network } from 'lucide-react';
 import type { BlogCategory, BlogPost } from './types';
 import type { ContentCluster, CalendarArticle } from '../types';
@@ -35,7 +36,7 @@ const BlogCategories: React.FC<Props> = ({ uid, projectId, categories, posts, cl
   // daquele cluster. Idempotente: reusa categoria com mesmo slug e só adiciona
   // categoryIds ausentes. Só toca posts já publicados (via sourceArticleId).
   const handlePopulateFromClusters = async () => {
-    if (!window.confirm(
+    if (!await confirmar(
       'Isto cria (ou reaproveita) uma categoria com o nome de cada cluster e vincula os posts já publicados a ela. Continuar?',
     )) return;
     setError(null);
@@ -127,7 +128,7 @@ const BlogCategories: React.FC<Props> = ({ uid, projectId, categories, posts, cl
   };
 
   const handleDelete = async (cat: BlogCategory) => {
-    if (!window.confirm(`Excluir a categoria "${cat.name}"?`)) return;
+    if (!await confirmar(`Excluir a categoria "${cat.name}"?`)) return;
     setDeletingId(cat.id);
     try {
       await deleteBlogCategory(uid, projectId, cat.id);

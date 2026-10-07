@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
-import { AlertTriangle, ArrowUpRight, Check, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
+import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
+import { AlertTriangle, ArrowUpRight, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
+import AnelProgresso from '../../components/movimento/AnelProgresso';
+import CheckDesenhado from '../../components/movimento/CheckDesenhado';
+import Confete from '../../components/movimento/Confete';
+import NumeroAnimado from '../../components/movimento/NumeroAnimado';
+import { MOLA, vibrar } from './movimento';
 import ChecklistOnboarding from './ChecklistOnboarding';
 import { emOnboarding, type EstadoItem, type ItemId, type ItemTrilha } from '../onboarding/mission/trilha';
 import { DIAS_CURTOS, inicioDaSemana, textoEstimativa, type DestinoTarefa, type OrigemTarefa, type TarefaSemana } from './semana';
@@ -43,13 +49,11 @@ export const Origem: React.FC<{ origem: OrigemTarefa }> = ({ origem }) => (
   </span>
 );
 
-const Tarefa: React.FC<{ t: TarefaSemana } & Pick<Props, 'onFazer' | 'onAbrir'>> = ({ t, onFazer, onAbrir }) => {
+const Tarefa: React.FC<{ t: TarefaSemana; acabouDeFazer?: boolean } & Pick<Props, 'onFazer' | 'onAbrir'>> = ({ t, acabouDeFazer, onFazer, onAbrir }) => {
   if (t.estado === 'feita') {
     return (
       <div className="flex items-center gap-3 px-4 py-3 rounded-[18px]" style={{ background: 'var(--ag-fill)' }}>
-        <span className="w-6 h-6 rounded-full grid place-items-center shrink-0" style={{ background: 'var(--ag-ok-soft)', color: 'var(--ag-ok)' }}>
-          <Check className="w-3.5 h-3.5" />
-        </span>
+        <CheckDesenhado feito tamanho={24} animarAoMontar={acabouDeFazer} className="shrink-0" />
         <div className="min-w-0 flex-1">
           <div className="text-[14px] text-[var(--ag-text-2)] line-through truncate" style={{ textDecorationColor: 'var(--ag-hairline-2)' }}>{t.titulo}</div>
           {t.detalhe && <div className="text-[12px] text-[var(--ag-text-3)] truncate">{t.detalhe}</div>}
@@ -112,18 +116,56 @@ const SemanaPanel: React.FC<Props> = ({ tarefas, hoje, onFazer, onAbrir, semanaP
   // No onboarding a semana começa recolhida, embaixo do checklist.
   const onboarding = !!checklist && !!onChecklist && emOnboarding(checklist);
   const [semanaAberta, setSemanaAberta] = useState(false);
+  // Fim da trilha com o painel aberto (estava em onboarding, deixou de estar):
+  // a única comemoração com confete do app, e uma vez só por navegador.
+  const estavaEmOnboarding = React.useRef(onboarding);
+  const [confete, setConfete] = useState(false);
+  React.useEffect(() => {
+    if (estavaEmOnboarding.current && !onboarding && checklist) {
+      let ja = false;
+      try { ja = localStorage.getItem('alfred:trilha-comemorada') === '1'; } catch { /* sem storage */ }
+      if (!ja) {
+        setConfete(true);
+        vibrar(30);
+        try { localStorage.setItem('alfred:trilha-comemorada', '1'); } catch { /* sem storage */ }
+      }
+    }
+    estavaEmOnboarding.current = onboarding;
+  }, [onboarding, checklist]);
   const recolhida = onboarding && !semanaAberta;
   const inicio = inicioDaSemana(new Date());
   const feitas = tarefas.filter((t) => t.estado === 'feita').length;
   const doDia = tarefas.filter((t) => t.dia === dia);
   const pct = tarefas.length ? Math.round((feitas / tarefas.length) * 100) : 0;
 
+  // Tarefas que viraram "feita" com o painel aberto: o check delas se desenha,
+  // e a semana inteira feita vira "Semana completa" com um brilho no anel.
+  const feitasAntes = React.useRef<Set<string> | null>(null);
+  const agoraFeitas = new Set(tarefas.filter((t) => t.estado === 'feita').map((t) => t.id));
+  const recemFeitas = new Set(feitasAntes.current ? [...agoraFeitas].filter((id) => !feitasAntes.current!.has(id)) : []);
+  React.useEffect(() => {
+    if (feitasAntes.current && [...agoraFeitas].some((id) => !feitasAntes.current!.has(id))) vibrar(15);
+    feitasAntes.current = agoraFeitas;
+  });
+
+  const completa = tarefas.length > 0 && feitas === tarefas.length;
   const contagem = tarefas.length > 0 && (
-    <span className="text-[13px] text-[var(--ag-text-2)] tabular-nums pb-1">{feitas} de {tarefas.length} feitas</span>
+    <span className="flex items-center gap-2 text-[13px] text-[var(--ag-text-2)] tabular-nums pb-1">
+      <AnelProgresso pct={pct} tamanho={22} espessura={3} />
+      {completa ? (
+        <span className="ag-rise font-semibold" style={{ color: 'var(--ag-ok)' }}>Semana completa</span>
+      ) : (
+        <span><NumeroAnimado valor={feitas} duracao={0.5} /> de {tarefas.length} feitas</span>
+      )}
+    </span>
   );
+  // Tarefas feitas descem para o fim do dia (com animação de layout): o que
+  // falta fica sempre no topo.
+  const ordenadas = [...doDia].sort((a, b) => Number(a.estado === 'feita') - Number(b.estado === 'feita'));
 
   return (
     <div className="w-full flex flex-col gap-6">
+    {confete && <Confete onFim={() => setConfete(false)} />}
     {onboarding && <ChecklistOnboarding itens={checklist!} onAcao={onChecklist!} />}
     <section className="w-full flex flex-col gap-4 text-left">
       {onboarding ? (
@@ -151,12 +193,22 @@ const SemanaPanel: React.FC<Props> = ({ tarefas, hoje, onFazer, onAbrir, semanaP
       {semanaPassada && (
         <div className="-mt-3 text-[12px] text-[var(--ag-text-3)] tabular-nums">
           Semana passada: {semanaPassada.feitas} de {semanaPassada.total} feitas
+          {feitas > semanaPassada.feitas && (
+            <span className="ag-rise inline-block ml-1.5 font-semibold" style={{ color: 'var(--ag-ok)' }}>
+              · +{feitas - semanaPassada.feitas} nesta semana
+            </span>
+          )}
         </div>
       )}
 
       {tarefas.length > 0 && (
         <div className="h-1.5 rounded-full overflow-hidden -mt-2" style={{ background: 'var(--ag-fill-2)' }}>
-          <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${pct}%`, background: 'var(--ag-text)' }} />
+          <motion.div
+            className="h-full rounded-full"
+            initial={false}
+            animate={{ width: `${pct}%`, background: completa ? 'var(--ag-ok)' : 'var(--ag-text)' }}
+            transition={{ type: 'spring', stiffness: 140, damping: 22 }}
+          />
         </div>
       )}
 
@@ -173,14 +225,23 @@ const SemanaPanel: React.FC<Props> = ({ tarefas, hoje, onFazer, onAbrir, semanaP
               role="tab"
               aria-selected={ativo}
               onClick={() => setDia(i)}
-              className="flex flex-col items-center gap-0.5 py-2 min-h-[44px] rounded-[14px] transition-colors"
+              className="relative flex flex-col items-center gap-0.5 py-2 min-h-[44px] rounded-[14px] transition-colors"
               style={ativo
-                ? { background: 'var(--ag-text)', color: 'var(--ag-bg-2)' }
+                ? { color: 'var(--ag-bg-2)' }
                 : { color: i < hoje ? 'var(--ag-text-3)' : 'var(--ag-text-2)' }}
             >
-              <span className="text-[10.5px] font-medium">{i === hoje ? 'HOJE' : rotulo}</span>
-              <span className="text-[16px] font-semibold tabular-nums" style={ativo ? undefined : { color: 'var(--ag-text)' }}>{data.getDate()}</span>
-              <span className="text-[10.5px] h-3.5 leading-none tabular-nums" style={ativo ? undefined : { color: abertas ? 'var(--ag-accent)' : 'var(--ag-ok)' }}>
+              {/* O dia selecionado é uma pílula só, que desliza entre os dias. */}
+              {ativo && (
+                <motion.span
+                  layoutId="semana-dia-ativo"
+                  className="absolute inset-0 rounded-[14px]"
+                  style={{ background: 'var(--ag-text)' }}
+                  transition={MOLA}
+                />
+              )}
+              <span className="relative text-[10.5px] font-medium">{i === hoje ? 'HOJE' : rotulo}</span>
+              <span className="relative text-[16px] font-semibold tabular-nums" style={ativo ? undefined : { color: 'var(--ag-text)' }}>{data.getDate()}</span>
+              <span className="relative text-[10.5px] h-3.5 leading-none tabular-nums" style={ativo ? undefined : { color: abertas ? 'var(--ag-accent)' : 'var(--ag-ok)' }}>
                 {abertas ? abertas : doI.length ? '✓' : ''}
               </span>
             </button>
@@ -188,7 +249,8 @@ const SemanaPanel: React.FC<Props> = ({ tarefas, hoje, onFazer, onAbrir, semanaP
         })}
       </div>
 
-      <div className="flex flex-col gap-2.5">
+      {/* key={dia}: ao trocar de dia, a lista entra em cascata. */}
+      <div key={dia} className="flex flex-col gap-2.5 ag-cascata">
         {doDia.length === 0 ? (
           <div className="ag-glass rounded-[22px] px-4 py-5 text-center text-[14px] text-[var(--ag-text-2)]">
             {tarefas.length === 0
@@ -196,7 +258,20 @@ const SemanaPanel: React.FC<Props> = ({ tarefas, hoje, onFazer, onAbrir, semanaP
               : dia < hoje ? 'Nada ficou deste dia.' : 'Nada para este dia.'}
           </div>
         ) : (
-          doDia.map((t) => <Tarefa key={t.id} t={t} onFazer={onFazer} onAbrir={onAbrir} />)
+          <LayoutGroup>
+            <AnimatePresence initial={false}>
+              {ordenadas.map((t) => (
+                <motion.div
+                  key={t.id}
+                  layout="position"
+                  exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.15 } }}
+                  transition={{ layout: { type: 'spring', stiffness: 380, damping: 34 } }}
+                >
+                  <Tarefa t={t} acabouDeFazer={recemFeitas.has(t.id)} onFazer={onFazer} onAbrir={onAbrir} />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </LayoutGroup>
         )}
       </div>
 

@@ -56,7 +56,7 @@ import { lerObjetivoDoSite } from './marketing/objetivoSite';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import 'react-quill-new/dist/quill.bubble.css';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { auth, db } from './firebase';
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, User } from 'firebase/auth';
 import { collection, doc, writeBatch, getDocs, setDoc, getDoc, deleteDoc, getDocFromServer, runTransaction, onSnapshot, updateDoc } from 'firebase/firestore';
@@ -111,6 +111,12 @@ import type { CompanyData } from './types/onboarding';
 import { registerReferralSignup } from './services/referralService';
 import { openSupportChat } from './services/supportChat';
 import { useEstadoMeli } from './modules/agent/useFontes';
+import TransicaoTela from './components/movimento/TransicaoTela';
+import Avisos from './components/movimento/Avisos';
+import Confirmacao from './components/movimento/Confirmacao';
+import NumeroAnimado from './components/movimento/NumeroAnimado';
+import { Bloco } from './components/movimento/Esqueleto';
+import { avisar } from './services/avisos';
 const OnboardingWizard = lazy(() => import('./modules/onboarding/OnboardingWizard'));
 const CompanyProfile = lazy(() => import('./modules/onboarding/CompanyProfile'));
 const ReferralPage = lazy(() => import('./modules/referral/ReferralPage'));
@@ -343,13 +349,13 @@ export default function App() {
       const r = await aderirObjetivos([o]);
       if (r.bloqueados?.includes(o)) {
         meliAderindo.current = false;
-        alert('Este módulo foi desativado pelo suporte. Fale com a gente pela Ajuda para reativar.');
+        avisar('Este módulo foi desativado pelo suporte. Fale com a gente pela Ajuda para reativar.');
         return;
       }
     } catch (err) {
       meliAderindo.current = false;
       console.error('Erro ao aderir:', err);
-      alert('Não foi possível ativar agora. Tente de novo em instantes.');
+      avisar('Não foi possível ativar agora. Tente de novo em instantes.');
       return;
     }
     if (o === 'meli') setMainView('meli');
@@ -790,7 +796,7 @@ export default function App() {
   const ensureCredits = (action: CreditAction, multiplier: number = 1): boolean => {
     const needed = getCreditCost(action.key) * multiplier;
     if (credits < needed) {
-      alert(`Você não possui créditos suficientes. Necessário: ${needed}, Disponível: ${credits}`);
+      avisar.erro(`Faltam ${needed - credits} créditos: esta ação usa ${needed} e você tem ${credits}.`, { rotulo: 'Comprar créditos', onClick: () => { setIsCreditPurchaseOpen(true); trackCreditPurchaseOpen(); } });
       return false;
     }
     return true;
@@ -847,7 +853,7 @@ export default function App() {
       return true;
     } catch (error: any) {
       if (error.message === "INSUFFICIENT_CREDITS") {
-        alert("Você não possui créditos suficientes. Por favor, adicione mais créditos.");
+        avisar.erro('Você não tem créditos suficientes para esta ação.', { rotulo: 'Comprar créditos', onClick: () => { setIsCreditPurchaseOpen(true); trackCreditPurchaseOpen(); } });
       } else {
         handleFirestoreError(error, OperationType.WRITE, `users/${user?.uid}`);
       }
@@ -888,7 +894,7 @@ export default function App() {
       trackLogin('google');
     } catch (error) {
       console.error("Login error:", error);
-      alert("Erro ao fazer login com o Google.");
+      avisar("Erro ao fazer login com o Google.");
     }
   };
 
@@ -997,11 +1003,11 @@ export default function App() {
 
   const saveToCloud = async (silent = false): Promise<boolean> => {
     if (!user) {
-      if (!silent) alert("Faça login para salvar na nuvem.");
+      if (!silent) avisar("Faça login para salvar na nuvem.");
       return false;
     }
     if (products.length === 0) {
-      if (!silent) alert("Não há produtos para salvar.");
+      if (!silent) avisar("Não há produtos para salvar.");
       return false;
     }
 
@@ -1132,11 +1138,11 @@ export default function App() {
 
       setLastSaved(new Date());
       setHasUnsavedChanges(false);
-      if (!silent) alert("Projeto salvo na nuvem com sucesso!");
+      if (!silent) avisar("Projeto salvo na nuvem com sucesso!");
       return true;
     } catch (error) {
       console.error("Error saving to cloud:", error);
-      if (!silent) alert("Erro ao salvar na nuvem. Verifique o console para mais detalhes.");
+      if (!silent) avisar("Erro ao salvar na nuvem. Verifique o console para mais detalhes.");
       return false;
     } finally {
       setIsSavingToCloud(false);
@@ -1146,7 +1152,7 @@ export default function App() {
   const loadFromCloud = async (silent = false, userId?: string) => {
     const targetUid = userId || user?.uid;
     if (!targetUid) {
-      if (!silent) alert("Faça login para carregar da nuvem.");
+      if (!silent) avisar("Faça login para carregar da nuvem.");
       return;
     }
 
@@ -1193,7 +1199,7 @@ export default function App() {
         setProducts(loadedProducts);
         setLastSaved(new Date());
         setHasUnsavedChanges(false);
-        if (!silent) alert(`${loadedProducts.length} produtos carregados com sucesso!`);
+        if (!silent) avisar(`${loadedProducts.length} produtos carregados com sucesso!`);
 
         // Resume sidebar video job listener if an active job survived a page refresh.
         // Only start if we don't already have an active listener (avoids double-sub).
@@ -1217,11 +1223,11 @@ export default function App() {
           }
         }
       } else {
-        if (!silent) alert("Nenhum produto encontrado na nuvem.");
+        if (!silent) avisar("Nenhum produto encontrado na nuvem.");
       }
     } catch (error) {
       console.error("Error loading from cloud:", error);
-      if (!silent) alert("Erro ao carregar da nuvem. Verifique o console para mais detalhes.");
+      if (!silent) avisar("Erro ao carregar da nuvem. Verifique o console para mais detalhes.");
     } finally {
       setIsLoadingFromCloud(false);
     }
@@ -1452,7 +1458,7 @@ export default function App() {
 
         // Check if it's the new format
         if (data.length > 0 && !('Código (SKU)' in data[0])) {
-          alert("Formato de planilha não reconhecido. Certifique-se de usar o novo formato com a coluna 'Código (SKU)'.");
+          avisar("Formato de planilha não reconhecido. Certifique-se de usar o novo formato com a coluna 'Código (SKU)'.");
           return;
         }
 
@@ -1522,7 +1528,7 @@ export default function App() {
         if (fileInputRef.current) fileInputRef.current.value = '';
       } catch (error) {
         console.error("Error parsing Excel file:", error);
-        alert("Erro ao ler o arquivo. Certifique-se de que é um arquivo .xlsx válido.");
+        avisar("Erro ao ler o arquivo. Certifique-se de que é um arquivo .xlsx válido.");
       }
     };
     reader.readAsBinaryString(file);
@@ -1547,7 +1553,7 @@ export default function App() {
       if (aiEnrichmentEnabled && selectedNewCategories.length > 0) {
         const hierarchyCost = getCreditCost(CREDIT_ACTIONS.generateHierarchy.key);
         if (credits < hierarchyCost) {
-          alert(`Você precisa de no mínimo ${hierarchyCost} crédito(s) para IA. A geração de hierarquia será ignorada.`);
+          avisar(`Você precisa de no mínimo ${hierarchyCost} crédito(s) para IA. A geração de hierarquia será ignorada.`);
         } else {
           try {
              const aiResult = await generateCategoryHierarchy(selectedNewCategories);
@@ -1560,7 +1566,7 @@ export default function App() {
              trackCategoryHierarchyGenerated({ category_count: selectedNewCategories.length });
           } catch(e) {
              console.error(e);
-             alert("Erro na IA, criando categorias planas...");
+             avisar("Erro na IA, criando categorias planas...");
           }
         }
       }
@@ -1623,7 +1629,7 @@ export default function App() {
 
     } catch (e) {
       console.error(e);
-      alert('Erro ao processar categorias.');
+      avisar('Erro ao processar categorias.');
     } finally {
       setIsProcessingCategories(false);
     }
@@ -1758,7 +1764,7 @@ export default function App() {
   // Imports a batch of Wake products: merges by produtoId, maps fields, and saves
   // a raw snapshot to users/{uid}/products/{id}/wake_versions before any enrichment.
   const handleWakeImport = async (incoming: WakeNormalizedProduct[]) => {
-    if (!user) { alert('Faça login para importar produtos da Wake.'); return; }
+    if (!user) { avisar('Faça login para importar produtos da Wake.'); return; }
     const uid = user.uid;
     const next = [...productsRef.current];
     const backups: { id: string; raw: unknown }[] = [];
@@ -2242,7 +2248,7 @@ export default function App() {
     }
 
     if (payload.length === 0) {
-      alert(`Nenhum produto selecionado está vinculado à integração ${INTEGRATION_META[integration].label} (ou não há alterações pendentes para enviar).`);
+      avisar(`Nenhum produto selecionado está vinculado à integração ${INTEGRATION_META[integration].label} (ou não há alterações pendentes para enviar).`);
       return;
     }
 
@@ -2456,7 +2462,7 @@ Retorne APENAS um JSON válido no seguinte formato:
       await consumeCredit(CREDIT_ACTIONS.enrichSingle, product['Descrição'], product['Código (SKU)']);
       trackProductEnriched({ mode: 'single' });
     } catch (error) {
-      alert(`Erro ao enriquecer dados para ${product['Descrição']}`);
+      avisar(`Erro ao enriquecer dados para ${product['Descrição']}`);
       setProducts(prev => {
         const updated = [...prev];
         const idx = updated.findIndex(p => p._id === id);
@@ -2515,7 +2521,7 @@ Retorne APENAS um JSON válido no seguinte formato:
       trackDescriptionGenerated({ mode: 'single', sku: product['Código (SKU)'] as string });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      if (!lancar) alert(`Erro ao gerar descrição para ${product['Descrição']}: ${errorMessage}`);
+      if (!lancar) avisar(`Erro ao gerar descrição para ${product['Descrição']}: ${errorMessage}`);
       setProducts(prev => {
         const updated = [...prev];
         const idx = updated.findIndex(p => p._id === id);
@@ -2643,7 +2649,7 @@ Retorne APENAS um JSON válido no seguinte formato:
     const count = alvo.size;
     const generateNeeded = count * getCreditCost(CREDIT_ACTIONS.generateSeoMass.key);
     if (credits < generateNeeded) {
-      alert(`Você não possui créditos suficientes. Necessário: ${generateNeeded}, Disponível: ${credits}`);
+      avisar.erro(`Faltam ${generateNeeded - credits} créditos: esta ação usa ${generateNeeded} e você tem ${credits}.`, { rotulo: 'Comprar créditos', onClick: () => { setIsCreditPurchaseOpen(true); trackCreditPurchaseOpen(); } });
       return;
     }
 
@@ -2776,7 +2782,7 @@ Retorne APENAS um JSON válido no seguinte formato:
       trackDescriptionGenerated({ mode: 'single', sku: parent['Código (SKU)'] as string });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      alert(`Erro ao gerar descrição para o grupo de "${parent['Descrição']}": ${errorMessage}`);
+      avisar(`Erro ao gerar descrição para o grupo de "${parent['Descrição']}": ${errorMessage}`);
     } finally {
       setGroupGeneratingIds(prev => { const next = new Set(prev); next.delete(parentId); return next; });
     }
@@ -2847,7 +2853,7 @@ Retorne APENAS um JSON válido no seguinte formato:
     const count = selectedIds.size;
     const enrichNeeded = count * getCreditCost(CREDIT_ACTIONS.enrichMass.key);
     if (credits < enrichNeeded) {
-      alert(`Você não possui créditos suficientes. Necessário: ${enrichNeeded}, Disponível: ${credits}`);
+      avisar.erro(`Faltam ${enrichNeeded - credits} créditos: esta ação usa ${enrichNeeded} e você tem ${credits}.`, { rotulo: 'Comprar créditos', onClick: () => { setIsCreditPurchaseOpen(true); trackCreditPurchaseOpen(); } });
       return;
     }
 
@@ -3087,7 +3093,7 @@ Retorne APENAS um JSON válido no seguinte formato:
       applyGenerationToProductAndChildren(previewProduct._id, generatedData);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      alert(`Erro ao regenerar descrição: ${errorMessage}`);
+      avisar(`Erro ao regenerar descrição: ${errorMessage}`);
       setPreviewProduct(prev => prev ? { 
         ...prev, 
         _isGenerating: false,
@@ -3250,7 +3256,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           <section className="ag-glass ag-sheen rounded-[24px] p-5 flex flex-col gap-2">
             <span className={rotulo}>Saldo disponível</span>
             <div className="flex items-baseline gap-2">
-              <span className="font-display text-[44px] leading-none font-semibold tabular-nums text-[var(--ag-text)]">{credits}</span>
+              <NumeroAnimado valor={credits} mostrarGanho className="font-display text-[44px] leading-none font-semibold text-[var(--ag-text)]" />
               <span className="text-[14px] text-[var(--ag-text-2)]">créditos</span>
             </div>
           </section>
@@ -3944,7 +3950,7 @@ Retorne APENAS um JSON válido no seguinte formato:
             >
               <Coins className="w-4 h-4 text-(--ag-warn) shrink-0" />
               <span className="hidden sm:inline">Créditos:</span>
-              <span className="text-(--ag-text) font-bold">{credits}</span>
+              <NumeroAnimado valor={credits} mostrarGanho className="text-(--ag-text) font-bold" />
             </button>
             {temAgente ? (
               // Com agente o avatar abre a Conta inteira (a folha no telefone);
@@ -4021,6 +4027,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           // Tabela completa com agente: a mesma margem das telas do agente (com `ag-tela-x` dentro).
           (mainView === 'products' || semCabecalho) && temAgente ? "p-3 pb-24 sm:p-6 md:pb-6" : "p-6 pb-20 md:pb-6",
         )}>
+          <TransicaoTela chave={mainView}>
           {mainView === 'missoes' ? (
             <TrilhaMissoes
               nome={(user.displayName ?? '').split(' ')[0]}
@@ -4092,6 +4099,7 @@ Retorne APENAS um JSON válido no seguinte formato:
           ) : mainView === 'agenteProdutos' ? (
             <ProdutosAgenteScreen
               products={products}
+              carregando={isLoadingFromCloud}
               selecionados={selectedIds}
               onSelecionar={setSelectedIds}
               custoPorDescricao={getCreditCost(CREDIT_ACTIONS.generateSeoMass.key)}
@@ -4721,6 +4729,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                             <React.Fragment key={product._id}>
                             <tr className={cn(
                               "hover:bg-(--ag-fill-solid) transition-colors group relative",
+                              product._isGenerating && "ag-gerando",
                               product._generationError
                                 ? "bg-(--ag-danger-tint)"
                                 : selectedIds.has(product._id) ? "bg-(--ag-accent-tint)" : "bg-(--ag-surface-solid)"
@@ -5070,6 +5079,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                       return (
                         <div key={product._id} className={cn(
                           "bg-(--ag-surface-solid) border rounded-2xl shadow-sm p-3.5 flex flex-col gap-2.5",
+                          isGeneratingDesc && "ag-gerando",
                           product._generationError ? "border-(--ag-danger-line) bg-(--ag-danger-soft)" : "border-(--ag-hairline)"
                         )}>
                           <div className="flex items-start gap-3">
@@ -5176,6 +5186,7 @@ Retorne APENAS um JSON válido no seguinte formato:
                 </div>
               </div>
             )}
+          </TransicaoTela>
         </main>
         </AbrirNaFerramentaProvider>
         </div>
@@ -5508,9 +5519,14 @@ Retorne APENAS um JSON válido no seguinte formato:
 
               <div className="max-h-[400px] overflow-y-auto">
                 {isLoadingLogs ? (
-                  <div className="flex flex-col items-center justify-center py-12">
-                    <RefreshCw className="w-8 h-8 text-orange-600 animate-spin mb-4" />
-                    <p className="text-gray-500">Carregando histórico...</p>
+                  <div className="flex flex-col gap-3 p-4" role="status" aria-label="Carregando histórico">
+                    {[0, 1, 2, 3, 4].map((i) => (
+                      <div key={i} className="flex items-center gap-4">
+                        <Bloco className="h-3.5 w-24" />
+                        <Bloco className="h-3.5 flex-1" />
+                        <Bloco className="h-3.5 w-12" />
+                      </div>
+                    ))}
                   </div>
                 ) : creditLogs.length === 0 ? (
                   <div className="text-center py-12 text-gray-500">
@@ -5869,7 +5885,10 @@ Retorne APENAS um JSON válido no seguinte formato:
   );
 
   return (
+    <MotionConfig reducedMotion="user">
     <ConversaAlfredProvider uid={conversaUid}>
+    <Avisos />
+    <Confirmacao />
     <Routes>
       <Route element={<MarketingLayout />}>
         <Route path="/" element={<HomePage />} />
@@ -5913,5 +5932,6 @@ Retorne APENAS um JSON válido no seguinte formato:
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </ConversaAlfredProvider>
+    </MotionConfig>
   );
 }

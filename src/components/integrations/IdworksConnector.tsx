@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useCopiar, RotuloCopiar } from '../movimento/Copiar';
 import { Check, RefreshCw, Upload, CloudUpload, X, Loader2, AlertCircle, ShieldCheck, Info } from 'lucide-react';
 import {
   idworksStatus, idworksConnect, idworksDisconnect, idworksPush,
@@ -116,13 +117,10 @@ const IdworksConnector: React.FC<Props> = ({ onImported, getPushPayload, getPush
     await refreshStatus();
   };
 
-  const handleCopyWebhookUrl = () => {
-    if (webhookConfig?.webhookUrl) navigator.clipboard.writeText(webhookConfig.webhookUrl).catch(() => {});
-  };
-
-  const handleCopyHeader = () => {
-    if (webhookConfig?.headerValue) navigator.clipboard.writeText(webhookConfig.headerValue).catch(() => {});
-  };
+  const [urlCopiada, copiarUrl] = useCopiar();
+  const [headerCopiado, copiarHeader] = useCopiar();
+  const handleCopyWebhookUrl = () => copiarUrl(webhookConfig?.webhookUrl);
+  const handleCopyHeader = () => copiarHeader(webhookConfig?.headerValue);
 
   useEffect(() => {
     if (!connected) return;
@@ -286,7 +284,7 @@ const IdworksConnector: React.FC<Props> = ({ onImported, getPushPayload, getPush
                   disabled={!webhookConfig?.webhookUrl}
                   className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 border border-slate-300 px-3 py-2 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
                 >
-                  Copiar
+                  <RotuloCopiar copiado={urlCopiada} />
                 </button>
               </div>
             </div>
@@ -308,7 +306,7 @@ const IdworksConnector: React.FC<Props> = ({ onImported, getPushPayload, getPush
                   disabled={!webhookConfig?.headerValue}
                   className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 border border-slate-300 px-3 py-2 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
                 >
-                  Copiar
+                  <RotuloCopiar copiado={headerCopiado} />
                 </button>
               </div>
             </div>

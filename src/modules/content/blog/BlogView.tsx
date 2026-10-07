@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { confirmar } from '../../../services/confirmar';
 import { ExternalLink, Plus, Pencil, Trash2, RefreshCw, Rocket, FileText, Tag, Palette, Globe2 } from 'lucide-react';
 import type { BlogSettings, BlogPost, BlogCategory } from './types';
 import { DEFAULT_BLOG_COLORS } from './types';
@@ -79,7 +80,7 @@ const BlogView: React.FC<Props> = ({ uid, projectId }) => {
   };
 
   const handleDelete = async (post: BlogPost) => {
-    if (!window.confirm(`Excluir o post "${post.title}"?`)) return;
+    if (!await confirmar(`Excluir o post "${post.title}"?`)) return;
     setDeletingId(post.id);
     try {
       await deleteBlogPost(uid, projectId, post.id);

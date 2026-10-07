@@ -74,7 +74,7 @@ const Porta: React.FC<{
           className="absolute -top-1.5 -right-2.5 min-w-[17px] h-[17px] px-1 rounded-full text-[10px] font-semibold leading-[17px] text-center"
           style={{ background: 'var(--ag-accent)', color: 'var(--ag-accent-ink)' }}
         >
-          {selo > 99 ? '99+' : selo}
+          <span key={selo} className="ag-bump inline-block">{selo > 99 ? '99+' : selo}</span>
         </span>
       )}
     </span>
@@ -111,7 +111,7 @@ const Aba: React.FC<{ topo: number; altura: number; visivel: boolean; animar: bo
         borderRadius: `${CURVA}px 0 0 ${CURVA}px`,
         opacity: visivel ? 1 : 0,
         transition: animar
-          ? 'top 420ms cubic-bezier(0.32, 0.72, 0, 1), height 420ms cubic-bezier(0.32, 0.72, 0, 1), opacity 200ms ease'
+          ? 'top 460ms cubic-bezier(0.34, 1.36, 0.64, 1), height 420ms cubic-bezier(0.32, 0.72, 0, 1), opacity 200ms ease'
           : 'opacity 200ms ease',
       }}
     >

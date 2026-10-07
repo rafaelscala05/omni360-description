@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { avisar } from '../../services/avisos';
 import { Category, AttributeDefinition } from '../../types/models';
 import { fetchCategories, saveCategory, getEffectiveAttributes, getEffectiveImagePrompts } from '../../services/categoryService';
 import { Plus, Edit, Trash2, Tag, Save, ArrowLeft, Loader2, Sparkles, Folder, Image } from 'lucide-react';
@@ -122,7 +123,7 @@ export default function CategoryManager({ onClose, semVoltar = false }: {
       setIsEditing(false);
     } catch (e) {
       console.error(e);
-      alert('Erro ao salvar categoria. Verifique o console para mais detalhes.');
+      avisar('Erro ao salvar categoria. Verifique o console para mais detalhes.');
     } finally {
       setLoading(false);
     }

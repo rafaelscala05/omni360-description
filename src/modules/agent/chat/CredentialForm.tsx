@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { reanimar, vibrar } from '../movimento';
 import { KeyRound, Loader2, ShieldCheck } from 'lucide-react';
 import { saveWordpressSecret, saveSanitySecret } from '../../../services/contentService';
 
@@ -7,6 +8,7 @@ export function CredentialForm({
 }: { uid: string; provider: 'wordpress' | 'sanity'; projectId: string; onDone: (ok: boolean) => void }) {
   const [value, setValue] = useState('');
   const [saving, setSaving] = useState(false);
+  const campoRef = useRef<HTMLInputElement>(null);
 
   const label = provider === 'wordpress' ? 'Senha de aplicativo do WordPress' : 'Token de API do Sanity';
 
@@ -17,6 +19,9 @@ export function CredentialForm({
       else await saveSanitySecret(uid, projectId, value);
       onDone(true);
     } catch {
+      // O campo treme antes de o card fechar como falha: o erro aponta para onde ele está.
+      reanimar(campoRef.current, 'ag-shake');
+      vibrar(25);
       onDone(false);
     } finally {
       setSaving(false);
@@ -44,6 +49,7 @@ export function CredentialForm({
       </div>
 
       <input
+        ref={campoRef}
         type="password"
         value={value}
         onChange={(e) => setValue(e.target.value)}

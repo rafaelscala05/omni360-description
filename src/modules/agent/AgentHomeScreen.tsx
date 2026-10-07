@@ -15,6 +15,7 @@ import Composer from './chat/Composer';
 import LogsPanel from './chat/LogsPanel';
 import LoteEmAndamento from './chat/LoteEmAndamento';
 import { useConversaAlfred } from './useConversaAlfred';
+import { useSucessos } from './movimento';
 import SemanaPanel from './SemanaPanel';
 import ColunaAtividade from './ColunaAtividade';
 import { useHistoricoSemana, useSemana } from './useSemana';
@@ -177,6 +178,7 @@ const AgentHomeScreen: React.FC<Props> = ({
   const acoesPendentesOperacionais = ['wake', 'tiny', 'bling', 'idworks'].reduce((n, k) => n + (pendentesPorProvider[k] ?? 0), 0);
   const acoesPendentesConteudo = pendentesPorProvider.content ?? 0;
   const pendentesTotal = acoesPendentesOperacionais + acoesPendentesConteudo;
+  const sucessos = useSucessos(Object.values(acoes));
 
   // A régua junta o estado das quatro plataformas com as ferramentas que cada
   // uma libera e as aprovações paradas nela. Conteúdo entra como um item
@@ -326,7 +328,7 @@ const AgentHomeScreen: React.FC<Props> = ({
                       <span>{erro}</span>
                     </div>
                   )}
-                  <AlfredLogo size={132} ativo={streaming} marca="malha" rotulo="Alfreds" />
+                  <AlfredLogo size={132} ativo={streaming} marca="malha" rotulo="Alfreds" humor={pendentesTotal > 0 ? 'atencao' : 'repouso'} sucesso={sucessos} />
                   <p className="text-[15px] text-[var(--ag-text-2)] max-w-sm">
                     Escolha uma tarefa da semana ou peça qualquer coisa ao Alfred.
                   </p>

@@ -22,6 +22,10 @@ interface Props {
   rotulo?: string;
   /** O A da marca: sólido na frente ('frente') ou montado pela malha ('malha'). */
   marca?: Marca;
+  /** 'atencao': há algo esperando o usuário (aprovação) — um halo âmbar respira. */
+  humor?: 'repouso' | 'atencao';
+  /** Muda a cada sucesso (ex.: ação executada): pulso verde + expansão da malha. */
+  sucesso?: number;
 }
 
 /** Folga em volta do quadrado para brilho, pings e expansão não serem cortados. */
@@ -40,7 +44,7 @@ function lerPaleta(el: HTMLElement): Paleta {
   };
 }
 
-const AlfredLogo: React.FC<Props> = ({ size = 56, ativo = false, interativo = true, className = '', rotulo, marca = 'nenhuma' }) => {
+const AlfredLogo: React.FC<Props> = ({ size = 56, ativo = false, interativo = true, className = '', rotulo, marca = 'nenhuma', humor = 'repouso', sucesso = 0 }) => {
   const caixaRef = useRef<HTMLSpanElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const motorRef = useRef<MotorLogo | null>(null);
@@ -78,6 +82,10 @@ const AlfredLogo: React.FC<Props> = ({ size = 56, ativo = false, interativo = tr
     motorRef.current?.definirAtivo(ativo);
   }, [ativo, size, marca]);
 
+  useEffect(() => {
+    if (sucesso) motorRef.current?.comemorar();
+  }, [sucesso]);
+
   const relativo = (e: React.PointerEvent) => {
     const r = caixaRef.current!.getBoundingClientRect();
     return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
@@ -104,6 +112,21 @@ const AlfredLogo: React.FC<Props> = ({ size = 56, ativo = false, interativo = tr
       aria-hidden={rotulo ? undefined : true}
       {...eventos}
     >
+      {humor === 'atencao' && !ativo && (
+        <span
+          aria-hidden
+          className="ag-halo-atencao absolute rounded-full pointer-events-none"
+          style={{ inset: -size * 0.12, background: 'radial-gradient(circle, var(--ag-warn, #c2610a) 0%, transparent 65%)' }}
+        />
+      )}
+      {sucesso > 0 && (
+        <span
+          key={sucesso}
+          aria-hidden
+          className="ag-halo-sucesso absolute inset-0 rounded-full pointer-events-none"
+          style={{ border: '2px solid var(--ag-ok, #12a150)' }}
+        />
+      )}
       <canvas
         ref={canvasRef}
         className="absolute pointer-events-none"

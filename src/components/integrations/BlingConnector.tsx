@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useCopiar, RotuloCopiar } from '../movimento/Copiar';
 import { Check, RefreshCw, Upload, CloudUpload, X, Loader2, AlertCircle, ShieldCheck, Info } from 'lucide-react';
 import {
   blingStatus, blingConnect, blingDisconnect, blingPush,
@@ -97,9 +98,8 @@ const BlingConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCa
     }
   };
 
-  const handleCopyWebhookUrl = () => {
-    if (status?.webhookUrl) navigator.clipboard.writeText(status.webhookUrl).catch(() => {});
-  };
+  const [webhookCopiado, copiar] = useCopiar();
+  const handleCopyWebhookUrl = () => copiar(status?.webhookUrl);
 
   useEffect(() => {
     if (!connected) return;
@@ -269,7 +269,7 @@ const BlingConnector: React.FC<Props> = ({ onImported, getPushPayload, getPushCa
                   disabled={!status?.webhookUrl}
                   className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 border border-slate-300 px-3 py-2 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
                 >
-                  Copiar
+                  <RotuloCopiar copiado={webhookCopiado} />
                 </button>
               </div>
             </div>

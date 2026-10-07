@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { confirmar } from '../../services/confirmar';
 import { Reorder } from 'motion/react';
 import {
   CalendarDays, Sparkles, RefreshCw, Play, FileText, Pencil, Check, X, Clock, Plus, GripVertical, Trash2,
@@ -167,7 +168,7 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
   const produzirMarcados = async () => {
     const lista = marcadosProduziveis;
     if (!lista.length) return;
-    if (!window.confirm(`Produzir ${lista.length === 1 ? '1 artigo' : `${lista.length} artigos`}? Cada produção debita os créditos dela.`)) return;
+    if (!await confirmar(`Produzir ${lista.length === 1 ? '1 artigo' : `${lista.length} artigos`}? Cada produção debita os créditos dela.`)) return;
     setProduzindoLote(true);
     try {
       for (const a of lista) await handleProduce(a.id);
@@ -208,7 +209,7 @@ const ArticlesProductionView: React.FC<Props> = ({ uid, projectId, clusters, ini
   };
 
   const handleDelete = async (a: CalendarArticle) => {
-    if (!window.confirm(`Excluir o artigo "${a.titulo}"? Essa ação não pode ser desfeita.`)) return;
+    if (!await confirmar(`Excluir o artigo "${a.titulo}"? Essa ação não pode ser desfeita.`)) return;
     try {
       await deleteArticle(uid, projectId, a.id);
       if (selected === a.id) setSelected(null);

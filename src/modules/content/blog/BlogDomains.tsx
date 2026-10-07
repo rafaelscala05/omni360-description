@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { confirmar } from '../../../services/confirmar';
 import { Plus, Trash2, RefreshCw, Check, Copy, ShieldCheck, Clock, KeyRound } from 'lucide-react';
 import type { BlogSettings } from './types';
 import {
@@ -106,7 +107,7 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
   };
 
   const handleRemove = async (d: string) => {
-    if (!window.confirm(`Remover o domínio "${d}"?`)) return;
+    if (!await confirmar(`Remover o domínio "${d}"?`)) return;
     setRemovingDomain(d);
     try {
       await removeBlogDomain(projectId, d);
@@ -136,7 +137,7 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
   };
 
   const handleRotateToken = async (d: string) => {
-    if (!window.confirm(`Gerar um novo token para "${d}"? O token atual para de funcionar e o domínio volta a ficar pendente.`)) return;
+    if (!await confirmar(`Gerar um novo token para "${d}"? O token atual para de funcionar e o domínio volta a ficar pendente.`)) return;
     setLoadingToken(d);
     setVerifyDetail((prev) => ({ ...prev, [d]: '' }));
     try {
@@ -220,7 +221,7 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
                 className="p-1.5 text-(--ag-text-3) hover:text-(--ag-text) hover:bg-(--ag-fill-2) rounded-md shrink-0"
                 title="Copiar"
               >
-                {copied === 'cname' ? <Check className="w-4 h-4 text-(--ag-ok)" /> : <Copy className="w-4 h-4" />}
+                <span key={String(copied === 'cname')} className="inline-flex ag-vira">{copied === 'cname' ? <Check className="w-4 h-4 text-(--ag-ok)" /> : <Copy className="w-4 h-4" />}</span>
               </button>
             </div>
           </div>
@@ -255,7 +256,7 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
                 className="p-1.5 text-(--ag-text-3) hover:text-(--ag-text) hover:bg-(--ag-fill-2) rounded-md shrink-0"
                 title="Copiar"
               >
-                {copied === 'token' ? <Check className="w-4 h-4 text-(--ag-ok)" /> : <Copy className="w-4 h-4" />}
+                <span key={String(copied === 'token')} className="inline-flex ag-vira">{copied === 'token' ? <Check className="w-4 h-4 text-(--ag-ok)" /> : <Copy className="w-4 h-4" />}</span>
               </button>
             </div>
           </div>
@@ -268,7 +269,7 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
                 className="p-1.5 text-(--ag-text-3) hover:text-(--ag-text) hover:bg-(--ag-fill-2) rounded-md shrink-0"
                 title="Copiar"
               >
-                {copied === 'worker' ? <Check className="w-4 h-4 text-(--ag-ok)" /> : <Copy className="w-4 h-4" />}
+                <span key={String(copied === 'worker')} className="inline-flex ag-vira">{copied === 'worker' ? <Check className="w-4 h-4 text-(--ag-ok)" /> : <Copy className="w-4 h-4" />}</span>
               </button>
             </div>
             <pre className="bg-(--ag-text) text-(--ag-text-3) text-xs rounded-xl p-3.5 overflow-x-auto"><code>{cloudflareWorkerSnippet(instructions.proxyToken)}</code></pre>
@@ -283,7 +284,7 @@ const BlogDomains: React.FC<Props> = ({ uid, projectId, settings }) => {
                 className="p-1.5 text-(--ag-text-3) hover:text-(--ag-text) hover:bg-(--ag-fill-2) rounded-md shrink-0"
                 title="Copiar"
               >
-                {copied === 'proxy' ? <Check className="w-4 h-4 text-(--ag-ok)" /> : <Copy className="w-4 h-4" />}
+                <span key={String(copied === 'proxy')} className="inline-flex ag-vira">{copied === 'proxy' ? <Check className="w-4 h-4 text-(--ag-ok)" /> : <Copy className="w-4 h-4" />}</span>
               </button>
             </div>
             <pre className="bg-(--ag-text) text-(--ag-text-3) text-xs rounded-xl p-3.5 overflow-x-auto"><code>{reverseProxySnippet(instructions.proxyToken)}</code></pre>

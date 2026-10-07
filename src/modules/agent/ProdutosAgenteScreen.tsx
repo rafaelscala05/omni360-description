@@ -18,6 +18,9 @@ import {
   type FiltrosProdutos, type OpcaoConteudo, type OpcaoIntegracao, type OpcaoSync,
 } from './produtosAgente';
 import LinhaProduto, { Caixa } from './produtos/LinhaProduto';
+import { AnimatePresence, motion } from 'motion/react';
+import { itemLista } from './movimento';
+import { EsqueletoLista } from '../../components/movimento/Esqueleto';
 import PainelFiltros from './produtos/PainelFiltros';
 import Paginacao from './produtos/Paginacao';
 import EnviarErp, { type ErpEnvio } from './produtos/EnviarErp';
@@ -27,6 +30,8 @@ export type ViewProdutos = 'categories' | 'integrations' | 'products';
 
 interface Props {
   products: Product[];
+  /** Catálogo chegando da nuvem: sem produtos ainda, mostra o esqueleto da lista, não "vazio". */
+  carregando?: boolean;
   /** A mesma seleção da tabela de produtos (`selectedIds` do App). */
   selecionados: Set<string>;
   onSelecionar: (ids: Set<string>) => void;
@@ -79,7 +84,7 @@ const estiloBotaoTopo: React.CSSProperties = { background: 'var(--ag-surface-sol
  * única ação embaixo ("Próximo passo"). A tabela antiga continua a um toque.
  */
 const ProdutosAgenteScreen: React.FC<Props> = ({
-  products, selecionados, onSelecionar, custoPorDescricao, gerando, progresso,
+  products, carregando = false, selecionados, onSelecionar, custoPorDescricao, gerando, progresso,
   onGerarDescricoes, onAbrirProduto, onAbrirView, onPedirAlfred, onVoltar, hasAgente,
   uid, credits, onFocoChange, onRecarregar, onSalvar, erpsConectados, onEnviarErp,
 }) => {
@@ -403,7 +408,9 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
               </div>
             )}
 
-            {visiveis.length === 0 ? (
+            {visiveis.length === 0 && carregando && lista.length === 0 ? (
+              <section className="ag-glass rounded-[22px] overflow-hidden"><EsqueletoLista n={6} /></section>
+            ) : visiveis.length === 0 ? (
               <div className="ag-glass rounded-[22px] px-5 py-10 flex flex-col items-center gap-3 text-center text-[14px] text-[var(--ag-text-2)]">
                 {busca ? 'Nenhum produto com esse nome ou SKU.' : lista.length === 0 ? 'O catálogo está vazio.' : nFiltros ? 'Nenhum produto com esses filtros.' : 'Nada aqui.'}
                 {nFiltros > 0 && (
@@ -419,7 +426,7 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
                   <Caixa marcada={selecao.paginaToda} rotulo="Selecionar os desta página" onClick={alternarPagina} />
                   <span className="flex-1">
                     {visiveis.length.toLocaleString('pt-BR')} {visiveis.length === 1 ? 'produto' : 'produtos'}
-                    {n > 0 && <> · <span className="font-semibold text-[var(--ag-text)]">{n} selecionado{n === 1 ? '' : 's'}</span></>}
+                    {n > 0 && <> · <span className="font-semibold text-[var(--ag-text)]"><span key={n} className="ag-bump inline-block">{n}</span> selecionado{n === 1 ? '' : 's'}</span></>}
                   </span>
                   <span className="hidden lg:block w-[170px] text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--ag-text-3)]">Integração</span>
                   <span className="hidden lg:block w-[38%] text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--ag-text-3)]">O que tem</span>
@@ -438,16 +445,24 @@ const ProdutosAgenteScreen: React.FC<Props> = ({
                     <button className="font-semibold text-[var(--ag-accent)]" onClick={() => onSelecionar(new Set())}>Limpar seleção</button>
                   </div>
                 )}
-                {pag.itens.map((p) => (
-                  <LinhaProduto
-                    key={p._id}
-                    p={p}
-                    marcado={selecionados.has(p._id)}
-                    onMarcar={() => alternar(p._id)}
-                    onAbrir={() => onAbrirProduto(p, 'geral')}
-                    mostrarVideo={filtros.conteudo.includes('semVideo')}
-                  />
-                ))}
+                {/* Página nova: as linhas entram em cascata (key = página). Filtro
+                    ou busca na mesma página: quem sai some e quem fica desliza
+                    para o lugar, em vez de a lista "pular". */}
+                <div key={pag.pagina} className="ag-cascata">
+                  <AnimatePresence initial={false} mode="popLayout">
+                    {pag.itens.map((p) => (
+                      <motion.div key={p._id} layout="position" {...itemLista}>
+                        <LinhaProduto
+                          p={p}
+                          marcado={selecionados.has(p._id)}
+                          onMarcar={() => alternar(p._id)}
+                          onAbrir={() => onAbrirProduto(p, 'geral')}
+                          mostrarVideo={filtros.conteudo.includes('semVideo')}
+                        />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
               </section>
             )}
             <Paginacao pagina={pag.pagina} totalPaginas={pag.totalPaginas} inicio={pag.inicio} fim={pag.fim} total={visiveis.length} onIr={irPara} />

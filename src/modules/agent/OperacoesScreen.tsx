@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Bloco, EsqueletoGrafico } from '../../components/movimento/Esqueleto';
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, ChevronRight, RefreshCw } from 'lucide-react';
 import type { Product } from '../../types/models';
 import { fetchPainelOps } from '../../services/agentChatService';
@@ -229,8 +230,18 @@ const OperacoesScreen: React.FC<Props> = ({ products, onVoltar, onAbrirFontes, o
           {erro && !dados && <Aviso tom="warn" titulo="Não deu para carregar o painel" texto={erro} acao={{ rotulo: 'Tentar de novo', onClick: () => setRecarga((n) => n + 1) }} />}
 
           {carregando && !dados && !erro && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {[0, 1, 2].map((i) => <div key={i} className="ag-shimmer h-24 rounded-[18px]" />)}
+            // Esqueleto com a forma do painel: três números e o gráfico de receita.
+            <div className="flex flex-col gap-3" role="status" aria-label="Carregando o painel">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="ag-glass rounded-[18px] px-4 py-3.5 flex flex-col gap-2.5">
+                    <Bloco className="h-3 w-1/3" />
+                    <Bloco className="h-6 w-2/3" />
+                    <Bloco className="h-2.5 w-1/2" />
+                  </div>
+                ))}
+              </div>
+              <div className="ag-glass rounded-[18px] p-4"><EsqueletoGrafico altura={120} /></div>
             </div>
           )}
 
@@ -273,8 +284,8 @@ const OperacoesScreen: React.FC<Props> = ({ products, onVoltar, onAbrirFontes, o
                 ))}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <Tile rotulo="Receita" valor={brl(p.receita, true)}><Delta atual={p.receita} anterior={p.anterior.receita} rotulo={ROTULO_ANTERIOR[periodo]} /></Tile>
-                <Tile rotulo="Pedidos" valor={int(p.pedidos)}><Delta atual={p.pedidos} anterior={p.anterior.pedidos} rotulo={ROTULO_ANTERIOR[periodo]} /></Tile>
+                <Tile rotulo="Receita" valor={brl(p.receita, true)} numero={p.receita} formatar={(n) => brl(n, true)}><Delta atual={p.receita} anterior={p.anterior.receita} rotulo={ROTULO_ANTERIOR[periodo]} /></Tile>
+                <Tile rotulo="Pedidos" valor={int(p.pedidos)} numero={p.pedidos} formatar={(n) => int(Math.round(n))}><Delta atual={p.pedidos} anterior={p.anterior.pedidos} rotulo={ROTULO_ANTERIOR[periodo]} /></Tile>
                 <Tile rotulo="Ticket médio" valor={p.pedidos ? brl(p.ticket) : '—'}><Delta atual={p.ticket} anterior={p.anterior.ticket} rotulo={ROTULO_ANTERIOR[periodo]} /></Tile>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-3">
@@ -341,7 +352,7 @@ const OperacoesScreen: React.FC<Props> = ({ products, onVoltar, onAbrirFontes, o
               ) : (
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <Tile rotulo="Esgotados que vendiam" valor={int(estoque.esgotadosQueVendiam.length)} alerta={estoque.esgotadosQueVendiam.length > 0}>
+                    <Tile rotulo="Esgotados que vendiam" valor={int(estoque.esgotadosQueVendiam.length)} numero={estoque.esgotadosQueVendiam.length} formatar={(n) => int(Math.round(n))} alerta={estoque.esgotadosQueVendiam.length > 0}>
                       <span className="text-[12px] text-[var(--ag-text-3)]">{int(estoque.esgotados)} esgotados no total</span>
                     </Tile>
                     <Tile rotulo={`Acabam em menos de ${COBERTURA_CURTA_DIAS} dias`} valor={pedidos && pedidos.detalhados < 0.5 ? '—' : int(estoque.coberturaCurta.length)} alerta={estoque.coberturaCurta.length > 0}>

@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { avisar } from '../services/avisos';
+import ImagemRevelada from './movimento/ImagemRevelada';
 import { X, Search, Image as ImageIcon, Loader2, Download, ExternalLink, RefreshCw } from 'lucide-react';
 import { Product, Category } from '../types/models';
 import { fetchAndProcessImage } from '../utils/imageUtils';
@@ -104,7 +106,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
   const handleGenerateAmbient = () => {
     if (!selectedImageUrl || !product) return;
     if (credits < getCreditCost(CREDIT_ACTIONS.ambientImage.key)) {
-      alert('Você não possui créditos suficientes. Por favor, adicione mais créditos.');
+      avisar('Você não possui créditos suficientes. Por favor, adicione mais créditos.');
       return;
     }
     // Pede confirmação do custo em créditos antes de gerar.
@@ -166,7 +168,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
     } catch (error: any) {
       console.error("Erro ao gerar ambientações:", error);
       const isQuota = /429|RESOURCE_EXHAUSTED|quota|limite/.test(error.message || "");
-      alert(isQuota
+      avisar(isQuota
         ? "O limite de uso da IA foi atingido (Erro 429). Aguarde um momento e tente novamente."
         : `Erro: ${error.message || "Erro ao processar a imagem."}`
       );
@@ -179,7 +181,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
   const handleRegenerateImage = (index: number) => {
     if (!selectedImageUrl || !product) return;
     if (credits < getCreditCost(CREDIT_ACTIONS.regenerateImage.key)) {
-      alert('Você não possui créditos suficientes. Por favor, adicione mais créditos.');
+      avisar('Você não possui créditos suficientes. Por favor, adicione mais créditos.');
       return;
     }
     // Pede confirmação do custo em créditos antes de regenerar.
@@ -202,7 +204,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
       }
     } catch (error: any) {
       const isQuota = /429|RESOURCE_EXHAUSTED|quota|limite/.test(error.message || "");
-      alert(isQuota
+      avisar(isQuota
         ? "Limite de uso da IA atingido. Aguarde e tente novamente."
         : `Erro ao regenerar imagem: ${error.message}`
       );
@@ -260,7 +262,7 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
         handleClose();
       } catch (error: any) {
         console.error('Erro ao salvar imagens:', error);
-        alert(`Erro ao salvar as imagens no Firebase Storage: ${error?.message || 'erro desconhecido'}. Verifique se o Firebase Storage está habilitado e se as regras permitem upload.`);
+        avisar(`Erro ao salvar as imagens no Firebase Storage: ${error?.message || 'erro desconhecido'}. Verifique se o Firebase Storage está habilitado e se as regras permitem upload.`);
       } finally {
         setIsSaving(false);
       }
@@ -390,9 +392,10 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
                   <p className="text-sm font-medium text-gray-700 mb-2">Pré-visualização:</p>
                   <div className="relative w-48 h-48 rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
                     <img
+                      key={selectedImageUrl}
                       src={selectedImageUrl}
                       alt="Pré-visualização"
-                      className="w-full h-full object-contain"
+                      className="w-full h-full object-contain ag-revela"
                       onError={(e) => { (e.target as HTMLImageElement).src = 'https://via.placeholder.com/200?text=Erro+ao+carregar'; }}
                     />
                   </div>
@@ -452,10 +455,23 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
           {step === 'ambient' && (
             <div className="space-y-6">
               {isGenerating ? (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <Loader2 className="w-8 h-8 text-orange-600 animate-spin mb-4" />
-                  <p className="text-gray-600">A IA está analisando o produto e gerando 3 imagens personalizadas...</p>
-                  <p className="text-sm text-gray-400 mt-2">Isso pode levar alguns segundos.</p>
+                // Os três lugares das imagens já aparecem, com a varredura de
+                // luz: o usuário vê onde o resultado vai cair.
+                <div className="flex flex-col gap-4" role="status">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                    {IMAGE_TITLES.map((title) => (
+                      <div key={title} className="flex flex-col gap-3">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{title}</p>
+                        <div className="ag-gerando aspect-square rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-300">
+                          <ImageIcon className="w-10 h-10 ag-respira" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-center text-sm text-gray-600 flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 text-orange-600 animate-spin" />
+                    A IA está analisando o produto e gerando 3 imagens personalizadas — isso leva alguns segundos.
+                  </p>
                 </div>
               ) : (
                 <>
@@ -464,9 +480,10 @@ export default function ImageSearchModal({ isOpen, onClose, product, uid, onSave
                       <div key={idx} className="flex flex-col gap-3">
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{title}</p>
 
-                        <div className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 shadow-sm bg-gray-50">
+                        <div className={`relative aspect-square rounded-lg overflow-hidden border border-gray-200 shadow-sm bg-gray-50 ${imageRegenerating[idx] ? 'ag-gerando' : ''}`}>
                           {ambientImages[idx] ? (
-                            <img src={ambientImages[idx]} alt={title} className="w-full h-full object-cover" />
+                            // key = url: a imagem regenerada também sai do desfoque.
+                            <ImagemRevelada key={ambientImages[idx]} src={ambientImages[idx]} alt={title} wrapperClassName="w-full h-full" className="w-full h-full object-cover" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-gray-300">
                               <ImageIcon className="w-10 h-10" />

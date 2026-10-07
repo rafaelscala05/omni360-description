@@ -3,7 +3,10 @@
 // que abre em cima e "Sua semana" fica recolhida embaixo.
 
 import React from 'react';
-import { Check, ChevronRight, Lock } from 'lucide-react';
+import { motion } from 'motion/react';
+import { ChevronRight, Lock } from 'lucide-react';
+import CheckDesenhado from '../../components/movimento/CheckDesenhado';
+import NumeroAnimado from '../../components/movimento/NumeroAnimado';
 import type { EstadoItem, ItemId, ItemTrilha } from '../onboarding/mission/trilha';
 
 interface Props {
@@ -23,13 +26,21 @@ const ChecklistOnboarding: React.FC<Props> = ({ itens, onAcao }) => {
     <section className="w-full flex flex-col gap-3 text-left" aria-label="Primeiros passos">
       <div className="flex items-end justify-between gap-3">
         <h1 className="font-display text-[26px] sm:text-[30px] font-semibold tracking-tight text-[var(--ag-text)]">Primeiros passos</h1>
-        <span className="text-[13px] text-[var(--ag-text-2)] tabular-nums pb-1">{feitos} de {obrigatorios.length} feitos</span>
+        <span className="text-[13px] text-[var(--ag-text-2)] tabular-nums pb-1">
+          <NumeroAnimado valor={feitos} duracao={0.5} /> de {obrigatorios.length} feitos
+        </span>
       </div>
       <div className="h-1.5 rounded-full overflow-hidden -mt-1" style={{ background: 'var(--ag-fill-2)' }}>
-        <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${pct}%`, background: 'var(--ag-text)' }} />
+        <motion.div
+          className="h-full rounded-full"
+          initial={false}
+          animate={{ width: `${pct}%` }}
+          transition={{ type: 'spring', stiffness: 140, damping: 22 }}
+          style={{ background: 'var(--ag-text)' }}
+        />
       </div>
 
-      <ol className="ag-glass rounded-[22px] overflow-hidden">
+      <ol className="ag-glass rounded-[22px] overflow-hidden ag-cascata">
         {itens.map((item, i) => {
           const feito = item.estado === 'feito';
           const bloqueado = item.estado === 'bloqueado';
@@ -42,15 +53,19 @@ const ChecklistOnboarding: React.FC<Props> = ({ itens, onAcao }) => {
                 onClick={() => onAcao(item.id, item.estado)}
                 className="w-full min-h-[56px] px-4 py-3 flex items-center gap-3 text-left disabled:cursor-default"
               >
-                <span
-                  className="w-6 h-6 rounded-full grid place-items-center shrink-0"
-                  style={feito
-                    ? { background: 'var(--ag-ok-soft)', color: 'var(--ag-ok)' }
-                    : { border: `1.5px solid ${daVez ? 'var(--ag-accent)' : 'var(--ag-hairline-2)'}`, color: 'var(--ag-text-3)' }}
-                  aria-hidden
-                >
-                  {feito ? <Check className="w-3.5 h-3.5" /> : bloqueado ? <Lock className="w-3 h-3" /> : null}
-                </span>
+                {feito ? (
+                  // Mesmo componente antes e depois: quando a etapa vira feita
+                  // com a tela aberta, o check se desenha.
+                  <CheckDesenhado feito tamanho={24} className="shrink-0" />
+                ) : (
+                  <span
+                    className="w-6 h-6 rounded-full grid place-items-center shrink-0"
+                    style={{ border: `1.5px solid ${daVez ? 'var(--ag-accent)' : 'var(--ag-hairline-2)'}`, color: 'var(--ag-text-3)' }}
+                    aria-hidden
+                  >
+                    {bloqueado ? <Lock className="w-3 h-3" /> : null}
+                  </span>
+                )}
                 <span className="min-w-0 flex-1">
                   <span
                     className={`block text-[14.5px] font-semibold truncate ${feito ? 'line-through text-[var(--ag-text-2)]' : 'text-[var(--ag-text)]'}`}

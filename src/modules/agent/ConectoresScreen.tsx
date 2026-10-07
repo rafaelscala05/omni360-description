@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { EsqueletoCard } from '../../components/movimento/Esqueleto';
 import { AlertTriangle, ChevronLeft, RefreshCw } from 'lucide-react';
 import type { AgentAction } from '../../types/agent';
 import { fetchTools, listenActions } from '../../services/agentChatService';
@@ -202,14 +203,14 @@ const ConectoresScreen: React.FC<Props> = ({ uid, hasMeli, hasContentAgent, revo
 
             {carregando && !integracoes.length ? (
               <div className="flex flex-col gap-2">
-                {[0, 1, 2].map((i) => <div key={i} className="ag-shimmer h-16 rounded-[20px]" />)}
+                {[0, 1, 2].map((i) => <EsqueletoCard key={i} linhas={1} />)}
               </div>
             ) : (
-              <>
+              <div className="flex flex-col gap-5 ag-cascata">
                 {fontes.atencao.length > 0 && <Secao titulo="Precisa de atenção" alerta>{grupo(fontes.atencao)}</Secao>}
                 {fontes.conectados.length > 0 && <Secao titulo="Conectados">{grupo(fontes.conectados)}</Secao>}
                 {fontes.disponiveis.length > 0 && <Secao titulo="Disponíveis">{grupo(fontes.disponiveis)}</Secao>}
-              </>
+              </div>
             )}
           </div>
         </div>

@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { avisar } from '../../services/avisos';
+import { estiloAbrirDaOrigem } from '../../modules/agent/origemToque';
 import { Product, Category, AttributeDefinition, ProductModalTab, ProductReference, getProductStatusFlags } from '../../types/models';
 import { getEffectiveAttributes } from '../../services/categoryService';
 import { suggestProductAttributes, generateDescriptionText, defaultTemplate, type Template } from '../../services/productService';
@@ -244,6 +246,9 @@ interface ProductEditModalProps {
 }
 
 export default function ProductEditModal({ product, categories, initialTab = 'geral', onClose, onSave, onCategoryUpdate, onOpenImageModal, templates = [], selectedTemplateId, uid = '', hasContentAgent = false, hasVideoModule = false, activeVideoProductId, activeUgcVideoProductId, getIdToken, onVideoGenerated, onVideoJobStarted, onUgcVideoGenerated, onUgcVideoJobStarted, onUgcVideoFailed, onProductReferenceSaved, ensureCredits, consumeCredit }: ProductEditModalProps) {
+  // Calculado uma vez, na abertura: cresce a partir da linha tocada.
+  const [estiloAbertura] = useState(estiloAbrirDaOrigem);
+  const [recemGerado, setRecemGerado] = useState(0);
   // Template escolhido para (re)gerar a descrição. Inicia no template padrão da
   // aplicação e pode ser trocado pelo usuário antes de gerar novamente.
   const [chosenTemplateId, setChosenTemplateId] = useState<string>(selectedTemplateId || defaultTemplate.id);
@@ -324,7 +329,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
       const attrs = { ...(prev.attributes || {}) };
       if (!(oldKey in attrs)) return prev;
       if (newKey in attrs) {
-        alert(`Já existe um atributo chamado "${newKey}" neste produto.`);
+        avisar(`Já existe um atributo chamado "${newKey}" neste produto.`);
         return prev;
       }
       const val = attrs[oldKey];
@@ -381,10 +386,13 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
       
       // Auto-save the product when premium content is generated
       onSave(finalProduct as Product);
+      // Os blocos que a IA acabou de preencher acendem, e um aviso confirma o salvamento.
+      setRecemGerado((n) => n + 1);
+      avisar.ok('Descrição, título e SEO gerados e salvos.');
     } catch (error) {
       console.error("Erro ao gerar conteúdo IA:", error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      alert(`Erro ao gerar conteúdo IA: ${errorMessage}`);
+      avisar(`Erro ao gerar conteúdo IA: ${errorMessage}`);
       setEditedProduct(prev => ({
         ...prev,
         _generationError: errorMessage
@@ -427,10 +435,10 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
       };
       
       await onCategoryUpdate(editedProduct.categoryId, newAttr);
-      alert("Atributo salvo na categoria com sucesso!");
+      avisar("Atributo salvo na categoria com sucesso!");
     } catch (error) {
       console.error("Erro ao salvar atributo na categoria:", error);
-      alert("Erro ao salvar na categoria.");
+      avisar("Erro ao salvar na categoria.");
     } finally {
       setIsSavingCategoryAttr(null);
     }
@@ -456,7 +464,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
       const hasImage = !!(editedProduct._selectedImage || editedProduct['URL imagem 1']);
       trackAttributesGenerated({ source: hasImage ? 'image' : 'text', sku: editedProduct['Código (SKU)'] as string });
     } else if (result.suggestedNewAttributes.length === 0) {
-      alert('A IA não encontrou novos atributos.');
+      avisar('A IA não encontrou novos atributos.');
     }
     setIsAnalyzing(false);
   };
@@ -479,7 +487,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
     // Moldura no design system do Alfred (tokens `--ag-*`), sempre no claro: o
     // miolo das abas ainda tem cores literais claras, e o modal abre por cima
     // do app inteiro — inclusive de telas sem escopo `.alfreds`.
-    <div className="alfreds fixed inset-0 z-[100] flex flex-col animate-in fade-in duration-300" data-tema="claro" style={{ background: 'var(--ag-bg)' }}>
+    <div className="alfreds fixed inset-0 z-[100] flex flex-col" data-tema="claro" style={{ background: 'var(--ag-bg)', ...estiloAbertura }}>
       {/* Header Bar */}
       <header
         className="h-16 px-3 md:px-6 flex items-center justify-between sticky top-0 z-20 gap-2"
@@ -1236,7 +1244,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                    </header>
 
                    <div className="grid grid-cols-1 gap-10">
-                      <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+                      <div key={`desc-${recemGerado}`} className={`bg-white p-8 rounded-3xl border border-slate-200 shadow-sm ${isGeneratingIA ? 'ag-gerando' : ''} ${recemGerado ? 'ag-acende-campo' : ''}`}>
                         <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
                           <label className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
                              <Layout className="w-4 h-4 text-orange-600" />
@@ -1262,7 +1270,7 @@ export default function ProductEditModal({ product, categories, initialTab = 'ge
                         />
                       </div>
 
-                      <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-8">
+                      <div key={`seo-${recemGerado}`} className={`bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-8 ${isGeneratingIA ? 'ag-gerando' : ''} ${recemGerado ? 'ag-acende-campo' : ''}`}>
                          <h3 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-4 flex items-center gap-2">
                             <Settings className="w-5 h-5 text-slate-400" />
                             Configurações de SEO

@@ -7,6 +7,8 @@
 // Tokens `--ag-*` apenas: quem monta abre o escopo `.alfreds` com o tema.
 
 import React, { createContext, useContext, useEffect } from 'react';
+import NumeroAnimado from './movimento/NumeroAnimado';
+import { AnimatePresence, motion, useDragControls } from 'motion/react';
 import {
   Building2, ChevronRight, Coins, Gift, GraduationCap, HelpCircle, LogOut, Moon, Plug, RefreshCw, Settings, Sun, Target, X,
 } from 'lucide-react';
@@ -54,7 +56,7 @@ export const ContaMenuItens: React.FC<{ dados: DadosConta; onEscolher: (item: It
       primeira
       icone={<Coins className="w-4 h-4" />}
       rotulo="Créditos"
-      extra={<span className="tabular-nums text-[12.5px] font-semibold text-[var(--ag-text-2)]">{dados.credits}</span>}
+      extra={<NumeroAnimado valor={dados.credits} className="text-[12.5px] font-semibold text-[var(--ag-text-2)]" />}
       onClick={() => onEscolher('creditos')}
     />
     <LinhaMenu icone={<RefreshCw className="w-4 h-4" />} rotulo="Histórico de uso" onClick={() => onEscolher('historico')} />
@@ -122,6 +124,7 @@ export const ContaSheet: React.FC<{
   onEscolher: (item: ItemConta) => void;
 }> = ({ aberto, dados, onFechar, onEscolher }) => {
   const { tema, alternar } = useAgentTheme();
+  const arraste = useDragControls();
 
   useEffect(() => {
     if (!aberto) return;
@@ -130,22 +133,50 @@ export const ContaSheet: React.FC<{
     return () => document.removeEventListener('keydown', esc);
   }, [aberto, onFechar]);
 
-  if (!aberto) return null;
   const escolher = (item: ItemConta) => { onFechar(); onEscolher(item); };
 
   return (
+    <AnimatePresence>
+    {aberto && (
     <div className="alfreds fixed inset-0 z-50 flex items-end md:items-center justify-center" data-tema={tema} role="dialog" aria-modal="true" aria-label="Conta">
-      <div className="absolute inset-0" style={{ background: 'var(--ag-scrim)' }} onClick={onFechar} />
-      <div
-        className="ag-rise relative w-full md:w-[360px] max-h-[88vh] overflow-y-auto rounded-t-[28px] md:rounded-[24px] px-3 pt-2 flex flex-col"
+      <motion.div
+        className="absolute inset-0"
+        style={{ background: 'var(--ag-scrim)' }}
+        onClick={onFechar}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+      />
+      <motion.div
+        className="relative w-full md:w-[360px] max-h-[88vh] overflow-y-auto rounded-t-[28px] md:rounded-[24px] px-3 pt-2 flex flex-col"
         // Sólido, não vidro: abre por cima do conteúdo e, translúcido, o texto
         // de trás atravessa as linhas no tema escuro.
         style={{
           background: 'var(--ag-surface-solid)', border: '1px solid var(--ag-hairline)', boxShadow: 'var(--ag-shadow-lg)',
           paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))',
         }}
+        initial={{ y: '40%', opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: '45%', opacity: 0, transition: { duration: 0.2, ease: [0.4, 0, 1, 1] } }}
+        transition={{ type: 'spring', stiffness: 420, damping: 38 }}
+        // Arrasta só pelo puxador (dragControls), para não brigar com a rolagem
+        // da lista; para baixo acompanha o dedo, para cima resiste.
+        drag="y"
+        dragControls={arraste}
+        dragListener={false}
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={{ top: 0.08, bottom: 0.9 }}
+        onDragEnd={(_, info) => {
+          if (info.offset.y > 110 || info.velocity.y > 550) onFechar();
+        }}
       >
-        <span className="md:hidden mx-auto mb-2 w-9 h-1 rounded-full" style={{ background: 'var(--ag-fill-2)' }} />
+        <span
+          className="md:hidden mx-auto -mt-1 mb-1 py-2 px-6 touch-none cursor-grab"
+          onPointerDown={(e) => arraste.start(e)}
+          aria-hidden
+        >
+          <span className="block w-9 h-1 rounded-full" style={{ background: 'var(--ag-fill-2)' }} />
+        </span>
         <div className="px-2 pt-1 pb-3 flex items-center gap-3">
           <AvatarConta dados={dados} tamanho={44} />
           <div className="min-w-0 flex-1 flex flex-col">
@@ -170,7 +201,9 @@ export const ContaSheet: React.FC<{
           </button>
         </div>
         <ContaMenuItens dados={dados} onEscolher={escolher} />
-      </div>
+      </motion.div>
     </div>
+    )}
+    </AnimatePresence>
   );
 };

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { PreviewField } from '../../../types/agent';
+import TextoRevelado from '../../../components/movimento/TextoRevelado';
+import ImagemRevelada from '../../../components/movimento/ImagemRevelada';
 
 export function formatar(v: unknown): string {
   if (v === null || v === undefined || v === '') return '—';
@@ -18,7 +20,10 @@ export const Bloco: React.FC<{ rotulo: string; valor: unknown; destaque?: boolea
   >
     <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em] mb-1" style={{ color: destaque ? 'var(--ag-ok)' : 'var(--ag-text-3)' }}>{rotulo}</div>
     <div className="text-[13px] leading-[1.5] break-words whitespace-pre-wrap" style={{ color: destaque ? 'var(--ag-text)' : 'var(--ag-text-2)' }}>
-      {formatar(valor) === '—' ? 'vazio' : formatar(valor)}
+      {formatar(valor) === '—'
+        ? 'vazio'
+        // O texto novo (o "depois" que a IA escreveu) surge palavra a palavra.
+        : destaque ? <TextoRevelado texto={formatar(valor)} animarAoMontar /> : formatar(valor)}
     </div>
   </div>
 );
@@ -34,6 +39,8 @@ export const Amostra: React.FC<{
   rodape?: (indice: number) => React.ReactNode;
 }> = ({ itens, rodape }) => {
   const [i, setI] = useState(0);
+  const [dir, setDir] = useState<1 | -1>(1);
+  const ir = (novo: number) => { setDir(novo >= i ? 1 : -1); setI(novo); };
   const atual = Math.min(i, itens.length - 1);
   const item = itens[atual];
   if (!item) return null;
@@ -44,7 +51,7 @@ export const Amostra: React.FC<{
         {itens.length > 1 && (
           <span className="flex items-center gap-1 shrink-0">
             <button
-              onClick={() => setI(Math.max(0, atual - 1))}
+              onClick={() => ir(Math.max(0, atual - 1))}
               disabled={atual === 0}
               aria-label="Item anterior"
               className="w-9 h-9 rounded-full grid place-items-center disabled:opacity-35"
@@ -54,7 +61,7 @@ export const Amostra: React.FC<{
             </button>
             <span className="text-[12px] tabular-nums text-[var(--ag-text-2)] min-w-[3.2rem] text-center">{atual + 1} / {itens.length}</span>
             <button
-              onClick={() => setI(Math.min(itens.length - 1, atual + 1))}
+              onClick={() => ir(Math.min(itens.length - 1, atual + 1))}
               disabled={atual >= itens.length - 1}
               aria-label="Próximo item"
               className="w-9 h-9 rounded-full grid place-items-center disabled:opacity-35"
@@ -65,6 +72,8 @@ export const Amostra: React.FC<{
           </span>
         )}
       </div>
+      {/* key = item: ao navegar, o item novo entra do lado para onde se foi. */}
+      <div key={atual} className="flex flex-col gap-2.5 ag-tela-entra" style={{ ['--ag-dir' as string]: dir }}>
       {item.campos.map((c, k) => (
         c.imagens?.length
           ? (
@@ -73,7 +82,7 @@ export const Amostra: React.FC<{
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {c.imagens.map((url) => (
                   <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-[12px] overflow-hidden aspect-square" style={{ background: 'var(--ag-fill)' }}>
-                    <img src={url} alt="" loading="lazy" className="w-full h-full object-cover" />
+                    <ImagemRevelada src={url} alt="" loading="lazy" wrapperClassName="w-full h-full" className="w-full h-full object-cover" />
                   </a>
                 ))}
               </div>
@@ -88,6 +97,7 @@ export const Amostra: React.FC<{
             </div>
           )
       ))}
+      </div>
       {rodape?.(atual)}
     </div>
   );

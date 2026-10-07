@@ -355,7 +355,7 @@ body {
 
 /* Varredura de luz sobre um placeholder enquanto o status carrega. */
 .ag-shimmer {
-  background: linear-gradient(90deg, var(--ag-fill) 25%, var(--ag-fill-2) 37%, var(--ag-fill) 63%);
+  background: linear-gradient(90deg, var(--ag-fill, rgba(15, 23, 42, 0.05)) 25%, var(--ag-fill-2, rgba(15, 23, 42, 0.1)) 37%, var(--ag-fill, rgba(15, 23, 42, 0.05)) 63%);
   background-size: 400% 100%;
   animation: ag-shimmer 1.4s ease infinite;
 }
@@ -502,4 +502,301 @@ body {
   .ag-eq-barra {
     animation: none;
   }
+}
+
+/* --- Movimento ---------------------------------------------------------------
+
+   Um vocabulário só para o app inteiro: três durações e três curvas. Nada aqui
+   anima propriedade de layout (largura, altura, margem) — só transform,
+   opacity e filter, que o navegador compõe sem recalcular a página. Os presets
+   do `motion` que espelham estes valores moram em src/modules/agent/movimento.ts. */
+
+:root {
+  --ag-dur-micro: 120ms;
+  --ag-dur-base: 220ms;
+  --ag-dur-tela: 340ms;
+  /* Mola "sem quique": chega rápido e assenta devagar. */
+  --ag-ease-mola: cubic-bezier(0.22, 1, 0.36, 1);
+  /* A curva das sheets do iOS. */
+  --ag-ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+  /* Saída: começa devagar e acelera, para o que sai não disputar o olho. */
+  --ag-ease-saida: cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* Toque: todo botão afunda um pouco ao ser pressionado. Usa a propriedade
+   `scale` (independente de `transform`), então compõe com qualquer translate
+   que o botão já tenha. Fica em @layer base de propósito: regra fora de layer
+   ganharia de todo utilitário do Tailwind (transition-*, active:scale-*) em
+   todos os botões do app. Para ficar de fora: data-sem-toque. */
+@layer base {
+  button,
+  [role='button'] {
+    transition-property: scale, color, background-color, border-color, opacity, box-shadow;
+    transition-duration: var(--ag-dur-micro);
+    transition-timing-function: var(--ag-ease-mola);
+  }
+  button:not(:disabled):not([data-sem-toque]):active,
+  [role='button']:not([aria-disabled='true']):not([data-sem-toque]):active {
+    scale: 0.97;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    button:not(:disabled):active,
+    [role='button']:active {
+      scale: none;
+    }
+  }
+}
+
+/* Entrada em cascata: cada filho direto entra 35 ms depois do anterior (até o
+   12º — depois disso ninguém está contando, e esperar mais só atrasa). */
+.ag-cascata > * {
+  /* `backwards`, não `both`: terminada a entrada, nada de transform preso no
+     item — senão ele brigaria com animação de layout e com position: fixed. */
+  animation: ag-rise 0.42s var(--ag-ease-mola) backwards;
+}
+.ag-cascata > *:nth-child(2) { animation-delay: 35ms; }
+.ag-cascata > *:nth-child(3) { animation-delay: 70ms; }
+.ag-cascata > *:nth-child(4) { animation-delay: 105ms; }
+.ag-cascata > *:nth-child(5) { animation-delay: 140ms; }
+.ag-cascata > *:nth-child(6) { animation-delay: 175ms; }
+.ag-cascata > *:nth-child(7) { animation-delay: 210ms; }
+.ag-cascata > *:nth-child(8) { animation-delay: 245ms; }
+.ag-cascata > *:nth-child(9) { animation-delay: 280ms; }
+.ag-cascata > *:nth-child(10) { animation-delay: 315ms; }
+.ag-cascata > *:nth-child(11) { animation-delay: 350ms; }
+.ag-cascata > *:nth-child(n + 12) { animation-delay: 385ms; }
+
+/* Item gerando: uma faixa de luz atravessa a linha enquanto a IA trabalha.
+   É um ::after, então não mexe no conteúdo nem no clique. */
+.ag-gerando {
+  position: relative;
+  isolation: isolate;
+}
+.ag-gerando::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    color-mix(in srgb, var(--ag-blue, #3053ff) 14%, transparent) 45%,
+    color-mix(in srgb, var(--ag-blue, #3053ff) 22%, transparent) 50%,
+    color-mix(in srgb, var(--ag-blue, #3053ff) 14%, transparent) 55%,
+    transparent 80%
+  );
+  background-size: 250% 100%;
+  animation: ag-varre 1.6s ease-in-out infinite;
+}
+@keyframes ag-varre {
+  from { background-position: 130% 0; }
+  to { background-position: -30% 0; }
+}
+
+/* Brilho correndo sobre uma barra de progresso enquanto ela trabalha. */
+.ag-barra-viva {
+  position: relative;
+  overflow: hidden;
+}
+.ag-barra-viva::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  transform: translateX(-100%);
+  animation: ag-indeterminado 1.8s ease-in-out infinite;
+}
+
+/* Ping: um item que acabou de ficar pronto pisca um anel uma vez. */
+.ag-ping-uma {
+  animation: ag-ping-uma 0.9s var(--ag-ease-mola) both;
+}
+@keyframes ag-ping-uma {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ag-ok, #12a150) 55%, transparent); }
+  100% { box-shadow: 0 0 0 10px transparent; }
+}
+
+/* Bump: o número cresce e volta quando muda (contador da seleção, selo). */
+.ag-bump {
+  animation: ag-bump 0.32s var(--ag-ease-mola);
+}
+@keyframes ag-bump {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.28); }
+  100% { transform: scale(1); }
+}
+
+/* Tremor de erro num campo: curto, horizontal, amortecido. */
+.ag-shake {
+  animation: ag-shake 0.38s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+@keyframes ag-shake {
+  10%, 90% { transform: translate3d(-1px, 0, 0); }
+  20%, 80% { transform: translate3d(3px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-6px, 0, 0); }
+  40%, 60% { transform: translate3d(6px, 0, 0); }
+}
+
+/* Etapa atual de um processo longo: respira devagar. */
+.ag-respira {
+  animation: ag-respira 1.8s ease-in-out infinite;
+}
+@keyframes ag-respira {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* Palavra surgindo (texto gerado pela IA). O atraso vem inline por palavra. */
+.ag-palavra {
+  display: inline;
+  animation: ag-palavra 0.5s var(--ag-ease-mola) both;
+}
+@keyframes ag-palavra {
+  from { opacity: 0; filter: blur(4px); }
+  to { opacity: 1; filter: blur(0); }
+}
+
+/* Imagem chegando: sai do desfoque e assenta no tamanho. */
+.ag-revela {
+  animation: ag-revela 0.7s var(--ag-ease-mola) both;
+}
+@keyframes ag-revela {
+  from { opacity: 0; filter: blur(18px); transform: scale(1.04); }
+  to { opacity: 1; filter: blur(0); transform: none; }
+}
+
+/* "+N" que sobe e some ao lado de um número que cresceu. */
+.ag-sobe-some {
+  animation: ag-sobe-some 1.4s var(--ag-ease-mola) both;
+  pointer-events: none;
+}
+@keyframes ag-sobe-some {
+  0% { opacity: 0; transform: translate3d(0, 6px, 0) scale(0.9); }
+  20% { opacity: 1; transform: translate3d(0, -4px, 0) scale(1.05); }
+  100% { opacity: 0; transform: translate3d(0, -22px, 0) scale(1); }
+}
+
+/* Vira: o selo gira no eixo X ao trocar de estado. */
+.ag-vira {
+  animation: ag-vira 0.5s var(--ag-ease-mola) both;
+  transform-origin: center;
+}
+@keyframes ag-vira {
+  from { opacity: 0; transform: perspective(300px) rotateX(-90deg); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-cascata > *,
+  .ag-gerando::after,
+  .ag-barra-viva::after,
+  .ag-ping-uma,
+  .ag-bump,
+  .ag-shake,
+  .ag-respira,
+  .ag-revela,
+  .ag-vira {
+    animation: none;
+  }
+  /* O que some sozinho precisa continuar sumindo: só sem deslocamento. */
+  .ag-palavra { animation: ag-fade 0.2s both; }
+  .ag-sobe-some { animation: ag-fade-out 1.2s both; }
+}
+@keyframes ag-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ag-fade-out { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+/* Troca de tela: entra com fade e um deslize curto na direção da navegação
+   (--ag-dir: 1 ou -1). Só entrada, e com fill-mode `backwards`: terminada a
+   animação, o contêiner fica sem transform. Isso importa — um ancestral com
+   transform vira o "viewport" de todo position: fixed dentro dele, e as
+   folhas, filtros e logs das telas são fixed. */
+.ag-tela-entra {
+  animation: ag-tela-entra var(--ag-dur-tela) var(--ag-ease-mola) backwards;
+}
+@keyframes ag-tela-entra {
+  from { opacity: 0; transform: translate3d(calc(var(--ag-dir, 1) * 12px), 0, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ag-tela-entra { animation: ag-fade 0.18s backwards; }
+}
+
+/* Tela cheia que cresce a partir do que foi tocado (ver origemToque.ts). */
+@keyframes ag-abre-da-origem {
+  from {
+    clip-path: inset(var(--o-top) var(--o-right) var(--o-bottom) var(--o-left) round 16px);
+    opacity: 0.6;
+  }
+  to {
+    clip-path: inset(0 0 0 0 round 0);
+    opacity: 1;
+  }
+}
+
+/* Acende verde e volta ao neutro: o que acabou de ficar em dia. */
+.ag-acende-ok {
+  animation: ag-vira 0.5s var(--ag-ease-mola) both, ag-acende-ok 1.8s ease-out 0.2s both;
+}
+@keyframes ag-acende-ok {
+  from { background: var(--ag-ok-soft); color: var(--ag-ok); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ag-acende-ok { animation: ag-acende-ok 1.8s ease-out both; }
+}
+
+/* Barra de ação do pé da tela: sobe com mola ao aparecer. Só a entrada, e com
+   `backwards`, porque ela costuma ser sticky e um transform residual a tiraria
+   do lugar. */
+.ag-barra-sobe {
+  animation: ag-barra-sobe 0.5s cubic-bezier(0.34, 1.3, 0.64, 1) backwards;
+}
+@keyframes ag-barra-sobe {
+  from { opacity: 0; transform: translate3d(0, 28px, 0); }
+}
+
+/* A ação principal acende quando passa a valer (ex.: seleção começou). */
+.ag-acende {
+  animation: ag-acende 0.9s var(--ag-ease-mola);
+}
+@keyframes ag-acende {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ag-accent, #ff5b03) 55%, transparent); }
+  100% { box-shadow: 0 0 0 12px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ag-barra-sobe, .ag-acende { animation: none; }
+}
+
+/* Estados da logo do Alfred (AlfredLogo `humor`/`sucesso`). */
+.ag-halo-atencao {
+  opacity: 0.25;
+  animation: ag-halo-atencao 2.6s ease-in-out infinite;
+}
+@keyframes ag-halo-atencao {
+  0%, 100% { opacity: 0.18; transform: scale(0.96); }
+  50% { opacity: 0.42; transform: scale(1.08); }
+}
+.ag-halo-sucesso {
+  animation: ag-halo-sucesso 1s var(--ag-ease-mola) both;
+}
+@keyframes ag-halo-sucesso {
+  from { opacity: 0.9; transform: scale(0.9); }
+  to { opacity: 0; transform: scale(1.6); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ag-halo-atencao { animation: none; opacity: 0.3; }
+  .ag-halo-sucesso { animation: ag-fade-out 0.8s both; }
+}
+
+/* Bloco que a IA acabou de preencher: um contorno verde que acende e apaga. */
+.ag-acende-campo {
+  animation: ag-acende-campo 1.6s var(--ag-ease-mola);
+}
+@keyframes ag-acende-campo {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ag-ok, #12a150) 45%, transparent); }
+  30% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--ag-ok, #12a150) 25%, transparent); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ag-acende-campo { animation: none; }
 }

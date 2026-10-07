@@ -1,6 +1,7 @@
 // Peças visuais do Centro de Operações, compartilhadas pelas seções
 // (OperacoesScreen, SecaoEntrega, SecaoCatalogo). Cores só por tokens `--ag-*`.
 import React from 'react';
+import NumeroAnimado from '../../../components/movimento/NumeroAnimado';
 import { AlertTriangle, Plug, Sparkles } from 'lucide-react';
 
 export const brl = (v: number, compacto = false) =>
@@ -34,7 +35,17 @@ export const BotaoAlfred: React.FC<{ onClick: () => void; children?: React.React
 );
 
 /** Número com rótulo. Com `onClick`, vira um seletor: `ativo` marca o que está aberto embaixo. */
-export const Tile: React.FC<{ rotulo: string; valor: string; children?: React.ReactNode; alerta?: boolean; onClick?: () => void; ativo?: boolean }> = ({ rotulo, valor, children, alerta, onClick, ativo }) => {
+export const Tile: React.FC<{
+  rotulo: string;
+  valor: string;
+  /** Com o número cru, o valor conta até ele (troca de período, dado chegando) em vez de trocar de uma vez. */
+  numero?: number;
+  formatar?: (n: number) => string;
+  children?: React.ReactNode;
+  alerta?: boolean;
+  onClick?: () => void;
+  ativo?: boolean;
+}> = ({ rotulo, valor, numero, formatar, children, alerta, onClick, ativo }) => {
   const Tag = onClick ? 'button' : 'div';
   return (
   <Tag
@@ -46,7 +57,9 @@ export const Tile: React.FC<{ rotulo: string; valor: string; children?: React.Re
       {alerta && <AlertTriangle className="w-3.5 h-3.5" style={{ color: 'var(--ag-warn)' }} aria-hidden />}
       {rotulo}
     </span>
-    <span className="font-display text-[26px] leading-tight font-semibold tabular-nums text-[var(--ag-text)] truncate">{valor}</span>
+    {numero !== undefined && formatar
+      ? <NumeroAnimado valor={numero} formatar={formatar} className="font-display text-[26px] leading-tight font-semibold text-[var(--ag-text)] truncate" />
+      : <span className="font-display text-[26px] leading-tight font-semibold tabular-nums text-[var(--ag-text)] truncate">{valor}</span>}
     {children}
   </Tag>
   );

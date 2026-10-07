@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { reanimar } from '../../modules/agent/movimento';
 import { Link } from 'react-router-dom';
 import { CheckCircle, Mail, Lock, Phone, Eye, EyeOff, ArrowLeft, Gift, X } from 'lucide-react';
 import logoAlfreds from '../../assets/brand/logo-alfreds-produtos.png';
@@ -90,6 +91,11 @@ export default function AuthPage({ onGoogleLogin, onEmailLogin, onEmailRegister,
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Erro de login: o formulário treme (curto, horizontal) além da mensagem.
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (error) reanimar(formRef.current, 'ag-shake');
+  }, [error]);
   const [resetSent, setResetSent] = useState(false);
   const [referrerName, setReferrerName] = useState<string | null>(null);
   const [showReferralPopup, setShowReferralPopup] = useState(false);
@@ -257,7 +263,7 @@ export default function AuthPage({ onGoogleLogin, onEmailLogin, onEmailRegister,
                   </>
                 )}
 
-                <form onSubmit={handleSubmit} className={`space-y-4 ${mode === 'reset' ? 'mt-6' : ''}`}>
+                <form ref={formRef} onSubmit={handleSubmit} className={`space-y-4 ${mode === 'reset' ? 'mt-6' : ''}`}>
                   <div>
                     <label htmlFor="auth-email" className="block text-[14px] font-medium text-[var(--ag-text)] mb-1.5">E-mail</label>
                     <div className="relative">

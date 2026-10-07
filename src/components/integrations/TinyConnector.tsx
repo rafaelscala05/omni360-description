@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, RefreshCw, Upload, CloudUpload, X, Loader2, AlertCircle, ShieldCheck, Info, KeyRound, Copy } from 'lucide-react';
+import { useCopiar, RotuloCopiar } from '../movimento/Copiar';
+import { confirmar } from '../../services/confirmar';
+import { Check, RefreshCw, Upload, CloudUpload, X, Loader2, AlertCircle, ShieldCheck, Info, KeyRound } from 'lucide-react';
 import {
   tinyStatus, tinyConnect, tinyV2Validate, tinyDisconnect, tinyPush,
   tinyImportStart, tinyImportStatus, tinyImportCancel, tinyImportSetAutosync, tinyWebhookConfig,
@@ -135,7 +137,7 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, pushCandid
   };
 
   const handleRegenerateWebhookSecret = async () => {
-    if (!window.confirm('Regerar a URL do webhook? A URL atual, se já configurada no painel do Tiny, vai parar de funcionar.')) return;
+    if (!await confirmar('Regerar a URL do webhook? A URL atual, se já configurada no painel do Tiny, vai parar de funcionar.')) return;
     setSavingWebhook(true);
     setError(null);
     try {
@@ -148,9 +150,8 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, pushCandid
     }
   };
 
-  const handleCopyWebhookUrl = () => {
-    if (status?.webhookUrl) navigator.clipboard.writeText(status.webhookUrl).catch(() => {});
-  };
+  const [webhookCopiado, copiar] = useCopiar();
+  const handleCopyWebhookUrl = () => copiar(status?.webhookUrl);
 
   // Poll the background job while connected. Polls on a steady cadence (not only
   // when active) so a server-initiated auto-sync is reflected too; reloads
@@ -424,7 +425,7 @@ const TinyConnector: React.FC<Props> = ({ onImported, getPushPayload, pushCandid
                     disabled={!status?.webhookUrl}
                     className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 border border-slate-300 px-3 py-2 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
                   >
-                    <Copy className="w-4 h-4" /> Copiar
+                    <RotuloCopiar copiado={webhookCopiado} />
                   </button>
                   <button
                     onClick={handleRegenerateWebhookSecret}

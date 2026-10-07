@@ -1,10 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Check, Loader2, Pause, Play, ShieldCheck, Square, Trash2, Undo2, X } from 'lucide-react';
 import type { AgentAction } from '../../../types/agent';
 import { agirNoLote, definirAutonomia, listenLote, type AcaoLote } from '../../../services/agentChatService';
 import { camposDoItem, linhaProgresso, linhasAoVivo, podeDesfazer, resumoLote, type LoteJob } from '../lote';
 import { Amostra } from './Amostra';
 import { carregarAutonomia, esquecerAutonomia, rotuloAutonomia } from './autonomia';
+import NumeroAnimado from '../../../components/movimento/NumeroAnimado';
+import CheckDesenhado from '../../../components/movimento/CheckDesenhado';
+import { reanimar, useMudou } from '../movimento';
 
 const Botao: React.FC<{
   onClick: () => void;
@@ -57,6 +60,13 @@ const LoteCard: React.FC<{ action: AgentAction }> = ({ action }) => {
   }, [pendente, action.tool]);
 
   const prontos = useMemo(() => (job?.itens ?? []).filter((i) => i.estado === 'pronto' && i.resultado), [job]);
+  const mudouProntos = useMudou(prontos.length);
+  // O anel é reanimado no próprio nó (sem `key`), para não remontar o card e
+  // perder a posição da amostra que o usuário está lendo.
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (mudouProntos) reanimar(cardRef.current, 'ag-ping-uma');
+  }, [mudouProntos]);
   const amostra = useMemo(
     () => prontos.map((i) => ({ alvo: `${i.nome}${i.sku ? ` · ${i.sku}` : ''}`, campos: camposDoItem(i) })),
     [prontos],
@@ -107,6 +117,7 @@ const LoteCard: React.FC<{ action: AgentAction }> = ({ action }) => {
 
   return (
     <div
+      ref={cardRef}
       className="ag-glass rounded-[20px] overflow-hidden"
       style={{
         boxShadow: prontos.length && pendente ? '0 0 0 4px var(--ag-accent-soft), var(--ag-shadow)' : 'var(--ag-shadow-sm)',
@@ -134,15 +145,21 @@ const LoteCard: React.FC<{ action: AgentAction }> = ({ action }) => {
             aria-valuemin={0}
             aria-valuemax={100}
           >
+            {/* Rodando: um brilho corre sobre a barra (ag-barra-viva). Pausado:
+                a barra perde a cor e o brilho para — parece parada porque está. */}
             <div
-              className="h-full rounded-full transition-[width] duration-500"
-              style={{ width: `${Math.max(pct, trabalhando ? 4 : 0)}%`, background: status === 'pausado' ? 'var(--ag-text-3)' : 'var(--ag-blue)' }}
+              className={`h-full rounded-full transition-[width,background-color,filter] duration-500 ${status === 'rodando' ? 'ag-barra-viva' : ''}`}
+              style={{
+                width: `${Math.max(pct, trabalhando ? 4 : 0)}%`,
+                background: status === 'pausado' ? 'var(--ag-text-3)' : 'var(--ag-blue)',
+                filter: status === 'pausado' ? 'saturate(0)' : undefined,
+              }}
             />
           </div>
           {r!.gravados > 0 && (
             <div className="text-[12px] text-[var(--ag-text-2)] flex items-center gap-1.5">
-              <Check className="w-3.5 h-3.5" style={{ color: 'var(--ag-ok)' }} />
-              {r!.gravados} {r!.gravados === 1 ? 'gravado' : 'gravados'} no catálogo
+              <CheckDesenhado feito tamanho={14} />
+              <NumeroAnimado valor={r!.gravados} duracao={0.5} /> {r!.gravados === 1 ? 'gravado' : 'gravados'} no catálogo
               {r!.falhas + r!.pulados > 0 && <span className="text-[var(--ag-text-3)]">· {r!.falhas + r!.pulados} ficaram de fora</span>}
             </div>
           )}
@@ -154,7 +171,9 @@ const LoteCard: React.FC<{ action: AgentAction }> = ({ action }) => {
       {job?.auto && job.itens.some((i) => i.estado !== 'fila') && (
         <ul className="px-4 py-2 flex flex-col gap-0.5 text-[13px]" style={{ borderBottom: '1px solid var(--ag-hairline)' }} aria-live="polite">
           {linhasAoVivo(job).map((l, i) => (
-            <li key={i} className="truncate" style={{ color: l.tom === 'ok' ? 'var(--ag-ok)' : l.tom === 'alerta' ? 'var(--ag-warn)' : 'var(--ag-text-2)' }}>{l.texto}</li>
+            // A chave é o texto: cada linha nova entra subindo, as que já
+            // estavam ficam paradas.
+            <li key={`${i}-${l.texto}`} className="truncate ag-rise" style={{ color: l.tom === 'ok' ? 'var(--ag-ok)' : l.tom === 'alerta' ? 'var(--ag-warn)' : 'var(--ag-text-2)' }}>{l.texto}</li>
           ))}
         </ul>
       )}
@@ -167,7 +186,8 @@ const LoteCard: React.FC<{ action: AgentAction }> = ({ action }) => {
 
       {pendente && prontos.length > 0 && (
         <>
-          <div className="px-4 pt-3 text-[13px] font-medium text-[var(--ag-text)]">
+          {/* Cada item que fica pronto "pinga": o texto entra de novo e o card dá um anel verde. */}
+          <div key={mudouProntos} className={`px-4 pt-3 text-[13px] font-medium text-[var(--ag-text)] ${mudouProntos ? 'ag-rise' : ''}`}>
             {status === 'rodando'
               ? `${prontos.length === 1 ? 'A primeira está pronta' : `As ${prontos.length} primeiras estão prontas`} — revise enquanto termino o resto.`
               : `${prontos.length === 1 ? '1 pronta' : `${prontos.length} prontas`} para revisar.`}

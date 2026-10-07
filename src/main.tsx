@@ -5,9 +5,11 @@ import App from './App.tsx';
 import './index.css';
 import { metaInit } from './meta';
 import { tiktokInit } from './tiktok';
+import { instalarOrigemToque } from './modules/agent/origemToque';
 
 metaInit();
 tiktokInit();
+instalarOrigemToque();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { confirmar } from '../../services/confirmar';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import TurndownService from 'turndown';
@@ -164,7 +165,7 @@ const ArticleView: React.FC<Props> = ({ uid, projectId, article, onClose, blogEn
   };
 
   const handleDelete = async () => {
-    if (!window.confirm(`Excluir o artigo "${article.titulo}"? Essa ação não pode ser desfeita.`)) return;
+    if (!await confirmar(`Excluir o artigo "${article.titulo}"? Essa ação não pode ser desfeita.`)) return;
     setDeleting(true);
     setError(null);
     try {

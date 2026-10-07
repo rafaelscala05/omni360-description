@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import NumeroAnimado from '../../components/movimento/NumeroAnimado';
 import { ArrowRight, ChevronRight, Package, PenLine, Sparkles, Store, Workflow } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Product } from '../../types/models';
@@ -53,7 +54,7 @@ const Chip: React.FC<{ tom: 'alerta' | 'ok' | 'neutro'; children: React.ReactNod
 const Linha: React.FC<{ rotulo: string; valor: React.ReactNode; tom?: 'alerta' | 'ok' | 'neutro'; primeira?: boolean }> = ({ rotulo, valor, tom = 'neutro', primeira }) => (
   <div className="flex items-center justify-between gap-3 py-2 text-[14px]" style={primeira ? undefined : { borderTop: '1px solid var(--ag-hairline)' }}>
     <span className="text-[var(--ag-text-2)]">{rotulo}</span>
-    <Chip tom={tom}>{valor}</Chip>
+    <Chip tom={tom}>{typeof valor === 'number' ? <NumeroAnimado valor={valor} /> : valor}</Chip>
   </div>
 );
 
@@ -108,7 +109,9 @@ const Cartao: React.FC<{
 
       <div className="px-5 pt-4 pb-2 flex flex-col gap-3 flex-1">
         <div className="flex items-baseline gap-2">
-          <span className="font-display text-[34px] leading-none font-semibold tabular-nums text-[var(--ag-text)]">{kpi}</span>
+          {typeof kpi === 'number'
+            ? <NumeroAnimado valor={kpi} className="font-display text-[34px] leading-none font-semibold text-[var(--ag-text)]" />
+            : <span className="font-display text-[34px] leading-none font-semibold tabular-nums text-[var(--ag-text)]">{kpi}</span>}
           <span className="text-[13px] text-[var(--ag-text-2)]">{kpiRotulo}</span>
         </div>
         <div>{children}</div>
@@ -338,7 +341,7 @@ const FerramentasScreen: React.FC<Props> = ({
             )}
 
             {/* F1 · celular: lista */}
-            <div className="md:hidden flex flex-col gap-3">
+            <div className="md:hidden flex flex-col gap-3 ag-cascata">
               <section className="ag-glass rounded-[22px]">
                 <LinhaAgente
                   primeira
@@ -379,7 +382,7 @@ const FerramentasScreen: React.FC<Props> = ({
 
             {/* D2 · desktop: cartões + coluna (próximos passos, Alfred sugere) */}
             <div className="hidden md:grid gap-5 items-start grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_380px]">
-              <div className="min-w-0 grid lg:grid-cols-2 gap-5">
+              <div className="min-w-0 grid lg:grid-cols-2 gap-5 ag-cascata">
                 <Cartao
                   origem="produto" nome="Produtos" papel="Catálogo, descrições e fotos"
                   pendencias={produtos.incompletos}

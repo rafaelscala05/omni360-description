@@ -1,5 +1,8 @@
 import React, { useMemo } from 'react';
-import { Check, ChevronRight, ScrollText } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { ChevronRight, ScrollText } from 'lucide-react';
+import CheckDesenhado from '../../components/movimento/CheckDesenhado';
+import { itemLista, itemResolvido } from './movimento';
 import type { AgentAction } from '../../types/agent';
 import type { Product } from '../../types/models';
 import { useRodando } from './useRodando';
@@ -55,14 +58,24 @@ const ColunaAtividade: React.FC<Props> = ({ uid, acoes, products, onExecutar, on
     [acoes],
   );
   const feitas = useMemo(() => feitasHoje(acoes), [acoes]);
+  // O que já estava feito ao abrir aparece pronto; só o que ficou feito agora desenha o check.
+  const [feitasIniciais] = React.useState(() => new Set(feitas.map((a) => a.id)));
   const [primeira, ...outras] = pendentes;
 
   return (
     <div className="flex flex-col gap-3">
       <Bloco titulo={`Precisa de você${pendentes.length ? ` · ${pendentes.length}` : ''}`} alerta={pendentes.length > 0}>
+        {/* A aprovação resolvida sai deslizando para a direita — rumo ao "Feito
+            hoje" logo abaixo, onde ela reaparece com o check se desenhando. */}
+        <AnimatePresence mode="popLayout" initial={false}>
+          {primeira && (
+            <motion.div key={primeira.id} layout {...itemResolvido}>
+              <ActionCard uid={uid} action={primeira} onExecutar={onExecutar} onRejeitar={onRejeitar} />
+            </motion.div>
+          )}
+        </AnimatePresence>
         {primeira ? (
           <>
-            <ActionCard uid={uid} action={primeira} onExecutar={onExecutar} onRejeitar={onRejeitar} />
             {outras.slice(0, 3).map((a) => (
               <button
                 key={a.id}
@@ -97,12 +110,15 @@ const ColunaAtividade: React.FC<Props> = ({ uid, acoes, products, onExecutar, on
       </Bloco>
 
       <Bloco titulo="Feito hoje">
-        {feitas.length ? feitas.slice(0, 5).map((a) => (
-          <div key={a.id} className="flex items-start gap-2 text-[14px] text-[var(--ag-text)]">
-            <Check className="w-4 h-4 mt-0.5 shrink-0 text-[var(--ag-ok)]" />
-            <span className="min-w-0 truncate">{a.preview.resumo || rotuloFerramenta(a.tool)}</span>
-          </div>
-        )) : <Vazio>Nada gravado hoje ainda.</Vazio>}
+        <AnimatePresence initial={false}>
+          {feitas.slice(0, 5).map((a) => (
+            <motion.div key={a.id} layout {...itemLista} className="flex items-start gap-2 text-[14px] text-[var(--ag-text)]">
+              <CheckDesenhado feito tamanho={16} animarAoMontar={!feitasIniciais.has(a.id)} className="mt-0.5 shrink-0" />
+              <span className="min-w-0 truncate">{a.preview.resumo || rotuloFerramenta(a.tool)}</span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+        {!feitas.length && <Vazio>Nada gravado hoje ainda.</Vazio>}
         {feitas.length > 5 && (
           <button onClick={onVerAtividade} className="self-start pt-1 text-[13px] font-medium text-[var(--ag-text-2)] hover:text-[var(--ag-text)]">Ver tudo</button>
         )}

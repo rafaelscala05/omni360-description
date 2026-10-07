@@ -4,6 +4,7 @@ import type { Product } from '../../../types/models';
 import { ASPECTO, ASPECTO_DO_ROTULO, type Aspecto } from '../aspectos';
 import { integracoesDoProduto, nomeDe, pilulasDe, skuDe, type EstadoPilula } from '../produtosAgente';
 import SeloIntegracao from './SeloIntegracao';
+import { useMudou } from '../movimento';
 
 /**
  * Pílula de um aspecto: o ícone diz qual (a cor dele, de `aspectos.tsx`), o
@@ -19,8 +20,11 @@ const Pilula: React.FC<{ rotulo: string; estado: EstadoPilula }> = ({ rotulo, es
         : estado === 'rodando' ? { background: 'var(--ag-blue-soft)', color: 'var(--ag-blue)' }
           : { color: 'var(--ag-text-3)', boxShadow: 'inset 0 0 0 1px var(--ag-hairline-2)' };
   const texto = estado === 'alerta' ? `sem ${rotulo}` : estado === 'rodando' ? `${rotulo} gerando` : rotulo;
+  // Quando o estado muda com a linha na tela (ex.: "sem descrição" → feito), a
+  // pílula vira no eixo X — o usuário vê o que acabou de mudar.
+  const mudou = useMudou(estado);
   return (
-    <span className="inline-flex items-center gap-1 h-6 pl-1.5 pr-2 rounded-full text-[11.5px] font-medium whitespace-nowrap" style={estilo}>
+    <span key={mudou} className={`inline-flex items-center gap-1 h-6 pl-1.5 pr-2 rounded-full text-[11.5px] font-medium whitespace-nowrap ${mudou ? 'ag-vira' : ''}`} style={estilo}>
       {estado === 'rodando' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Icone className="w-3 h-3" />}
       {texto}
       {estado === 'ok' && <Check className="w-3 h-3" strokeWidth={2.5} />}
@@ -38,10 +42,18 @@ const primeiraImagem = (p: Product): string | null => {
 const Miniatura: React.FC<{ p: Product }> = ({ p }) => {
   const url = primeiraImagem(p);
   const [falhou, setFalhou] = useState(false);
+  const [carregou, setCarregou] = useState(false);
   return (
     <span className="w-12 h-12 rounded-[12px] shrink-0 overflow-hidden grid place-items-center" style={{ background: 'var(--ag-fill)', boxShadow: 'inset 0 0 0 1px var(--ag-hairline)' }}>
       {url && !falhou ? (
-        <img src={url} alt="" loading="lazy" className="w-full h-full object-cover" onError={() => setFalhou(true)} />
+        <img
+          src={url}
+          alt=""
+          loading="lazy"
+          className={`w-full h-full object-cover ${carregou ? 'ag-revela' : 'opacity-0'}`}
+          onLoad={() => setCarregou(true)}
+          onError={() => setFalhou(true)}
+        />
       ) : (
         <span className="text-[15px] font-semibold text-[var(--ag-text-3)]">{nomeDe(p).slice(0, 1).toUpperCase()}</span>
       )}
@@ -49,7 +61,9 @@ const Miniatura: React.FC<{ p: Product }> = ({ p }) => {
   );
 };
 
-export const Caixa: React.FC<{ marcada: boolean; rotulo: string; onClick: () => void }> = ({ marcada, rotulo, onClick }) => (
+export const Caixa: React.FC<{ marcada: boolean; rotulo: string; onClick: () => void }> = ({ marcada, rotulo, onClick }) => {
+  const mudou = useMudou(marcada);
+  return (
   <button
     onClick={onClick}
     role="checkbox"
@@ -63,10 +77,11 @@ export const Caixa: React.FC<{ marcada: boolean; rotulo: string; onClick: () => 
         ? { background: 'var(--ag-text)', color: 'var(--ag-bg-2)' }
         : { border: '1.5px solid var(--ag-hairline-2)', background: 'var(--ag-surface-solid)' }}
     >
-      {marcada && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
+      {marcada && <Check key={mudou} className={`w-3.5 h-3.5 ${mudou ? 'ag-bump' : ''}`} strokeWidth={3} />}
     </span>
   </button>
-);
+  );
+};
 
 interface Props {
   p: Product;
@@ -81,9 +96,11 @@ interface Props {
 const LinhaProduto: React.FC<Props> = ({ p, marcado, onMarcar, onAbrir, mostrarVideo }) => {
   const integracoes = integracoesDoProduto(p);
   const pilulas = [...pilulasDe(p, 'catalogo'), ...(mostrarVideo ? pilulasDe(p, 'videos').slice(1) : [])];
+  const gerando = !!p._isGenerating || pilulas.some((pl) => pl.estado === 'rodando');
   return (
     <div
-      className="flex items-center gap-1 pl-1 pr-3 py-2.5 transition-colors hover:bg-[var(--ag-fill)]"
+      data-linha-produto
+      className={`flex items-center gap-1 pl-1 pr-3 py-2.5 transition-colors hover:bg-[var(--ag-fill)] ${gerando ? 'ag-gerando' : ''}`}
       style={{ borderTop: '1px solid var(--ag-hairline)', background: marcado ? 'var(--ag-fill)' : undefined }}
     >
       <Caixa marcada={marcado} rotulo={`Selecionar ${nomeDe(p)}${skuDe(p) ? ` (${skuDe(p)})` : ''}`} onClick={onMarcar} />
